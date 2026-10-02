@@ -373,7 +373,6 @@ export function FreightTripsPage({ canEdit }: { canEdit: boolean }) {
               selection={poolSel}
               onSelection={setPoolSel}
               selectable={canEdit}
-              title="— tick the ones that go on this trip"
             />
           </>
         )}
@@ -472,7 +471,7 @@ export function FreightTripsPage({ canEdit }: { canEdit: boolean }) {
       )}
 
       {confirmCancel && detail && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 px-4" role="dialog" aria-modal="true">
+        <div data-freight-overlay className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 px-4" role="dialog" aria-modal="true">
           <div className="w-full max-w-[400px] rounded-xl bg-white p-5 shadow-xl">
             <h3 className="text-[15px] font-semibold text-ink-900">Cancel {detail.tripNumber}?</h3>
             <p className="mt-2 text-[12.5px] leading-relaxed text-ink-600">

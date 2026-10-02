@@ -3,28 +3,38 @@
 // Freight Trips — the Held bills pool. Floor's held set (via /api/freight-trips/pool,
 // which is getFloorHold) minus bills already on an active freight trip.
 //
-//   By route (default) — ONE CARD PER DELIVERY TYPE, Floor's All-tab style
-//     (./route-cards.tsx; mockup docs/mockups/freight-trips/held-cards.html),
-//     no status: Local, Upcountry, IGT / Cross (only with bills), and an amber
-//     "No route" card when needed. A click on a card head (every bill of the
-//     type) or a club row opens
-//     the DRILL-IN: those bills grouped by INVOICE DATE, oldest first, each date
-//     a band with its own select-all, then the SHARED held-bills table
-//     (components/floor/hold-table.tsx, imported as-is). "No invoice yet" last.
-//   Flat — one HoldTable, invoice date oldest first, no-invoice last.
+// CARDS ARE THE ONLY VIEW (owner, 2026-10-02 — the Flat table and the header
+// toggle are gone): one card per delivery type (./route-cards.tsx; mockup
+// docs/mockups/freight-trips/held-cards.html).
 //
-// Selection lives in the page, so ticks survive cards ↔ drill-in ↔ Flat.
+// A click opens the DRILL-IN, the look of Floor's By route open card
+// (components/floor/route-cards.tsx Chip + OpenPanel — COPIED, never imported):
+//   - a strip of CLUB TABS for that delivery type — "{club}" over "{kg} kg ·
+//     {stops} stops"; the selected tab is brand-filled with a ✕ (= back to the
+//     cards); "Esc to go back to cards" at the right;
+//   - the selected club's bills in ROUTE SECTIONS — "{route}  {stops} stops ·
+//     {kg} kg" (+ "+N Hand · kg — not counted"), a select-all, then the SHARED
+//     held-bills table (components/floor/hold-table.tsx, as-is). Rows by invoice
+//     date OLDEST first, no invoice last (then OBD date); Hand bills after.
+// A card HEAD opens the first club tab; a card ROW opens that club.
+//
+// Selection lives in the page, so ticks survive tab switches and going back.
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { HoldTable } from "@/components/floor/hold-table";
-import { formatLitres } from "@/components/floor/status-pill";
-import { formatDateIST } from "@/lib/floor/format";
 import { isAllIdsSelected, toggleAllIds, toggleOne, type FloorSelection } from "@/lib/floor/selection";
 import type { FloorRouteClub, FloorScope } from "@/lib/floor/types";
 import type { FreightPoolRow } from "@/lib/freight-trips/pool";
-import { buildHeldCards, drillRows, HeldCardGrid, kgText, litresOf, type DrillTarget } from "./route-cards";
-
-type Pivot = "route" | "flat";
+import {
+  buildHeldCards,
+  drillTabs,
+  HeldCardGrid,
+  kgText,
+  stopCount,
+  type ClubRow,
+  type DrillTarget,
+  type RouteSection,
+} from "./route-cards";
 
 /** Invoice date oldest first; no invoice last (by OBD date). Stable on OBD number. */
 function byInvoiceDate(a: FreightPoolRow, b: FreightPoolRow): number {
@@ -41,6 +51,8 @@ function byInvoiceDate(a: FreightPoolRow, b: FreightPoolRow): number {
   return a.obdNumber.localeCompare(b.obdNumber);
 }
 
+const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+
 export function PoolView({
   rows,
   allRows,
@@ -51,7 +63,6 @@ export function PoolView({
   selection,
   onSelection,
   selectable,
-  title,
 }: {
   /** The pool in the active scope. */
   rows: FreightPoolRow[];
@@ -64,156 +75,172 @@ export function PoolView({
   selection: FloorSelection;
   onSelection: (next: FloorSelection) => void;
   selectable: boolean;
-  /** Overrides the header line (the add band passes its own). */
-  title?: string;
 }) {
-  const [pivot, setPivot] = useState<Pivot>("route");
   const [drill, setDrill] = useState<DrillTarget | null>(null);
   const now = useMemo(() => new Date(), [rows]);
 
   // One card per delivery type (the chip in effect decides which), + No route.
   const model = useMemo(() => buildHeldCards(scope, clubs, rows, allRows), [scope, clubs, rows, allRows]);
+  // Re-derived from the CURRENT model, so a club that emptied drops out of the tabs.
+  const open = useMemo(() => (drill ? drillTabs(model, drill) : null), [drill, model]);
 
-  // The drill-in's bills, re-derived from the CURRENT model on every render, so a
-  // bill that went onto a trip leaves the list at the next load.
-  const drilled = useMemo(() => (drill ? drillRows(model, drill) : null), [drill, model]);
+  // A chip change re-scopes the cards: the open view would describe the old scope.
+  useEffect(() => setDrill(null), [scope]);
 
-  const flatRows = useMemo(() => [...rows].sort(byInvoiceDate), [rows]);
-  const seg = (on: boolean) => `px-[11px] text-[11px] ${on ? "bg-white font-semibold text-ink-900" : "text-ink-500"}`;
+  // Esc → back to the cards. Scoped to THIS view (live only while it is open),
+  // and it yields to any freight overlay (drawer, confirm) — those carry
+  // `data-freight-overlay` and own Esc while they are up.
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented) return;
+      if (document.querySelector("[data-freight-overlay]")) return;
+      const el = document.activeElement as HTMLElement | null;
+      if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT" || el.isContentEditable)) return;
+      setDrill(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open]);
+
+  if (loading && rows.length === 0) {
+    return <div className="px-5 py-14 text-center text-[11.5px] text-ink-400">Loading held bills…</div>;
+  }
+  if (error) {
+    return <div className="px-5 py-14 text-center text-[11.5px] text-ink-400">Couldn&rsquo;t load held bills. {error}</div>;
+  }
+
+  if (open && drill) {
+    return (
+      <div className="px-3.5 py-3.5">
+        <div className="flex flex-wrap items-center gap-2.5">
+          {open.tabs.map((t) => (
+            <ClubTab
+              key={t.key}
+              club={t}
+              isOpen={t.key === open.selected.key}
+              onClick={() =>
+                t.key === open.selected.key
+                  ? setDrill(null)
+                  : drill.kind === "type" && setDrill({ kind: "type", type: drill.type, clubKey: t.key })
+              }
+            />
+          ))}
+          <span className="ml-auto whitespace-nowrap pl-3 text-[12px] text-ink-400">Esc to go back to cards</span>
+        </div>
+        <div className="mt-3 overflow-hidden rounded-[11px] border border-ink-100 bg-white">
+          {open.selected.routes.map((s, i) => (
+            <RouteBlock
+              key={s.key}
+              section={s}
+              first={i === 0}
+              now={now}
+              selectable={selectable}
+              selection={selection}
+              onSelection={onSelection}
+            />
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="flex min-h-0 flex-col">
-      <div className="flex items-center gap-3 border-b border-ink-100 px-4 py-2.5">
-        <div className="min-w-0">
-          <span className="text-[15px] font-semibold text-ink-900">Held bills {rows.length}</span>
-          <span className="ml-2 text-[12px] text-ink-500">{title ?? "— not on a freight trip yet"}</span>
-        </div>
-        <span className="ml-auto flex h-[27px] shrink-0 overflow-hidden rounded-[6px] border border-ink-100 bg-ink-50">
-          <button type="button" className={seg(pivot === "route")} onClick={() => setPivot("route")}>By route</button>
-          <button type="button" className={seg(pivot === "flat")} onClick={() => setPivot("flat")}>Flat</button>
+    <div className="px-4 py-4">
+      {model.cards.length === 0 && model.noRoute.length === 0 ? (
+        <div className="px-5 py-12 text-center text-[11.5px] text-ink-400">No held bills for this delivery type.</div>
+      ) : (
+        <HeldCardGrid model={model} onOpen={setDrill} />
+      )}
+    </div>
+  );
+}
+
+/** Floor's open-card chip: a 190px box, name over "kg · stops"; open = brand + ✕. */
+function ClubTab({ club, isOpen, onClick }: { club: ClubRow; isOpen: boolean; onClick: () => void }) {
+  const cls = isOpen ? "border-brand-600 bg-brand-600 text-white" : "border-ink-100 bg-white text-ink-900 hover:border-ink-200";
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={isOpen}
+      title={isOpen ? "Back to cards" : undefined}
+      className={`flex w-[190px] items-center gap-2 rounded-[14px] border px-5 py-3 text-left ${cls}`}
+    >
+      <span className="block min-w-0 flex-1">
+        <span className="block truncate text-[15px] font-semibold">{club.name}</span>
+        <span className={`block whitespace-nowrap text-[13px] tabular-nums ${isOpen ? "text-white/80" : "text-ink-400"}`}>
+          {club.rows.length === 0 ? "Hand only" : `${kgText(club.rows)} kg · ${plural(stopCount(club.rows), "stop", "stops")}`}
+        </span>
+      </span>
+      {isOpen && (
+        <span className="shrink-0 text-[15px] leading-none" aria-label="Close">
+          &#x2715;
+        </span>
+      )}
+    </button>
+  );
+}
+
+/** One route of the open club: Floor's section header, a select-all, the shared table. */
+function RouteBlock({
+  section: s,
+  first,
+  now,
+  selectable,
+  selection,
+  onSelection,
+}: {
+  section: RouteSection;
+  first: boolean;
+  now: Date;
+  selectable: boolean;
+  selection: FloorSelection;
+  onSelection: (next: FloorSelection) => void;
+}) {
+  const list = useMemo(() => [...[...s.rows].sort(byInvoiceDate), ...[...s.hand].sort(byInvoiceDate)], [s]);
+  const allOn = isAllIdsSelected(selection, list);
+  return (
+    <div className={first ? "" : "border-t border-ink-100"}>
+      <div className="flex flex-wrap items-baseline gap-[9px] border-b border-ink-100 bg-ink-25 px-3.5 py-[9px]">
+        {selectable && (
+          <input
+            type="checkbox"
+            aria-label={`Select all held bills on ${s.name}`}
+            className="h-[13px] w-[13px] cursor-pointer self-center accent-brand-600"
+            checked={allOn}
+            onChange={() => onSelection(toggleAllIds(selection, list))}
+          />
+        )}
+        <span className="text-[13.5px] font-bold text-ink-900">{s.name}</span>
+        {s.reachLabel && <span className="text-[11px] text-ink-400">{s.reachLabel}</span>}
+        <span className="text-[12px] tabular-nums text-ink-400">
+          {s.rows.length > 0 ? (
+            <>
+              {plural(stopCount(s.rows), "stop", "stops")} &middot; {kgText(s.rows)} kg
+            </>
+          ) : (
+            "Hand only"
+          )}
+          {s.hand.length > 0 && (
+            <span className="ml-[9px] font-semibold text-data-brown">
+              +{s.hand.length} Hand · {kgText(s.hand)} kg — not counted
+            </span>
+          )}
         </span>
       </div>
-
-      {loading && rows.length === 0 ? (
-        <div className="px-5 py-14 text-center text-[11.5px] text-ink-400">Loading held bills…</div>
-      ) : error ? (
-        <div className="px-5 py-14 text-center text-[11.5px] text-ink-400">Couldn&rsquo;t load held bills. {error}</div>
-      ) : rows.length === 0 && pivot === "flat" ? (
-        <div className="px-5 py-14 text-center">
-          <h4 className="text-[13px] font-semibold text-ink-900">No held bills to plan</h4>
-          <p className="mt-1.5 text-[11.5px] text-ink-400">Every held bill is already on a freight trip, or nothing is on hold.</p>
-        </div>
-      ) : pivot === "flat" ? (
-        <TableBox>
+      <div className="overflow-x-auto">
+        <div className="min-w-[1080px]">
           <HoldTable
-            rows={flatRows}
+            rows={list}
             now={now}
             selectable={selectable}
             selection={selection}
             onToggleRow={(id) => onSelection(toggleOne(selection, id))}
             onToggleAll={(rs) => onSelection(toggleAllIds(selection, rs))}
           />
-        </TableBox>
-      ) : drilled ? (
-        <div>
-          <div className="flex items-center gap-3 px-4 pb-1 pt-3">
-            <button type="button" onClick={() => setDrill(null)} className="text-[12.5px] font-semibold text-brand-700 hover:underline">
-              ← All routes
-            </button>
-            <span className="truncate text-[14px] font-semibold text-ink-900">{drilled.title}</span>
-            <span className="text-[12px] tabular-nums text-ink-500">
-              {drilled.rows.length} bill{drilled.rows.length === 1 ? "" : "s"}
-            </span>
-          </div>
-          {drilled.rows.length === 0 ? (
-            <div className="px-5 py-12 text-center text-[11.5px] text-ink-400">No held bills left here.</div>
-          ) : (
-            <InvoiceDateBands rows={drilled.rows} now={now} selectable={selectable} selection={selection} onSelection={onSelection} />
-          )}
         </div>
-      ) : (
-        <div className="px-4 py-4">
-          {model.cards.length === 0 && model.noRoute.length === 0 ? (
-            <div className="px-5 py-12 text-center text-[11.5px] text-ink-400">No held bills for this delivery type.</div>
-          ) : (
-            <HeldCardGrid model={model} onOpen={setDrill} />
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-/** Horizontal scroll inside the box, never the page. */
-function TableBox({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="overflow-x-auto">
-      <div className="min-w-[1080px]">{children}</div>
-    </div>
-  );
-}
-
-/** The drill-in: one band per invoice date, oldest first; "No invoice yet" last. */
-function InvoiceDateBands({
-  rows,
-  now,
-  selectable,
-  selection,
-  onSelection,
-}: {
-  rows: FreightPoolRow[];
-  now: Date;
-  selectable: boolean;
-  selection: FloorSelection;
-  onSelection: (next: FloorSelection) => void;
-}) {
-  const bands = useMemo(() => {
-    const byKey = new Map<string, FreightPoolRow[]>();
-    for (const r of [...rows].sort(byInvoiceDate)) {
-      const key = r.invoiceDate ? r.invoiceDate.slice(0, 10) : "";
-      const list = byKey.get(key) ?? [];
-      list.push(r);
-      byKey.set(key, list);
-    }
-    // Insertion order is already oldest first with "" last (byInvoiceDate).
-    return Array.from(byKey.entries());
-  }, [rows]);
-
-  return (
-    <div>
-      {bands.map(([key, list]) => {
-        const allOn = isAllIdsSelected(selection, list);
-        const label = key === "" ? "No invoice yet" : formatDateIST(list[0].invoiceDate);
-        return (
-          <div key={key || "none"} className="border-b border-ink-100">
-            <div className="flex items-center gap-3 bg-ink-25 px-4 py-2">
-              {selectable && (
-                <input
-                  type="checkbox"
-                  aria-label={`Select all bills — ${label}`}
-                  className="h-[13px] w-[13px] cursor-pointer accent-brand-600"
-                  checked={allOn}
-                  onChange={() => onSelection(toggleAllIds(selection, list))}
-                />
-              )}
-              <span className="text-[13px] font-semibold text-ink-900">{label}</span>
-              <span className="text-[12px] tabular-nums text-ink-500">
-                · {list.length} bill{list.length === 1 ? "" : "s"} · {formatLitres(litresOf(list))} L · {kgText(list)} kg
-              </span>
-            </div>
-            <TableBox>
-              <HoldTable
-                rows={list}
-                now={now}
-                selectable={selectable}
-                selection={selection}
-                onToggleRow={(id) => onSelection(toggleOne(selection, id))}
-                onToggleAll={(rs) => onSelection(toggleAllIds(selection, rs))}
-              />
-            </TableBox>
-          </div>
-        );
-      })}
+      </div>
     </div>
   );
 }

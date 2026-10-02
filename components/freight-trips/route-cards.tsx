@@ -7,9 +7,9 @@
 // no pick progress.
 //
 //   ┌ head ─ dot(s) TYPE ─────────────────────── ┐
-//   │ 3,209 kg                          [ 22 ]  │  ← click: every held bill of the type
+//   │ 3,209 kg                          [ 22 ]  │  ← click: the drill-in on its FIRST club tab
 //   │ 7 stops · 5,785 L                [ bills ] │
-//   ├ row ─ Adajan + Olpad   3 stops ……… 1,030 kg │  ← click: that club's held bills
+//   ├ row ─ Adajan + Olpad   3 stops ……… 1,030 kg │  ← click: the drill-in on that club's tab
 //   └ row ─ Other routes     1 stop  ………    69 kg ┘
 //
 // Cards: Local and Upcountry always (empty → "No held bills"); IGT / Cross only
@@ -78,13 +78,29 @@ function hasNoRoute(r: FreightPoolRow): boolean {
 
 // ── The model ───────────────────────────────────────────────────────────────
 
-/** One row of a type card: a route club, or "Other routes". */
+/** One ROUTE inside a club — a section of the drill-in (Floor's open panel). */
+export interface RouteSection {
+  key: string;
+  name: string;
+  /** The other type this route's bills come from (Kamrej: "Upcountry"), or null. */
+  reachLabel: string | null;
+  rows: FreightPoolRow[];
+  hand: FreightPoolRow[];
+}
+
+/** One row of a type card (and one tab of the drill-in): a route club, or "Other routes". */
 export interface ClubRow {
   key: string;
   name: string;
   /** Counted bills (not Hand). */
   rows: FreightPoolRow[];
   hand: FreightPoolRow[];
+  /** Its routes with held bills — club members main first; Other routes by kg. */
+  routes: RouteSection[];
+}
+
+function kgOf(rows: FreightPoolRow[]): number {
+  return rows.reduce((s, r) => s + (loadKg(r.weightKg, r.isGift) ?? 0), 0);
 }
 
 export interface TypeCard {
@@ -106,20 +122,58 @@ function clubRowsFor(
   const typeClubs = clubs.filter((c) => types.includes(c.deliveryType)).sort((a, b) => a.sortOrder - b.sortOrder);
   const clubRouteIds = new Set(typeClubs.flatMap((c) => c.members.map((m) => m.routeId)));
 
-  const out: ClubRow[] = typeClubs.map((c) => {
-    const all = c.members.flatMap((m) =>
-      m.reachFrom === null
-        ? typeRows.filter((r) => r.routeId === m.routeId)
-        : allRows.filter((r) => r.routeId === m.routeId && r.deliveryType === m.reachFrom),
-    );
-    return { key: `club:${c.id}`, name: c.name, rows: all.filter((r) => !r.isHand), hand: all.filter((r) => r.isHand) };
+  const section = (key: string, name: string, reachLabel: string | null, all: FreightPoolRow[]): RouteSection => ({
+    key,
+    name,
+    reachLabel,
+    rows: all.filter((r) => !r.isHand),
+    hand: all.filter((r) => r.isHand),
   });
+  const club = (key: string, name: string, routes: RouteSection[]): ClubRow => {
+    const withBills = routes.filter((s) => s.rows.length > 0 || s.hand.length > 0);
+    return {
+      key,
+      name,
+      rows: withBills.flatMap((s) => s.rows),
+      hand: withBills.flatMap((s) => s.hand),
+      routes: withBills,
+    };
+  };
 
+  const out: ClubRow[] = typeClubs.map((c) =>
+    club(
+      `club:${c.id}`,
+      c.name,
+      [...c.members]
+        .sort((a, b) => a.sortOrder - b.sortOrder)
+        .map((m) =>
+          section(
+            `r:${m.routeId}`,
+            m.routeName,
+            m.reachFrom,
+            m.reachFrom === null
+              ? typeRows.filter((r) => r.routeId === m.routeId)
+              : allRows.filter((r) => r.routeId === m.routeId && r.deliveryType === m.reachFrom),
+          ),
+        ),
+    ),
+  );
+
+  // Routes in no club: ONE "Other routes" row, a section per route, by kg (Floor's order).
   const other = typeRows.filter(
     (r) => !hasNoRoute(r) && r.routeId !== null && !clubRouteIds.has(r.routeId) && !HIDDEN_ROUTE_IDS.includes(r.routeId),
   );
   if (other.length > 0) {
-    out.push({ key: "other", name: "Other routes", rows: other.filter((r) => !r.isHand), hand: other.filter((r) => r.isHand) });
+    const byRoute = new Map<number, FreightPoolRow[]>();
+    for (const r of other) {
+      const list = byRoute.get(r.routeId as number) ?? [];
+      list.push(r);
+      byRoute.set(r.routeId as number, list);
+    }
+    const sections = Array.from(byRoute.entries())
+      .map(([id, list]) => section(`r:${id}`, list[0].route ?? "Route", null, list))
+      .sort((a, b) => kgOf(b.rows) - kgOf(a.rows) || a.name.localeCompare(b.name));
+    out.push(club("other", "Other routes", sections));
   }
   // Only clubs with held bills — no greyed empty rows (owner).
   return out.filter((c) => c.rows.length > 0 || c.hand.length > 0);
@@ -162,16 +216,32 @@ export function buildHeldCards(
 }
 
 /** Find the bills a click opened, from the CURRENT model (so moved bills drop out). */
-export function drillRows(model: HeldCardsModel, t: DrillTarget): { title: string; rows: FreightPoolRow[] } {
-  if (t.kind === "noRoute") return { title: "No route", rows: model.noRoute };
-  const card = model.cards.find((c) => c.key === t.type);
-  if (!card) return { title: t.type, rows: [] };
-  if (t.clubKey === null) return { title: card.label, rows: [...card.rows, ...card.hand] };
-  const club = card.clubs.find((c) => c.key === t.clubKey);
-  return club ? { title: `${card.label} › ${club.name}`, rows: [...club.rows, ...club.hand] } : { title: card.label, rows: [] };
-}
+/** What a click opens: one club tab of a type (head click = its FIRST club), or No route. */
+export type DrillTarget = { kind: "type"; type: TypeKey; clubKey: string } | { kind: "noRoute" };
 
-export type DrillTarget = { kind: "type"; type: TypeKey; clubKey: string | null } | { kind: "noRoute" };
+/**
+ * The drill-in's TABS (the type's club rows) and the selected one, from the
+ * CURRENT model — so a club whose last bill went onto a trip drops out, and the
+ * selection falls back to the first tab. Null = nothing left to show (back to cards).
+ */
+export function drillTabs(model: HeldCardsModel, t: DrillTarget): { tabs: ClubRow[]; selected: ClubRow } | null {
+  if (t.kind === "noRoute") {
+    if (model.noRoute.length === 0) return null;
+    const rows = model.noRoute.filter((r) => !r.isHand);
+    const hand = model.noRoute.filter((r) => r.isHand);
+    const only: ClubRow = {
+      key: "noRoute",
+      name: "No route",
+      rows,
+      hand,
+      routes: [{ key: "none", name: "No route", reachLabel: null, rows, hand }],
+    };
+    return { tabs: [only], selected: only };
+  }
+  const tabs = model.cards.find((c) => c.key === t.type)?.clubs ?? [];
+  if (tabs.length === 0) return null;
+  return { tabs, selected: tabs.find((c) => c.key === t.clubKey) ?? tabs[0] };
+}
 
 // ── The grid ────────────────────────────────────────────────────────────────
 // Mockup sizes: card radius 14px, head 22px / 24px padding, kg 30px, rows 64px
@@ -188,7 +258,13 @@ export function HeldCardGrid({ model, onOpen }: { model: HeldCardsModel; onOpen:
         const total = c.rows.length + c.hand.length;
         return (
           <section key={c.key} className="flex flex-col overflow-hidden rounded-[14px] border border-ink-100 bg-white">
-            <button type="button" onClick={() => onOpen({ kind: "type", type: c.key, clubKey: null })} className={`${HEAD} hover:bg-ink-25`}>
+            {/* Head = the whole type: the drill-in opens on its FIRST club tab. */}
+            <button
+              type="button"
+              disabled={c.clubs.length === 0}
+              onClick={() => c.clubs.length > 0 && onOpen({ kind: "type", type: c.key, clubKey: c.clubs[0].key })}
+              className={`${HEAD} hover:bg-ink-25 disabled:cursor-default disabled:hover:bg-transparent`}
+            >
               <span className="min-w-0 flex-1">
                 <span className="flex items-center gap-2 text-[13px] font-semibold text-ink-700">
                   <span className="inline-flex gap-[3px]">

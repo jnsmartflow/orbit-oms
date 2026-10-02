@@ -83,7 +83,7 @@ export function TripDrawer({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-black/20" onMouseDown={(e) => e.target === e.currentTarget && !busy && onClose()}>
+    <div data-freight-overlay className="fixed inset-0 z-50 flex justify-end bg-black/20" onMouseDown={(e) => e.target === e.currentTarget && !busy && onClose()}>
       <div className="flex h-full w-full max-w-[420px] flex-col bg-white shadow-xl">
         <div className="flex items-center border-b border-ink-100 px-5 py-4">
           <h3 className="text-[15px] font-semibold text-ink-900">
