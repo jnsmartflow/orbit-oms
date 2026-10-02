@@ -191,3 +191,5 @@ formulas and print/void are stored), so these apply to old challans on their nex
 ---
 
 *Draft · 2026-10-02 · for the Tint Manager consolidation pass.*
+
+**Shipped later the same day — `8379d434`:** the Tint tab now counts TINT LINES ONLY (`import_raw_line_items.isTinting`, one helper `lib/tint/tint-lines.ts`, new orders-route fields `tintVolume` / `tintArticleTag`) in the summary cards, operator board, group headers, Vol / Art. columns and history, and each operator shows "avg N L/hr" (same pace rule as the top card: tint litres done ÷ hours since that operator's first start, to the last finish on a history day). This supersedes the "Not shipped" note in §1.
