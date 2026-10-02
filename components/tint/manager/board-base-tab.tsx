@@ -26,6 +26,7 @@ import { StatusPill as FloorStatusPill, rowStatus } from "@/components/floor/sta
 import type { DispatchSlotValue, DispatchWindow } from "@/components/floor/dispatch-slot-picker";
 import type { FloorBoardRow } from "@/lib/floor/types";
 import { BoardSlotCell } from "./board-slot-cell";
+import { isNoTintBaseRow } from "@/lib/tint/base-bills";
 
 const HEAD_TH = "h-[31px] border-b border-[#ebebeb] px-3.5 text-left text-[10px] font-medium uppercase tracking-[0.05em] text-[#9ca3af]";
 const TD      = "px-3.5 py-2 text-[11px] whitespace-nowrap overflow-hidden text-ellipsis border-b border-[#f0f0f0] text-[#4b5563]";
@@ -113,6 +114,13 @@ export function BoardBaseTab({
                   >
                     <td className={TD}>
                       <ObdCode code={r.obdNumber} />
+                      {/* A "Base — No Tint" bill (2026-10-02): imported as tint, closed by the
+                          placeholder — a base order. Small grey tag, nothing else differs. */}
+                      {isNoTintBaseRow(r) && (
+                        <span className="ml-1.5 rounded-[3px] bg-gray-100 px-[5px] py-px align-[1px] text-[9.5px] font-semibold text-gray-500" title="Closed through Base — No Tint: nothing was mixed">
+                          No tint
+                        </span>
+                      )}
                       {/* Floor's row carries obdDateTime / isEmailTime already. */}
                       <ObdDateLine iso={r.obdDateTime} isEmailTime={r.isEmailTime} />
                     </td>

@@ -9,6 +9,7 @@ import { getBaseOperatorId } from "@/lib/tint/base-operator";
 import { getISTDayRange } from "@/lib/dates";
 import { floorBoardWhere, floorHoldWhere, getISTTodayDateOnly } from "@/lib/floor/queries";
 import { BASE_BILL_WHERE } from "@/lib/tint/manager-bill";
+import { tintManagerBaseWhere } from "@/lib/tint/base-bills";
 import { PROJECT_SMU_NAMES } from "@/lib/billing/pick-delete-rule";
 
 export const dynamic = "force-dynamic";
@@ -119,6 +120,8 @@ export async function GET(): Promise<NextResponse> {
   // CLAUDE_TINT.md §1.9's rule is that if a feed gains or loses a stage this
   // predicate must move with it, and Set E just did.
   const baseOperatorId = await getBaseOperatorId();
+  // Arm 6's Base set (non-tint 74/77 + Base — No Tint bills) — a superset filter.
+  const baseWhere = await tintManagerBaseWhere();
 
   const agg = await prisma.orders.aggregate({
     where: {
@@ -170,8 +173,11 @@ export async function GET(): Promise<NextResponse> {
             { workflowStage: "cancelled", updatedAt: { gte: startOfToday } },
           ],
         },
-        // Arm 6 — the Base tab: Floor's live board ∩ Base bills (header).
-        { AND: [floorBoardWhere(getISTDayRange(), getISTTodayDateOnly()), BASE_BILL_WHERE] },
+        // Arm 6 — the Base tab: Floor's live board ∩ Base bills (header). The
+        // SUPERSET since 2026-10-02 (lib/tint/base-bills.ts): it also covers
+        // "Base — No Tint" bills, whose picks, checks and trips write `orders`
+        // but match none of the tint arms (they left the tint stages).
+        { AND: [floorBoardWhere(getISTDayRange(), getISTTodayDateOnly()), baseWhere] },
         // Arm 7 — the Hold tab's Base rows.
         { AND: [floorHoldWhere(), BASE_BILL_WHERE] },
         // Arm 8 — the CI tab's Base rows (same startOfToday as arm 5).

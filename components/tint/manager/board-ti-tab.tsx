@@ -144,7 +144,11 @@ export function BoardTiTab({
       <div className="px-3.5 py-2.5 text-[10.5px] text-gray-400 border-b border-gray-100">
         {history
           ? <>{pending.length} &quot;Base — No Tint&quot; {pending.length === 1 ? "bill" : "bills"} with a TI written that day · read only</>
-          : <>{pending.length} {pending.length === 1 ? "bill" : "bills"} sent as &quot;Base — No Tint&quot; that still owe a TI · click to select</>}
+          : (() => {
+              const owing = pending.filter((o) => !o.tiDoneAt).length;
+              const done = pending.length - owing;
+              return <>{owing} {owing === 1 ? "bill" : "bills"} sent as &quot;Base — No Tint&quot; that still owe a TI · click to select{done > 0 && <> · {done} TI done today</>}</>;
+            })()}
       </div>
       <div className={cn("flex-1 overflow-y-auto", barUp && "pb-[96px]")}>
         {pending.length === 0 ? (
@@ -174,16 +178,21 @@ export function BoardTiTab({
             </thead>
             <tbody>
               {pending.map((o) => {
-                const sel = selected.has(o.tintAssignmentId);
+                // A "TI done" row (live, 2026-10-02): every line written today —
+                // read-only for the rest of the IST day, after the pending rows
+                // (the route orders them). No select, no ⋯.
+                const done = !history && !!o.tiDoneAt;
+                const readOnly = history || done;
+                const sel = !readOnly && selected.has(o.tintAssignmentId);
                 const owed = owedLines(o);
                 return (
                   <tr
                     key={o.tintAssignmentId}
                     data-search-key={`ti-${o.tintAssignmentId}`}
-                    onClick={history ? undefined : () => onToggle(o)}
-                    aria-selected={history ? undefined : sel}
+                    onClick={readOnly ? undefined : () => onToggle(o)}
+                    aria-selected={readOnly ? undefined : sel}
                     className={cn(
-                      history ? "cursor-default" : "cursor-pointer",
+                      readOnly ? "cursor-default" : "cursor-pointer",
                       sel ? "bg-brand-50 [&>td:first-child]:shadow-[inset_3px_0_0_theme(colors.brand.600)]" : "hover:bg-gray-50",
                     )}
                   >
@@ -227,9 +236,15 @@ export function BoardTiTab({
                       </td>
                     )}
                     <td className={TD} title={history && o.tiWrittenBy ? `TI by ${o.tiWrittenBy}` : undefined}>
-                      <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded border bg-amber-50 text-amber-700 border-amber-200">
-                        TI {o.coveredLines}/{o.totalTintingLines}
-                      </span>
+                      {done ? (
+                        <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded border bg-green-50 text-green-700 border-green-200 whitespace-nowrap">
+                          TI done {new Date(o.tiDoneAt as string).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Kolkata" })}
+                        </span>
+                      ) : (
+                        <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded border bg-amber-50 text-amber-700 border-amber-200">
+                          TI {o.coveredLines}/{o.totalTintingLines}
+                        </span>
+                      )}
                       {history && (
                         <div className="mt-0.5 truncate text-[10px] text-[#9ca3af]">
                           {o.tiWrittenBy ?? "—"} · {o.tiWrittenAt ? new Date(o.tiWrittenAt).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Kolkata" }) : "—"}
@@ -237,7 +252,7 @@ export function BoardTiTab({
                       )}
                     </td>
                     <td className={cn(TD, "px-1 text-center overflow-visible")} onClick={(e) => e.stopPropagation()}>
-                      {!history && (
+                      {!readOnly && (
                         <RowMenu
                           busy={undoBusyId === o.orderId}
                           onEnter={() => onOpen(o)}

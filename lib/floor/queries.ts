@@ -1019,7 +1019,11 @@ export async function getFloorBoard(
       // Derived HERE and only here — see tintPhaseOf above and the field's own
       // contract on FloorBoardRow. No extra query: `orderType` and
       // `workflowStage` are already on the fetched row.
-      tintPhase: tintPhaseOf(order.orderType, order.workflowStage),
+      // A "Base — No Tint" bill (colour rule says base) carries NO tint phase
+      // (2026-10-02): it was never mixed, so it must not read "Tint done" just
+      // because orderType is "tint". Same rule as the TINT/BASE badge
+      // (colourWork, resolveColourWork); every other bill is unchanged.
+      tintPhase: colourWorkByOrder.get(order.id) === "base" ? null : tintPhaseOf(order.orderType, order.workflowStage),
       // ISO for the wire, like every other date here. Null when the tint room
       // has not finished — the pill then renders no time rather than a
       // borrowed one (see the field on FloorBoardRow).

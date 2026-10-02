@@ -59,6 +59,9 @@ interface TiWritten {
 }
 
 interface PendingOrder extends Partial<TiWritten> {
+  /** LIVE only (2026-10-02): every line covered today — when the last TI was
+   *  written. Present only on those "TI done" rows; they list after the pending ones. */
+  tiDoneAt?: string;
   orderId:            number;
   obdNumber:          string;
   siteName:           string;
@@ -243,20 +246,27 @@ export async function GET(req: Request): Promise<NextResponse> {
   const [entriesA, entriesB] = await Promise.all([
     prisma.tinter_issue_entries.findMany({
       where:  { tintAssignmentId: { in: assignmentIds }, rawLineItemId: { not: null } },
-      select: { tintAssignmentId: true, rawLineItemId: true },
+      select: { tintAssignmentId: true, rawLineItemId: true, createdAt: true },
     }),
     prisma.tinter_issue_entries_b.findMany({
       where:  { tintAssignmentId: { in: assignmentIds }, rawLineItemId: { not: null } },
-      select: { tintAssignmentId: true, rawLineItemId: true },
+      select: { tintAssignmentId: true, rawLineItemId: true, createdAt: true },
     }),
   ]);
   const coveredByAssignment = new Map<number, Set<number>>();
+  // The LATEST TI write per assignment — when a fully covered bill was finished.
+  const lastTiAt = new Map<number, Date>();
   for (const e of [...entriesA, ...entriesB]) {
     if (e.tintAssignmentId == null || e.rawLineItemId == null) continue;
     const set = coveredByAssignment.get(e.tintAssignmentId) ?? new Set<number>();
     set.add(e.rawLineItemId);
     coveredByAssignment.set(e.tintAssignmentId, set);
+    const prev = lastTiAt.get(e.tintAssignmentId);
+    if (!prev || e.createdAt > prev) lastTiAt.set(e.tintAssignmentId, e.createdAt);
   }
+  // "TI done" stays on the live list for the rest of the IST day it finished
+  // (owner, 2026-10-02) — getISTDayRange(), the repo's one IST day helper.
+  const todayStart = getISTDayRange().start;
 
   // 4. Keep only the assignments that still owe something.
   //    An assignment with ZERO active tinting lines is DONE, not pending —
@@ -269,9 +279,16 @@ export async function GET(req: Request): Promise<NextResponse> {
 
     const covered = coveredByAssignment.get(a.id) ?? new Set<number>();
     const missing = lines.filter((l) => !covered.has(l.id));
-    // Fully covered drops off the LIVE list; a history day keeps it (it is the
-    // record of what was written that day).
-    if (!history && missing.length === 0) continue;
+    // Fully covered: a history day keeps it (the record of what was written that
+    // day). The LIVE list keeps it only for the rest of the IST day its last TI
+    // was written, as a read-only "TI done" row (`tiDoneAt`); the next day it
+    // drops off. A bill still owing lines is unchanged.
+    let tiDoneAt: string | null = null;
+    if (!history && missing.length === 0) {
+      const at = lastTiAt.get(a.id);
+      if (!at || at < todayStart) continue;
+      tiDoneAt = at.toISOString();
+    }
 
     const ownSite = a.order.customer?.customerName ?? a.order.shipToCustomerName ?? "—";
     const redirect = a.order.shipToOverrideCustomer?.customerName ?? null;
@@ -310,6 +327,7 @@ export async function GET(req: Request): Promise<NextResponse> {
         hasTiEntry:        covered.has(l.id),
       })),
       ...(history ? tiWrittenOf(writtenOnDay.get(a.id) ?? []) : {}),
+      ...(tiDoneAt !== null ? { tiDoneAt } : {}),
     });
   }
 
@@ -337,6 +355,9 @@ export async function GET(req: Request): Promise<NextResponse> {
     }
   }
 
+  // Pending rows first, then today's "TI done" rows (stable — each block keeps
+  // its own newest-first order).
+  out.sort((x, y) => (x.tiDoneAt ? 1 : 0) - (y.tiDoneAt ? 1 : 0));
   return NextResponse.json({ orders: out });
 }
 

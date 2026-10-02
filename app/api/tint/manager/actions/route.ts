@@ -8,7 +8,8 @@ import {
   BILL_ACTION_ORDER_SELECT,
   type ResolvedSlot,
 } from "@/lib/floor/bill-actions";
-import { checkTintAction, tintManagerBillRefusal } from "@/lib/tint/manager-bill";
+import { BASE_PICKER_HOLD_REFUSAL, checkTintAction, tintManagerBillRefusal } from "@/lib/tint/manager-bill";
+import { getColourWorkByOrder } from "@/lib/picking/colour-work-query";
 
 export const dynamic = "force-dynamic";
 
@@ -104,6 +105,16 @@ export async function POST(req: Request): Promise<NextResponse> {
       if (notTint !== null || order === null) {
         failed.push({ orderId, error: notTint ?? "Order not found" });
         continue;
+      }
+      // A "Base — No Tint" bill is a BASE order (2026-10-02): the Base tab's
+      // hold rule applies — refused once a picker has it (owner §I-1). Decided by
+      // Picking's colour rule (getColourWorkByOrder), only on the stages it matters.
+      if (action === "hold" && order.orderType === "tint" && (order.workflowStage === "pick_assigned" || order.workflowStage === "pick_done")) {
+        const colour = await getColourWorkByOrder([{ orderId, smu: order.smu, orderType: order.orderType }]);
+        if (colour.get(orderId) === "base") {
+          failed.push({ orderId, error: BASE_PICKER_HOLD_REFUSAL });
+          continue;
+        }
       }
 
       const r = await applyBillAction(order, action, { slot, urgent: typeof body.urgent === "boolean" ? body.urgent : undefined }, changedById, "tint");

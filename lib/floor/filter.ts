@@ -41,6 +41,9 @@ interface FlaggableRow {
   isKeyCustomer: boolean;
   priorityLevel: number | null; // FloorBoardRow (via PickingQueueRow) is nullable
   isTint: boolean;
+  /** Picking's TINT/BASE answer (lib/picking/colour-work.ts) — optional so a
+   *  hand-built row without it reads as "unknown", never as base. */
+  colourWork?: "tint" | "base" | null;
   smu: string | null;
   isShipToOverride: boolean;
   ageDays?: number | null;
@@ -53,7 +56,9 @@ function matchesFlag(r: FlaggableRow, flag: FloorFilterFlag): boolean {
     case "urgent":
       return r.priorityLevel === 1;
     case "tint":
-      return r.isTint;
+      // A "Base — No Tint" bill is NOT tint (2026-10-02): the colour rule wins
+      // over orderType, the same answer the TINT/BASE badge shows.
+      return r.isTint && r.colourWork !== "base";
     case "site":
       return r.smu !== null && PROJECT_SMUS.has(r.smu) && !r.isShipToOverride;
     case "carried":

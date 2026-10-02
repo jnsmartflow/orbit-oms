@@ -32,7 +32,7 @@ import { getISTDayRange } from "@/lib/dates";
 import { getFloorBoard } from "@/lib/floor/queries";
 import type { FloorBoardRow } from "@/lib/floor/types";
 import { TRIP_BILLS_ADDED } from "@/lib/trips/activity";
-import { BASE_BILL_WHERE } from "@/lib/tint/manager-bill";
+import { isTintManagerBaseRow, tintManagerBaseWhere } from "@/lib/tint/base-bills";
 
 /**
  * The TRIP CUT-OFF term (owner decision 8): not on a trip, OR on the trip it
@@ -85,10 +85,18 @@ export async function baseTripCutoffWhere(date?: string): Promise<Prisma.ordersW
  *  With `date` (history, 2026-10-02): Floor's HISTORY board for that IST day
  *  (getFloorBoard mode "history" — promised for D, checked on D, or on D's
  *  trips) ∩ Base bills ∩ the cut-off dated to D. Omitted → exactly as before. */
+//
+// "Base — No Tint" bills (2026-10-02, owner): a project-division bill closed by
+// the placeholder is a base order. The read uses lib/tint/base-bills.ts's
+// SUPERSET (non-tint 74/77 OR placeholder-finished 74/77 tint), and the row
+// stays only if Picking's colour rule says base (row.colourWork, filled by
+// getFloorBoard via resolveColourWork). There is no second rule. Same trip
+// cut-off for every row.
 export async function getTintBaseRows(date?: string): Promise<FloorBoardRow[]> {
   const cutoff = await baseTripCutoffWhere(date);
+  const baseWhere = await tintManagerBaseWhere();
   const board = date
-    ? await getFloorBoard({ mode: "history", date, extraWhere: { AND: [BASE_BILL_WHERE, cutoff] } })
-    : await getFloorBoard({ mode: "live", extraWhere: { AND: [BASE_BILL_WHERE, cutoff] } });
-  return board.rows;
+    ? await getFloorBoard({ mode: "history", date, extraWhere: { AND: [baseWhere, cutoff] } })
+    : await getFloorBoard({ mode: "live", extraWhere: { AND: [baseWhere, cutoff] } });
+  return board.rows.filter(isTintManagerBaseRow);
 }

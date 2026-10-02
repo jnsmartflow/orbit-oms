@@ -906,6 +906,8 @@ export function TintManagerContent() {
     setRailSel(new Set());
     setHoldSel(new Set());
     setBaseSel(new Set());
+    // A "TI done" row is read-only — never selectable.
+    if (o.tiDoneAt) return;
     setTiSel((s) => { const n = new Set(s); if (n.has(o.tintAssignmentId)) n.delete(o.tintAssignmentId); else n.add(o.tintAssignmentId); return n; });
   }, []);
   const selectedTi = useMemo(() => basePending.filter((o) => tiSel.has(o.tintAssignmentId)), [basePending, tiSel]);
@@ -1811,7 +1813,8 @@ export function TintManagerContent() {
             disabledTabs={historyDate !== null ? ["hold"] : undefined}
             counts={{
               tinting: groups.reduce((n, g) => n + g.rows.length, 0),
-              ti:      basePendingShown.length,
+              // Pending only — today's "TI done" rows (tiDoneAt) are not owed work.
+              ti:      basePendingShown.filter((o) => !o.tiDoneAt).length,
               ...(holdRowsShown !== null ? { hold: holdRowsShown.length } : {}),
               ...(cancelledRowsShown !== null ? { ci: cancelledRowsShown.length } : {}),
               ...(pickDecidedCount !== null ? { pick: pickDecidedCount } : {}),

@@ -425,6 +425,10 @@ export interface BasePendingOrder {
   tiWrittenAt?:      string;
   tiSamplingNos?:    string[];
   tiLinesOnDay?:     number;
+  /** LIVE only (2026-10-02): every line has a TI, the last written TODAY (IST) —
+   *  when. Such a row stays on the TI tab for the rest of the day as a read-only
+   *  "TI done" row, listed after the pending ones, and is not counted. */
+  tiDoneAt?:         string;
   /** Header search (2026-10-02) — SAP's ship-to and bill-to customer codes. */
   shipToCode:        string | null;
   billToCode:        string | null;
