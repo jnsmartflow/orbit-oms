@@ -127,7 +127,9 @@ export function BoardTintTab({
 
   return (
     <div className={cn("flex-1 overflow-y-auto bg-white", barUp && "pb-[96px]")}>
-      <div className="flex max-w-[1500px] flex-col gap-5 px-7 pt-6 pb-12">
+      {/* Full pane width, like the Base / Hold / CI tabs (no max-width cap,
+          2026-10-02); the 24/28 gutter is the mockup's page padding. */}
+      <div className="flex flex-col gap-5 px-7 pt-6 pb-12">
         <SummaryCard groups={groups} nowMs={nowMs} />
         <OperatorsCard groups={groups} nowMs={nowMs} focusedId={focused?.operatorId ?? null} onFocus={onFocusOperator} />
 
