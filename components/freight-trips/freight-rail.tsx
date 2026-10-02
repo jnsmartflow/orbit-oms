@@ -45,7 +45,7 @@ export function FreightRail({
   const adding = addCount > 0;
 
   return (
-    <div className="flex min-h-0 flex-col overflow-y-auto border-ink-100 bg-ink-25 px-[11px] pb-4 pt-3 md:border-r">
+    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto border-ink-100 bg-ink-25 px-[11px] pb-4 pt-3 md:border-r">
       <div className="mb-[9px] px-1 text-[11px] font-semibold uppercase tabular-nums tracking-[0.06em] text-ink-400">
         {active.length} trip{active.length === 1 ? "" : "s"} · {billTotal} bill{billTotal === 1 ? "" : "s"}
       </div>

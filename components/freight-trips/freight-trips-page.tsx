@@ -390,17 +390,39 @@ export function FreightTripsPage({ canEdit }: { canEdit: boolean }) {
         searchPlaceholder="Search OBD, invoice, dealer"
         searchValue={search}
         onSearchChange={setSearch}
-        // Delivery-type scope for the held pool. The segmented control has no
-        // "All" button by design (CLAUDE_UI §6): clicking the active one clears it.
-        segments={SCOPE_SEGMENTS}
-        activeSegment={scope === "All" ? null : scope}
-        onSegmentChange={(id) => setScope(id === null ? "All" : (id as FloorScope))}
+        // Delivery-type scope for the held pool — drawn HERE (leftExtra), not as
+        // the header's `segments`, so the header's 1-9 hotkey cannot switch it.
+        // Default: NO chip active = every type (Floor On hold's set). Clicking a
+        // chip filters; clicking the active one clears back to all (CLAUDE_UI §6:
+        // no "All" button).
+        leftExtra={
+          <span className="inline-flex gap-[2px] rounded-[7px] bg-gray-100 p-[3px]">
+            {SCOPE_SEGMENTS.map((s) => {
+              const on = scope === s.id;
+              return (
+                <button
+                  key={s.id}
+                  type="button"
+                  aria-pressed={on}
+                  onClick={() => setScope(on ? "All" : (s.id as FloorScope))}
+                  className={`rounded-[5px] px-[11px] py-[4px] text-[11px] transition-colors ${
+                    on ? "bg-brand-600 font-medium text-white" : "text-gray-500 hover:bg-white/60"
+                  }`}
+                >
+                  {s.label}
+                </button>
+              );
+            })}
+          </span>
+        }
         currentDate={date}
         onDateChange={(d) => { setDate(d); setView({ kind: "pool" }); }}
       />
 
       <div className="flex min-h-0 flex-1 flex-col md:flex-row">
-        <div className="max-h-[38vh] shrink-0 md:max-h-none md:w-[260px]">
+        {/* The rail column fills the body's full height (its own bg + border to
+            the bottom, like Floor's trip rail) and scrolls on its own. */}
+        <div className="flex max-h-[38vh] min-h-0 shrink-0 flex-col md:max-h-none md:w-[260px]">
           <FreightRail
             trips={trips}
             loading={trips === null}
