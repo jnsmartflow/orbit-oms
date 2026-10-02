@@ -172,6 +172,7 @@ export function BoardTiTab({
                 return (
                   <tr
                     key={o.tintAssignmentId}
+                    data-search-key={`ti-${o.tintAssignmentId}`}
                     onClick={() => onToggle(o)}
                     aria-selected={sel}
                     className={cn(

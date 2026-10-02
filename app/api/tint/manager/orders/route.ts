@@ -573,6 +573,9 @@ export async function GET(): Promise<NextResponse> {
             // obdNumber (verified live 2026-09-05 — max 1 across 13,167 OBDs),
             // so there is no second row for either rule to choose between.
             billToCustomerName: true,
+            // The bill-to dealer's CODE (2026-10-02) — read-only, for the header
+            // search (TM search matches bill-to name AND code).
+            billToCustomerId: true,
           },
         })
       : [];
@@ -580,6 +583,7 @@ export async function GET(): Promise<NextResponse> {
     const smuCodeMap = new Map(rawSummaries.map((s) => [s.obdNumber, s.smuCode]));
     const obdDateMap = new Map(rawSummaries.map((s) => [s.obdNumber, { date: s.obdEmailDate, time: s.obdEmailTime }]));
     const billToMap  = new Map(rawSummaries.map((s) => [s.obdNumber, s.billToCustomerName]));
+    const billToCodeMap = new Map(rawSummaries.map((s) => [s.obdNumber, s.billToCustomerId]));
 
     // ── Ship-to override + dispatch window (2026-10-01, tabs build step 5) ────
     // ONE batched read over every bill the board shows, instead of widening four
@@ -760,6 +764,7 @@ export async function GET(): Promise<NextResponse> {
         smu:              smuMap.get(o.obdNumber) ?? null,
         smuCode:          smuCodeMap.get(o.obdNumber) ?? null,
         billToName:       billToMap.get(o.obdNumber) ?? null,
+        billToCode:       billToCodeMap.get(o.obdNumber) ?? null,
         obdEmailDate:     obdDateMap.get(o.obdNumber)?.date ?? null,
         obdEmailTime:     obdDateMap.get(o.obdNumber)?.time ?? null,
         orderDateTime:    o.orderDateTime?.toISOString() ?? null,

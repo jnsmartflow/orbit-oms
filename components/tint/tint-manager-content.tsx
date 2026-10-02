@@ -75,6 +75,11 @@ import { BoardShopDeliveryDialog, type ShopDeliveryBill } from "@/components/tin
 import { BoardHoldTab } from "@/components/tint/manager/board-hold-tab";
 import { BoardCiTab } from "@/components/tint/manager/board-ci-tab";
 import type { FloorBoardRow, FloorCancelledRow } from "@/lib/floor/types";
+import type { PickDeleteDecidedRow } from "@/lib/billing/pick-delete-types";
+import { parseSearch } from "@/lib/floor/search";
+import { obdHighlight, type TintFindRow as FindRow } from "@/lib/tint/search";
+import { SearchDropdown, type SearchResultRow } from "@/components/tint/manager/search-dropdown";
+import { buildSearchSources, matchSources, type SearchItem } from "@/components/tint/manager/search-sources";
 import { BoardBaseTab } from "@/components/tint/manager/board-base-tab";
 import { slotValueOf } from "@/components/tint/manager/board-slot-cell";
 import { OffFloorDialog, type CiReasonOption, type OffFloorFormBill, type OffFloorTab } from "@/components/floor/off-floor-dialog";
@@ -194,6 +199,9 @@ export function TintManagerContent() {
   // The Pick delete tab's badge — its own decided-row count for the month shown
   // (null until the tab has loaded once). Step 8.
   const [pickDecidedCount, setPickDecidedCount] = useState<number | null>(null);
+  // The decided rows behind that badge — the header search's Delete source
+  // (2026-10-02). Same fetch, kept instead of counted and thrown away.
+  const [pickDecidedRows, setPickDecidedRows] = useState<PickDeleteDecidedRow[] | null>(null);
   // Bumped after every board reload so an open panel re-reads its bill.
   const [panelReload, setPanelReload] = useState(0);
   const [dialogBusy, setDialogBusy] = useState(false);
@@ -320,7 +328,8 @@ export function TintManagerContent() {
 
   const delTypes   = useMemo(() => new Set(headerFilters.deliveryType ?? []), [headerFilters]);
   const urgentOnly = (headerFilters.urgent ?? []).includes("urgent");
-  const q          = searchQuery.trim().toLowerCase();
+  // (The box no longer filters the rail / Tint tab as you type — since
+  // 2026-10-02 it runs on Enter into a results dropdown; see "Header search".)
   /** The header filters, ONE predicate for every tab (2026-10-02): a row passes
    *  when its delivery type is ticked (or none is) and, with "Urgent only", its
    *  priority is urgent — the board's own rule, priorityLevel ≤ 2 (rows.ts). */
@@ -333,20 +342,13 @@ export function TintManagerContent() {
 
   const rail = useMemo(() => {
     return buildRail(payload).filter((o) => {
-      if (!passesFilters(o.deliveryTypeName, o.priorityLevel)) return false;
-      if (!q) return true;
-      return (
-        o.obdNumber.toLowerCase().includes(q) ||
-        (o.customer?.customerName ?? "").toLowerCase().includes(q) ||
-        (o.soNumber ?? "").toLowerCase().includes(q) ||
-        (o.route ?? "").toLowerCase().includes(q)
-      );
+      return passesFilters(o.deliveryTypeName, o.priorityLevel);
     });
-  }, [payload, passesFilters, q]);
+  }, [payload, passesFilters]);
 
   const groups = useMemo(() => {
     const all = buildGroups(payload);
-    if (delTypes.size === 0 && !urgentOnly && !q) return all;
+    if (delTypes.size === 0 && !urgentOnly) return all;
     return all
       .map((g) => ({
         ...g,
@@ -354,18 +356,11 @@ export function TintManagerContent() {
           const dt = r.order?.deliveryTypeName ?? r.split?.deliveryTypeName ?? r.completed?.deliveryTypeName ?? "";
           if (delTypes.size > 0 && !delTypes.has(dt)) return false;
           if (urgentOnly && !r.isUrgent) return false;
-          if (!q) return true;
-          return (
-            r.obdNumber.toLowerCase().includes(q) ||
-            r.siteName.toLowerCase().includes(q) ||
-            (r.soNumber ?? "").toLowerCase().includes(q) ||
-            (r.route ?? "").toLowerCase().includes(q) ||
-            r.operatorName.toLowerCase().includes(q)
-          );
+          return true;
         }),
       }))
       .filter((g) => g.rows.length > 0);
-  }, [payload, delTypes, urgentOnly, q]);
+  }, [payload, delTypes, urgentOnly]);
 
   // Every other tab's rows through the SAME filters (2026-10-02). Display +
   // badges + Prev/Next walk read these; selections and writes keep the full lists.
@@ -658,6 +653,9 @@ export function TintManagerContent() {
         if (document.querySelector('[data-slot-popover="open"]')) return;
         if (typing) return;
         // The tab row's Filter / ⌨ popovers (2026-10-02) — controlled here.
+        // The search dropdown (2026-10-02) — focus in the box is the header's
+        // Escape (clear + blur); this rung covers an open list with focus elsewhere.
+        if (searchRunRef.current !== null) { closeSearchRef.current(); return; }
         if (filterOpen) { setFilterOpen(false); return; }
         if (shortcutsOpen) { setShortcutsOpen(false); return; }
         if (barOpAnchor !== null) { setBarOpAnchor(null); return; }
@@ -747,7 +745,10 @@ export function TintManagerContent() {
       const res = await fetch(`${TINT_PICK_DELETE_BASE}/list?month=${encodeURIComponent(month)}`, { cache: "no-store" });
       if (!res.ok) return;
       const body = (await res.json()) as { decided?: unknown[] };
-      if (Array.isArray(body.decided)) setPickDecidedCount(body.decided.length);
+      if (Array.isArray(body.decided)) {
+        setPickDecidedCount(body.decided.length);
+        setPickDecidedRows(body.decided as PickDeleteDecidedRow[]);
+      }
     } catch { /* the badge keeps its last number */ }
   }, [access.canViewPickDelete]);
 
@@ -1511,6 +1512,156 @@ export function TintManagerContent() {
 
   // ── Header pieces ─────────────────────────────────────────────────────────
 
+  // ── Header search (2026-10-02, round 2 step 2) ───────────────────────────
+  // Floor's behaviour: runs on ENTER (not while typing), "/" focuses the box,
+  // Escape clears and closes (both the header's). Results drop down under the
+  // box, grouped by source in tab order, matched by ONE matcher —
+  // lib/floor/search.ts through lib/tint/search.ts's views. The SOURCES are the
+  // UNFILTERED lists (filters never hide a result) and are data-driven
+  // (search-sources.tsx), so a history day can be swapped in later. The server
+  // fallback, GET /api/tint/manager/find, is ALWAYS the last group, "Not on Tint
+  // Manager", minus OBDs a client group already shows.
+  const [searchRun, setSearchRun] = useState<string | null>(null);
+  const [findRows, setFindRows] = useState<FindRow[] | null>(null);
+  const [findLoading, setFindLoading] = useState(false);
+  const [searchActiveKey, setSearchActiveKey] = useState<string | null>(null);
+  const [flash, setFlash] = useState<{ key: string; at: number } | null>(null);
+  const findSeq = useRef(0);
+
+  const searchSources = useMemo(() => buildSearchSources({
+    rail:    buildRail(payload),
+    groups:  buildGroups(payload),
+    base:    baseRows,
+    ti:      basePending,
+    hold:    access.canViewHoldTab ? holdRows : null,
+    ci:      access.canViewCiTab ? cancelledRows : null,
+    deleted: access.canViewPickDelete ? pickDecidedRows : null,
+  }), [payload, baseRows, basePending, holdRows, cancelledRows, pickDecidedRows, access.canViewHoldTab, access.canViewCiTab, access.canViewPickDelete]);
+
+  const searchGroups = useMemo(() => {
+    if (searchRun === null) return null;
+    const parsed = parseSearch(searchRun);
+    const client = matchSources(searchSources, parsed);
+    const shown = new Set(client.flatMap((g) => g.rows.map((r) => r.obd)));
+    const find: SearchItem[] = (findRows ?? [])
+      .filter((f) => !shown.has(f.obdNumber))
+      .map((f) => ({
+        key: `find-${f.orderId}`, obd: f.obdNumber, highlight: obdHighlight(f.obdNumber, parsed),
+        billTo: f.billTo, shipTo: f.shipTo,
+        context: `${f.dateLabel} ${new Date(f.date).toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "Asia/Kolkata" })}${f.smu ? ` · ${f.smu}` : ""}`,
+        pill: <span className="inline-flex items-center rounded-[4px] bg-[#f3f4f6] px-2 py-[2px] text-[10px] font-semibold text-[#6b7280]">{f.stage}</span>,
+        openable: false, views: [], target: null,
+      }));
+    return [...client, { key: "find", label: "Not on Tint Manager", rows: find }];
+  }, [searchRun, searchSources, findRows]);
+  const searchFlat = useMemo(() => (searchGroups ?? []).flatMap((g) => g.rows), [searchGroups]);
+
+  // The active row follows the results: first row on a fresh run, kept while it still exists.
+  useEffect(() => {
+    if (searchFlat.length === 0) { if (searchActiveKey !== null) setSearchActiveKey(null); return; }
+    if (!searchFlat.some((r) => r.key === searchActiveKey)) setSearchActiveKey(searchFlat[0].key);
+  }, [searchFlat, searchActiveKey]);
+
+  const closeSearch = useCallback(() => {
+    findSeq.current++;
+    setSearchRun(null);
+    setFindRows(null);
+    setFindLoading(false);
+    setSearchActiveKey(null);
+  }, []);
+  // Refs for the page's window-level Escape chain (declared above this block).
+  const searchRunRef = useRef(searchRun);
+  searchRunRef.current = searchRun;
+  const closeSearchRef = useRef(closeSearch);
+  closeSearchRef.current = closeSearch;
+
+  const runSearch = useCallback(() => {
+    const q = searchQuery.trim();
+    if (!q) return;
+    setSearchRun(q);
+    setSearchActiveKey(null);
+    setFindRows(null);
+    setFindLoading(true);
+    const seq = ++findSeq.current;
+    void (async () => {
+      try {
+        const res = await fetch(`/api/tint/manager/find?q=${encodeURIComponent(q)}`, { cache: "no-store" });
+        const body = (await res.json().catch(() => ({}))) as { rows?: FindRow[] };
+        if (seq === findSeq.current) setFindRows(Array.isArray(body.rows) ? body.rows : []);
+      } catch {
+        if (seq === findSeq.current) setFindRows([]);
+      } finally {
+        if (seq === findSeq.current) setFindLoading(false);
+      }
+    })();
+  }, [searchQuery]);
+
+  /** Open a result: its tab (or its rail card), its panel where the tab has
+   *  one, and a ~2s brand-50 flash on the row once it is on screen. */
+  const openSearchResult = useCallback((row: SearchResultRow) => {
+    const item = searchFlat.find((r) => r.key === row.key) as SearchItem | undefined;
+    if (!item) return;
+    if (!item.openable || item.target === null) {
+      toast.info(`${item.obd} is not on the Tint Manager`, { description: typeof item.context === "string" ? item.context : undefined });
+      return;
+    }
+    const t = item.target;
+    closeSearch();
+    if (t.clearFocus) setFocusedOperatorId(null);
+    if (t.tab !== null) setActiveTab(t.tab);
+    if (t.railId !== undefined) {
+      setSelection(new Set());
+      setHoldSel(new Set());
+      setBaseSel(new Set());
+      setTiSel(new Set());
+      setRailSel(new Set([t.railId]));
+    }
+    if (t.panelKey) setPanelKey(t.panelKey);
+    if (t.flashKey) setFlash({ key: t.flashKey, at: Date.now() });
+  }, [searchFlat, closeSearch]);
+
+  // The flash: once the tab has rendered, scroll the row into view and wash it
+  // brand-50 for ~2s. A class on the element, not state on every row.
+  useEffect(() => {
+    if (!flash) return;
+    let el: Element | null = null;
+    const show = setTimeout(() => {
+      el = document.querySelector(`[data-search-key="${CSS.escape(flash.key)}"]`);
+      if (!el) return;
+      el.scrollIntoView({ block: "center", behavior: "smooth" });
+      el.classList.add("!bg-brand-50");
+    }, 150);
+    const hide = setTimeout(() => el?.classList.remove("!bg-brand-50"), 2200);
+    return () => { clearTimeout(show); clearTimeout(hide); el?.classList.remove("!bg-brand-50"); };
+  }, [flash]);
+
+  const onSearchKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      const q = searchQuery.trim();
+      // Same query, results up → Enter opens the active row; otherwise it runs.
+      if (searchRun !== null && q === searchRun && searchFlat.length > 0) {
+        const row = searchFlat.find((r) => r.key === searchActiveKey) ?? searchFlat[0];
+        openSearchResult(row);
+      } else {
+        runSearch();
+      }
+      return;
+    }
+    if ((e.key === "ArrowDown" || e.key === "ArrowUp") && searchFlat.length > 0) {
+      e.preventDefault();
+      const i = Math.max(0, searchFlat.findIndex((r) => r.key === searchActiveKey));
+      const next = e.key === "ArrowDown" ? Math.min(searchFlat.length - 1, i + 1) : Math.max(0, i - 1);
+      setSearchActiveKey(searchFlat[next].key);
+    }
+  }, [searchQuery, searchRun, searchFlat, searchActiveKey, openSearchResult, runSearch]);
+
+  const onSearchChange = useCallback((v: string) => {
+    setSearchQuery(v);
+    // Cleared (typing it empty, or the header's Escape) → close the dropdown.
+    if (v.trim() === "") closeSearch();
+  }, [closeSearch]);
+
   // The stats line left the header 2026-10-02 (the tab badges carry the counts).
 
   /** Filter groups. Delivery Type values are delivery_type_master.name exactly
@@ -1561,7 +1712,19 @@ export function TintManagerContent() {
         showDatePicker={false}
         searchPlaceholder="Search OBD, SO, site, route…"
         searchValue={searchQuery}
-        onSearchChange={setSearchQuery}
+        onSearchChange={onSearchChange}
+        onSearchKeyDown={onSearchKeyDown}
+        searchExpanded={searchGroups !== null}
+        searchDropdown={searchGroups !== null ? (
+          <SearchDropdown
+            groups={searchGroups}
+            activeKey={searchActiveKey}
+            loadingFallback={findLoading}
+            onPick={openSearchResult}
+            onHover={setSearchActiveKey}
+            onClose={closeSearch}
+          />
+        ) : undefined}
         searchLayout="wide-right"
         showClock={false}
         showShortcutsButton={false}

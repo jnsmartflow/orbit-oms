@@ -81,7 +81,7 @@ export function BoardCiTab({
               {rows.map((r) => {
                 const ciLive = r.ciNumber !== null;
                 return (
-                  <tr key={r.orderId} className="hover:bg-gray-50">
+                  <tr key={r.orderId} data-search-key={`ci-${r.orderId}`} className="hover:bg-gray-50">
                     <td className={TD}><ObdCode code={r.obdNumber} /></td>
                     <td className={TD} title={r.billToName ?? undefined}>
                       <span className="text-[11.5px] font-medium text-[#111827]">{r.billToName ?? "—"}</span>

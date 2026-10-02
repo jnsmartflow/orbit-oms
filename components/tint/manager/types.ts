@@ -64,6 +64,9 @@ export interface TintOrder {
    *  tint OBDs, so the board shows both. Same source Floor uses for
    *  FloorPartyFields.billToName. */
   billToName:         string | null;
+  /** The bill-to dealer's SAP code (import_raw_summary.billToCustomerId) — the
+   *  header search matches it (2026-10-02). Optional: older payload literals. */
+  billToCode?:        string | null;
   /** customer.area.primaryRoute.name — the AREA path, matching Floor's
    *  FLOOR_DEALER_SELECT. Never delivery_point_master.primaryRoute (2% cover). */
   route:              string | null;
@@ -416,6 +419,9 @@ export interface BasePendingOrder {
   smuCode:           string | null;
   route:             string | null;
   articleTag:        string | null;
+  /** Header search (2026-10-02) — SAP's ship-to and bill-to customer codes. */
+  shipToCode:        string | null;
+  billToCode:        string | null;
   /** Header filters (2026-10-02). */
   deliveryTypeName:  string | null;
   priorityLevel:     number;

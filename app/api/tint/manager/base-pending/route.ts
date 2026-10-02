@@ -76,6 +76,9 @@ interface PendingOrder {
   smuCode:           string | null;
   route:             string | null;
   articleTag:        string | null;
+  /** Header search (2026-10-02) — SAP's ship-to and bill-to customer CODES. */
+  shipToCode:        string | null;
+  billToCode:        string | null;
   /** Header filters (2026-10-02) — delivery_type_master.name via the AREA, and the priority. */
   deliveryTypeName:  string | null;
   priorityLevel:     number;
@@ -139,6 +142,7 @@ export async function GET(): Promise<NextResponse> {
           id:                 true,
           obdNumber:          true,
           shipToCustomerName: true,
+          shipToCustomerId:   true,
           customerId:         true,
           // Display only (step 7): the redirect name and the bill volume.
           shipToOverrideCustomer: { select: { customerName: true } },
@@ -244,6 +248,8 @@ export async function GET(): Promise<NextResponse> {
       smuCode:           null, // filled below with the dealer name, same query
       route:             a.order.customer?.area?.primaryRoute?.name ?? null,
       articleTag:        a.order.querySnapshot?.articleTag ?? null,
+      shipToCode:        a.order.shipToCustomerId ?? null,
+      billToCode:        null, // filled below with the dealer name, same query
       deliveryTypeName:  a.order.customer?.area?.deliveryType?.name ?? null,
       priorityLevel:     a.order.priorityLevel,
       billToName:        null, // filled below, one query for the whole page
@@ -269,18 +275,21 @@ export async function GET(): Promise<NextResponse> {
   if (out.length > 0) {
     const summaries = await prisma.import_raw_summary.findMany({
       where:   { obdNumber: { in: out.map((o) => o.obdNumber) } },
-      select:  { obdNumber: true, billToCustomerName: true, smuCode: true, createdAt: true },
+      select:  { obdNumber: true, billToCustomerName: true, billToCustomerId: true, smuCode: true, createdAt: true },
       orderBy: { createdAt: "asc" },
     });
     const dealerByObd = new Map<string, string | null>();
     const smuCodeByObd = new Map<string, string | null>();
+    const billToCodeByObd = new Map<string, string | null>();
     for (const s of summaries) {
       dealerByObd.set(s.obdNumber, s.billToCustomerName); // newer wins
       smuCodeByObd.set(s.obdNumber, s.smuCode);
+      billToCodeByObd.set(s.obdNumber, s.billToCustomerId);
     }
     for (const o of out) {
       o.billToName = dealerByObd.get(o.obdNumber) ?? null;
       o.smuCode    = smuCodeByObd.get(o.obdNumber) ?? null;
+      o.billToCode = billToCodeByObd.get(o.obdNumber) ?? null;
     }
   }
 

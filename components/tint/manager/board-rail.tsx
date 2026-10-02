@@ -70,6 +70,8 @@ export function BoardRail({
             return (
               <div
                 key={o.id}
+                // Header search (2026-10-02): an opened result scrolls to + flashes this card.
+                data-search-key={`rail-${o.id}`}
                 role="button"
                 tabIndex={0}
                 aria-pressed={sel}

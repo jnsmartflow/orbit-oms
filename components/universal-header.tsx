@@ -135,6 +135,22 @@ export interface UniversalHeaderProps {
   searchLayout?: "compact" | "wide" | "wide-right";
 
   /**
+   * OPTIONAL search extras (2026-10-02, the Tint Manager's Enter-to-run search
+   * with a results dropdown). All three default to "absent", and absent renders
+   * EXACTLY what it did before — no wrapper, no handler, no width change — so
+   * Billing and every other caller are byte-identical.
+   *   - `onSearchKeyDown` — the input's keydown (Enter / ↑ / ↓ for a dropdown).
+   *     The header's own window-level `/` and Escape handling is unchanged.
+   *   - `searchDropdown` — rendered directly under the box, inside a `relative`
+   *     wrapper that holds both (the caller positions it absolutely).
+   *   - `searchExpanded` — widen a wide box while its dropdown is open
+   *     (240 → 440px). Ignored in the compact layout.
+   */
+  onSearchKeyDown?: (e: React.KeyboardEvent<HTMLInputElement>) => void;
+  searchDropdown?: React.ReactNode;
+  searchExpanded?: boolean;
+
+  /**
    * Render the IST clock (and the divider that follows it). Default `true`.
    *
    * ⚠ Setting this false also stops the 1-second `setInterval` that drives it.
@@ -212,6 +228,9 @@ export function UniversalHeader({
   searchPlaceholder = "Search...",
   searchValue,
   onSearchChange,
+  onSearchKeyDown,
+  searchDropdown,
+  searchExpanded = false,
   searchLayout = "compact",
   showClock = true,
   shortcuts,
@@ -339,11 +358,14 @@ export function UniversalHeader({
   // wrapper at its call site; that wrapper is gone. Re-introducing any wrapper
   // with its own width would push this box off the right edge by the
   // difference.
-  const searchBox = (
+  // The wide arm's class, verbatim; `searchExpanded` (default false) swaps ONLY
+  // its width — a caller that never passes it gets the identical string.
+  const wideBoxClass = "flex items-center gap-2 w-[240px] max-w-full min-w-0 h-[36px] rounded-[10px] bg-[#f7f7f5] border border-gray-200 px-3 transition-colors hover:border-gray-300 focus-within:bg-white focus-within:border-brand-600 focus-within:ring-2 focus-within:ring-brand-600/15";
+  const searchField = (
     <div
       className={
         wideSearch
-          ? "flex items-center gap-2 w-[240px] max-w-full min-w-0 h-[36px] rounded-[10px] bg-[#f7f7f5] border border-gray-200 px-3 transition-colors hover:border-gray-300 focus-within:bg-white focus-within:border-brand-600 focus-within:ring-2 focus-within:ring-brand-600/15"
+          ? (searchExpanded ? wideBoxClass.replace("w-[240px]", "w-[440px]") : wideBoxClass)
           : `bg-gray-50 rounded-[6px] px-[10px] py-[4px] flex items-center gap-[6px] transition-all duration-200 ${
               searchFocused || searchValue ? "w-[260px]" : "w-[180px]"
             }`
@@ -356,6 +378,7 @@ export function UniversalHeader({
         placeholder={searchPlaceholder}
         value={searchValue ?? ""}
         onChange={(e) => onSearchChange?.(e.target.value)}
+        onKeyDown={onSearchKeyDown}
         onFocus={() => setSearchFocused(true)}
         onBlur={() => setSearchFocused(false)}
         // Wide: transparent input over the wrapper's fill — giving the input its
@@ -381,6 +404,11 @@ export function UniversalHeader({
       )}
     </div>
   );
+  // With a dropdown, box + dropdown share one `relative` wrapper; without one
+  // (every caller but the Tint Manager) this IS the field, unwrapped, as before.
+  const searchBox = searchDropdown !== undefined
+    ? <div className="relative">{searchField}{searchDropdown}</div>
+    : searchField;
 
   // The Import button — ONE definition, rendered in one of two clusters.
   // Compact keeps it leftmost in the RIGHT cluster (unchanged); wide moves it

@@ -262,6 +262,8 @@ export function TintBoardRow({
       )}
       onClick={row.selectable ? onToggle : undefined}
       aria-selected={row.selectable ? selected : undefined}
+      // Header search (2026-10-02): an opened result scrolls to + flashes this row.
+      data-search-key={row.key}
     >
 
       {/* # — the queue rank.

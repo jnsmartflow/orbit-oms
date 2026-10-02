@@ -128,6 +128,7 @@ export function BoardHoldTab({
                 return (
                   <tr
                     key={r.orderId}
+                    data-search-key={`hold-${r.orderId}`}
                     onClick={() => onToggle(r)}
                     aria-selected={sel}
                     className={cn(

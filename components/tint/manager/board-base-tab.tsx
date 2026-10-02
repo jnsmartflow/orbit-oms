@@ -99,6 +99,7 @@ export function BoardBaseTab({
                 return (
                   <tr
                     key={r.orderId}
+                    data-search-key={`base-${r.orderId}`}
                     onClick={() => onToggle(r)}
                     aria-selected={sel}
                     className={cn(
