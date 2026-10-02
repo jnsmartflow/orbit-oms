@@ -1,23 +1,30 @@
 "use client";
 
-// Freight Trips — the held pool as ROUTE CARDS, Floor's "By route" look.
+// Freight Trips — the held pool as DELIVERY-TYPE CARDS (Floor "All tab" style).
+// Mockup (owner-approved): docs/mockups/freight-trips/held-cards.html — its card
+// anatomy copied, MINUS every status bit: no ring (a plain "{n} bills" block in
+// its 64px slot), no per-route status bar, no greyed empty rows. Held bills have
+// no pick progress.
 //
-// 🔴 COPIED, NOT IMPORTED (decided 2026-10-02). Floor's components/floor/route-cards.tsx
-// is typed to FloorBoardRow (zone, pick status for its bar) and wires FloorTable
-// into its open panel; it has no switch for the bar. Freight rows are HELD bills —
-// no pick progress, no upcoming zone — so the CLUBBING RULES and the CARD LOOK
-// are copied here and the status bar is left out. Floor's file is untouched.
+//   ┌ head ─ dot(s) TYPE ─────────────────────── ┐
+//   │ 3,209 kg                          [ 22 ]  │  ← click: every held bill of the type
+//   │ 7 stops · 5,785 L                [ bills ] │
+//   ├ row ─ Adajan + Olpad   3 stops ……… 1,030 kg │  ← click: that club's held bills
+//   └ row ─ Other routes     1 stop  ………    69 kg ┘
 //
-// Rules copied from Floor (keep in step by hand if Floor's change):
-//   - a club is on a section when its delivery type is one the section covers
-//     (scopeTypes — imported, pure); members main first; a member with no bills
-//     gets no line; a member with `reachFrom` draws that other type's bills;
-//   - every route of the section in no club, plus route-less bills, share ONE
-//     "Other routes" card — lines by kg, "No route" last; route 20 folds into
-//     "No route", route 25 is hidden;
+// Cards: Local and Upcountry always (empty → "No held bills"); IGT / Cross only
+// with bills; "No route" (amber, read-only) only when some held bill has no route
+// or no delivery type — its rows are the bills themselves.
+//
+// 🔴 COPIED, NOT IMPORTED. Floor's components/floor/route-cards.tsx is typed to
+// FloorBoardRow (zone, pick status) and draws its bar; the CLUBBING RULES are
+// copied below (clubRowsFor) and Floor's file is untouched:
+//   - a club is in a type when its delivery type is one the type covers
+//     (scopeTypes — imported, pure); members main first; a member with
+//     `reachFrom` draws that other type's bills; a member with none: no row;
+//   - routes in no club share "Other routes" (by kg); route 25 hidden;
 //   - Hand bills (the dealer collects) ride no truck: out of kg / L / stops,
-//     summed as "+N Hand · X kg — not counted";
-//   - every card the same height across the grid (spacer line slots).
+//     shown as "+N Hand · X kg — not counted".
 // Clubs come from Floor's getRouteClubs() via /api/freight-trips/pool.
 
 import { formatLitres, formatWeightKg } from "@/components/floor/status-pill";
@@ -26,28 +33,20 @@ import { scopeTypes } from "@/lib/floor/scope";
 import type { FloorRouteClub, FloorScope } from "@/lib/floor/types";
 import type { FreightPoolRow } from "@/lib/freight-trips/pool";
 
+/** Route 20 "No Route" is no route; route 25 "TEST R" is hidden (Floor's rule). */
 const NO_ROUTE_IDS: readonly number[] = [20];
 const HIDDEN_ROUTE_IDS: readonly number[] = [25];
-const NO_ROUTE_LABEL = "No route";
 
-export interface FreightLine {
-  key: string;
-  name: string;
-  /** Counted bills (not Hand). */
-  rows: FreightPoolRow[];
-  hand: FreightPoolRow[];
-  reachLabel: string | null;
-}
+type TypeKey = Exclude<FloorScope, "All">;
 
-export interface FreightCard {
-  key: string;
-  name: string;
-  lines: FreightLine[];
-  rows: FreightPoolRow[];
-  hand: FreightPoolRow[];
-}
+/** The type cards, in order, with their identity colours (data.* — CLAUDE_UI §2.1). */
+const TYPE_CARDS: { key: TypeKey; label: string; dots: string[]; always: boolean }[] = [
+  { key: "Local", label: "Local", dots: ["bg-data-blue"], always: true },
+  { key: "Upcountry", label: "Upcountry", dots: ["bg-data-orange"], always: true },
+  { key: "IGT / Cross", label: "IGT / Cross", dots: ["bg-data-teal", "bg-data-rose"], always: false },
+];
 
-const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+// ── Figures ─────────────────────────────────────────────────────────────────
 
 export function stopCount(rows: FreightPoolRow[]): number {
   return new Set(rows.map((r) => r.stopKey)).size;
@@ -57,7 +56,7 @@ export function litresOf(rows: FreightPoolRow[]): number {
   return rows.reduce((s, r) => s + loadLitres(r.volumeLitres, r.isGift), 0);
 }
 
-/** Whole kilos, "+" when a bill has no weight, "—" when none has one (Floor's kgText). */
+/** Whole kilos, "+" when a bill has no weight; "—" when no bill has one (Floor's kgText). */
 export function kgText(rows: { weightKg: number | null; isGift: boolean }[]): string {
   let kg = 0;
   let unknown = 0;
@@ -70,181 +69,227 @@ export function kgText(rows: { weightKg: number | null; isGift: boolean }[]): st
   return `${Math.round(kg).toLocaleString("en-US")}${unknown > 0 ? "+" : ""}`;
 }
 
-function kgNumber(rows: FreightPoolRow[]): number {
-  return rows.reduce((s, r) => s + (loadKg(r.weightKg, r.isGift) ?? 0), 0);
+const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+
+/** A held bill with no route of its own: no route id, or the "No Route" placeholder. */
+function hasNoRoute(r: FreightPoolRow): boolean {
+  return r.routeId === null || NO_ROUTE_IDS.includes(r.routeId);
 }
 
-/** The delivery types a section covers — Floor's scopeTypes (pure), [] for "no type". */
-export function sectionTypes(section: Exclude<FloorScope, "All"> | null): readonly string[] {
-  return section === null ? [] : scopeTypes(section) ?? [];
+// ── The model ───────────────────────────────────────────────────────────────
+
+/** One row of a type card: a route club, or "Other routes". */
+export interface ClubRow {
+  key: string;
+  name: string;
+  /** Counted bills (not Hand). */
+  rows: FreightPoolRow[];
+  hand: FreightPoolRow[];
+}
+
+export interface TypeCard {
+  key: TypeKey;
+  label: string;
+  dots: string[];
+  clubs: ClubRow[];
+  rows: FreightPoolRow[];
+  hand: FreightPoolRow[];
+}
+
+/** The clubs of one type, from Floor's club rules (copied), no-route bills excluded. */
+function clubRowsFor(
+  types: readonly string[],
+  clubs: FloorRouteClub[],
+  typeRows: FreightPoolRow[],
+  allRows: FreightPoolRow[],
+): ClubRow[] {
+  const typeClubs = clubs.filter((c) => types.includes(c.deliveryType)).sort((a, b) => a.sortOrder - b.sortOrder);
+  const clubRouteIds = new Set(typeClubs.flatMap((c) => c.members.map((m) => m.routeId)));
+
+  const out: ClubRow[] = typeClubs.map((c) => {
+    const all = c.members.flatMap((m) =>
+      m.reachFrom === null
+        ? typeRows.filter((r) => r.routeId === m.routeId)
+        : allRows.filter((r) => r.routeId === m.routeId && r.deliveryType === m.reachFrom),
+    );
+    return { key: `club:${c.id}`, name: c.name, rows: all.filter((r) => !r.isHand), hand: all.filter((r) => r.isHand) };
+  });
+
+  const other = typeRows.filter(
+    (r) => !hasNoRoute(r) && r.routeId !== null && !clubRouteIds.has(r.routeId) && !HIDDEN_ROUTE_IDS.includes(r.routeId),
+  );
+  if (other.length > 0) {
+    out.push({ key: "other", name: "Other routes", rows: other.filter((r) => !r.isHand), hand: other.filter((r) => r.isHand) });
+  }
+  // Only clubs with held bills — no greyed empty rows (owner).
+  return out.filter((c) => c.rows.length > 0 || c.hand.length > 0);
+}
+
+export interface HeldCardsModel {
+  cards: TypeCard[];
+  /** Held bills with no route, or no delivery type — the amber card. Empty = no card. */
+  noRoute: FreightPoolRow[];
 }
 
 /**
- * The cards for one delivery-type SECTION.
- * @param types       the delivery types the section covers (sectionTypes)
- * @param sectionRows the section's rows; @param allRows every pool row (for `reachFrom`).
+ * @param scopedRows the pool in the chip in effect; @param allRows the whole pool
+ * (only for a club member that draws from another type, e.g. Kamrej).
  */
-export function buildFreightCards(
-  types: readonly string[],
+export function buildHeldCards(
+  scope: FloorScope,
   clubs: FloorRouteClub[],
-  sectionRows: FreightPoolRow[],
+  scopedRows: FreightPoolRow[],
   allRows: FreightPoolRow[],
-): FreightCard[] {
-  const sectionClubs = clubs.filter((c) => types.includes(c.deliveryType)).sort((a, b) => a.sortOrder - b.sortOrder);
-  const clubRouteIds = new Set(sectionClubs.flatMap((c) => c.members.map((m) => m.routeId)));
-
-  const clubCards: FreightCard[] = sectionClubs.map((c) => {
-    const lines: FreightLine[] = [...c.members]
-      .sort((a, b) => a.sortOrder - b.sortOrder)
-      .map((m) => {
-        const all =
-          m.reachFrom === null
-            ? sectionRows.filter((r) => r.routeId === m.routeId)
-            : allRows.filter((r) => r.routeId === m.routeId && r.deliveryType === m.reachFrom);
-        return {
-          key: `r:${m.routeId}`,
-          name: m.routeName,
-          rows: all.filter((r) => !r.isHand),
-          hand: all.filter((r) => r.isHand),
-          reachLabel: m.reachFrom,
-        };
-      })
-      .filter((l) => l.rows.length > 0 || l.hand.length > 0);
-    return {
-      key: `club:${c.id}`,
-      name: c.name,
-      lines,
-      rows: lines.flatMap((l) => l.rows),
-      hand: lines.flatMap((l) => l.hand),
-    };
-  });
-
-  const others = new Map<string, FreightLine>();
-  for (const r of sectionRows) {
-    if (r.routeId !== null && (clubRouteIds.has(r.routeId) || HIDDEN_ROUTE_IDS.includes(r.routeId))) continue;
-    const key = r.routeId === null || NO_ROUTE_IDS.includes(r.routeId) ? "none" : `r:${r.routeId}`;
-    const line = others.get(key) ?? {
-      key,
-      name: key === "none" ? NO_ROUTE_LABEL : r.route ?? NO_ROUTE_LABEL,
-      rows: [],
-      hand: [],
-      reachLabel: null,
-    };
-    (r.isHand ? line.hand : line.rows).push(r);
-    others.set(key, line);
+): HeldCardsModel {
+  const typed = new Set<number>();
+  const cards: TypeCard[] = [];
+  for (const t of TYPE_CARDS) {
+    if (scope !== "All" && scope !== t.key) continue;
+    const types = scopeTypes(t.key) ?? [];
+    const typeRows = scopedRows.filter((r) => r.deliveryType !== null && types.includes(r.deliveryType));
+    for (const r of typeRows) if (!hasNoRoute(r)) typed.add(r.orderId);
+    const clubRows = clubRowsFor(types, clubs, typeRows, allRows);
+    // A Kamrej-style reach can pull rows of ANOTHER type into this card; the
+    // card's totals are its club rows, so they always add up to what it lists.
+    const rows = clubRows.flatMap((c) => c.rows);
+    const hand = clubRows.flatMap((c) => c.hand);
+    if (!t.always && rows.length === 0 && hand.length === 0) continue;
+    cards.push({ key: t.key, label: t.label, dots: t.dots, clubs: clubRows, rows, hand });
   }
-  const otherLines = Array.from(others.values()).sort((a, b) => {
-    if (a.key === "none") return 1;
-    if (b.key === "none") return -1;
-    return kgNumber(b.rows) - kgNumber(a.rows) || a.name.localeCompare(b.name);
-  });
-  const cards = clubCards.filter((c) => c.rows.length > 0 || c.hand.length > 0);
-  if (otherLines.length > 0) {
-    cards.push({
-      key: "other",
-      name: "Other routes",
-      lines: otherLines,
-      rows: otherLines.flatMap((l) => l.rows),
-      hand: otherLines.flatMap((l) => l.hand),
-    });
-  }
-  return cards;
+  for (const c of cards) for (const r of [...c.rows, ...c.hand]) typed.add(r.orderId);
+  const noRoute = scopedRows.filter((r) => !typed.has(r.orderId) && !(r.routeId !== null && HIDDEN_ROUTE_IDS.includes(r.routeId)));
+  return { cards, noRoute };
 }
+
+/** Find the bills a click opened, from the CURRENT model (so moved bills drop out). */
+export function drillRows(model: HeldCardsModel, t: DrillTarget): { title: string; rows: FreightPoolRow[] } {
+  if (t.kind === "noRoute") return { title: "No route", rows: model.noRoute };
+  const card = model.cards.find((c) => c.key === t.type);
+  if (!card) return { title: t.type, rows: [] };
+  if (t.clubKey === null) return { title: card.label, rows: [...card.rows, ...card.hand] };
+  const club = card.clubs.find((c) => c.key === t.clubKey);
+  return club ? { title: `${card.label} › ${club.name}`, rows: [...club.rows, ...club.hand] } : { title: card.label, rows: [] };
+}
+
+export type DrillTarget = { kind: "type"; type: TypeKey; clubKey: string | null } | { kind: "noRoute" };
 
 // ── The grid ────────────────────────────────────────────────────────────────
+// Mockup sizes: card radius 14px, head 22px / 24px padding, kg 30px, rows 64px
+// with an inset divider. 4 columns ≥1281px, 2 below, 1 at ≤680px.
 
-const CARD = "block w-full min-w-0 rounded-[11px] border border-ink-100 bg-white text-left";
-const LINE = "block w-full border-t border-ink-50 px-3.5 pb-3 pt-[11px] text-left";
+const HEAD = "flex w-full items-center gap-4 border-b border-ink-100 px-6 py-[22px] text-left";
+const ROW = "flex h-16 w-full flex-col justify-center px-6 text-left hover:bg-ink-25";
 
-/** What a click opens: the whole card (lineKey null) or one route line. */
-export interface DrillTarget {
-  section: string;
-  cardKey: string;
-  lineKey: string | null;
-}
-
-export function FreightCardGrid({
-  section,
-  cards,
-  lineSlots,
-  handSlot,
-  onOpen,
-}: {
-  section: string;
-  cards: FreightCard[];
-  /** The most route lines on any card on the page — every card gets that many slots. */
-  lineSlots: number;
-  /** Some card on the page has Hand bills — reserve the "+N Hand" line. */
-  handSlot: boolean;
-  onOpen: (t: DrillTarget) => void;
-}) {
+export function HeldCardGrid({ model, onOpen }: { model: HeldCardsModel; onOpen: (t: DrillTarget) => void }) {
+  const { cards, noRoute } = model;
   return (
-    <div className="grid grid-cols-1 items-start gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+    <div className="grid grid-cols-1 items-stretch gap-5 min-[681px]:grid-cols-2 min-[1281px]:grid-cols-4">
       {cards.map((c) => {
-        const spacers = Math.max(0, lineSlots - c.lines.length);
-        const handOnly = c.rows.length === 0;
+        const total = c.rows.length + c.hand.length;
         return (
-          <div key={c.key} className={CARD}>
-            <button
-              type="button"
-              onClick={() => onOpen({ section, cardKey: c.key, lineKey: null })}
-              className="block w-full rounded-t-[11px] px-3.5 pb-3 pt-3.5 text-left hover:bg-ink-25"
-            >
-              <span className="mb-1 block truncate text-[13px] font-semibold text-ink-500">{c.name}</span>
-              <span className="block whitespace-nowrap text-[26px] font-extrabold leading-[1.05] tracking-[-0.03em] tabular-nums text-ink-900">
-                {handOnly ? (
-                  <small className="text-[13px] font-medium tracking-normal text-ink-400">Hand only</small>
-                ) : (
-                  <>
-                    {kgText(c.rows)}
-                    <small className="ml-[3px] text-[13px] font-semibold tracking-normal text-ink-400">kg</small>
-                  </>
+          <section key={c.key} className="flex flex-col overflow-hidden rounded-[14px] border border-ink-100 bg-white">
+            <button type="button" onClick={() => onOpen({ kind: "type", type: c.key, clubKey: null })} className={`${HEAD} hover:bg-ink-25`}>
+              <span className="min-w-0 flex-1">
+                <span className="flex items-center gap-2 text-[13px] font-semibold text-ink-700">
+                  <span className="inline-flex gap-[3px]">
+                    {c.dots.map((d) => (
+                      <span key={d} className={`h-2 w-2 shrink-0 rounded-full ${d}`} />
+                    ))}
+                  </span>
+                  {c.label}
+                </span>
+                <span className="mt-2 block text-[30px] font-semibold leading-none tracking-[-0.025em] tabular-nums text-ink-900">
+                  {c.rows.length > 0 ? kgText(c.rows) : "0"}
+                  <small className="ml-1 text-[13px] font-medium tracking-normal text-ink-400">kg</small>
+                </span>
+                <span className="mt-2.5 flex flex-wrap gap-x-4 text-[12px] tabular-nums text-ink-500">
+                  <span><b className="font-semibold text-ink-700">{stopCount(c.rows)}</b> stops</span>
+                  <span><b className="font-semibold text-ink-700">{formatLitres(litresOf(c.rows))}</b> L</span>
+                </span>
+                {c.hand.length > 0 && (
+                  <span className="mt-1 block whitespace-nowrap text-[11.5px] font-semibold tabular-nums text-data-brown">
+                    +{c.hand.length} Hand &middot; {kgText(c.hand)} kg — not counted
+                  </span>
                 )}
               </span>
-              <span className="mt-[5px] block whitespace-nowrap text-[12.5px] tabular-nums text-ink-400">
-                {handOnly ? <>&nbsp;</> : <>{plural(stopCount(c.rows), "stop", "stops")} &middot; {formatLitres(litresOf(c.rows))} L</>}
+              {/* The ring's 64px slot, neutral: a plain count, no status. */}
+              <span className="flex h-16 w-16 shrink-0 flex-col items-center justify-center rounded-full border border-ink-100 bg-ink-25">
+                <span className="text-[17px] font-semibold leading-none tabular-nums text-ink-900">{total}</span>
+                <span className="mt-[3px] text-[10px] font-medium text-ink-400">bills</span>
               </span>
-              {handSlot && (
-                <span
-                  className={`mt-[3px] block whitespace-nowrap text-[11.5px] font-semibold tabular-nums text-data-brown ${c.hand.length > 0 ? "" : "invisible"}`}
-                  aria-hidden={c.hand.length === 0}
-                >
-                  +{c.hand.length} Hand &middot; {kgText(c.hand)} kg — not counted
-                </span>
-              )}
             </button>
-            {Array.from({ length: spacers }, (_, i) => (
-              <span key={`spacer:${i}`} className={`${LINE} invisible`} aria-hidden>
-                <span className="flex items-baseline gap-2 text-[14.5px]">·</span>
+            {c.clubs.length === 0 ? (
+              <div className="flex flex-1 items-center justify-center px-6 py-8 text-[12.5px] text-ink-400">No held bills</div>
+            ) : (
+              <div className="flex flex-1 flex-col py-1.5">
+                {c.clubs.map((club, i) => (
+                  <button
+                    key={club.key}
+                    type="button"
+                    onClick={() => onOpen({ kind: "type", type: c.key, clubKey: club.key })}
+                    className={`${ROW} ${i > 0 ? "shadow-[inset_0_1px_0_#F3F4F7]" : ""}`}
+                  >
+                    <span className="flex w-full items-baseline gap-2">
+                      <span className="min-w-0 truncate text-[13px] font-semibold text-ink-900">{club.name}</span>
+                      {club.rows.length > 0 ? (
+                        <>
+                          <span className="whitespace-nowrap text-[12px] text-ink-400">{plural(stopCount(club.rows), "stop", "stops")}</span>
+                          <span className="ml-auto whitespace-nowrap text-[13px] font-semibold tabular-nums text-ink-900">
+                            {kgText(club.rows)}
+                            <small className="ml-0.5 text-[11.5px] font-normal text-ink-400">kg</small>
+                          </span>
+                        </>
+                      ) : (
+                        <span className="ml-auto whitespace-nowrap text-[12px] text-ink-400">Hand only</span>
+                      )}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </section>
+        );
+      })}
+
+      {noRoute.length > 0 && (
+        <section className="flex flex-col overflow-hidden rounded-[14px] border bg-white" style={{ borderColor: "#FCE7B2" /* mockup --amber-bd */ }}>
+          <button type="button" onClick={() => onOpen({ kind: "noRoute" })} className={`${HEAD} bg-warn-bg`} style={{ borderBottomColor: "#FCE7B2" }}>
+            <span className="min-w-0 flex-1">
+              <span className="flex items-center gap-2 text-[13px] font-semibold text-ink-700">
+                <span className="h-2 w-2 shrink-0 rounded-full bg-warn-text" />
+                No route
+                <span className="ml-auto rounded-full border bg-white px-2 py-[2px] text-[11px] font-semibold text-warn-text" style={{ borderColor: "#FCE7B2" }}>
+                  Needs an area
+                </span>
               </span>
-            ))}
-            {c.lines.map((l) => (
+              <span className="mt-2 block text-[30px] font-semibold leading-none tracking-[-0.025em] tabular-nums text-ink-900">
+                {noRoute.length}
+                <small className="ml-1 text-[13px] font-medium tracking-normal text-ink-400">bills</small>
+              </span>
+              <span className="mt-2.5 flex flex-wrap gap-x-4 text-[12px] tabular-nums text-ink-500">
+                <span><b className="font-semibold text-ink-700">{formatLitres(litresOf(noRoute))}</b> L</span>
+                <span>Not on any type card</span>
+              </span>
+            </span>
+          </button>
+          <div className="flex flex-1 flex-col py-1.5">
+            {noRoute.map((r, i) => (
               <button
-                key={l.key}
+                key={r.orderId}
                 type="button"
-                onClick={() => onOpen({ section, cardKey: c.key, lineKey: l.key })}
-                className={`${LINE} hover:bg-ink-25`}
+                onClick={() => onOpen({ kind: "noRoute" })}
+                className={`${ROW} ${i > 0 ? "shadow-[inset_0_1px_0_#F3F4F7]" : ""}`}
               >
-                <span className="flex items-baseline gap-2 whitespace-nowrap">
-                  <span className="min-w-0 truncate text-[14.5px] font-semibold text-ink-900">{l.name}</span>
-                  {l.reachLabel && <span className="shrink-0 text-[11px] text-ink-400">{l.reachLabel}</span>}
-                  {l.rows.length > 0 ? (
-                    <>
-                      <span className="shrink-0 text-[12px] tabular-nums text-ink-400">{plural(stopCount(l.rows), "stop", "stops")}</span>
-                      <span className="ml-auto shrink-0 text-[14px] font-bold tabular-nums text-ink-900">
-                        {kgText(l.rows)}
-                        <small className="ml-0.5 text-[11px] font-medium text-ink-400">kg</small>
-                      </span>
-                    </>
-                  ) : (
-                    <span className="shrink-0 text-[12px] text-ink-400">Hand only</span>
-                  )}
+                <span className="flex w-full items-baseline gap-2">
+                  <span className="min-w-0 truncate text-[13px] font-semibold text-ink-900">{r.dealerName}</span>
+                  <span className="whitespace-nowrap font-mono text-[12px] text-ink-400">{r.obdNumber}</span>
+                  <span className="ml-auto whitespace-nowrap text-[12px] font-semibold text-warn-text">{hasNoRoute(r) ? "No route" : "No delivery type"}</span>
                 </span>
               </button>
             ))}
           </div>
-        );
-      })}
+        </section>
+      )}
     </div>
   );
 }

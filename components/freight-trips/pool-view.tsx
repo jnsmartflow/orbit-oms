@@ -3,9 +3,11 @@
 // Freight Trips — the Held bills pool. Floor's held set (via /api/freight-trips/pool,
 // which is getFloorHold) minus bills already on an active freight trip.
 //
-//   By route (default) — one SECTION per delivery type (Local · Upcountry ·
-//     IGT · Cross, + "No delivery type" when any), each Floor-style route cards
-//     (./route-cards.tsx). A click on a card (whole club) or a route line opens
+//   By route (default) — ONE CARD PER DELIVERY TYPE, Floor's All-tab style
+//     (./route-cards.tsx; mockup docs/mockups/freight-trips/held-cards.html),
+//     no status: Local, Upcountry, IGT / Cross (only with bills), and an amber
+//     "No route" card when needed. A click on a card head (every bill of the
+//     type) or a club row opens
 //     the DRILL-IN: those bills grouped by INVOICE DATE, oldest first, each date
 //     a band with its own select-all, then the SHARED held-bills table
 //     (components/floor/hold-table.tsx, imported as-is). "No invoice yet" last.
@@ -17,29 +19,12 @@ import { useMemo, useState } from "react";
 import { HoldTable } from "@/components/floor/hold-table";
 import { formatLitres } from "@/components/floor/status-pill";
 import { formatDateIST } from "@/lib/floor/format";
-import { inScope } from "@/lib/floor/scope";
 import { isAllIdsSelected, toggleAllIds, toggleOne, type FloorSelection } from "@/lib/floor/selection";
 import type { FloorRouteClub, FloorScope } from "@/lib/floor/types";
 import type { FreightPoolRow } from "@/lib/freight-trips/pool";
-import {
-  buildFreightCards,
-  FreightCardGrid,
-  kgText,
-  litresOf,
-  sectionTypes,
-  type DrillTarget,
-  type FreightCard,
-} from "./route-cards";
+import { buildHeldCards, drillRows, HeldCardGrid, kgText, litresOf, type DrillTarget } from "./route-cards";
 
 type Pivot = "route" | "flat";
-type SectionScope = Exclude<FloorScope, "All">;
-
-const SECTIONS: { key: SectionScope; label: string }[] = [
-  { key: "Local", label: "Local" },
-  { key: "Upcountry", label: "Upcountry" },
-  { key: "IGT / Cross", label: "IGT · Cross" },
-];
-const NO_TYPE_KEY = "none";
 
 /** Invoice date oldest first; no invoice last (by OBD date). Stable on OBD number. */
 function byInvoiceDate(a: FreightPoolRow, b: FreightPoolRow): number {
@@ -54,12 +39,6 @@ function byInvoiceDate(a: FreightPoolRow, b: FreightPoolRow): number {
   const bo = b.obdDateTime ?? "";
   if (ao !== bo) return ao < bo ? -1 : 1;
   return a.obdNumber.localeCompare(b.obdNumber);
-}
-
-interface Section {
-  key: string;
-  label: string;
-  cards: FreightCard[];
 }
 
 export function PoolView({
@@ -92,35 +71,12 @@ export function PoolView({
   const [drill, setDrill] = useState<DrillTarget | null>(null);
   const now = useMemo(() => new Date(), [rows]);
 
-  const sections: Section[] = useMemo(() => {
-    const shown = scope === "All" ? SECTIONS : SECTIONS.filter((s) => s.key === scope);
-    const out: Section[] = shown.map((s) => {
-      const sectionRows = rows.filter((r) => inScope(r.deliveryType, s.key));
-      return { key: s.key, label: s.label, cards: buildFreightCards(sectionTypes(s.key), clubs, sectionRows, allRows) };
-    });
-    if (scope === "All") {
-      const untyped = rows.filter((r) => !SECTIONS.some((s) => inScope(r.deliveryType, s.key)));
-      if (untyped.length > 0) {
-        out.push({ key: NO_TYPE_KEY, label: "No delivery type", cards: buildFreightCards([], [], untyped, allRows) });
-      }
-    }
-    return out.filter((s) => s.cards.length > 0);
-  }, [rows, allRows, clubs, scope]);
+  // One card per delivery type (the chip in effect decides which), + No route.
+  const model = useMemo(() => buildHeldCards(scope, clubs, rows, allRows), [scope, clubs, rows, allRows]);
 
-  const allCards = sections.flatMap((s) => s.cards);
-  const lineSlots = Math.max(1, ...allCards.map((c) => c.lines.length));
-  const handSlot = allCards.some((c) => c.hand.length > 0);
-
-  // The drill-in's bills, re-derived from the CURRENT pool on every render, so a
+  // The drill-in's bills, re-derived from the CURRENT model on every render, so a
   // bill that went onto a trip leaves the list at the next load.
-  const drilled = useMemo(() => {
-    if (!drill) return null;
-    const card = sections.find((s) => s.key === drill.section)?.cards.find((c) => c.key === drill.cardKey);
-    if (!card) return { title: "These bills", rows: [] as FreightPoolRow[] };
-    const line = drill.lineKey ? card.lines.find((l) => l.key === drill.lineKey) : null;
-    const list = line ? [...line.rows, ...line.hand] : [...card.rows, ...card.hand];
-    return { title: line ? `${card.name} › ${line.name}` : card.name, rows: list };
-  }, [drill, sections]);
+  const drilled = useMemo(() => (drill ? drillRows(model, drill) : null), [drill, model]);
 
   const flatRows = useMemo(() => [...rows].sort(byInvoiceDate), [rows]);
   const seg = (on: boolean) => `px-[11px] text-[11px] ${on ? "bg-white font-semibold text-ink-900" : "text-ink-500"}`;
@@ -142,7 +98,7 @@ export function PoolView({
         <div className="px-5 py-14 text-center text-[11.5px] text-ink-400">Loading held bills…</div>
       ) : error ? (
         <div className="px-5 py-14 text-center text-[11.5px] text-ink-400">Couldn&rsquo;t load held bills. {error}</div>
-      ) : rows.length === 0 ? (
+      ) : rows.length === 0 && pivot === "flat" ? (
         <div className="px-5 py-14 text-center">
           <h4 className="text-[13px] font-semibold text-ink-900">No held bills to plan</h4>
           <p className="mt-1.5 text-[11.5px] text-ink-400">Every held bill is already on a freight trip, or nothing is on hold.</p>
@@ -176,18 +132,12 @@ export function PoolView({
           )}
         </div>
       ) : (
-        <div className="space-y-5 px-4 py-3.5">
-          {sections.map((s) => (
-            <section key={s.key}>
-              <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-ink-400">
-                {s.label}
-                <span className="ml-2 normal-case tracking-normal text-ink-400">
-                  · {s.cards.reduce((n, c) => n + c.rows.length + c.hand.length, 0)} bills
-                </span>
-              </h3>
-              <FreightCardGrid section={s.key} cards={s.cards} lineSlots={lineSlots} handSlot={handSlot} onOpen={setDrill} />
-            </section>
-          ))}
+        <div className="px-4 py-4">
+          {model.cards.length === 0 && model.noRoute.length === 0 ? (
+            <div className="px-5 py-12 text-center text-[11.5px] text-ink-400">No held bills for this delivery type.</div>
+          ) : (
+            <HeldCardGrid model={model} onOpen={setDrill} />
+          )}
         </div>
       )}
     </div>
