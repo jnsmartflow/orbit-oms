@@ -6,6 +6,10 @@ import { checkAnyPermission } from "@/lib/permissions";
 import { getHideExclusion } from "@/lib/hide/visibility";
 import { TINT_STATUS_DONE } from "@/lib/tint/assignment-status";
 import { getBaseOperatorId } from "@/lib/tint/base-operator";
+import { getISTDayRange } from "@/lib/dates";
+import { floorBoardWhere, floorHoldWhere, getISTTodayDateOnly } from "@/lib/floor/queries";
+import { BASE_BILL_WHERE } from "@/lib/tint/manager-bill";
+import { PROJECT_SMU_NAMES } from "@/lib/billing/pick-delete-rule";
 
 export const dynamic = "force-dynamic";
 
@@ -59,6 +63,23 @@ export const dynamic = "force-dynamic";
  *           left arm 1 by being cancelled must still move the marker for later
  *           edits that day. Same startOfToday as the board (below).
  *
+ * ── THE BASE TAB (2026-10-01, code-discovery-2026-10-01-tint-manager-base-tab.md
+ * §F, owner §I) — Base bills (non-tint SMU 74/77) sit OUTSIDE the tint block, so
+ * three more arms are OR-ed BESIDE it (the tint block is unchanged inside):
+ *
+ *   arm 6 — FLOOR'S OWN live predicate (lib/floor/queries.ts floorBoardWhere,
+ *           imported, never copied) AND BASE_BILL_WHERE: the Base tab's set.
+ *           Deliberately WITHOUT the Base feed's trip cut-off — a superset, so
+ *           the marker never misses a Base change; a trip bill from an earlier
+ *           day costs at most a spare reload. Uses Floor's IST day, as Floor's
+ *           own marker does — each arm mirrors the feed it watches.
+ *   arm 7 — floorHoldWhere() AND BASE_BILL_WHERE: held Base bills (Hold tab).
+ *   arm 8 — Base bills cancelled (or edited after the cancel) today: the CI tab.
+ *           Same startOfToday as arm 5.
+ *
+ * The ci_returns stamp widens from tint bills to tint OR project-SMU bills, so a
+ * Base CI's status change moves it too.
+ *
  * And four more stamps in the GREATEST statement (step 9), each a tab's own
  * source: tint bills' ci_returns (the CI tab), pick_delete_decisions (the Pick
  * delete tab + popup), and the "Base — No Tint" placeholder's TI entries
@@ -104,6 +125,7 @@ export async function GET(): Promise<NextResponse> {
   const agg = await prisma.orders.aggregate({
     where: {
       AND: [
+        { OR: [
         {
           orderType: "tint",
           isRemoved: false,
@@ -150,6 +172,13 @@ export async function GET(): Promise<NextResponse> {
             { workflowStage: "cancelled", updatedAt: { gte: startOfToday } },
           ],
         },
+        // Arm 6 — the Base tab: Floor's live board ∩ Base bills (header).
+        { AND: [floorBoardWhere(getISTDayRange(), getISTTodayDateOnly()), BASE_BILL_WHERE] },
+        // Arm 7 — the Hold tab's Base rows.
+        { AND: [floorHoldWhere(), BASE_BILL_WHERE] },
+        // Arm 8 — the CI tab's Base rows (same startOfToday as arm 5).
+        { AND: [{ isRemoved: false, workflowStage: "cancelled", updatedAt: { gte: startOfToday } }, BASE_BILL_WHERE] },
+        ] },
         hideExclusion,
       ],
     },
@@ -189,7 +218,8 @@ export async function GET(): Promise<NextResponse> {
       (SELECT max("updatedAt") FROM order_splits),
       (SELECT max("updatedAt") FROM delivery_challans),
       (SELECT max(c."updatedAt") FROM ci_returns c
-         JOIN orders o ON o.id = c."orderId" AND o."orderType" = 'tint'),
+         JOIN orders o ON o.id = c."orderId"
+          AND (o."orderType" = 'tint' OR o.smu IN (${Prisma.join([...PROJECT_SMU_NAMES])}))),
       (SELECT max("updatedAt") FROM pick_delete_decisions)${baseTiTerms}) AS m`;
   const latest = laterOf(agg._max.updatedAt, childRows[0]?.m ?? null);
 
