@@ -207,7 +207,9 @@ export async function GET(
                   salesOfficer: { select: { name: true, phone: true } },
                 },
               },
+              // Oldest first (2026-10-02) — the first receiver entered prints.
               contacts: {
+                orderBy: { id: "asc" },
                 select: {
                   name:        true,
                   phone:       true,
@@ -250,7 +252,9 @@ export async function GET(
               salesOfficer: { select: { name: true, phone: true } },
             },
           },
+          // Oldest first (2026-10-02) — the first receiver entered prints.
           contacts: {
+            orderBy: { id: "asc" },
             select: {
               name:        true,
               phone:       true,
@@ -307,7 +311,9 @@ export async function GET(
     const shipToSiteContact = (() => {
       const contacts = resolvedShipTo?.contacts ?? [];
       if (contacts.length === 0) return null;
-      const SITE_ROLES = ["Site Engineer", "Contractor", "Supervisor"];
+      // "Receiver" FIRST (2026-10-02): the Tint Manager's Add ship-to form saves
+      // its site receivers under that role (matched by NAME, never by id).
+      const SITE_ROLES = ["Receiver", "Site Engineer", "Contractor", "Supervisor"];
       const match =
         contacts.find((c) => c.isPrimary && c.contactRole?.name !== "Sales Officer") ??
         contacts.find((c) => c.contactRole?.name != null && SITE_ROLES.includes(c.contactRole.name)) ??
@@ -401,10 +407,13 @@ export async function GET(
         },
 
         shipTo: {
-          // Redirected → the redirect's own name and code; else SAP's, as before.
-          name:         shipToOverridden
-                          ? (resolvedShipTo?.customerName ?? "")
-                          : (rawSummary?.shipToCustomerName ?? ""),
+          // NAME: the customer master's name whenever a master record exists for
+          // the ship-to (or the redirect) — so a spelling corrected in the master
+          // prints (2026-10-02); SAP's name only when there is no master record.
+          // CODE (below) is unchanged: the redirect's code, else SAP's.
+          name:         resolvedShipTo?.customerName
+                          ?? rawSummary?.shipToCustomerName
+                          ?? "",
           address:      resolvedShipTo?.address               ?? null,
           shipToCode:   shipToOverridden
                           ? (resolvedShipTo?.customerCode ?? null)
@@ -477,7 +486,9 @@ const SHIP_TO_POINT_SELECT = {
       salesOfficer: { select: { name: true, phone: true } },
     },
   },
+  // Oldest first (2026-10-02) — the first receiver entered prints.
   contacts: {
+    orderBy: { id: "asc" },
     select: {
       name:        true,
       phone:       true,

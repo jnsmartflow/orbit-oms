@@ -18,6 +18,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { MIN_ADDRESS, PHONE_HINT, SO_NO_PHONE, firstShipToProblem, checkReceivers, normalizeMobile } from "@/lib/customers/ship-to-rules";
 
 export interface AddShipToResult {
   customerCode: string;
@@ -108,15 +109,15 @@ export function AddShipToSheet({
     return () => { live = false; window.clearTimeout(t); };
   }, [open, name]);
 
-  const receiverRows = receivers.filter((r) => r.name.trim() !== "" || r.phone.trim() !== "");
-  const receiverMissingName = receiverRows.some((r) => r.name.trim() === "");
-  const canSave = !!area && !!so && name.trim() !== "" && !receiverMissingName && !saving && !!shipToCode;
-  const footerMsg =
-    !area && !so ? "Pick area and sales person to save."
-    : !area ? "Pick an area to save."
-    : !so ? "Pick a sales person to save."
-    : receiverMissingName ? "Each receiver with a phone needs a name."
-    : "Saves to customer master + order-entry search.";
+  // EVERY FIELD IS MANDATORY (2026-10-02) — lib/customers/ship-to-rules.ts, the
+  // same rules the create route enforces. The footer names the first problem.
+  const receiverRows = checkReceivers(receivers).rows;
+  const problem = firstShipToProblem({
+    name, address, hasArea: !!area, hasSo: !!so, soPhone: so?.phone, receivers,
+  });
+  const soNoPhone = !!so && (!so.phone || so.phone.trim() === "");
+  const canSave = problem === null && !saving && !!shipToCode;
+  const footerMsg = problem ?? "Saves to customer master + order-entry search.";
 
   const save = useCallback(async () => {
     if (!canSave || !area || !so || !shipToCode) return;
@@ -132,7 +133,7 @@ export function AddShipToSheet({
           address:        address.trim() || null,
           areaId:         area.id,
           salesOfficerId: so.id,
-          receivers:      receiverRows.map((r) => ({ name: r.name.trim(), phone: r.phone.trim() || null })),
+          receivers:      receiverRows.map((r) => ({ name: r.name, phone: r.phone })),
         }),
       });
       const data = (await res.json().catch(() => ({}))) as Partial<AddShipToResult> & { error?: string };
@@ -211,7 +212,7 @@ export function AddShipToSheet({
 
           {/* 2 — Address & area */}
           <Group n={2} title="Site address & area">
-            <Field label="Site address" hint="for the challan & driver">
+            <Field label="Site address" hint="for the challan & driver" required>
               <textarea
                 className={cn(INPUT, "h-[68px] resize-none py-2 leading-[1.4]")}
                 value={address}
@@ -219,6 +220,9 @@ export function AddShipToSheet({
                 maxLength={500}
                 placeholder={"Building / plot, road, landmark\ne.g. Akshay Group site, Opp. Star Bazaar, Pal Road"}
               />
+              {address.trim() !== "" && address.trim().length < MIN_ADDRESS && (
+                <p className="mt-1 text-[11.5px] text-red-600">At least {MIN_ADDRESS} characters — building, road, landmark.</p>
+              )}
             </Field>
             <Field label="Area" required>
               <Combo<AreaOpt>
@@ -245,49 +249,72 @@ export function AddShipToSheet({
                 empty="No sales officer matches"
               />
               {so && (
-                <div className="mt-2 grid grid-cols-[auto_1fr_auto] items-center gap-3 rounded-[10px] border border-ink-100 bg-ink-25 px-3 py-2.5">
+                <div className={cn(
+                  "mt-2 grid grid-cols-[auto_1fr_auto] items-center gap-3 rounded-[10px] border px-3 py-2.5",
+                  soNoPhone ? "border-red-200 bg-red-50" : "border-ink-100 bg-ink-25",
+                )}>
                   <span className="flex h-8 w-8 items-center justify-center rounded-full bg-brand-100 text-[12px] font-bold text-brand-700">
                     {so.name.split(/\s+/).map((w) => w[0]).join("").slice(0, 2).toUpperCase()}
                   </span>
                   <div className="min-w-0">
                     <b className="block truncate text-[13px] text-ink-900">{so.name}</b>
-                    <span className="block truncate text-[12px] text-ink-500">
-                      {[so.phone, so.email].filter(Boolean).join(" · ") || "No phone or email on file"}
-                    </span>
+                    {soNoPhone ? (
+                      // Mandatory: the challan prints his phone. The form never edits the SO master.
+                      <span className="block text-[12px] font-semibold text-red-600">{SO_NO_PHONE}</span>
+                    ) : (
+                      <span className="block truncate text-[12px] text-ink-500">
+                        {[so.phone, so.email].filter(Boolean).join(" · ")}
+                      </span>
+                    )}
                   </div>
                   <em className="rounded-[5px] bg-ok-bg px-[7px] py-0.5 text-[11px] font-semibold not-italic text-ok-text">Primary</em>
                 </div>
               )}
             </Field>
-            <Field label="Receiver at site" hint="who takes the delivery">
-              {receivers.map((r, i) => (
-                <div key={r.key} className="mb-2 grid grid-cols-[1fr_170px_30px] items-center gap-2">
+            <Field label="Receiver at site" hint="who takes the delivery" required>
+              {receivers.map((r, i) => {
+                // Red only once something is typed (a fully empty row is just "missing").
+                const nameBad = r.name.trim() !== "" && r.name.trim().length < 2;
+                const phoneBad = r.phone.trim() !== "" && normalizeMobile(r.phone) === null;
+                const partly = i > 0 && (r.name.trim() !== "") !== (r.phone.trim() !== "");
+                return (
+                <div key={r.key} className="mb-2">
+                <div className="grid grid-cols-[1fr_170px_30px] items-center gap-2">
                   <input
-                    className={INPUT}
+                    className={cn(INPUT, (nameBad || (partly && r.name.trim() === "")) && "border-red-400")}
                     value={r.name}
                     placeholder={i === 0 ? "Receiver name" : "Another receiver"}
                     maxLength={100}
                     onChange={(e) => setReceivers((list) => list.map((x) => (x.key === r.key ? { ...x, name: e.target.value } : x)))}
                   />
                   <input
-                    className={INPUT}
+                    className={cn(INPUT, (phoneBad || (partly && r.phone.trim() === "")) && "border-red-400")}
                     value={r.phone}
-                    placeholder="Phone (optional)"
+                    placeholder="Mobile"
                     inputMode="tel"
                     maxLength={30}
                     onChange={(e) => setReceivers((list) => list.map((x) => (x.key === r.key ? { ...x, phone: e.target.value } : x)))}
                   />
-                  <button
-                    type="button"
-                    className="h-[38px] text-[15px] text-ink-400 hover:text-red-600 disabled:opacity-30"
-                    title="Remove this receiver"
-                    disabled={receivers.length === 1 && r.name === "" && r.phone === ""}
-                    onClick={() => setReceivers((list) => (list.length === 1 ? [newReceiver()] : list.filter((x) => x.key !== r.key)))}
-                  >
-                    ✕
-                  </button>
+                  {/* The first row is the main receiver — it has no ✕. */}
+                  {i === 0 ? <span /> : (
+                    <button
+                      type="button"
+                      className="h-[38px] text-[15px] text-ink-400 hover:text-red-600"
+                      title="Remove this receiver"
+                      onClick={() => setReceivers((list) => list.filter((x) => x.key !== r.key))}
+                    >
+                      ✕
+                    </button>
+                  )}
                 </div>
-              ))}
+                {(nameBad || phoneBad) && (
+                  <p className="mt-1 text-[11.5px] text-red-600">
+                    {[nameBad ? "Name needs at least 2 characters" : null, phoneBad ? PHONE_HINT : null].filter(Boolean).join(" · ")}
+                  </p>
+                )}
+                </div>
+                );
+              })}
               <button
                 type="button"
                 onClick={() => setReceivers((list) => [...list, newReceiver()])}
@@ -345,7 +372,10 @@ function Field({ label, hint, required, children }: { label: string; hint?: stri
     <div>
       <label className="mb-1.5 flex justify-between text-[12px] font-semibold text-ink-700">
         <span>{label}</span>
-        {required ? <span className="font-medium text-[#E11D48]">required</span> : hint ? <em className="font-medium not-italic text-ink-400">{hint}</em> : null}
+        <span className="flex items-center gap-2">
+          {hint && <em className="font-medium not-italic text-ink-400">{hint}</em>}
+          {required && <span className="font-medium text-[#E11D48]">required</span>}
+        </span>
       </label>
       {children}
     </div>

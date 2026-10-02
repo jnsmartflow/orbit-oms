@@ -6,6 +6,7 @@ import { checkAnyPermission } from "@/lib/permissions";
 import { logAdminAction } from "@/lib/audit/log";
 import { SoSyncValidationError } from "@/lib/customers/so-sync";
 import { createCustomer } from "@/lib/customers/create-customer";
+import { MIN_ADDRESS, SO_NO_PHONE, checkReceivers } from "@/lib/customers/ship-to-rules";
 
 export const dynamic = "force-dynamic";
 
@@ -49,7 +50,7 @@ const receiverSchema = z.object({
 const bodySchema = z.object({
   customerCode:   z.string().trim().min(1).max(50),
   customerName:   z.string().trim().min(1).max(200),
-  address:        z.string().max(500).optional().nullable(),
+  address:        z.string().max(500).optional().nullable(),   // required — checked below (ship-to-rules)
   areaId:         z.number().int().positive(),
   salesOfficerId: z.number().int().positive(),
   receivers:      z.array(receiverSchema).max(10).default([]),
@@ -75,13 +76,27 @@ export async function POST(req: Request): Promise<NextResponse> {
   const body = parsed.data;
   const customerCode = body.customerCode.toUpperCase();
 
-  // Receivers: empty rows ignored; a phone without a name is refused.
-  const rows = body.receivers
-    .map((r) => ({ name: r.name.trim(), phone: (r.phone ?? "").trim() }))
-    .filter((r) => r.name !== "" || r.phone !== "");
-  if (rows.some((r) => r.name === "")) {
-    return NextResponse.json({ error: "Each receiver with a phone needs a name." }, { status: 400 });
+  // EVERY FIELD IS MANDATORY (2026-10-02) — the same rules as the form,
+  // lib/customers/ship-to-rules.ts: address 10+ chars, at least one receiver
+  // with a 2+ char name AND a 10-digit mobile, partly filled extra rows refused.
+  const address = (body.address ?? "").trim();
+  if (address.length < MIN_ADDRESS) {
+    return NextResponse.json({ error: `Site address is required (at least ${MIN_ADDRESS} characters).` }, { status: 400 });
   }
+  const receiverCheck = checkReceivers(body.receivers.map((r) => ({ name: r.name, phone: r.phone ?? "" })));
+  if (receiverCheck.message !== null) {
+    return NextResponse.json({ error: receiverCheck.message.replace(/ to save.$/, ".") }, { status: 400 });
+  }
+  const rows = receiverCheck.rows;
+
+  // The sales person must exist, be active and HAVE A PHONE in the master
+  // (the challan prints it). The form never edits the SO master.
+  const so = await prisma.sales_officer_master.findFirst({
+    where:  { id: body.salesOfficerId, isActive: true },
+    select: { phone: true },
+  });
+  if (!so) return NextResponse.json({ error: "Pick an active sales person." }, { status: 400 });
+  if (!so.phone || so.phone.trim() === "") return NextResponse.json({ error: SO_NO_PHONE }, { status: 400 });
 
   // Lookups — readable 400s before any write.
   const area = await prisma.area_master.findFirst({
@@ -114,7 +129,7 @@ export async function POST(req: Request): Promise<NextResponse> {
       data: {
         customerCode,
         customerName:           body.customerName,
-        address:                body.address?.trim() || null,
+        address,
         areaId:                 area.id,
         // "Use area default" — the admin form writes NULL for both.
         primaryRouteId:         null,
@@ -126,7 +141,7 @@ export async function POST(req: Request): Promise<NextResponse> {
       // contact (it does that on every admin save too).
       contacts: rows.map((r, i) => ({
         name:          r.name,
-        phone:         r.phone || null,
+        phone:         r.phone,
         isPrimary:     i === 0,
         contactRoleId: receiverRoleId,
       })),
