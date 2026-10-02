@@ -32,7 +32,7 @@
 // the three types are re-exported below even though this file no longer declares
 // them.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
 import { useCanImportObds } from "@/lib/hooks/use-can-import-obds";
 import { toast } from "sonner";
@@ -553,6 +553,25 @@ export function TintManagerContent() {
   const barMode: BarMode | null =
     railSel.size > 0 ? "rail" : selection.size > 0 ? "table" : holdSel.size > 0 ? "hold" : baseSel.size > 0 ? "base"
     : tiSel.size > 0 ? "ti" : null;
+
+  // ── The bottom bar's REAL height, for the missing-customer card (2026-10-02) ──
+  // Every Tint Manager bottom bar (BoardBottomBar for rail / Tint / Hold / Base /
+  // CI selections, BoardTiBottomBar for TI) mounts inside `barWrapRef` (a
+  // display:contents wrapper — the bar keeps its own absolute position). Its
+  // rendered top is measured, never guessed: offset = viewport height − bar top,
+  // re-read on resize of the bar (ResizeObserver) or the window. 0 = no bar.
+  const barWrapRef = useRef<HTMLDivElement>(null);
+  const [barOffset, setBarOffset] = useState(0);
+  useLayoutEffect(() => {
+    const el = barWrapRef.current?.firstElementChild as HTMLElement | null | undefined;
+    if (!el) { setBarOffset(0); return; }
+    const measure = () => setBarOffset(Math.max(0, Math.round(window.innerHeight - el.getBoundingClientRect().top)));
+    measure();
+    const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(measure) : null;
+    ro?.observe(el);
+    window.addEventListener("resize", measure);
+    return () => { ro?.disconnect(); window.removeEventListener("resize", measure); };
+  }, [barMode]);
   /** One shape for every selected bill, whichever side it came from. */
   const barBills = useMemo(() => {
     if (barMode === "rail") {
@@ -2108,6 +2127,9 @@ export function TintManagerContent() {
             />
           )}
 
+          {/* Every bottom bar mounts in here so its height can be measured
+              (the missing-customer card sits above it). display:contents — no box. */}
+          <div ref={barWrapRef} className="contents" data-tm-bottom-bar>
           {barMode === "ti" && (
             <BoardTiBottomBar
               count={selectedTi.length}
@@ -2174,6 +2196,7 @@ export function TintManagerContent() {
               onRemove={() => { const o = selectedRail[0]; if (o) setRemoveModalOrder(o); }}
             />
           )}
+          </div>
         </div>
       </div>
 
@@ -2426,6 +2449,7 @@ export function TintManagerContent() {
       {missingCard.card && (
         <MissingCustomerCard
           card={missingCard.card}
+          bottomBarOffset={barOffset}
           canAdd={access.canAddCustomer}
           onAdd={() => { if (missingCard.card) handleAddShipTo(missingCard.card.bill); }}
         />

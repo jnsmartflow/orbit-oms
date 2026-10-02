@@ -198,20 +198,33 @@ export function useMissingCardQueue({
 }
 
 /** The card, bottom-right. ONE button; no Later, no ✕. */
-export function MissingCustomerCard({ card, canAdd, onAdd }: {
+export function MissingCustomerCard({ card, canAdd, onAdd, bottomBarOffset = 0 }: {
   card:   MissingCardState;
   canAdd: boolean;
   onAdd:  () => void;
+  /** Height the page MEASURED for an open bottom bar (0 = none). The card then
+   *  sits 12px above it, and drops BELOW the bar in z-order so the bar and its
+   *  menus are never covered (2026-10-02). */
+  bottomBarOffset?: number;
 }) {
+  const barUp = bottomBarOffset > 0;
   const secs = Math.ceil(card.leftMs / 1000);
   const mmss = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}`;
   return (
     <div
       className={cn(
-        "fixed bottom-6 right-6 z-[60] w-[440px] overflow-hidden rounded-[14px] border border-[#FDE68A] border-t-4 border-t-warn bg-white shadow-[0_18px_40px_rgba(27,24,38,0.18)]",
-        "origin-top-right transition-[transform,opacity] duration-300 ease-in",
+        "fixed right-6 w-[440px] overflow-hidden rounded-[14px] border border-[#FDE68A] border-t-4 border-t-warn bg-white shadow-[0_18px_40px_rgba(27,24,38,0.18)]",
+        // The bar (FloorActionBar, z-20) and its More menu stay on top while it is open.
+        barUp ? "z-[15]" : "z-[60]",
+        "origin-top-right",
         card.leaving ? "-translate-y-[70vh] scale-[0.2] opacity-0" : "translate-y-0 scale-100 opacity-100",
       )}
+      // bottom: 24px normally; bar height + 12px while a bottom bar is open.
+      // The move animates in 200ms; the exit (transform/opacity) in 300ms.
+      style={{
+        bottom: barUp ? bottomBarOffset + 12 : 24,
+        transition: "bottom 200ms ease-out, transform 300ms ease-in, opacity 300ms ease-in",
+      }}
       role="status"
     >
       <div className="px-4 pb-4 pt-3.5">
@@ -235,7 +248,7 @@ export function MissingCustomerCard({ card, canAdd, onAdd }: {
           />
         </div>
         <p className="mt-1.5 text-[11.5px] text-ink-400">
-          {card.added ? "Next one in a moment…" : `${mmss} left · then it moves to the orange chip`}
+          {card.added ? "Next one in a moment…" : mmss}
         </p>
         <div className="mt-3 flex justify-end">
           {card.added ? (
