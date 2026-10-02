@@ -38,6 +38,7 @@ import { useTintOperatorLive } from "@/components/tint/operator/use-tint-operato
 import { DetailChangedStrip } from "@/components/picking/picking-live";
 import { Tooltip } from "@/components/ui/tooltip";
 import { toast } from "sonner";
+import { PACK_CODES, derivePackCode } from "@/lib/sampling/pack-code";
 
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -302,27 +303,9 @@ const ACOTONE_SHADES = [
 // lib/tint/shade-colors.ts so they can be shared with SkipJobModal (Phase 3c)
 // and the upcoming PauseJobModal (Phase 4). Imported at the top of the file.
 
-// Ascending by actual litres. `litres` is the authoritative per-unit size
-// used by derivePackCode() for exact-match lookup.
-const PACK_CODES = [
-  { value: "ml_500",  label: "500ml",  litres: 0.5   },
-  { value: "L_0_9",   label: "0.9L",   litres: 0.9   },
-  { value: "L_0_925", label: "0.925L", litres: 0.925 },
-  { value: "L_1",     label: "1L",     litres: 1     },
-  { value: "L_3_6",   label: "3.6L",   litres: 3.6   },
-  { value: "L_3_7",   label: "3.7L",   litres: 3.7   },
-  { value: "L_4",     label: "4L",     litres: 4     },
-  { value: "L_9",     label: "9L",     litres: 9     },
-  { value: "L_9_25",  label: "9.25L",  litres: 9.25  },
-  { value: "L_10",    label: "10L",    litres: 10    },
-  { value: "L_15",    label: "15L",    litres: 15    },
-  { value: "L_18",    label: "18L",    litres: 18    },
-  { value: "L_18_5",  label: "18.5L",  litres: 18.5  },
-  { value: "L_20",    label: "20L",    litres: 20    },
-  { value: "L_22",    label: "22L",    litres: 22    },
-  { value: "L_30",    label: "30L",    litres: 30    },
-  { value: "L_40",    label: "40L",    litres: 40    },
-] as const;
+// PACK_CODES (+ derivePackCode below) live in lib/sampling/pack-code.ts
+// (2026-10-02) — one copy shared with the Tint Manager's TI panel and the bulk
+// TI route. Imported at the top of the file.
 
 function defaultTIFormEntry(): TIFormEntry {
   return {
@@ -343,16 +326,6 @@ function defaultTIFormEntry(): TIFormEntry {
   };
 }
 
-// Exact-match lookup against PACK_CODES.litres (tolerance 0.005L — 5× smaller
-// than the smallest adjacent gap 0.025L between 0.9L and 0.925L). Returns null
-// if the SKU's per-unit volume isn't a known pack — caller renders "—" and
-// skips the shades suggestion fetch / TI form stays uncorrupted.
-function derivePackCode(volumeLine: number | null, unitQty: number): string | null {
-  if (unitQty <= 0 || volumeLine == null) return null;
-  const perUnit = volumeLine / unitQty;
-  const match = PACK_CODES.find(p => Math.abs(perUnit - p.litres) < 0.005);
-  return match ? match.value : null;
-}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 

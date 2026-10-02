@@ -41,6 +41,7 @@ import { SaveSamplingPopup, type SaveSamplingResult } from "@/components/tint/op
 import type { SuggestResponse, SuggestFlatRow } from "@/app/api/sampling-library/_lib/suggest";
 import type { PackCode } from "@prisma/client";
 import { canScale, scalePigments, packDoseLitres } from "@/lib/sampling/pack-litres";
+import { derivePackCode } from "@/lib/sampling/pack-code";
 import { TINTER_SHADE_COLORS, ACOTONE_SHADE_COLORS } from "@/lib/tint/shade-colors";
 
 // Pigment column order. Copied verbatim from tint-operator-content.tsx's SHADES
@@ -60,30 +61,8 @@ const ACOTONE_CODES = [
   "OR1", "GR1", "BU1", "BU2",
 ] as const;
 
-// Exact-match pack lookup, copied from tint-operator-content.tsx's PACK_CODES +
-// derivePackCode. Tolerance 0.005 L — 5× smaller than the smallest adjacent gap
-// (0.025 L, between 0.9 L and 0.925 L).
-//
-// ⚠ This returns the PackCode ENUM value ("L_20"), which is what the TI POST
-// requires. It is NOT the human label the base-pending route computes for
-// display ("20 L") — those are two different things and must not be swapped.
-const PACK_CODES: ReadonlyArray<{ value: string; litres: number }> = [
-  { value: "ml_500",  litres: 0.5   }, { value: "L_0_9",   litres: 0.9   },
-  { value: "L_0_925", litres: 0.925 }, { value: "L_1",     litres: 1     },
-  { value: "L_3_6",   litres: 3.6   }, { value: "L_3_7",   litres: 3.7   },
-  { value: "L_4",     litres: 4     }, { value: "L_9",     litres: 9     },
-  { value: "L_9_25",  litres: 9.25  }, { value: "L_10",    litres: 10    },
-  { value: "L_15",    litres: 15    }, { value: "L_18",    litres: 18    },
-  { value: "L_18_5",  litres: 18.5  }, { value: "L_20",    litres: 20    },
-  { value: "L_22",    litres: 22    }, { value: "L_30",    litres: 30    },
-  { value: "L_40",    litres: 40    },
-];
-
-function derivePackCode(volumeLine: number | null, unitQty: number): string | null {
-  if (unitQty <= 0 || volumeLine == null) return null;
-  const perUnit = volumeLine / unitQty;
-  return PACK_CODES.find((p) => Math.abs(perUnit - p.litres) < 0.005)?.value ?? null;
-}
+// The pack table + exact match live in lib/sampling/pack-code.ts (2026-10-02) —
+// one copy shared with the operator screen and the bulk TI route.
 
 export interface BaseTiLine {
   rawLineItemId:     number;

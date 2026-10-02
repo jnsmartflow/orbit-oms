@@ -4,26 +4,13 @@ import { checkAnyPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { getBaseOperatorId } from "@/lib/tint/base-operator";
 import { TINT_STATUS_DONE } from "@/lib/tint/assignment-status";
-import { PackCode, Prisma } from "@prisma/client";
-import {
-  getIstYearPrefix,
-  resolveSamplingForEntry,
-} from "../_lib/sampling-resolution";
+import { PackCode } from "@prisma/client";
+import { pigmentsFromBody, saveTinterIssue } from "@/lib/tint/ti-save";
 
 export const dynamic = "force-dynamic";
 
-const ACOTONE_PIGMENT_CODES = [
-  "YE2", "YE1", "XY1", "XR1", "WH1", "RE2", "RE1", "OR1",
-  "NO2", "NO1", "MA1", "GR1", "BU2", "BU1",
-] as const;
-type AcotonePigment = (typeof ACOTONE_PIGMENT_CODES)[number];
-
-interface EntryResult {
-  tiEntryId:           number;
-  allocatedSamplingNo: string;
-  isNewSampling:       boolean;
-  isNewVariant:        boolean;
-}
+// The ACOTONE pigment list and the per-entry result shape live in
+// lib/tint/ti-save.ts (2026-10-02) — one owner for the save.
 
 export async function POST(req: Request): Promise<NextResponse> {
   const session = await auth();
@@ -143,104 +130,32 @@ export async function POST(req: Request): Promise<NextResponse> {
       orderId = assignment.orderId;
     }
 
-    // Step 2 — load order for siteId + obdNumber
-    const order = await prisma.orders.findUnique({
-      where:  { id: orderId },
-      select: { obdNumber: true, customerId: true },
+    // Steps 2–5 — the shared save (lib/tint/ti-save.ts, 2026-10-02 bulk TI step 0):
+    // per-entry sampling resolution + TI row, tiSubmitted, the challan sync and,
+    // on a Base bill's last owed line, its usage log. The gates above stay here.
+    const saved = await saveTinterIssue({
+      tinterType:       "ACOTONE",
+      orderId,
+      splitId:          hasSplit ? Number(splitId) : null,
+      tintAssignmentId: hasAssignment ? Number(tintAssignmentId) : null,
+      userId,
+      logTag:           "tinter-issue-b",
+      entries: typedEntries.map((entry) => ({
+        baseSku:       (entry.baseSku as string).trim(),
+        packCode:      entry.packCode as PackCode,
+        tinQty:        Number(entry.tinQty ?? 0),
+        rawLineItemId: entry.rawLineItemId != null ? Number(entry.rawLineItemId) : null,
+        samplingNo:    typeof entry.samplingNo === "string" && entry.samplingNo.trim() !== "" ? entry.samplingNo.trim() : null,
+        shadeName:     typeof entry.shadeName === "string" && entry.shadeName.trim() !== "" ? entry.shadeName.trim() : null,
+        pigments:      pigmentsFromBody("ACOTONE", entry),
+      })),
     });
-    const siteId = order?.customerId ?? null;
+    if (!saved.ok) return NextResponse.json({ error: saved.error }, { status: saved.status });
 
-    // Step 3 — best-effort dealer name lookup (only used when allocating new
-    // sampling rows in Scenario 1).
-    let dealerNameRaw: string | null = null;
-    if (order?.obdNumber) {
-      const summary = await prisma.import_raw_summary.findFirst({
-        where:  { obdNumber: order.obdNumber },
-        select: { billToCustomerName: true },
-      });
-      dealerNameRaw = summary?.billToCustomerName ?? null;
-    }
-
-    const yearPrefix = getIstYearPrefix();
-    const results: EntryResult[] = [];
-
-    // Step 4 — per-entry routing + writes (sequential)
-    for (const entry of typedEntries) {
-      const baseSku  = (entry.baseSku as string).trim();
-      const packCode = entry.packCode as PackCode;
-      const tinQty   = Number(entry.tinQty ?? 0);
-      const rawLineItemId = entry.rawLineItemId != null ? Number(entry.rawLineItemId) : null;
-
-      const bodySamplingNo = typeof entry.samplingNo === "string" && entry.samplingNo.trim() !== ""
-        ? entry.samplingNo.trim() : null;
-      const bodyShadeName = typeof entry.shadeName === "string" && entry.shadeName.trim() !== ""
-        ? entry.shadeName.trim() : null;
-
-      const pigments = {} as Record<AcotonePigment, number>;
-      for (const code of ACOTONE_PIGMENT_CODES) {
-        pigments[code] = Number(entry[code] ?? 0);
-      }
-
-      let resolution;
-      try {
-        resolution = await resolveSamplingForEntry({
-          tinterType: "ACOTONE",
-          bodySamplingNo,
-          bodyShadeName,
-          baseSku,
-          packCode,
-          userId,
-          siteId,
-          dealerName: dealerNameRaw,
-          yearPrefix,
-          pigments,
-        });
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        if (msg.startsWith("Sampling number ") && msg.endsWith(" not found")) {
-          return NextResponse.json({ error: msg }, { status: 400 });
-        }
-        throw err;
-      }
-
-      const ti = await prisma.tinter_issue_entries_b.create({
-        data: {
-          orderId,
-          splitId:          hasSplit ? Number(splitId) : null,
-          tintAssignmentId: hasAssignment ? Number(tintAssignmentId) : null,
-          rawLineItemId,
-          submittedById:    userId,
-          baseSku,
-          tinQty:           new Prisma.Decimal(tinQty),
-          packCode,
-          samplingNo:       resolution.resolvedSamplingNo,
-          shadeName:        resolution.resolvedShadeName,
-          ...pigments,
-        },
-      });
-
-      results.push({
-        tiEntryId:           ti.id,
-        allocatedSamplingNo: resolution.resolvedSamplingNo,
-        isNewSampling:       resolution.isNewSampling,
-        isNewVariant:        resolution.isNewVariant,
-      });
-    }
-
-    // Step 5 — mark parent submitted
-    if (hasSplit) {
-      await prisma.order_splits.update({
-        where: { id: Number(splitId) },
-        data:  { tiSubmitted: true },
-      });
-    } else {
-      await prisma.tint_assignments.update({
-        where: { id: Number(tintAssignmentId) },
-        data:  { tiSubmitted: true },
-      });
-    }
-
-    return NextResponse.json({ success: results.length, entries: results }, { status: 200 });
+    return NextResponse.json(
+      { success: saved.entries.length, entries: saved.entries, formulaSync: saved.formulaSync, usageLog: saved.usageLog },
+      { status: 200 },
+    );
   } catch (err) {
     console.error("[tinter-issue-b POST]", err);
     return NextResponse.json(
