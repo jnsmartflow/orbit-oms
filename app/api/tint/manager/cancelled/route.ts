@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { checkAnyPermission } from "@/lib/permissions";
 import { getFloorCancelled } from "@/lib/floor/queries";
+import { BASE_BILL_WHERE } from "@/lib/tint/manager-bill";
 
 export const dynamic = "force-dynamic";
 
@@ -16,6 +17,10 @@ export const dynamic = "force-dynamic";
  * only non-voided, non-draft CIs), so the tab offers no Restore on it — the
  * restore route refuses it anyway. READ-ONLY.
  *
+ * Since 2026-10-01 the set is tint ∪ BASE bills (non-tint SMU 74/77, owner §I
+ * decision 3): a Base bill's CI shows here too. Restore stays tint-only (the
+ * restore route refuses a Base bill; the tab draws no Restore on one).
+ *
  * Gate: tint_manager canView AND (tint_ci OR tint_cancel) canView.
  */
 export async function GET(): Promise<NextResponse> {
@@ -29,6 +34,6 @@ export async function GET(): Promise<NextResponse> {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const rows = await getFloorCancelled("All", undefined, undefined, { orderType: "tint" });
+  const rows = await getFloorCancelled("All", undefined, undefined, { OR: [{ orderType: "tint" }, BASE_BILL_WHERE] });
   return NextResponse.json({ rows, count: rows.length }, { headers: { "Cache-Control": "no-store, max-age=0" } });
 }

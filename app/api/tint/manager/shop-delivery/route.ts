@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { setShipToOverride } from "@/lib/floor/ship-to";
-import { checkTintAction, tintBillRefusal } from "@/lib/tint/manager-bill";
+import { checkTintAction, tintManagerBillRefusal } from "@/lib/tint/manager-bill";
 import { effectiveCustomerId } from "@/lib/trips/drop-key";
 
 export const dynamic = "force-dynamic";
@@ -10,6 +10,9 @@ export const dynamic = "force-dynamic";
 // POST /api/tint/manager/shop-delivery — "Shop delivery" (owner, 2026-10-01):
 // every selected TINT bill's ship-to becomes its own BILL-TO dealer. Tint
 // Manager only — Floor and Billing have no such action.
+//
+// Tint bills AND Base bills (non-tint SMU 74/77 — Base tab, owner 2026-10-01 §I)
+// through tintManagerBillRefusal.
 //
 // Body: { orderIds: number[] }
 // Response: { done: number[], failed: [{ orderId, error }], skipped: [{ orderId, reason }] },
@@ -76,9 +79,9 @@ export async function POST(req: Request): Promise<NextResponse> {
     try {
       const order = await prisma.orders.findUnique({
         where: { id: orderId },
-        select: { obdNumber: true, orderType: true, isRemoved: true, customerId: true, shipToOverrideCustomerId: true, shipToCustomerId: true },
+        select: { obdNumber: true, orderType: true, smu: true, isRemoved: true, customerId: true, shipToOverrideCustomerId: true, shipToCustomerId: true },
       });
-      const notTint = tintBillRefusal(order);
+      const notTint = tintManagerBillRefusal(order, "shop-delivery");
       if (notTint !== null || order === null) {
         failed.push({ orderId, error: notTint ?? "Order not found" });
         continue;

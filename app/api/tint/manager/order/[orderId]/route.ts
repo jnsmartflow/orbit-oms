@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { checkAnyPermission } from "@/lib/permissions";
 import { getOrderDetail } from "@/lib/floor/order-detail";
+import { isBaseBill } from "@/lib/tint/manager-bill";
 
 export const dynamic = "force-dynamic";
 
@@ -13,6 +14,9 @@ export const dynamic = "force-dynamic";
  * — one owner), under the Tint Manager's own gate so a tint manager never needs
  * the `floor` tick. Tint bills only: anything else is a 404, so this gate cannot
  * be used to read other desks' bills. READ-ONLY.
+ *
+ * Base bills (non-tint SMU 74/77) are readable too since 2026-10-01 — the Base
+ * tab's panel (owner §I); the rule is lib/tint/manager-bill.ts isBaseBill.
  *
  * Gate: tint_manager canView. The panel's TABS keep their own per-user ticks
  * (tint_panel_items / _details / _activity, CLAUDE_TINT §1.2) — a tab without
@@ -35,7 +39,7 @@ export async function GET(
   }
 
   const detail = await getOrderDetail(orderId);
-  if (!detail || detail.orderType !== "tint") {
+  if (!detail || (detail.orderType !== "tint" && !isBaseBill(detail))) {
     return NextResponse.json({ error: "Order not found" }, { status: 404 });
   }
 

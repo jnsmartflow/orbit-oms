@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { checkAnyPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { getFloorHold } from "@/lib/floor/queries";
+import { BASE_BILL_WHERE } from "@/lib/tint/manager-bill";
 import type { TintHoldRow } from "@/components/tint/manager/types";
 
 export const dynamic = "force-dynamic";
@@ -18,6 +19,10 @@ export const dynamic = "force-dynamic";
  * stage, the Floor dispatch window, the original site, and the latest operator.
  * READ-ONLY, sequential awaits (CORE §3).
  *
+ * Since 2026-10-01 the held set is tint ∪ BASE bills (non-tint SMU 74/77, owner
+ * §I decision 7): a held Base bill leaves Floor's board — and so the Base tab —
+ * and this tab is where the Tint Manager releases it.
+ *
  * Gate: tint_manager canView AND tint_hold canView.
  */
 export async function GET(): Promise<NextResponse> {
@@ -31,7 +36,7 @@ export async function GET(): Promise<NextResponse> {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const held = await getFloorHold("All", undefined, undefined, { orderType: "tint" });
+  const held = await getFloorHold("All", undefined, undefined, { OR: [{ orderType: "tint" }, BASE_BILL_WHERE] });
   const ids = held.map((r) => r.orderId);
 
   const extras = ids.length > 0

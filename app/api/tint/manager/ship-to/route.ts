@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { setShipToOverride } from "@/lib/floor/ship-to";
-import { checkTintAction, tintBillRefusal } from "@/lib/tint/manager-bill";
+import { checkTintAction, tintManagerBillRefusal } from "@/lib/tint/manager-bill";
 
 export const dynamic = "force-dynamic";
 
@@ -11,6 +11,9 @@ export const dynamic = "force-dynamic";
 //
 // Body: { orderId: number, customerId: number | null }  (null clears)
 // Response: Floor's exactly — { orderId, shipToOverrideCustomerId, changed }.
+//
+// Base bills too (non-tint SMU 74/77 — Base tab, owner 2026-10-01 §I), via
+// tintManagerBillRefusal(order, "ship-to").
 //
 // Gate: tint_manager canEdit AND tint_ship_to canEdit. Tint bills only, then
 // lib/floor/ship-to.ts setShipToOverride — the SAME write Floor's route calls,
@@ -55,9 +58,9 @@ export async function POST(req: Request): Promise<NextResponse> {
 
   const order = await prisma.orders.findUnique({
     where: { id: orderId },
-    select: { orderType: true, isRemoved: true },
+    select: { orderType: true, smu: true, isRemoved: true },
   });
-  const notTint = tintBillRefusal(order);
+  const notTint = tintManagerBillRefusal(order, "ship-to");
   if (notTint !== null) {
     return NextResponse.json({ error: notTint }, { status: order === null || order.isRemoved ? 404 : 409 });
   }

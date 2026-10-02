@@ -8,7 +8,7 @@ import {
   BILL_ACTION_ORDER_SELECT,
   type ResolvedSlot,
 } from "@/lib/floor/bill-actions";
-import { checkTintAction, tintBillRefusal } from "@/lib/tint/manager-bill";
+import { checkTintAction, tintManagerBillRefusal } from "@/lib/tint/manager-bill";
 
 export const dynamic = "force-dynamic";
 
@@ -31,6 +31,11 @@ export const dynamic = "force-dynamic";
 // used — it refuses every tint stage.
 //
 // Gate: tint_manager canEdit AND the action's tick (lib/tint/manager-bill.ts).
+//
+// BASE BILLS (2026-10-01, Base tab — owner §I): hold / unhold / change-slot also
+// accept a NON-tint SMU 74/77 bill, through tintManagerBillRefusal with the
+// action. hand / unhand are not Base actions and still refuse it; hold refuses a
+// Base bill a picker holds (pick_assigned / pick_done, decision 1).
 // cancel / restore / CI are NOT accepted here (build step 3).
 
 type TintBoardAction = "hold" | "unhold" | "hand" | "unhand" | "change-slot";
@@ -89,9 +94,9 @@ export async function POST(req: Request): Promise<NextResponse> {
     try {
       const order = await prisma.orders.findUnique({
         where: { id: orderId },
-        select: { ...BILL_ACTION_ORDER_SELECT, orderType: true },
+        select: { ...BILL_ACTION_ORDER_SELECT, orderType: true, smu: true },
       });
-      const notTint = tintBillRefusal(order);
+      const notTint = tintManagerBillRefusal(order, action);
       if (notTint !== null || order === null) {
         failed.push({ orderId, error: notTint ?? "Order not found" });
         continue;

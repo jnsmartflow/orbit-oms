@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { FLOOR_REMARK_MAX } from "@/lib/floor/off-floor";
 import { findActiveCiReason, listActiveCiReasons, raiseFullBillCi } from "@/lib/floor/raise-ci";
 import { stopTintWork } from "@/lib/tint/stop-work";
-import { checkTintAction, tintBillRefusal } from "@/lib/tint/manager-bill";
+import { checkTintAction, tintManagerBillRefusal } from "@/lib/tint/manager-bill";
 
 export const dynamic = "force-dynamic";
 
@@ -30,6 +30,12 @@ export const dynamic = "force-dynamic";
  *     skipped (duplicate CI, open draft, undelivered lines) therefore keeps its
  *     operator's job untouched. A waiting bill has no assignment; its legacy
  *     splits, if any, are cancelled the same way.
+ *
+ * BASE BILLS (non-tint SMU 74/77, owner 2026-10-01 §I decision 3) are accepted
+ * too, and take FLOOR'S path exactly: raiseFullBillCi with no allowTintRoom and
+ * no beforeWrite (app/api/floor/ci) — there is no tint work to stop, and the
+ * trip / dispatched / cancelled refusals are the shared function's own.
+ *
  * If the stop succeeds and the CI create then fails, the bill is left at its
  * tint stage with no live job — the Stop & cancel retry state (plan §D): no
  * operator can finish it, and pressing Raise CI (or Stop & cancel) again
@@ -117,27 +123,30 @@ export async function POST(req: Request): Promise<NextResponse> {
 
   for (const orderId of orderIds) {
     try {
-      // Tint bills only — before anything else.
+      // Tint or Base bills only — before anything else.
       const order = await prisma.orders.findUnique({
         where: { id: orderId },
-        select: { orderType: true, isRemoved: true, obdNumber: true },
+        select: { orderType: true, smu: true, isRemoved: true, obdNumber: true },
       });
-      const notTint = tintBillRefusal(order);
-      if (notTint !== null) {
-        skipped.push({ orderId, obdNumber: order?.obdNumber ?? null, reason: notTint });
+      const notTint = tintManagerBillRefusal(order, "ci");
+      if (notTint !== null || order === null) {
+        skipped.push({ orderId, obdNumber: order?.obdNumber ?? null, reason: notTint ?? "Order not found" });
         continue;
       }
 
-      const r = await raiseFullBillCi({
-        orderId,
-        reason,
-        remark,
-        userId,
-        allowTintRoom: true,
-        beforeWrite: async () => {
-          await stopTintWork({ orderId, managerId: userId, note: "CI raised from Tint Manager" });
-        },
-      });
+      const r = order.orderType === "tint"
+        ? await raiseFullBillCi({
+            orderId,
+            reason,
+            remark,
+            userId,
+            allowTintRoom: true,
+            beforeWrite: async () => {
+              await stopTintWork({ orderId, managerId: userId, note: "CI raised from Tint Manager" });
+            },
+          })
+        // A Base bill — Floor's call, verbatim.
+        : await raiseFullBillCi({ orderId, reason, remark, userId });
       if (r.ok) raised.push({ orderId: r.orderId, obdNumber: r.obdNumber, ciNumber: r.ciNumber });
       else skipped.push({ orderId: r.orderId, obdNumber: r.obdNumber, reason: r.reason });
     } catch (err) {
