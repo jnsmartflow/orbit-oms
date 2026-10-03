@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tint Operators Tracks</title>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{--ink-25:#FAFAFC;--ink-50:#F4F3F8;--ink-100:#E9E7F0;--ink-200:#D9D6E3;--ink-400:#9C99AC;--ink-500:#7A7689;--ink-600:#5C5869;--ink-900:#1B1826;
+--tint-600:#0284C7;--ok:#059669;--warn:#D97706;--line:#EEEDF3;--brand-600:#7C3AED}
+*{box-sizing:border-box}
+body{margin:0;font-family:"Plus Jakarta Sans",system-ui,sans-serif;font-size:13px;color:var(--ink-900);background:#fff}
+.note{background:var(--ink-900);color:#fff;font-size:12px;padding:7px 16px}.note b{color:#C4B5FD}
+.page{padding:18px 24px}
+.sec{border:1px solid var(--ink-100);border-radius:14px;background:#fff;overflow:hidden}
+.sh{display:flex;justify-content:space-between;align-items:center;padding:13px 18px}
+.sh h3{margin:0;font-size:14px}
+.legend{display:flex;gap:14px;font-size:11px;color:var(--ink-500)}
+.legend span{display:flex;gap:5px;align-items:center}.legend i{width:10px;height:10px;border-radius:2px;display:inline-block}
+.grid{display:grid;grid-template-columns:240px 1fr 130px}
+.oh{align-items:center;height:30px;background:var(--ink-25);border-top:1px solid var(--line);border-bottom:1px solid var(--line);font-size:10.5px;color:var(--ink-400);font-weight:700;letter-spacing:.05em;text-transform:uppercase}
+.oh .c1{padding-left:18px}.oh .c3{text-align:right;padding-right:18px}
+.ticks{position:relative;height:100%;margin:0 10px}
+.ticks span{position:absolute;top:9px;transform:translateX(-50%);font-weight:500;letter-spacing:0}
+.ticks .now{top:6px;background:var(--ink-900);color:#fff;border-radius:5px;padding:1px 6px;font-weight:700}
+.or{align-items:center;border-bottom:1px solid var(--line);padding:12px 0}
+.or:last-child{border-bottom:0}
+.who{padding:0 18px;display:flex;gap:10px;align-items:center}
+.av{width:32px;height:32px;border-radius:50%;background:var(--ink-50);color:var(--ink-600);font-weight:700;font-size:12px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.who b{font-size:13.5px;display:block}
+.st{font-size:12px;display:flex;align-items:center;gap:6px;color:var(--ink-500);margin-top:2px}
+.st i{width:7px;height:7px;border-radius:50%;background:var(--ink-200)}
+.st.tinting{color:var(--tint-600);font-weight:600}.st.tinting i{background:var(--tint-600)}
+.st.paused{color:var(--warn);font-weight:600}.st.paused i{background:var(--warn)}
+.st span{color:var(--ink-500);font-weight:500}
+/* two tracks, like a video editor */
+.tracks{position:relative;margin:0 10px;display:flex;flex-direction:column;gap:5px;padding:6px 0;min-height:44px;border-radius:6px;
+ background-color:#FCFCFD;
+ background-image:repeating-linear-gradient(90deg,#F0EFF5 0 1px,transparent 1px calc(100%/6));}
+.trk{position:relative;height:16px}
+.trk.thin{height:10px}
+.tl{position:absolute;left:-2px;top:50%;transform:translate(-100%,-50%);font-size:9.5px;color:var(--ink-400);font-weight:700;letter-spacing:.04em;text-transform:uppercase;padding-right:6px}
+.b{position:absolute;top:0;bottom:0;border-radius:3px}
+.b.d{background:var(--ok)}
+.b.t{background:var(--tint-600)}
+.b.p{background:repeating-linear-gradient(135deg,var(--warn) 0 5px,#FDE7C2 5px 9px)}
+.nl{position:absolute;top:-14px;bottom:-14px;width:2px;background:var(--ink-900);z-index:2}
+.tot{text-align:right;padding-right:18px}
+.tot b{font-size:15px}.tot span{display:block;font-size:11px;color:var(--ink-500)}
+.tt{position:fixed;z-index:50;width:280px;background:#fff;border:1px solid var(--ink-100);border-radius:12px;box-shadow:0 14px 32px rgba(27,24,38,.16);padding:12px 14px;display:none;pointer-events:none}
+.tt .h{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+.tt .h b{font-family:"JetBrains Mono",monospace;font-size:12.5px}
+.tt .pill{font-size:10.5px;font-weight:700;border-radius:5px;padding:2px 7px}
+.pill.done{background:#ECFDF5;color:#047857}.pill.tinting{background:#E0F2FE;color:#0369A1}.pill.paused{background:#FFFBEB;color:#B45309}
+.tt .site{font-weight:700;font-size:13.5px}
+.tt .bill{font-size:12px;color:var(--ink-500);margin-top:1px}
+.tt .row{display:grid;grid-template-columns:70px 1fr;gap:4px 8px;margin-top:9px;padding-top:9px;border-top:1px solid var(--line);font-size:12px}
+.tt .row span{color:var(--ink-400)}
+.tt{width:330px}
+.fx{margin-top:9px;padding-top:9px;border-top:1px solid var(--line)}
+.fx .fv{font-family:"JetBrains Mono",monospace;font-size:12.5px;font-weight:600}
+.fx .fl{font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-400);font-weight:700;margin-bottom:5px}
+.fx .sku{font-size:12px;color:var(--ink-600)}
+.fx .sn{font-size:12.5px;font-weight:700;margin-top:2px}.fx .sn em{font-style:normal;font-size:10px;font-weight:700;border-radius:4px;padding:1px 5px;margin-left:5px;background:var(--ink-50);color:var(--ink-600)}
+.fx .sn em.aco{background:#FFF7ED;color:#C2410C}
+.chips{display:flex;flex-wrap:wrap;gap:4px;margin-top:5px}
+.chips span{font-family:"JetBrains Mono",monospace;font-size:11px;border:1px solid var(--ink-100);border-top:3px solid var(--c,#999);border-radius:0 0 5px 5px;padding:1px 6px;background:#fff}
+.rsn{display:inline-block;font-size:11.5px;font-weight:700;color:#B45309;background:#FFFBEB;border:1px solid #FDE68A;border-radius:5px;padding:2px 8px;margin-top:8px}
+.rmk{font-size:12px;color:var(--ink-600);margin-top:5px;font-style:italic}
+.b{cursor:default}.b:hover{filter:brightness(1.08);box-shadow:0 0 0 2px #fff,0 0 0 3px var(--ink-900)}
+.sw{position:absolute;right:24px;top:40px;display:flex;gap:6px}
+.sw button{font-family:inherit;font-size:11.5px;border:1px solid var(--ink-200);background:#fff;border-radius:6px;padding:3px 10px;cursor:pointer}
+.sw button.on{background:var(--ink-900);color:#fff;border-color:var(--ink-900)}
+.fchip{font-family:"JetBrains Mono",monospace;font-size:11px;border:1px solid #E9E7F0;border-top:3px solid var(--c);border-radius:0 0 5px 5px;padding:0 5px;margin-left:4px;background:#fff}
+.tip{font-size:11.5px;color:var(--ink-500);padding:10px 18px;border-top:1px solid var(--line);background:var(--ink-25)}
+</style></head>
+<body>
+<div class="note"><b>Operators — two tracks per operator</b> (like a video editor) · top = jobs done / tinting · bottom = pause running continuously · one grey block per operator with hour lines (08, 10, 12…) · pause stripe only when there is a pause</div>
+<div class="page">
+  <div class="sec">
+    <div class="sh"><h3>Operators</h3>
+      <div class="legend"><span><i style="background:var(--ok)"></i>Done</span><span><i style="background:var(--tint-600)"></i>Tinting</span><span><i style="background:repeating-linear-gradient(135deg,var(--warn) 0 3px,#FDE7C2 3px 5px)"></i>Paused job</span></div></div>
+    <div class="grid oh">
+      <div class="c1">Operator</div>
+      <div class="ticks">
+        <span style="left:0%">08:00</span><span style="left:16.6%">10:00</span><span style="left:33.3%">12:00</span>
+        <span class="now" style="left:50.5%">14:06</span><span style="left:66.6%">16:00</span><span style="left:83.3%">18:00</span><span style="left:99%">20:00</span>
+      </div>
+      <div class="c3">Today</div>
+    </div>
+
+    <!-- Chandrasing: idle, one done job, no pause -->
+    <div class="grid or">
+      <div class="who"><div class="av">CV</div><div><b>Chandrasing Valvi</b><div class="st" id="cvSt"><i></i>Idle</div></div></div>
+      <div class="tracks">
+        <div class="trk"><div class="b d" style="left:34.5%;width:13.5%" data-k="done" data-obd="9109880030" data-f="WS Powerflexx 90 Base 20L;26-0412 · Peach Glow;TINTER;YOX 18,WHT 6,FFR 2" data-site="AAROHI HEIGHTS" data-bill="G D SALES CORPORATION" data-vol="500 L · 25 Drum" data-t="12:08 – 13:46" data-dur="1 h 38 min"></div><div class="b t" id="cvTint" style="left:48.6%;width:1.9%;display:none" data-k="tinting" data-obd="9109880029" data-site="Aarohi Heights (Agrim Heights)" data-bill="G D SALES CORPORATION" data-vol="480 L · 24 Drum" data-t="started 13:52" data-dur="14 min so far"></div><div class="nl" style="left:50.5%"></div></div>
+      </div>
+      <div class="tot"><b>740 L</b><span>373 L/hr</span></div>
+    </div>
+
+    <!-- Deepak: paused job runs continuously on bottom track; done jobs on top track -->
+    <div class="grid or">
+      <div class="who"><div class="av">DV</div><div><b>Deepak Vasava</b><div class="st paused"><i></i>Paused</div></div></div>
+      <div class="tracks">
+        <div class="trk">
+          <div class="b d" style="left:19%;width:4.5%" data-k="done" data-obd="9109833440" data-f="DP Exterior 90 Base 20L;26-0388 · Sky Blue;TINTER;TBL 9,WHT 12" data-site="Sumeru Sky Leaf" data-bill="JAINAM PAINTS" data-vol="220 L · 11 Drum" data-t="10:16 – 10:48" data-dur="32 min"></div>
+          <div class="b d" style="left:33.3%;width:3%" data-k="done" data-obd="9109880452" data-f="Promise Ext Br Wht 20L;26-0318 · WHT 20;TINTER;WHT 24" data-site="Iscon Infinity Tower" data-bill="SARITA COLOURS" data-vol="100 L · 5 Drum" data-t="12:00 – 12:21" data-dur="21 min"></div>
+          <div class="b d" style="left:37.6%;width:3.8%" data-k="done" data-obd="9109880451" data-f="WS Max 92 Base 20L;26-0405 · Sandstone;ACOTONE;YE1 14,NO1 6,RE1 2" data-site="RAJHANS CINEMA" data-bill="MARUTI PAINTS" data-vol="240 L · 12 Drum" data-t="12:31 – 12:59" data-dur="28 min"></div>
+          <div class="b d" style="left:41.7%;width:4%" data-k="done" data-obd="9109862615" data-f="DP Exterior 90 Base 20L;26-0391 · Olive Mist;TINTER;LFY 10,GRN 3,BLK 1" data-site="Nilkanth Eminance" data-bill="SHRI KRISHNA PAINTS AGENCY" data-vol="160 L · 8 Drum" data-t="13:01 – 13:30" data-dur="29 min"></div>
+          <div class="nl" style="left:50.5%"></div>
+        </div>
+        <div class="trk thin"><div class="b p" style="left:27.6%;width:22.9%" data-k="paused" data-reason="Material shortage" data-remark="WS Max 92 base finished, waiting for stock" data-prog="6 of 20 Drum done" data-obd="9109823864" data-site="Sumeru Sky Leaf" data-bill="JAINAM PAINTS" data-vol="400 L · 20 Drum" data-t="paused since 11:55" data-dur="2 h 11 min"></div></div>
+      </div>
+      <div class="tot"><b>520 L</b><span>137 L/hr</span></div>
+    </div>
+
+    <div class="tip">Top track: every job he finished (green) and the one he is tinting now (blue). Bottom track: a job he paused, drawn as one continuous orange stripe from pause until resume / now — so it never hides the green jobs above it. Hover any block to see the job.</div>
+  </div>
+
+  <div class="sec" style="margin-top:16px">
+    <div class="sh"><h3>Done today</h3><span style="font-size:12px;color:var(--ink-500)">same table as now · new FORMULA column</span></div>
+    <table style="width:100%;border-collapse:collapse;table-layout:fixed;font-size:12.5px">
+      <colgroup><col style="width:4%"><col style="width:11%"><col style="width:15%"><col style="width:16%"><col style="width:7%"><col style="width:9%"><col style="width:28%"><col style="width:10%"></colgroup>
+      <tr style="font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;color:#9C99AC;text-align:left;background:#FAFAFC">
+        <th style="padding:8px 10px">#</th><th>OBD</th><th>Bill to</th><th>Ship to</th><th>Vol</th><th>Art.</th><th>Formula</th><th>Status</th></tr>
+      <tr style="border-top:1px solid #EEEDF3"><td style="padding:10px">1</td><td class="mono">9109833440</td><td>JAINAM PAINTS</td><td>Sumeru Sky Leaf</td><td>220</td><td>11 Drum</td>
+        <td class="mono">TBL 9 · WHT 12</td><td><span class="pill done" style="font-size:11px;font-weight:600;border-radius:5px;padding:2px 8px">Done 10:48</span></td></tr>
+      <tr style="border-top:1px solid #EEEDF3"><td style="padding:10px">2</td><td class="mono">9109880451</td><td>MARUTI PAINTS</td><td>RAJHANS CINEMA</td><td>240</td><td>12 Drum</td>
+        <td class="mono">YE1 14 · NO1 6 · RE1 2</td><td><span class="pill done" style="font-size:11px;font-weight:600;border-radius:5px;padding:2px 8px">Done 12:59</span></td></tr>
+      <tr style="border-top:1px solid #EEEDF3"><td style="padding:10px">3</td><td class="mono">9109880099</td><td>SHIVANSHI ENTERPRISE</td><td>SANCTUM PALACIO</td><td>500</td><td>25 Drum</td>
+        <td class="mono">YOX 18 · WHT 6 · FFR 2 <span style="color:#7A7689;font-family:Plus Jakarta Sans">+1 line</span></td><td><span class="pill done" style="font-size:11px;font-weight:600;border-radius:5px;padding:2px 8px">Done 13:46</span></td></tr>
+    </table>
+    <div class="tip">Formula = only the pigment values from the TI entry (e.g. OXR 100 · WHT 20). 2+ tint lines: first line + "+N line".</div>
+  </div>
+</div>
+<div class="tt" id="tt"></div>
+<div class="sw"><button class="on" data-m="idle">Chandrasing: Idle</button><button data-m="tint">Chandrasing: Tinting</button></div>
+<script>
+const tt=document.getElementById('tt');
+const L={done:'Done',tinting:'Tinting',paused:'Paused'};
+const PC={YOX:'#b8860b',LFY:'#cccc00',GRN:'#2e7d32',TBL:'#1565c0',WHT:'#757575',MAG:'#c2185b',FFR:'#d32f2f',BLK:'#37474f',OXR:'#8d3c1a',YE1:'#d4a017',NO1:'#8d6e63',RE1:'#c62828'};
+function fx(f){if(!f)return'';const pig=f.split(';')[3];
+ return `<div class="fx"><div class="fl">Formula</div><div class="fv">${pig.split(',').join(' · ')}</div></div>`}
+document.querySelectorAll('.b[data-k]').forEach(b=>{
+ b.addEventListener('mousemove',e=>{
+  const d=b.dataset;let body='';
+  if(d.k=='paused'){
+   body=`<div class="rsn">⏸ ${d.reason}</div>${d.remark?`<div class="rmk">“${d.remark}”</div>`:''}
+   <div class="row"><span>Tint</span><b>${d.vol}</b><span>Paused</span><b>${d.t.replace('paused ','')}</b><span>For</span><b>${d.dur}</b><span>Progress</span><b>${d.prog}</b></div>`;
+  }else{
+   body=`<div class="row"><span>Tint</span><b>${d.vol}</b><span>Time</span><b>${d.t}</b><span>Took</span><b>${d.dur}</b></div>${fx(d.f)}`;
+  }
+  tt.innerHTML=`<div class="h"><b>${d.obd}</b><span class="pill ${d.k}">${L[d.k]}</span></div>
+   <div class="site">${d.site}</div><div class="bill">billed to ${d.bill}</div>${body}`;
+  tt.style.display='block';
+  const x=Math.min(e.clientX+14,window.innerWidth-350),y=Math.min(e.clientY+16,window.innerHeight-tt.offsetHeight-10);
+  tt.style.left=x+'px';tt.style.top=y+'px';
+ });
+ b.addEventListener('mouseleave',()=>tt.style.display='none');
+});
+document.querySelectorAll('.sw button').forEach(btn=>btn.onclick=()=>{
+ document.querySelectorAll('.sw button').forEach(x=>x.classList.toggle('on',x===btn));
+ const t=btn.dataset.m=='tint';
+ document.getElementById('cvTint').style.display=t?'block':'none';
+ const st=document.getElementById('cvSt');st.className='st'+(t?' tinting':'');st.innerHTML='<i></i>'+(t?'Tinting':'Idle');
+});
+</script>
+</body></html>

@@ -22,6 +22,7 @@ import { StatusPill, formatSmu } from "./board-bits";
 import { BoardSlotCell } from "./board-slot-cell";
 import { MissingShipToLine, missingRowCls, useMissingCustomers } from "./missing-customer";
 import type { DispatchSlotValue, DispatchWindow } from "@/components/floor/dispatch-slot-picker";
+import { formulaText } from "@/lib/tint/job-track";
 import type { BoardGroup, BoardRow } from "./types";
 
 // ── Column widths ────────────────────────────────────────────────────────────
@@ -59,6 +60,14 @@ import type { BoardGroup, BoardRow } from "./types";
 // # 6 · OBD 10 · Invoice 9 · SMU 4 · Bill To 13 · Ship To 16 · Route 7 · Due 10 ·
 // Vol 5 · Art. 8 · Status 9 · ⋯ 3  = 100.
 const COLS = ["6%", "10%", "9%", "4%", "13%", "16%", "7%", "10%", "5%", "8%", "9%", "3%"] as const;
+
+// 2026-10-03 (Tint tab only — operators board round): a FORMULA column after
+// Art. (the TI pigment values, first tint line). Paid for by trimming every
+// column a point or two; OBD / Invoice / Bill To / Ship To stay readable:
+// # 5 · OBD 9 · Invoice 8 · SMU 4 · Bill To 12 · Ship To 14 · Route 6 · Due 8 ·
+// Vol 5 · Art. 7 · Formula 11 · Status 9 · ⋯ 2  = 100.
+// The Base / Hold / old board table keep COLS above (no formula prop).
+const COLS_FORMULA = ["5%", "9%", "8%", "4%", "12%", "14%", "6%", "8%", "5%", "7%", "11%", "9%", "2%"] as const;
 
 // ── Typography, copied from Floor's floor-table.tsx ──────────────────────────
 // Floor's four class strings verbatim, so header, cells and pills read
@@ -164,12 +173,12 @@ export function BoardTable({
 
 /** The board's colgroup — exported (2026-10-02) so the Tint tab's per-operator
  *  tables (board-tint-tab.tsx) use the SAME widths as this table. */
-export function BoardColGroup() {
-  return <colgroup>{COLS.map((w, i) => <col key={i} style={{ width: w }} />)}</colgroup>;
+export function BoardColGroup({ formula = false }: { formula?: boolean } = {}) {
+  return <colgroup>{(formula ? COLS_FORMULA : COLS).map((w, i) => <col key={i} style={{ width: w }} />)}</colgroup>;
 }
 
 /** The board's header row — exported (2026-10-02) for the Tint tab's tables. */
-export function BoardHeadRow() {
+export function BoardHeadRow({ formula = false }: { formula?: boolean } = {}) {
   return (
     <tr>
       <th className={HEAD_TH_NARROW}>#</th>
@@ -182,6 +191,7 @@ export function BoardHeadRow() {
       <th className={HEAD_TH}>Due</th>
       <th className={cn(HEAD_TH, "text-right")}>Vol</th>
       <th className={HEAD_TH}>Art.</th>
+      {formula && <th className={HEAD_TH}>Formula</th>}
       <th className={HEAD_TH}>Status</th>
       <th className={HEAD_TH_NARROW} />
     </tr>
@@ -236,6 +246,7 @@ function GroupSection({
  *  `tall` = the Tint tab's 52px rows (mockup v13); the cells are unchanged. */
 export function TintBoardRow({
   row, selected, onToggle, onOpen, onReorder, busy, windows, canSlot, slotBusy, onSetSlot, tall = false, readOnly = false,
+  showFormula = false,
 }: {
   row:       BoardRow;
   selected:  boolean;
@@ -250,6 +261,8 @@ export function TintBoardRow({
   tall?:     boolean;
   /** History (2026-10-02): no selection, no ⋯ — a past day is read-only. */
   readOnly?: boolean;
+  /** The Tint tab's FORMULA column (2026-10-03) — pair with BoardColGroup/BoardHeadRow formula. */
+  showFormula?: boolean;
 }) {
   // A ROW CLICK SELECTS (2026-10-01, step 6 — owner decision 5). No checkbox:
   // the selected row fills brand-50 with a brand bar on its first cell (the
@@ -437,6 +450,25 @@ export function TintBoardRow({
       <td className={cn(TD, "text-[10.5px]")} title={row.articleTag ?? undefined}>
         <span className="text-[#6b7280]">{row.articleTag ?? "—"}</span>
       </td>
+
+      {/* FORMULA (Tint tab, 2026-10-03) — the first tint line's pigment values
+          ("TBL 9 · WHT 12"), "+N line" when more lines carry a TI, "—" before
+          any TI is saved. Hover = every line. */}
+      {showFormula && (
+        <td className={TD} title={row.formula.length > 0 ? row.formula.map(formulaText).join("\n") : "No TI saved yet"}>
+          {row.formula.length === 0 ? (
+            <span className="text-[#9ca3af]">—</span>
+          ) : (
+            // The values ellipsise; "+N line" never does.
+            <span className="flex min-w-0 items-baseline">
+              <span className="min-w-0 truncate font-mono text-[10.5px] text-[#111827]">{formulaText(row.formula[0])}</span>
+              {row.formula.length > 1 && (
+                <span className="ml-1.5 flex-shrink-0 text-[10.5px] text-[#6b7280]">+{row.formula.length - 1} line</span>
+              )}
+            </span>
+          )}
+        </td>
+      )}
 
       <td className={TD}>
         <StatusPill status={row.status} at={row.statusAt} pauseCount={row.pauseCount} />

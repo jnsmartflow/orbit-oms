@@ -12,6 +12,10 @@ import { getBaseOperatorId } from "@/lib/tint/base-operator";
 import { SUPPORT_DONE_OUTPUT } from "@/lib/workflow-stages";
 import { resolveFloorDisplayDate } from "@/lib/floor/format";
 import { getISTDayRange } from "@/lib/dates";
+import {
+  ACOTONE_REGISTER, TINTER_REGISTER, buildJobTrack, pigmentsOf,
+  type FormulaLine, type JobTrack,
+} from "@/lib/tint/job-track";
 
 /**
  * The OBD cell's date line and the Invoice column (2026-10-02, owner) — the SAME
@@ -636,6 +640,129 @@ export async function GET(req: Request): Promise<NextResponse> {
     const overrideNameOf = (id: number): string | null =>
       shipAndSlotById.get(id)?.shipToOverrideCustomer?.customerName ?? null;
 
+    // ── Job tracks + formula lines (2026-10-03, operators board two tracks) ───
+    // lib/tint/job-track.ts rebuilds each whole-OBD job's work / pause segments
+    // and each bill's TI formula. FIVE batched SELECTs over the jobs and bills
+    // already on the board, no N+1. READ-ONLY. New fields only (`jobTrack`,
+    // `formulaLines`); nothing existing is renamed.
+    type TrackAsg = { id: number; orderId: number; status: string; createdAt: Date; startedAt: Date | null; completedAt: Date | null };
+    const trackAsgs: TrackAsg[] = [
+      ...activeOrders
+        .map((o) => o.tintAssignments[0])
+        .filter((a): a is NonNullable<typeof a> => !!a && (a.status === "tinting_in_progress" || a.status === "paused")),
+      ...completedAssignments,
+    ];
+    const trackAsgIds = trackAsgs.map((a) => a.id);
+    const [pauseRows, tiRowsA, tiRowsB] = await Promise.all([
+      trackAsgIds.length > 0
+        ? prisma.tint_pause_events.findMany({
+            where:   { assignmentId: { in: trackAsgIds } },
+            // Explicit select — the BigInt id stays out of the payload.
+            select:  { assignmentId: true, pausedAt: true, resumedAt: true, elapsedMinutesAtPause: true, pauseReason: true, pauseRemark: true, progressSnapshot: true },
+            orderBy: { pausedAt: "asc" },
+          })
+        : Promise.resolve([]),
+      boardBillIds.length > 0
+        ? prisma.tinter_issue_entries.findMany({
+            where:  { orderId: { in: boardBillIds } },
+            select: {
+              id: true, orderId: true, splitId: true, tintAssignmentId: true, rawLineItemId: true, createdAt: true,
+              YOX: true, LFY: true, GRN: true, TBL: true, WHT: true, MAG: true, FFR: true, BLK: true, OXR: true, HEY: true, HER: true, COB: true, COG: true,
+            },
+          })
+        : Promise.resolve([]),
+      boardBillIds.length > 0
+        ? prisma.tinter_issue_entries_b.findMany({
+            where:  { orderId: { in: boardBillIds } },
+            select: {
+              id: true, orderId: true, splitId: true, tintAssignmentId: true, rawLineItemId: true, createdAt: true,
+              WH1: true, NO1: true, NO2: true, YE1: true, YE2: true, XY1: true, RE1: true, RE2: true, XR1: true, MA1: true, OR1: true, GR1: true, BU1: true, BU2: true,
+            },
+          })
+        : Promise.resolve([]),
+    ]);
+
+    const pausesByAsg = new Map<number, typeof pauseRows>();
+    for (const p of pauseRows) {
+      const list = pausesByAsg.get(p.assignmentId) ?? [];
+      list.push(p);
+      pausesByAsg.set(p.assignmentId, list);
+    }
+    // The FIRST start of a job that has paused: tint_logs "started" (the start
+    // route writes it once; resume writes none). Only for paused-ever jobs.
+    const pausedOrderIds = Array.from(new Set(trackAsgs.filter((a) => pausesByAsg.has(a.id)).map((a) => a.orderId)));
+    const startLogs = pausedOrderIds.length > 0
+      ? await prisma.tint_logs.findMany({
+          where:  { orderId: { in: pausedOrderIds }, action: "started", splitId: null },
+          select: { orderId: true, createdAt: true },
+        })
+      : [];
+    // The lines a pause's progress snapshot names (skuId = import_raw_line_items.id).
+    const snapLineIds = new Set<number>();
+    for (const p of pauseRows) {
+      const items = (p.progressSnapshot as { items?: Array<{ skuId: number }> } | null)?.items;
+      if (Array.isArray(items)) for (const it of items) if (Number.isInteger(it.skuId)) snapLineIds.add(it.skuId);
+    }
+    const snapLines = snapLineIds.size > 0
+      ? await prisma.import_raw_line_items.findMany({
+          where:  { id: { in: Array.from(snapLineIds) } },
+          select: { id: true, unitQty: true, articleTag: true },
+        })
+      : [];
+    const snapLineById = new Map(snapLines.map((l) => [l.id, l]));
+
+    const trackOf = (a: TrackAsg | undefined): JobTrack | null => {
+      if (!a) return null;
+      const events = pausesByAsg.get(a.id) ?? [];
+      const firstPause = events[0]?.pausedAt ?? null;
+      // The latest "started" log for this order inside this assignment's life
+      // (after it was created, before its first pause).
+      let firstStart: Date | null = null;
+      if (firstPause) {
+        for (const l of startLogs) {
+          if (l.orderId !== a.orderId || l.createdAt < a.createdAt || l.createdAt > firstPause) continue;
+          if (!firstStart || l.createdAt > firstStart) firstStart = l.createdAt;
+        }
+      }
+      return buildJobTrack(a, events, firstStart, snapLineById);
+    };
+
+    // Formula lines: the latest TI row per line, register order, non-zero only.
+    type TiRow = { id: number; orderId: number; splitId: number | null; tintAssignmentId: number | null; rawLineItemId: number | null; createdAt: Date; pigments: Array<[string, number]> };
+    const tiRows: TiRow[] = [
+      ...tiRowsA.map((r) => ({ ...r, pigments: pigmentsOf(r as unknown as Record<string, unknown>, TINTER_REGISTER) })),
+      ...tiRowsB.map((r) => ({ ...r, pigments: pigmentsOf(r as unknown as Record<string, unknown>, ACOTONE_REGISTER) })),
+    ];
+    const tiByOrder = new Map<number, TiRow[]>();
+    for (const r of tiRows) {
+      const list = tiByOrder.get(r.orderId) ?? [];
+      list.push(r);
+      tiByOrder.set(r.orderId, list);
+    }
+    /** A whole-OBD job's lines (this assignment's TI, else the bill's non-split
+     *  TI), or a split's own lines. */
+    const formulaOf = (orderId: number, by: { assignmentId?: number; splitId?: number }): FormulaLine[] => {
+      const all = tiByOrder.get(orderId) ?? [];
+      let pick: TiRow[];
+      if (by.splitId !== undefined) {
+        pick = all.filter((r) => r.splitId === by.splitId);
+      } else {
+        const whole = all.filter((r) => r.splitId === null);
+        const mine = whole.filter((r) => r.tintAssignmentId === by.assignmentId);
+        pick = mine.length > 0 ? mine : whole;
+      }
+      const latest = new Map<string, TiRow>();
+      for (const r of pick) {
+        const k = r.rawLineItemId !== null ? `l${r.rawLineItemId}` : `r${r.id}`;
+        const cur = latest.get(k);
+        if (!cur || r.createdAt > cur.createdAt) latest.set(k, r);
+      }
+      return Array.from(latest.values())
+        .sort((a, b) => (a.rawLineItemId ?? Number.MAX_SAFE_INTEGER) - (b.rawLineItemId ?? Number.MAX_SAFE_INTEGER) || a.id - b.id)
+        .filter((r) => r.pigments.length > 0)
+        .map((r) => ({ rawLineItemId: r.rawLineItemId, pigments: r.pigments }));
+    };
+
     // ── Line items for orders (split builder modal needs these) ───────────────
     const orderObdNumbers = orders.map((o) => o.obdNumber);
     const rawLineItemsRaw = orderObdNumbers.length > 0
@@ -870,6 +997,14 @@ export async function GET(req: Request): Promise<NextResponse> {
         _count:           undefined,
         skipSummary,
         pauseSummary,
+
+        // Operators board + Formula column (2026-10-03, lib/tint/job-track.ts).
+        // jobTrack only for a running / paused job (the done ones ride Set E).
+        jobTrack:     (() => {
+          const a = o.tintAssignments[0];
+          return a && (a.status === "tinting_in_progress" || a.status === "paused") ? trackOf(a) : null;
+        })(),
+        formulaLines: formulaOf(o.id, { assignmentId: o.tintAssignments[0]?.id }),
       };
     });
 
@@ -904,6 +1039,8 @@ export async function GET(req: Request): Promise<NextResponse> {
       route:            (s.order as any).customer?.area?.primaryRoute?.name ?? null,
       isKeyCustomer:    (s.order as any).customer?.isKeyCustomer ?? false,
       shipToOverrideName: overrideNameOf(s.order.id),
+      // Formula column (2026-10-03) — the split's own TI lines.
+      formulaLines:     formulaOf(s.order.id, { splitId: s.id }),
     }));
     const completedSplitsWithSmu = completedSplits.map((s) => ({
       ...s,
@@ -933,6 +1070,8 @@ export async function GET(req: Request): Promise<NextResponse> {
       route:            (s.order as any).customer?.area?.primaryRoute?.name ?? null,
       isKeyCustomer:    (s.order as any).customer?.isKeyCustomer ?? false,
       shipToOverrideName: overrideNameOf(s.order.id),
+      // Formula column (2026-10-03) — the split's own TI lines.
+      formulaLines:     formulaOf(s.order.id, { splitId: s.id }),
     }));
 
     // 3e bug fix — destructure skipEventId (BigInt) off each tint_assignments
@@ -968,6 +1107,9 @@ export async function GET(req: Request): Promise<NextResponse> {
       ...tintLinesOf(tintLinesByObd.get(a.order.obdNumber) ?? []),
       isKeyCustomer:    (a.order as any).customer?.isKeyCustomer ?? false,
       shipToOverrideName: overrideNameOf(a.order.id),
+      // Operators board + Formula column (2026-10-03, lib/tint/job-track.ts).
+      jobTrack:         trackOf(a),
+      formulaLines:     formulaOf(a.order.id, { assignmentId: a.id }),
     }));
 
     return NextResponse.json({

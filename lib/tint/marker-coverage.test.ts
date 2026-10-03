@@ -48,9 +48,13 @@ const BOARD_TABLES = [
 /**
  * Tables the brief lists as board-ish that the Manager board does NOT read (checked below against
  * the orders route source, so this exemption fails the moment the board starts reading them).
- * The TI tables feed the operator's own list and the base-pending panel, not the board reload.
+ * EMPTY since 2026-10-03: the orders route now reads both TI tables for the Tint tab's FORMULA
+ * column and hover card. They were already STAMP_TABLES (so already in BOARD_TABLES above), and
+ * the marker reads MAX("createdAt") from each — a new TI moves it. ⚠ A TI EDIT
+ * (tinter-issue[-b]/[id] PUT, an update) does not raise createdAt, so an edited formula shows on
+ * the board's next reload, not at once. Markers deliberately unchanged in that round.
  */
-const NOT_ON_BOARD = ["tinter_issue_entries", "tinter_issue_entries_b"];
+const NOT_ON_BOARD: string[] = [];
 
 const WRITE_OPS = ["create", "createMany", "update", "updateMany", "upsert", "delete", "deleteMany"];
 const STAMP_OPS = new Set(["create", "createMany", "update", "updateMany", "upsert"]);
@@ -120,12 +124,15 @@ test("every tint route that writes a board table also moves a marker stamp", () 
   assert.deepEqual(failures, []);
 });
 
-test("the NOT_ON_BOARD exemption still holds: the board reload does not read the TI tables", () => {
+test("the NOT_ON_BOARD exemption still holds, and the TI tables the board reads are stamp tables", () => {
   const src = stripComments(readFileSync(path.join(ROOT, "app", "api", "tint", "manager", "orders", "route.ts"), "utf8"));
   for (const t of NOT_ON_BOARD) {
     assert.equal(src.includes(t), false, `the orders route now reads ${t} — move it into BOARD_TABLES`);
   }
-  assert.equal(/tinterIssue/i.test(src), false, "the orders route now includes a tinter-issue relation");
+  // The TI tables the route reads (2026-10-03) must stay covered by the marker.
+  for (const t of ["tinter_issue_entries", "tinter_issue_entries_b"]) {
+    if (src.includes(`prisma.${t}.`)) assert.ok(BOARD_TABLES.includes(t) && STAMP_TABLES.includes(t), `${t} is read but not a stamp table`);
+  }
 });
 
 test("the marker route reads every stamp table", () => {

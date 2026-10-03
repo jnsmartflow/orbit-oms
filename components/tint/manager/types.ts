@@ -9,6 +9,7 @@
 
 import type { SkuDisplay } from "@/types/sku-display";
 import type { FloorHoldRow } from "@/lib/floor/types";
+import type { FormulaLine, JobTrack } from "@/lib/tint/job-track";
 
 export interface TintAssignmentInfo {
   id:          number;
@@ -162,6 +163,10 @@ export interface TintOrder {
     lastReason:           string;
     lastProgressSnapshot: { items?: Array<{ skuId: number; doneQty: number }> } | null;
   } | null;
+  /** The current job's work / pause segments (running or paused only) and the
+   *  bill's TI formula lines — lib/tint/job-track.ts, added 2026-10-03. */
+  jobTrack?:     JobTrack | null;
+  formulaLines?: FormulaLine[];
 }
 
 export interface SplitCard {
@@ -205,6 +210,8 @@ export interface SplitCard {
   isKeyCustomer:    boolean;
   /** The parent bill's redirected site (orders.shipToOverrideCustomerId), or null. */
   shipToOverrideName: string | null;
+  /** The split's own TI formula lines (lib/tint/job-track.ts), added 2026-10-03. */
+  formulaLines?:  FormulaLine[];
   assignedTo:     { id: number; name: string | null };
   lineItems: {
     rawLineItemId: number;
@@ -267,6 +274,12 @@ export interface CompletedAssignment {
   /** Tint lines only (lib/tint/tint-lines.ts), added 2026-10-02. */
   tintVolume?:     number | null;
   tintArticleTag?: string | null;
+  /** tint_assignments.accumulatedMinutes — the finished job's total tinting
+   *  minutes (spread by the route's `...a`); declared 2026-10-03. */
+  accumulatedMinutes?: number;
+  /** Work / pause segments + TI formula lines (lib/tint/job-track.ts), 2026-10-03. */
+  jobTrack?:     JobTrack | null;
+  formulaLines?: FormulaLine[];
   assignedTo:  { id: number; name: string | null };
   order: {
     id:                 number;
@@ -385,6 +398,14 @@ export interface BoardRow {
   pausedAt:       string | null;
   /** orders.handAt set (orders only). */
   isHand:         boolean;
+  /** The job's work / pause segments (2026-10-03, lib/tint/job-track.ts) —
+   *  whole-OBD running, paused and done jobs; null for assigned rows and splits
+   *  (a split never pauses: the board draws startedAt → completedAt / now). */
+  track:          JobTrack | null;
+  /** tint_assignments.accumulatedMinutes (whole-OBD rows), else null. */
+  accumulatedMinutes: number | null;
+  /** The bill's TI formula lines, first line first; [] when no TI is saved. */
+  formula:        FormulaLine[];
   order?:         TintOrder;
   split?:         SplitCard;
   completed?:     CompletedAssignment;

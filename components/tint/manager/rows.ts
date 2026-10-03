@@ -142,6 +142,9 @@ function rowFromOrder(o: TintOrder, status: BoardRowStatus): BoardRow | null {
     startedAt:       a.startedAt ?? null,
     completedAt:     null,
     pausedAt:        status === "paused" ? (o.pauseSummary?.lastPausedAt ?? null) : null,
+    track:           o.jobTrack ?? null,
+    accumulatedMinutes: a.accumulatedMinutes ?? null,
+    formula:         o.formulaLines ?? [],
     order:           o,
   };
 }
@@ -193,6 +196,9 @@ function rowFromSplit(s: SplitCard, status: BoardRowStatus): BoardRow {
     completedAt:     status === "tinting_done" ? (s.completedAt ?? null) : null,
     // Splits never pause (the operator route 400s a split pause, CLAUDE_TINT §5).
     pausedAt:        null,
+    track:           null,
+    accumulatedMinutes: null,
+    formula:         s.formulaLines ?? [],
     split:           s,
   };
 }
@@ -241,6 +247,9 @@ function rowFromCompletedAssignment(a: CompletedAssignment): BoardRow {
     startedAt:       a.startedAt ?? null,
     completedAt:     a.completedAt ?? null,
     pausedAt:        null,
+    track:           a.jobTrack ?? null,
+    accumulatedMinutes: a.accumulatedMinutes ?? null,
+    formula:         a.formulaLines ?? [],
     completed:       a,
   };
 }

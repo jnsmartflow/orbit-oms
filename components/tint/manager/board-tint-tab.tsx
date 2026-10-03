@@ -32,14 +32,16 @@
 // draw D's done blocks with no now line, and Now & next is replaced by
 // "Completed on {D}" — the same rows, read-only (no ▲▼, no ⋯, no selection).
 //
-// ⚠ PAUSES: the payload carries only the LATEST pause per order
-// (pauseSummary), not the pause intervals, so a paused job is drawn as one
-// striped amber block from startedAt to now, and finished jobs draw solid (any
-// pauses inside them are not shown). And startedAt is RESET on resume
-// (CLAUDE_TINT §3.8), so a resumed job's block starts at its last resume.
+// PAUSES (2026-10-03): the payload now carries each job's work and pause
+// segments (row.track, lib/tint/job-track.ts), so the Operators card draws two
+// tracks per operator — work on top, pauses below — instead of one striped block
+// from the last resume to now. The tables gain a FORMULA column (TI values).
 
-import { useEffect, useId, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
+import { computeElapsedMs } from "@/lib/tint/elapsed-time";
+import { formulaText, type PauseSegment, type WorkSegment } from "@/lib/tint/job-track";
 import { aggregateArticleTags } from "@/lib/article-tag-parse";
 import type { DispatchSlotValue, DispatchWindow } from "@/components/floor/dispatch-slot-picker";
 import { BoardColGroup, BoardHeadRow, TintBoardRow } from "./board-table";
@@ -73,18 +75,6 @@ const litresOf = (rows: BoardRow[]) => rows.reduce((n, r) => n + (r.volumeLitres
 const isDone = (r: BoardRow) => r.status === "tinting_done";
 const ms = (iso: string | null) => (iso ? Date.parse(iso) : NaN);
 
-/** A job's block on today's lane, in minutes-of-day, clipped to today. */
-function blockOf(r: BoardRow, nowMs: number): { a: number; b: number } | null {
-  const s = ms(r.startedAt);
-  if (Number.isNaN(s)) return null;
-  const today = istDay(nowMs);
-  const e = isDone(r) ? ms(r.completedAt) : nowMs;
-  if (Number.isNaN(e) || istDay(e) < today) return null;            // finished before today
-  const a = istDay(s) < today ? 0 : istMinutes(s);                   // carried over → from midnight
-  const b = istMinutes(e);
-  return b >= a ? { a, b } : null;
-}
-
 export function BoardTintTab({
   groups, selection, onToggleRow, onOpenRow, onReorder, busyKeys,
   windows, canSlot, slotBusy, onSetSlot, barUp = false,
@@ -113,7 +103,7 @@ export function BoardTintTab({
     const t = setInterval(() => setNowMs(Date.now()), 60_000);
     return () => clearInterval(t);
   }, []);
-  // History: the clock is pinned to the last minute of day D, so blockOf / the
+  // History: the clock is pinned to the last minute of day D, so the lanes / the
   // summary treat D as "today" and every block is a finished one.
   const nowMs = historyDate ? Date.parse(`${historyDate}T23:59:00+05:30`) : liveNowMs;
   const dayLabel = historyDate ? historyLabel(historyDate) : null;
@@ -134,6 +124,7 @@ export function BoardTintTab({
     onSetSlot: (v: DispatchSlotValue) => onSetSlot(r, v),
     tall:      true,
     readOnly:  historyDate !== null,
+    showFormula: true,
   });
 
   const openOf = (g: BoardGroup) => g.rows.filter((r) => !isDone(r));
@@ -175,8 +166,8 @@ export function BoardTintTab({
                       </span>
                     </div>
                     <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed" }}>
-                      <BoardColGroup />
-                      <thead><BoardHeadRow /></thead>
+                      <BoardColGroup formula />
+                      <thead><BoardHeadRow formula /></thead>
                       <tbody>{done.map((r) => <TintBoardRow key={r.key} {...rowProps(r)} />)}</tbody>
                     </table>
                   </div>
@@ -209,11 +200,11 @@ export function BoardTintTab({
                   </span>
                 </div>
                 <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed" }}>
-                  <BoardColGroup />
-                  <thead><BoardHeadRow /></thead>
+                  <BoardColGroup formula />
+                  <thead><BoardHeadRow formula /></thead>
                   <tbody>
                     {open.length === 0 ? (
-                      <tr><td colSpan={12} className="py-7 text-center text-[11.5px] text-ink-400">Nothing waiting</td></tr>
+                      <tr><td colSpan={13} className="py-7 text-center text-[11.5px] text-ink-400">Nothing waiting</td></tr>
                     ) : (
                       open.map((r) => <TintBoardRow key={r.key} {...rowProps(r)} />)
                     )}
@@ -238,11 +229,11 @@ export function BoardTintTab({
                 </span>
               </div>
               <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed" }}>
-                <BoardColGroup />
-                <thead><BoardHeadRow /></thead>
+                <BoardColGroup formula />
+                <thead><BoardHeadRow formula /></thead>
                 <tbody>
                   {done.length === 0 ? (
-                    <tr><td colSpan={12} className="py-7 text-center text-[11.5px] text-ink-400">Nothing finished yet today</td></tr>
+                    <tr><td colSpan={13} className="py-7 text-center text-[11.5px] text-ink-400">Nothing finished yet today</td></tr>
                   ) : (
                     done.map((r) => <TintBoardRow key={r.key} {...rowProps(r)} />)
                   )}
@@ -342,6 +333,78 @@ function SummaryCard({ groups, nowMs, history = false }: { groups: BoardGroup[];
 }
 
 // ── 2. Operators ─────────────────────────────────────────────────────────────
+//
+// TWO TRACKS PER OPERATOR (2026-10-03, owner; mockup
+// docs/mockups/tint-manager/tint-manager-operators-compact-mockup.html), like a
+// video editor, inside ONE very light block 08:00–20:00 with faint hour lines:
+//   top    — WORK segments: green = a finished job, blue = the job tinting now
+//            (to the now line). A paused-and-resumed job shows each of its runs.
+//            The runs a still-PAUSED job has done so far draw blue at 40%.
+//   bottom — PAUSE segments: orange stripes, pausedAt → resumedAt (or now). Drawn
+//            only when the operator has one in view; the block keeps the same
+//            height either way, so every operator row lines up.
+// Segments come from the payload (row.track — lib/tint/job-track.ts). A split
+// never pauses, so it has no track: its one run is startedAt → completedAt/now.
+// Hover any block → a card that follows the cursor (HoverCard below).
+
+/** The five reason labels, as the owner worded them for this board (2026-10-03).
+ *  lib/tint/pause-reasons.ts keeps its own wording for the operator screens. */
+const REASON_LABEL: Record<string, string> = {
+  lunch_break:       "Lunch break",
+  shift_end:         "Shift end",
+  machine_breakdown: "Machine breakdown",
+  material_shortage: "Material shortage",
+  urgent_priority:   "Urgent priority",
+};
+
+const STRIPES = "repeating-linear-gradient(135deg, #D97706 0 5px, #FDE7C2 5px 9px)";
+
+type BlockKind = "done" | "tinting" | "pausedWork" | "pause";
+interface Block {
+  key:   string;
+  kind:  BlockKind;
+  /** Minutes of the day, fractional, already clipped to 08:00–20:00. */
+  a:     number;
+  b:     number;
+  row:   BoardRow;
+  pause: PauseSegment | null;
+}
+interface Hover { row: BoardRow; pause: PauseSegment | null; x: number; y: number }
+
+/** Minutes since IST midnight of the lane's day, or null when outside that day. */
+function clipToDay(fromIso: string, toIso: string | null, nowMs: number): { a: number; b: number } | null {
+  const dayStart = istDay(nowMs) * DAY_MS - IST_MS;
+  const s = ms(fromIso);
+  const e = toIso ? ms(toIso) : nowMs;
+  if (Number.isNaN(s) || Number.isNaN(e) || e < dayStart || s > dayStart + DAY_MS) return null;
+  const a = Math.max(T0, (Math.max(s, dayStart) - dayStart) / 60000);
+  const b = Math.min(T1, (Math.min(e, dayStart + DAY_MS) - dayStart) / 60000);
+  return b >= a ? { a, b } : null;
+}
+
+/** A row's work runs — the payload's track, or a split's single run. */
+function workOf(r: BoardRow): WorkSegment[] {
+  if (r.track) return r.track.work;
+  if (!r.startedAt || r.status === "assigned" || r.status === "paused") return [];
+  return [{ from: r.startedAt, to: isDone(r) ? r.completedAt : null }];
+}
+
+function blocksOf(rows: BoardRow[], nowMs: number): { work: Block[]; pauses: Block[] } {
+  const work: Block[] = [];
+  const pauses: Block[] = [];
+  for (const r of rows) {
+    const kind: BlockKind = isDone(r) ? "done" : r.status === "tinting_in_progress" ? "tinting" : "pausedWork";
+    workOf(r).forEach((s, i) => {
+      const c = clipToDay(s.from, s.to, nowMs);
+      if (c) work.push({ key: `${r.key}-w${i}`, kind, ...c, row: r, pause: null });
+    });
+    (r.track?.pauses ?? []).forEach((p, i) => {
+      const c = clipToDay(p.from, p.to, nowMs);
+      if (c) pauses.push({ key: `${r.key}-p${i}`, kind: "pause", ...c, row: r, pause: p });
+    });
+  }
+  return { work, pauses };
+}
 
 function OperatorsCard({
   groups, nowMs, focusedId, onFocus, history = false,
@@ -350,42 +413,32 @@ function OperatorsCard({
   nowMs:     number;
   focusedId: number | null;
   onFocus:   (operatorId: number | null) => void;
-  /** A past day: no now pill / line, "N done" instead of the queue, a done line. */
+  /** A past day: no now pill / line. */
   history?:  boolean;
 }) {
-  const patternId = `paused-${useId().replace(/:/g, "")}`;
   const nowM = istMinutes(nowMs);
   const ticks: number[] = [];
   for (let m = T0; m <= T1; m += 120) ticks.push(m);
+  const [hover, setHover] = useState<Hover | null>(null);
 
   return (
     <section className="overflow-hidden rounded-[14px] border border-ink-100 bg-white">
-      {/* The striped "paused" fill, defined once for every lane on the card. */}
-      <svg width="0" height="0" className="absolute" aria-hidden="true">
-        <defs>
-          <pattern id={patternId} width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
-            <rect width="6" height="6" className="fill-warn-bg" />
-            <rect width="3" height="6" className="fill-warn" />
-          </pattern>
-        </defs>
-      </svg>
-
       <div className="flex items-center justify-between border-b border-[#EEEDF3] px-5 py-3.5">
         <h3 className="text-[14px] font-bold tracking-[-.01em] text-ink-900">Operators</h3>
         <div className="flex gap-4 text-[11.5px] text-ink-500">
           <span className="flex items-center gap-1.5"><i className="inline-block h-2.5 w-2.5 rounded-[3px] bg-ok" />Done</span>
           <span className="flex items-center gap-1.5"><i className="inline-block h-2.5 w-2.5 rounded-[3px] bg-tint-600" />Tinting</span>
           <span className="flex items-center gap-1.5">
-            <svg width="10" height="10" aria-hidden="true"><rect width="10" height="10" rx="3" fill={`url(#${patternId})`} /></svg>
+            <i className="inline-block h-2.5 w-2.5 rounded-[3px]" style={{ background: "repeating-linear-gradient(135deg, #D97706 0 3px, #FDE7C2 3px 5px)" }} />
             Paused
           </span>
         </div>
       </div>
 
       {/* Header row — the time axis, 08:00–20:00 every 2 h, and the now pill. */}
-      <div className="grid h-[30px] grid-cols-[300px_1fr_132px] items-center border-b border-[#EEEDF3] bg-ink-25 text-[11px] text-ink-400">
+      <div className="grid h-[30px] grid-cols-[240px_1fr_130px] items-center border-b border-[#EEEDF3] bg-ink-25 text-[11px] text-ink-400">
         <div className="pl-5 font-semibold uppercase tracking-[.05em]">Operator</div>
-        <div className="relative mx-2 h-full">
+        <div className="relative mx-2.5 h-full">
           {ticks.map((m) => (
             <span key={m} className="absolute top-2 -translate-x-1/2" style={{ left: `${pct(m)}%` }}>{hm(m)}</span>
           ))}
@@ -409,7 +462,6 @@ function OperatorsCard({
         const paused  = running ? null : g.rows.find((r) => r.status === "paused") ?? null;
         const kind: "tinting" | "paused" | "idle" = running ? "tinting" : paused ? "paused" : "idle";
         const done = g.rows.filter(isDone);
-        const queue = g.rows.filter((r) => !isDone(r)).length;
         const initials = g.operatorName.split(/\s+/).filter(Boolean).map((w) => w[0]).join("").slice(0, 2).toUpperCase();
         const on = focusedId === g.operatorId;
         return (
@@ -421,53 +473,38 @@ function OperatorsCard({
             onClick={() => onFocus(on ? null : g.operatorId)}
             onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onFocus(on ? null : g.operatorId); } }}
             className={cn(
-              "relative grid min-h-[84px] cursor-pointer grid-cols-[300px_1fr_132px] border-b border-[#EEEDF3] transition-colors last:border-b-0",
+              "relative grid cursor-pointer grid-cols-[240px_1fr_130px] items-center border-b border-[#EEEDF3] py-3 transition-colors last:border-b-0",
               on ? "bg-brand-50 before:absolute before:inset-y-0 before:left-0 before:w-[3px] before:bg-brand-600" : "hover:bg-ink-25",
             )}
           >
-            {/* left — who */}
-            <div className="flex min-w-0 items-center gap-3 py-3.5 pl-5 pr-4">
-              <div className="relative flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full border border-ink-100 bg-ink-50 text-[12.5px] font-bold text-ink-600">
+            {/* left — who, and ONE status word */}
+            <div className="flex min-w-0 items-center gap-2.5 px-5">
+              <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-ink-50 text-[12px] font-bold text-ink-600">
                 {initials}
-                <span className={cn(
-                  "absolute -bottom-px -right-px h-[11px] w-[11px] rounded-full border-2 border-white",
-                  kind === "tinting" ? "bg-tint-600" : kind === "paused" ? "bg-warn" : "bg-ink-200",
-                )} />
               </div>
               <div className="min-w-0">
-                <div className="flex items-baseline gap-2 text-[14.5px] font-bold text-ink-900">
-                  <span className="truncate">{g.operatorName}</span>
-                  <span className="flex-shrink-0 rounded-[5px] bg-ink-50 px-[7px] py-px text-[11.5px] font-semibold text-ink-500">
-                    {history ? `${done.length} done` : `${queue} in queue`}
-                  </span>
-                </div>
+                <div className="truncate text-[13.5px] font-bold text-ink-900">{g.operatorName}</div>
                 <div className={cn(
-                  "mt-1 max-w-[220px] truncate text-[12px]",
-                  kind === "tinting" ? "text-tint-700" : kind === "paused" ? "text-warn-text" : "text-ink-500",
+                  "mt-0.5 flex items-center gap-1.5 text-[12px]",
+                  kind === "tinting" ? "font-semibold text-tint-600" : kind === "paused" ? "font-semibold text-warn" : "text-ink-500",
                 )}>
-                  {history ? (
-                    <>Last finished · {hhmm(done.reduce<string | null>((m, r) => (r.completedAt && (!m || r.completedAt > m) ? r.completedAt : m), null))}</>
-                  ) : kind === "tinting" && running ? (
-                    <><b className="font-bold">Tinting</b> · {running.siteName} · since {hhmm(running.startedAt)}</>
-                  ) : kind === "paused" && paused ? (
-                    <><b className="font-bold">Paused</b> · {paused.siteName} · {hhmm(paused.pausedAt)}</>
-                  ) : (
-                    <><b className="font-bold">Idle</b> · nothing running</>
-                  )}
+                  <i className={cn(
+                    "inline-block h-[7px] w-[7px] rounded-full",
+                    kind === "tinting" ? "bg-tint-600" : kind === "paused" ? "bg-warn" : "bg-ink-200",
+                  )} />
+                  {kind === "tinting" ? "Tinting" : kind === "paused" ? "Paused" : "Idle"}
                 </div>
               </div>
             </div>
 
-            {/* middle — the day lane */}
-            <div className="relative flex h-full items-center px-2">
-              <DayLane rows={g.rows} nowMs={nowMs} patternId={patternId} showNow={!history} />
-            </div>
+            {/* middle — the two tracks */}
+            <Tracks rows={g.rows} nowMs={nowMs} showNow={!history} onHover={setHover} />
 
             {/* right — this operator's tinted litres (tint lines only) + their own
                 pace (paceOf, the top card's rule). "—" before a finished job. */}
             <div className="flex flex-col items-end justify-center pr-5 text-right" title={artsOf(done)}>
-              <b className="text-[18px] tracking-[-.01em] tabular-nums text-ink-900">{fmtL(litresOf(done))} L</b>
-              <span className="text-[11.5px] text-ink-500">
+              <b className="text-[15px] tracking-[-.01em] tabular-nums text-ink-900">{fmtL(litresOf(done))} L</b>
+              <span className="text-[11px] text-ink-500">
                 {(() => {
                   const p = done.length > 0 ? paceOf(g.rows, nowMs, history).pace : null;
                   return p !== null ? `avg ${fmtL(Math.round(p))} L/hr` : "—";
@@ -477,51 +514,172 @@ function OperatorsCard({
           </div>
         );
       })}
+      {hover && <HoverCard hover={hover} nowMs={nowMs} />}
     </section>
   );
 }
 
-function DayLane({ rows, nowMs, patternId, showNow = true }: { rows: BoardRow[]; nowMs: number; patternId: string; showNow?: boolean }) {
-  const W = 1000, H = 36;
-  const x = (m: number) => (pct(m) / 100) * W;
+function Tracks({
+  rows, nowMs, showNow, onHover,
+}: {
+  rows:    BoardRow[];
+  nowMs:   number;
+  showNow: boolean;
+  onHover: (h: Hover | null) => void;
+}) {
+  const { work, pauses } = useMemo(() => blocksOf(rows, nowMs), [rows, nowMs]);
   const nowM = istMinutes(nowMs);
-  const grid: number[] = [];
-  for (let m = T0 + 60; m < T1; m += 60) grid.push(m);
+  const hours: number[] = [];
+  for (let m = T0 + 60; m < T1; m += 60) hours.push(m);
+
+  const block = (b: Block) => (
+    <div
+      key={b.key}
+      className={cn(
+        "absolute inset-y-0 rounded-[3px] hover:z-[3] hover:brightness-110 hover:shadow-[0_0_0_2px_#fff,0_0_0_3px_#1B1826]",
+        b.kind === "done" ? "bg-ok" : b.kind === "tinting" ? "bg-tint-600" : b.kind === "pausedWork" ? "bg-tint-600/40" : undefined,
+      )}
+      style={{
+        left:  `${pct(b.a)}%`,
+        // At least ~3px, so a two-minute job or pause is still hoverable.
+        width: `max(3px, ${pct(b.b) - pct(b.a)}%)`,
+        ...(b.kind === "pause" ? { background: STRIPES } : {}),
+      }}
+      onMouseMove={(e) => onHover({ row: b.row, pause: b.pause, x: e.clientX, y: e.clientY })}
+      onMouseLeave={() => onHover(null)}
+    />
+  );
 
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} width="100%" height={H} preserveAspectRatio="none" className="block overflow-visible">
-      <rect x="0" y="4" width={W} height={H - 8} rx="8" className="fill-ink-25 stroke-ink-50" vectorEffect="non-scaling-stroke" />
-      {grid.map((m) => (
-        <line key={m} x1={x(m)} x2={x(m)} y1="4" y2={H - 4} className={(m / 60) % 2 === 0 ? "stroke-ink-100" : "stroke-ink-50"} vectorEffect="non-scaling-stroke" />
+    <div className="relative mx-2.5 h-[44px] rounded-md bg-ink-25">
+      {hours.map((m) => (
+        <span key={m} className="absolute inset-y-0 w-px bg-[#F0EFF5]" style={{ left: `${pct(m)}%` }} />
       ))}
-      {rows.map((r) => {
-        const blk = blockOf(r, nowMs);
-        if (!blk || blk.b < T0 || blk.a > T1) return null;
-        const a = Math.max(blk.a, T0), b = Math.min(blk.b, T1);
-        const width = Math.max(6, x(b) - x(a) - 3);
-        const mins = blk.b - blk.a;
-        const tip = `${r.obdNumber} · ${r.siteName}\n${fmtL(r.volumeLitres ?? 0)} L · ${r.articleTag ?? "—"}\n` +
-          `${hm(blk.a)} → ${isDone(r) ? hm(blk.b) : "now"} · ${mins} min` +
-          (r.status === "paused" ? "\nPaused — drawn from the last start (pause intervals are not on the board)" : "");
-        return (
-          <rect
-            key={r.key}
-            x={x(a) + 1.5}
-            y="9"
-            width={width}
-            height={H - 18}
-            rx="4"
-            className={isDone(r) ? "fill-ok" : r.status === "tinting_in_progress" ? "fill-tint-600" : undefined}
-            fill={r.status === "paused" ? `url(#${patternId})` : undefined}
-          >
-            <title>{tip}</title>
-          </rect>
-        );
-      })}
+      {/* top track — work */}
+      <div className="absolute inset-x-0 top-[6px] h-4">{work.map(block)}</div>
+      {/* bottom track — pauses, only when there is one */}
+      {pauses.length > 0 && <div className="absolute inset-x-0 top-[27px] h-2.5">{pauses.map(block)}</div>}
       {showNow && nowM >= T0 && nowM <= T1 && (
-        <line x1={x(nowM)} x2={x(nowM)} y1="0" y2={H} className="stroke-ink-900" strokeWidth="2" vectorEffect="non-scaling-stroke" />
+        <span className="pointer-events-none absolute -top-2 -bottom-2 z-[2] w-0.5 -translate-x-px bg-ink-900" style={{ left: `${pct(nowM)}%` }} />
       )}
-    </svg>
+    </div>
+  );
+}
+
+// ── Hover card ───────────────────────────────────────────────────────────────
+
+/** "1 h 38 min" / "32 min". */
+function fmtDur(min: number): string {
+  const m = Math.max(0, Math.round(min));
+  if (m < 60) return `${m} min`;
+  return `${Math.floor(m / 60)} h ${m % 60} min`;
+}
+/** "11:55", or "15 Sep 11:55" when not on the lane's day. */
+function atOf(iso: string, nowMs: number): string {
+  if (istDay(ms(iso)) === istDay(nowMs)) return hhmm(iso);
+  const d = new Date(iso).toLocaleDateString("en-IN", { day: "2-digit", month: "short", timeZone: "Asia/Kolkata" });
+  return `${d} ${hhmm(iso)}`;
+}
+
+function HoverCard({ hover, nowMs }: { hover: Hover; nowMs: number }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const { row, x, y } = hover;
+  // Follow the cursor, never off screen.
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const w = el.offsetWidth, h = el.offsetHeight;
+    el.style.left = `${Math.max(8, Math.min(x + 14, window.innerWidth - w - 10))}px`;
+    el.style.top  = `${Math.max(8, Math.min(y + 16, window.innerHeight - h - 10))}px`;
+  });
+
+  // The pause shown: the hovered one, or — on a paused job's work block — its open one.
+  const pause = hover.pause ?? (row.status === "paused" ? (row.track?.pauses.filter((p) => p.to === null).slice(-1)[0] ?? null) : null);
+  const state: "done" | "tinting" | "paused" = pause ? "paused" : isDone(row) ? "done" : "tinting";
+  const tint = `${fmtL(row.volumeLitres ?? 0)} L · ${row.articleTag?.replace(/, /g, " · ") ?? "—"}`;
+  const work = workOf(row);
+  const firstStart = work[0]?.from ?? row.startedAt;
+
+  const label = "text-ink-400";
+  const grid  = "mt-2.5 grid grid-cols-[70px_1fr] gap-x-2 gap-y-1 border-t border-[#EEEDF3] pt-2.5 text-[12px]";
+
+  let body: ReactNode;
+  if (state === "paused" && pause) {
+    const forMin = ((pause.to ? ms(pause.to) : nowMs) - ms(pause.from)) / 60000;
+    body = (
+      <>
+        <div className="mt-2 inline-block rounded-[5px] border border-[#FDE68A] bg-warn-bg px-2 py-0.5 text-[11.5px] font-bold text-warn-text">
+          ⏸ {REASON_LABEL[pause.reason] ?? pause.reason}
+        </div>
+        {pause.remark && <div className="mt-1 text-[12px] italic text-ink-600">“{pause.remark}”</div>}
+        <div className={grid}>
+          <span className={label}>Tint</span><b>{tint}</b>
+          <span className={label}>Paused</span>
+          <b>{pause.to ? `${atOf(pause.from, nowMs)} – ${atOf(pause.to, nowMs)}` : `since ${atOf(pause.from, nowMs)}`}</b>
+          <span className={label}>For</span><b>{fmtDur(forMin)}</b>
+          <span className={label}>Progress</span>
+          <b>{pause.progress ? `${pause.progress.done} of ${pause.progress.total} ${pause.progress.unit} done` : "—"}</b>
+        </div>
+      </>
+    );
+  } else {
+    // Took: a finished job's accumulatedMinutes (its total tinting time, pauses
+    // excluded); a running one's from the shared timer helper. A split has
+    // neither — its single run's length.
+    let tookMin: number | null = null;
+    if (state === "done") {
+      tookMin = row.accumulatedMinutes ?? (row.startedAt && row.completedAt ? (ms(row.completedAt) - ms(row.startedAt)) / 60000 : null);
+    } else {
+      const e = computeElapsedMs({ status: "tinting_in_progress", startedAt: row.startedAt, accumulatedMinutes: row.accumulatedMinutes ?? 0, nowMs });
+      tookMin = e !== null ? e / 60000 : null;
+    }
+    body = (
+      <>
+        <div className={grid}>
+          <span className={label}>Tint</span><b>{tint}</b>
+          <span className={label}>Time</span>
+          <b>
+            {state === "done"
+              ? `${firstStart ? atOf(firstStart, nowMs) : "—"} – ${row.completedAt ? atOf(row.completedAt, nowMs) : "—"}`
+              : `started ${firstStart ? atOf(firstStart, nowMs) : "—"}`}
+          </b>
+          <span className={label}>Took</span>
+          <b>{tookMin !== null ? `${fmtDur(tookMin)}${state === "tinting" ? " so far" : ""}` : "—"}</b>
+        </div>
+        <div className="mt-2.5 border-t border-[#EEEDF3] pt-2.5">
+          <div className="mb-1 text-[10.5px] font-bold uppercase tracking-[.05em] text-ink-400">Formula</div>
+          {row.formula.length === 0 ? (
+            <div className="text-[12px] text-ink-400">No TI saved yet</div>
+          ) : (
+            row.formula.map((f, i) => (
+              <div key={i} className="font-mono text-[12.5px] font-semibold text-ink-900">{formulaText(f)}</div>
+            ))
+          )}
+        </div>
+      </>
+    );
+  }
+
+  return createPortal(
+    <div
+      ref={ref}
+      className="pointer-events-none fixed z-[60] w-[330px] rounded-xl border border-ink-100 bg-white px-3.5 py-3 text-ink-900 shadow-[0_14px_32px_rgba(27,24,38,.16)]"
+      style={{ left: x + 14, top: y + 16 }}
+    >
+      <div className="mb-1.5 flex items-center justify-between">
+        <b className="font-mono text-[12.5px]">{row.obdNumber}</b>
+        <span className={cn(
+          "rounded-[5px] px-[7px] py-0.5 text-[10.5px] font-bold",
+          state === "done" ? "bg-ok-bg text-ok-text" : state === "tinting" ? "bg-tint-bg text-tint-700" : "bg-warn-bg text-warn-text",
+        )}>
+          {state === "done" ? "Done" : state === "tinting" ? "Tinting" : "Paused"}
+        </span>
+      </div>
+      <div className="text-[13.5px] font-bold">{row.siteName}</div>
+      <div className="mt-px text-[12px] text-ink-500">billed to {row.billToName ?? "—"}</div>
+      {body}
+    </div>,
+    document.body,
   );
 }
 
