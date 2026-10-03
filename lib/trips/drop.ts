@@ -19,6 +19,27 @@ import { prisma } from "@/lib/prisma";
 import { computeDropKey, dropShipToCode, effectiveCustomerId, type DropKeyInput } from "@/lib/trips/drop-key";
 import { dealerDisplayName } from "@/lib/orders/dealer-name";
 
+/**
+ * Delete a stop that now holds nothing — no order and no re-delivery. Returns
+ * true when it deleted. ONE rule for both remove paths (bills and re-deliveries).
+ *
+ * ⚠ `isRemoved` IS DELIBERATELY NOT FILTERED. A soft-removed bill still carries
+ * its `tripDropId`, so a drop holding only removed bills is NOT empty — deleting
+ * it would clear their pointers through the FK's ON DELETE SET NULL and lose
+ * where they were. The read side hides them from counts (lib/trips/queries.ts).
+ *
+ * ⚠ RE-DELIVERIES COUNT (2026-10-03). trip_redeliveries.tripDropId is ON DELETE
+ * RESTRICT, so deleting a stop under one would fail; it must simply stay.
+ */
+export async function deleteTripDropIfEmpty(dropId: number): Promise<boolean> {
+  const orders = await prisma.orders.count({ where: { tripDropId: dropId } });
+  if (orders > 0) return false;
+  const redeliveries = await prisma.trip_redeliveries.count({ where: { tripDropId: dropId } });
+  if (redeliveries > 0) return false;
+  await prisma.trip_drops.delete({ where: { id: dropId } });
+  return true;
+}
+
 /** The order fields the stop needs: the drop-key inputs plus SAP's ship-to name. */
 export interface TripDropInput extends DropKeyInput {
   /** orders.shipToCustomerName — the name fallback when the master has none. */

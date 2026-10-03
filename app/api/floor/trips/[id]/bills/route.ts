@@ -3,7 +3,7 @@ import { auth } from "@/lib/auth";
 import { checkAnyPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { computeDropKey } from "@/lib/trips/drop-key";
-import { findOrCreateTripDrop } from "@/lib/trips/drop";
+import { deleteTripDropIfEmpty, findOrCreateTripDrop } from "@/lib/trips/drop";
 import { logTripBills } from "@/lib/trips/activity";
 
 export const dynamic = "force-dynamic";
@@ -172,16 +172,12 @@ export async function POST(
         // If that stop now holds nothing, delete it. Counted AFTER the update
         // above so this bill is already gone from the tally.
         //
-        // ⚠ `isRemoved` IS DELIBERATELY NOT FILTERED HERE. A soft-removed bill
-        // still carries its `tripDropId`, so a drop holding only removed bills
-        // is NOT empty — deleting it would clear their pointers through the FK's
-        // ON DELETE SET NULL and lose where they were. The read side already
-        // hides them from counts (lib/trips/queries.ts filters isRemoved there,
-        // which is the right place for a display rule).
-        const remaining = await prisma.orders.count({ where: { tripDropId: dropId } });
-        if (remaining === 0) {
-          await prisma.trip_drops.delete({ where: { id: dropId } });
-        }
+        // ⚠ "Nothing" = no order (removed ones included — a soft-removed bill
+        // still carries its pointer) AND no re-delivery (2026-10-03, discovery
+        // B9: trip_redeliveries.tripDropId is RESTRICT). The rule lives in
+        // lib/trips/drop.ts deleteTripDropIfEmpty, shared with the re-delivery
+        // remove path.
+        await deleteTripDropIfEmpty(dropId);
         continue;
       }
 

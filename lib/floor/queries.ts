@@ -744,6 +744,16 @@ export async function getFloorBoard(
     // onlyIds, the whole-set extras describe the subset and the two SKU reads
     // are skipped.
     extraWhere?: Prisma.ordersWhereInput;
+    // TRIP RE-DELIVERIES (2026-10-03): build rows for these order ids WHATEVER
+    // their stage — the board predicate is REPLACED by `id IN (…) AND not
+    // removed` (hide still applied). A re-delivered bill has already gone out
+    // (pick_checked / dispatched on an earlier trip), so no board arm admits it,
+    // yet the opened trip draws it in its stop table with the same FloorTable
+    // row (lib/trips/queries.ts getTripDetail). Same include tree, enrichment
+    // and mapping — no second row builder. Omitted → the where is byte-identical
+    // to before. NEVER pass it for the board or the marker. Like onlyIds, the
+    // whole-set extras describe the subset and the two SKU reads are skipped.
+    anyStageIds?: number[];
   } = {},
 ): Promise<FloorBoardResult> {
   const mode = opts.mode ?? "live";
@@ -868,7 +878,11 @@ export async function getFloorBoard(
         // names; both are handed over rather than re-derived inside.
         floorBoardWhere(getISTDayRange(), todayDateOnly);
 
-  const boardTerms: Prisma.ordersWhereInput[] = opts.onlyIds ? [base, hide, { id: { in: opts.onlyIds } }] : [base, hide];
+  const boardTerms: Prisma.ordersWhereInput[] = opts.anyStageIds
+    ? [{ id: { in: opts.anyStageIds }, isRemoved: false }, hide]
+    : opts.onlyIds
+      ? [base, hide, { id: { in: opts.onlyIds } }]
+      : [base, hide];
   if (opts.extraWhere) boardTerms.push(opts.extraWhere);
   const orders = await prisma.orders.findMany({
     where: { AND: boardTerms },
@@ -1209,7 +1223,7 @@ export async function getFloorBoard(
   // instead of an answer.
   // 7a: the by-id path (opts.onlyIds) skips these two reads — no Floor reader
   // uses them (FLOOR §10b "dead payload") and they would describe a subset.
-  const subset = opts.onlyIds !== undefined || opts.extraWhere !== undefined;
+  const subset = opts.onlyIds !== undefined || opts.extraWhere !== undefined || opts.anyStageIds !== undefined;
   const waitingRows = subset
     ? []
     : rows.filter((r) => r.zone !== "upcoming" && !r.isAssigned && !r.isDone && !r.isChecked);

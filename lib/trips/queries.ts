@@ -34,6 +34,9 @@ import {
 // disagree about it again — read that module's header before changing the rule.
 import { tripsOnDeskWhere } from "@/lib/trips/live-trips";
 import { getTripActivity, type TripActivityRow } from "@/lib/trips/activity";
+import { getAttemptHistories, redeliveryReasonLabel, type AttemptHistoryEntry } from "@/lib/trips/redelivery";
+import { getFloorBoard } from "@/lib/floor/queries";
+import type { FloorBoardRow } from "@/lib/floor/types";
 import { isGiftBill, loadKg, loadLitres } from "@/lib/orders/gift";
 // 🔴 THE ROUTE/AREA RANKING LIVES IN ONE PLACE (2026-09-16) — a pure module the
 // CLIENT can import too, so the rail card-s label and the pool-s add hint cannot
@@ -95,6 +98,43 @@ export interface TripDropSummary {
   orderIds: number[];
   bills: number;
   litres: number;
+  /**
+   * RE-DELIVERIES on this stop (2026-10-03, Schema v27.53) — bills that came
+   * back on an earlier truck, planned again here. NOT in `orderIds`, `bills`
+   * or `litres`: the bill's own tripDropId still points at its FIRST trip, so
+   * these are a separate list, in id order.
+   */
+  redeliveries: TripRedeliveryRow[];
+}
+
+/**
+ * One re-delivery on a stop, as the opened trip draws it (2026-10-03).
+ *
+ * `row` is the bill as a FloorTable row — built by the board's own row builder
+ * (getFloorBoard `anyStageIds`), never by hand — or null when the board would
+ * not show the bill at all (an admin Hide rule, or a bill soft-removed since).
+ * ⚠ `row.tripDropId` / `row.tripNumber` describe the bill's OWN (first) trip,
+ * not this one. Key the row `rd:<id>`, never the plain order id, and never let
+ * its orderId reach the bills route — removal goes through the re-delivery
+ * route with `id` (plan rev 5 §4.3).
+ */
+export interface TripRedeliveryRow {
+  /** trip_redeliveries.id — what the remove call takes. */
+  id: number;
+  orderId: number;
+  obdNumber: string;
+  /** LIVE orders.invoiceNo (the row's snapshot only when the order cannot be read). */
+  invoiceNo: string | null;
+  attemptNo: number;
+  reason: string;
+  reasonLabel: string;
+  note: string | null;
+  confirmedReturn: boolean;
+  createdAt: string;
+  createdByName: string | null;
+  /** The bill's OTHER Orbit attempts (this trip left out), non-cancelled trips, oldest first. */
+  history: AttemptHistoryEntry[];
+  row: FloorBoardRow | null;
 }
 
 export interface TripSummary {
@@ -165,6 +205,14 @@ export interface TripSummary {
    * dispatched.
    */
   dispatchedCount: number;
+  /**
+   * Re-deliveries planned on this trip (2026-10-03, Schema v27.53). 🔴 A
+   * SEPARATE FIGURE — never inside `counts`, the buckets, `isReady`,
+   * `deliveryTypes` or the litres/kg: those describe the trip's OWN bills
+   * (orders.tripDropId), and a re-delivered bill's pointer stays on its first
+   * trip. "+1 re-del" on the rail; Send to billing still sees 0 bills.
+   */
+  redeliveryCount: number;
   totalLitres: number;
   dropCount: number;
   /**
@@ -670,6 +718,7 @@ function toSummary(
   bills: TripBillRow[],
   dropCount: number,
   areaStops: readonly AreaStop[],
+  redeliveryCount: number,
 ): TripSummary {
   const counts: TripBillCounts = { ...EMPTY_COUNTS };
   let totalLitres = 0;
@@ -757,6 +806,7 @@ function toSummary(
       counts.checked === counts.total - counts.held,
     counts,
     dispatchedCount,
+    redeliveryCount,
     totalLitres,
     dropCount,
     areaLabel: deriveAreaLabel(areaStops),
@@ -840,6 +890,18 @@ export async function getTripsForDate(
 
   const bills = await loadTripBills(drops.map((d) => d.id));
   const labels = await loadTripLabels(trips);
+  // Re-deliveries (2026-10-03): ONE batched read for the whole feed — the count
+  // per trip, and which stops hold one (a re-delivery-only stop still names the
+  // trip's area/route, plan rev 5 §2 #9).
+  const redeliveryRows = await prisma.trip_redeliveries.findMany({
+    where: { tripId: { in: trips.map((t) => t.id) } },
+    select: { tripId: true, tripDropId: true },
+  });
+  const redeliveryCountByTripId = new Map<number, number>();
+  for (const r of redeliveryRows) {
+    redeliveryCountByTripId.set(r.tripId, (redeliveryCountByTripId.get(r.tripId) ?? 0) + 1);
+  }
+  const dropIdsWithRedeliveries = new Set(redeliveryRows.map((r) => r.tripDropId));
 
   const tripIdByDropId = new Map(drops.map((d) => [d.id, d.tripId]));
   const billsByTripId = new Map<number, TripBillRow[]>();
@@ -861,7 +923,7 @@ export async function getTripsForDate(
       areaName: d.areaName,
       routeName: d.routeName,
       dropSeq: d.dropSeq,
-      hasBills: dropIdsWithBills.has(d.id),
+      hasBills: dropIdsWithBills.has(d.id) || dropIdsWithRedeliveries.has(d.id),
     });
     areaStopsByTripId.set(d.tripId, arr);
   }
@@ -873,8 +935,70 @@ export async function getTripsForDate(
       billsByTripId.get(t.id) ?? [],
       dropCountByTripId.get(t.id) ?? 0,
       areaStopsByTripId.get(t.id) ?? [],
+      redeliveryCountByTripId.get(t.id) ?? 0,
     ),
   );
+}
+
+/**
+ * The trip's re-deliveries, each with its FloorTable row (2026-10-03).
+ *
+ * Batched, and skipped entirely on a trip with none (one cheap read): the
+ * rows, then ONE getFloorBoard call over every re-delivered order id
+ * (`anyStageIds` — the board's own row builder, whatever the stage), ONE read
+ * of the live invoice numbers, and ONE history read (getAttemptHistories).
+ * Never a per-drop query. SELECT-only.
+ */
+async function loadTripRedeliveries(
+  tripId: number,
+): Promise<Array<{ tripDropId: number; row: TripRedeliveryRow }>> {
+  const rows = await prisma.trip_redeliveries.findMany({
+    where: { tripId },
+    orderBy: { id: "asc" },
+    select: {
+      id: true,
+      tripDropId: true,
+      orderId: true,
+      obdNumber: true,
+      invoiceNo: true,
+      attemptNo: true,
+      reason: true,
+      note: true,
+      confirmedReturn: true,
+      createdAt: true,
+      createdBy: { select: { name: true } },
+    },
+  });
+  if (rows.length === 0) return [];
+
+  const orderIds = Array.from(new Set(rows.map((r) => r.orderId)));
+  const board = await getFloorBoard({ mode: "live", scope: "All", anyStageIds: orderIds });
+  const boardRowByOrderId = new Map(board.rows.map((r) => [r.orderId, r]));
+  const live = await prisma.orders.findMany({
+    where: { id: { in: orderIds } },
+    select: { id: true, invoiceNo: true },
+  });
+  const liveInvoiceById = new Map(live.map((o) => [o.id, o.invoiceNo]));
+  const histories = await getAttemptHistories(orderIds);
+
+  return rows.map((r) => ({
+    tripDropId: r.tripDropId,
+    row: {
+      id: r.id,
+      orderId: r.orderId,
+      obdNumber: r.obdNumber,
+      invoiceNo: liveInvoiceById.has(r.orderId) ? (liveInvoiceById.get(r.orderId) ?? null) : r.invoiceNo,
+      attemptNo: r.attemptNo,
+      reason: r.reason,
+      reasonLabel: redeliveryReasonLabel(r.reason),
+      note: r.note,
+      confirmedReturn: r.confirmedReturn,
+      createdAt: r.createdAt.toISOString(),
+      createdByName: r.createdBy?.name ?? null,
+      history: (histories.get(r.orderId) ?? []).filter((h) => h.tripId !== tripId),
+      row: boardRowByOrderId.get(r.orderId) ?? null,
+    },
+  }));
 }
 
 /**
@@ -917,6 +1041,13 @@ export async function getTripDetail(tripId: number): Promise<TripDetail | null> 
   // Two more statements, on a fetch that runs when a planner opens ONE trip.
   // See TripDetail.activity — deliberately absent from the board feed.
   const activity = await getTripActivity(tripId);
+  const redeliveries = await loadTripRedeliveries(tripId);
+  const redeliveriesByDropId = new Map<number, TripRedeliveryRow[]>();
+  for (const { tripDropId, row } of redeliveries) {
+    const arr = redeliveriesByDropId.get(tripDropId) ?? [];
+    arr.push(row);
+    redeliveriesByDropId.set(tripDropId, arr);
+  }
 
   const billsByDropId = new Map<number, TripBillRow[]>();
   for (const b of bills) {
@@ -928,6 +1059,7 @@ export async function getTripDetail(tripId: number): Promise<TripDetail | null> 
 
   const dropSummaries: TripDropSummary[] = drops.map((d) => {
     const own = billsByDropId.get(d.id) ?? [];
+    const redel = redeliveriesByDropId.get(d.id) ?? [];
     return {
       id: d.id,
       dropSeq: d.dropSeq,
@@ -942,6 +1074,7 @@ export async function getTripDetail(tripId: number): Promise<TripDetail | null> 
       bills: own.length,
       // `bills` above counts a gift; the litres leave it out (lib/orders/gift.ts).
       litres: own.reduce((sum, b) => sum + loadLitres(b.litres, b.isGift), 0),
+      redeliveries: redel,
     };
   });
 
@@ -955,8 +1088,11 @@ export async function getTripDetail(tripId: number): Promise<TripDetail | null> 
         areaName: d.areaName,
         routeName: d.routeName,
         dropSeq: d.dropSeq,
-        hasBills: (billsByDropId.get(d.id)?.length ?? 0) > 0,
+        // A re-delivery-only stop counts as having bills (plan rev 5 §2 #9).
+        hasBills:
+          (billsByDropId.get(d.id)?.length ?? 0) > 0 || (redeliveriesByDropId.get(d.id)?.length ?? 0) > 0,
       })),
+      redeliveries.length,
     ),
     drops: dropSummaries,
     activity,

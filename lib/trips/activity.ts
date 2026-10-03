@@ -91,6 +91,16 @@ export const TRIP_TAKEN_BACK_FROM_BILLING = "taken_back_from_billing";
 export const TRIP_INVOICES_COPIED = "invoices_copied";
 
 /**
+ * Re-deliveries (2026-10-03, Schema v27.53) — a bill that came back undelivered
+ * put on THIS trip as attempt 2, 3 … (lib/trips/redelivery.ts). The
+ * `trip_redeliveries` row is DELETED on remove, so the `redelivery_removed`
+ * row's detail is the only record that it was ever planned: it carries the
+ * same per-bill facts as the add. One row per press, every bill listed.
+ */
+export const TRIP_REDELIVERY_ADDED = "redelivery_added";
+export const TRIP_REDELIVERY_REMOVED = "redelivery_removed";
+
+/**
  * ⚠ BOTH ARE STILL WRITTEN, AND THIS NOTE WAS WRONG TWICE BEFORE.
  *
  * `dispatched` — Mark dispatched STAYS (the owner dropped slice 4 on
@@ -125,6 +135,8 @@ export const TRIP_ACTIONS = [
   TRIP_INVOICES_COPIED,
   TRIP_RELEASED,
   TRIP_DISPATCHED,
+  TRIP_REDELIVERY_ADDED,
+  TRIP_REDELIVERY_REMOVED,
 ] as const;
 
 export type TripAction = (typeof TRIP_ACTIONS)[number];
@@ -421,17 +433,27 @@ export async function logTripCancelled(opts: {
   orderIds: number[];
   obdNumbers: string[];
   reason?: string | null;
+  /**
+   * Re-deliveries planned on the trip (2026-10-03). Their rows are KEPT (plan
+   * rev 5 §2 #6) — listed here so the cancel record names them, kept apart from
+   * `orderIds` because those bills were never detached (they were never this
+   * trip's bills).
+   */
+  redeliveries?: Array<{ orderId: number; obd: string }>;
 }): Promise<void> {
   const carried =
     opts.orderIds.length === 0
       ? "it carried no bills"
       : `${bills(opts.orderIds.length)} detached`;
+  const redel = opts.redeliveries ?? [];
+  const redelTail =
+    redel.length > 0 ? `, ${redel.length} re-deliver${redel.length === 1 ? "y" : "ies"} kept as the record` : "";
   const why = opts.reason ? ` — ${opts.reason}` : "";
   await writeActivity({
     tripId: opts.tripId,
     action: TRIP_CANCELLED_ACTION,
     actorId: opts.actorId,
-    summary: `Trip ${opts.tripNumber} cancelled, now ${opts.renamedTo}, ${carried}${why}`,
+    summary: `Trip ${opts.tripNumber} cancelled, now ${opts.renamedTo}, ${carried}${redelTail}${why}`,
     detail: {
       was: opts.tripNumber,
       now: opts.renamedTo,
@@ -439,6 +461,12 @@ export async function logTripCancelled(opts: {
       orderIds: opts.orderIds,
       obdNumbers: opts.obdNumbers,
       reason: opts.reason ?? null,
+      ...(redel.length > 0
+        ? {
+            redeliveryOrderIds: redel.map((r) => r.orderId),
+            redeliveryObdNumbers: redel.map((r) => r.obd),
+          }
+        : {}),
     },
   });
 }
@@ -628,6 +656,67 @@ export async function logTripDispatched(opts: {
     actorId: opts.actorId,
     summary: `${bills(opts.orderIds.length)} marked dispatched${tail}`,
     detail: { orderIds: opts.orderIds, obdNumbers: opts.obdNumbers, closed: opts.closed },
+  });
+}
+
+/** One re-delivered bill as the log records it — enough to read back after the row is deleted. */
+export interface RedeliveryLogItem {
+  orderId: number;
+  obd: string;
+  attemptNo: number;
+  /** site_closed | wrong_dispatch — lib/trips/redelivery.ts REDELIVERY_REASONS. */
+  reason: string;
+}
+
+/**
+ * Re-deliveries were put on the trip (2026-10-03). ONE row per press, every
+ * bill that was actually added — a refused bill is not in it.
+ */
+export async function logTripRedeliveryAdded(opts: {
+  tripId: number;
+  actorId: number;
+  items: RedeliveryLogItem[];
+  note?: string | null;
+  confirmedReturn?: boolean;
+}): Promise<void> {
+  if (opts.items.length === 0) return; // nothing happened, nothing to say
+  const n = opts.items.length;
+  await writeActivity({
+    tripId: opts.tripId,
+    action: TRIP_REDELIVERY_ADDED,
+    actorId: opts.actorId,
+    summary: `${n} re-deliver${n === 1 ? "y" : "ies"} added — ${opts.items.map((i) => `${i.obd} (attempt ${i.attemptNo})`).join(", ")}`,
+    detail: {
+      items: opts.items.map((i) => ({ orderId: i.orderId, obd: i.obd, attemptNo: i.attemptNo, reason: i.reason })),
+      orderIds: opts.items.map((i) => i.orderId),
+      obdNumbers: opts.items.map((i) => i.obd),
+      note: opts.note ?? null,
+      confirmedReturn: opts.confirmedReturn === true,
+    },
+  });
+}
+
+/**
+ * Re-deliveries were taken off the trip (2026-10-03). The rows are DELETED, so
+ * this detail is the only record they existed — same per-bill facts as the add.
+ */
+export async function logTripRedeliveryRemoved(opts: {
+  tripId: number;
+  actorId: number;
+  items: RedeliveryLogItem[];
+}): Promise<void> {
+  if (opts.items.length === 0) return;
+  const n = opts.items.length;
+  await writeActivity({
+    tripId: opts.tripId,
+    action: TRIP_REDELIVERY_REMOVED,
+    actorId: opts.actorId,
+    summary: `${n} re-deliver${n === 1 ? "y" : "ies"} removed — ${opts.items.map((i) => i.obd).join(", ")}`,
+    detail: {
+      items: opts.items.map((i) => ({ orderId: i.orderId, obd: i.obd, attemptNo: i.attemptNo, reason: i.reason })),
+      orderIds: opts.items.map((i) => i.orderId),
+      obdNumbers: opts.items.map((i) => i.obd),
+    },
   });
 }
 

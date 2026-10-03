@@ -197,6 +197,15 @@ export async function POST(
   // alternative — logging afterwards from the `detached` list — loses the whole
   // record if the process dies mid-loop, which is the failure that matters.
   // A bill that refused to detach is reported to the caller in `failed`.
+  // Re-deliveries planned on this trip (2026-10-03). Their rows are KEPT as the
+  // record of the plan (plan rev 5 §2 #6), exactly like the drop rows; every
+  // history and attempt count ignores a cancelled trip. Listed in the log only.
+  const redeliveries = await prisma.trip_redeliveries.findMany({
+    where: { tripId },
+    select: { orderId: true, obdNumber: true },
+    orderBy: { id: "asc" },
+  });
+
   await logTripCancelled({
     tripId,
     actorId: cancelledById,
@@ -204,6 +213,7 @@ export async function POST(
     renamedTo,
     orderIds: orders.map((o) => o.id),
     obdNumbers: orders.map((o) => o.obdNumber),
+    redeliveries: redeliveries.map((r) => ({ orderId: r.orderId, obd: r.obdNumber })),
     // ⚠ NO REASON IS PASSED, because this route does not take one — it reads
     // `_req` and never parses a body. `logTripCancelled` accepts one so a later
     // slice can add the field without touching the writer; inventing a body
