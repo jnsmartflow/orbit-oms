@@ -46,6 +46,11 @@ export function FreightRail({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto border-ink-100 bg-ink-25 px-[11px] pb-4 pt-3 md:border-r">
+      {/* The page title lives HERE, not in a top header (owner, 2026-10-03). */}
+      <div className="mb-3 px-1">
+        <h1 className="text-[16px] font-semibold tracking-[-0.01em] text-ink-900">Freight Trips</h1>
+        <p className="mt-0.5 text-[11.5px] leading-snug text-ink-400">Report only — the floor never sees these</p>
+      </div>
       <div className="mb-[9px] px-1 text-[11px] font-semibold uppercase tabular-nums tracking-[0.06em] text-ink-400">
         {active.length} trip{active.length === 1 ? "" : "s"} · {billTotal} bill{billTotal === 1 ? "" : "s"}
       </div>

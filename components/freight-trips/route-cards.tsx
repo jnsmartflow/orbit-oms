@@ -250,7 +250,16 @@ export function drillTabs(model: HeldCardsModel, t: DrillTarget): { tabs: ClubRo
 const HEAD = "flex w-full items-center gap-4 border-b border-ink-100 px-6 py-[22px] text-left";
 const ROW = "flex h-16 w-full flex-col justify-center px-6 text-left hover:bg-ink-25";
 
-export function HeldCardGrid({ model, onOpen }: { model: HeldCardsModel; onOpen: (t: DrillTarget) => void }) {
+export function HeldCardGrid({
+  model,
+  onOpen,
+  searching = false,
+}: {
+  model: HeldCardsModel;
+  onOpen: (t: DrillTarget) => void;
+  /** A search is in effect: an empty Local / Upcountry card reads "No matches". */
+  searching?: boolean;
+}) {
   const { cards, noRoute } = model;
   return (
     <div className="grid grid-cols-1 items-stretch gap-5 min-[681px]:grid-cols-2 min-[1281px]:grid-cols-4">
@@ -295,7 +304,7 @@ export function HeldCardGrid({ model, onOpen }: { model: HeldCardsModel; onOpen:
               </span>
             </button>
             {c.clubs.length === 0 ? (
-              <div className="flex flex-1 items-center justify-center px-6 py-8 text-[12.5px] text-ink-400">No held bills</div>
+              <div className="flex flex-1 items-center justify-center px-6 py-8 text-[12.5px] text-ink-400">{searching ? "No matches" : "No held bills"}</div>
             ) : (
               <div className="flex flex-1 flex-col py-1.5">
                 {c.clubs.map((club, i) => (

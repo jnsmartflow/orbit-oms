@@ -8,10 +8,14 @@
 //
 // Look: a copy of Floor's trip desk (rail + main), built new — Floor's
 // trip-desk / trip-rail / trip-detail-header are NOT imported (they hard-wire
-// /api/floor/trips). Header: <UniversalHeader /> (CORE §3; /floor is the one
-// hand-rolled exception and this screen does not earn a second).
+// /api/floor/trips).
 //
-//   rail:  Held bills · trip cards (active, newest first) · Cancelled (n)
+// 🔴 NO <UniversalHeader /> — a NAMED EXCEPTION to CORE §3 (2026-10-03, owner):
+// the top bar is ONE big Floor-style search box (./search-bar.tsx — why there);
+// the title sits at the top of the rail. No date stepper, no type chips.
+//
+//   top:   search (name / ship-to / bill-to, OBD, invoice; paste many numbers)
+//   rail:  title · Held bills · trip cards (ALL active, any date) · Cancelled (n)
 //   main:  pool (Held bills) | one trip (stops) | trip + add band + pool | cancelled list
 //   bar:   the shared FloorActionBar shell, only while something is ticked
 //
@@ -20,11 +24,11 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { UniversalHeader } from "@/components/universal-header";
 import { FloorActionBar, BAR_PRIMARY, BAR_SECONDARY } from "@/components/floor/floor-action-bar";
 import { formatLitres, formatWeightKg } from "@/components/floor/status-pill";
 import { usePickingMarker } from "@/lib/hooks/use-picking-marker";
-import { applySearch, parseSearch } from "@/lib/floor/search";
+import { freightSearch, parseSearch } from "./search";
+import { SearchBar } from "./search-bar";
 import { loadKg, loadLitres } from "@/lib/orders/gift";
 import type { FloorSelection } from "@/lib/floor/selection";
 import type { FloorHoldRow, FloorRouteClub, FloorScope } from "@/lib/floor/types";
@@ -181,10 +185,11 @@ export function FreightTripsPage({ canEdit }: { canEdit: boolean }) {
   const parsed = useMemo(() => parseSearch(search), [search]);
   // No delivery-type chips any more (2026-10-03): the whole held pool is in scope.
   const scopedPool = pool;
-  const poolRows = useMemo(
-    () => (search.trim() ? applySearch(scopedPool, parsed) : scopedPool),
-    [scopedPool, parsed, search],
-  );
+  // The search narrows what the CARDS and the DRILL-IN are built from. Ticks are
+  // NOT touched: a ticked bill hidden by the search stays ticked, and the bottom
+  // bar still counts it (poolSelRows reads the whole pool, below).
+  const searching = parsed.mode !== "none";
+  const poolRows = useMemo(() => freightSearch(scopedPool, parsed), [scopedPool, parsed]);
   const poolLitres = useMemo(() => scopedPool.reduce((s, r) => s + loadLitres(r.volumeLitres, r.isGift), 0), [scopedPool]);
   const poolSelRows = useMemo(() => pool.filter((r) => poolSel.has(r.orderId)), [pool, poolSel]);
   const tripRows = useMemo(() => (detail ? detail.stops.flatMap((s) => s.bills) : []), [detail]);
@@ -360,7 +365,8 @@ export function FreightTripsPage({ canEdit }: { canEdit: boolean }) {
             </div>
             <PoolView
               rows={poolRows}
-              allRows={pool}
+              allRows={poolRows}
+              searching={searching}
               clubs={clubs}
               scope={SCOPE}
               loading={poolLoading}
@@ -377,7 +383,8 @@ export function FreightTripsPage({ canEdit }: { canEdit: boolean }) {
     main = (
       <PoolView
         rows={poolRows}
-        allRows={pool}
+        allRows={poolRows}
+        searching={searching}
         clubs={clubs}
         scope={SCOPE}
         loading={poolLoading}
@@ -391,18 +398,11 @@ export function FreightTripsPage({ canEdit }: { canEdit: boolean }) {
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-white">
-      <UniversalHeader
-        title={
-          <span className="flex items-baseline gap-2">
-            Freight Trips
-            <span className="text-[11px] font-normal text-ink-400">Report only — the floor never sees these</span>
-          </span>
-        }
-        showShortcutsButton={false}
-        searchPlaceholder="Search OBD, invoice, dealer"
-        searchValue={search}
-        onSearchChange={setSearch}
-        showDatePicker={false}
+      <SearchBar
+        committed={search}
+        matches={searching ? poolRows.length : null}
+        onSearch={setSearch}
+        onClear={() => setSearch("")}
       />
 
       <div className="flex min-h-0 flex-1 flex-col md:flex-row">

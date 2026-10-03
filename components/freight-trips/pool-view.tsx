@@ -67,8 +67,9 @@ export function PoolView({
   selection,
   onSelection,
   selectable,
+  searching = false,
 }: {
-  /** The pool in the active scope. */
+  /** The pool in the active scope (already narrowed by the search, when one is in effect). */
   rows: FreightPoolRow[];
   /** The whole pool — read only for a club member that draws from another type. */
   allRows: FreightPoolRow[];
@@ -79,6 +80,8 @@ export function PoolView({
   selection: FloorSelection;
   onSelection: (next: FloorSelection) => void;
   selectable: boolean;
+  /** A search is in effect — an empty Local / Upcountry card says "No matches". */
+  searching?: boolean;
 }) {
   const [drill, setDrill] = useState<DrillTarget | null>(null);
   const now = useMemo(() => new Date(), [rows]);
@@ -154,7 +157,7 @@ export function PoolView({
       {model.cards.length === 0 && model.noRoute.length === 0 ? (
         <div className="px-5 py-12 text-center text-[11.5px] text-ink-400">No held bills for this delivery type.</div>
       ) : (
-        <HeldCardGrid model={model} onOpen={setDrill} />
+        <HeldCardGrid model={model} onOpen={setDrill} searching={searching} />
       )}
     </div>
   );
