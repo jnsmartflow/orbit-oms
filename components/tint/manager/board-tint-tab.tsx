@@ -543,19 +543,31 @@ function Tracks({
   const block = (b: Block) => {
     const w = pct(b.b) - pct(b.a);
     const mid = (pct(b.a) + pct(b.b)) / 2;
+    const active = b.row.key === activeKey;
+    // SHORT (real duration under 5 min, 2026-10-03): same colour, at least 10px
+    // wide, centred on its time, drawn ABOVE its neighbours with a 3px ring in
+    // the track's own background (ink-25) — clear space either side, so a short
+    // job between two pieces of another same-colour job reads without hover.
+    const seg = b.pause ?? b.work;
+    const realMin = seg ? ((seg.to ? ms(seg.to) : nowMs) - ms(seg.from)) / 60000 : Infinity;
+    const short = realMin < 5;
+    const minPx = short ? 10 : 6;
     return (
       <div
         key={b.key}
         className={cn(
           "absolute inset-y-0 rounded-[3px]",
-          b.row.key === activeKey && "z-[3] brightness-110 shadow-[0_0_0_2px_#fff,0_0_0_3px_#1B1826]",
+          short && "z-[4]",
+          active && (short ? "z-[5] brightness-110" : "z-[3] brightness-110 shadow-[0_0_0_2px_#fff,0_0_0_3px_#1B1826]"),
           b.kind === "done" ? "bg-ok" : b.kind === "tinting" ? "bg-tint-600" : b.kind === "pausedWork" ? "bg-tint-600/40" : undefined,
         )}
         style={{
-          // Inset 1px a side (the 2px gap), never under 6px, centred on its time.
-          width: `max(6px, calc(${w}% - 2px))`,
-          left:  `calc(${mid}% - max(3px, calc(${w / 2}% - 1px)))`,
+          // Inset 1px a side (the 2px gap), never under 6px (10px if short), centred on its time.
+          width: `max(${minPx}px, calc(${w}% - 2px))`,
+          left:  `calc(${mid}% - max(${minPx / 2}px, calc(${w / 2}% - 1px)))`,
           ...(b.kind === "pause" ? { background: STRIPES } : {}),
+          // The ring (and, when its job is hovered, the same dark outline outside it).
+          ...(short ? { boxShadow: active ? "0 0 0 3px #FAFAFC, 0 0 0 4px #1B1826" : "0 0 0 3px #FAFAFC" } : {}),
         }}
         onMouseMove={(e) => onHover({ row: b.row, pause: b.pause, work: b.work, x: e.clientX, y: e.clientY })}
         onMouseLeave={() => onHover(null)}
