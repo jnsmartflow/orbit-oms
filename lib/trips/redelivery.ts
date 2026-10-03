@@ -75,6 +75,25 @@ export interface AttemptHistoryEntry {
   reasonLabel: string | null;
   /** The tie-breaker after tripDate: the trip's createdAt (original) or the row's (redelivery). */
   createdAt: string;
+  /** The trip's plate — vehicle_master.vehicleNo, else trips.adhocVehicleNo, else null (the header's rule). */
+  vehiclePlate: string | null;
+  /** trips.driverName / driverPhone — the trip's own SNAPSHOT, never read through vehicleId. */
+  driverName: string | null;
+  driverPhone: string | null;
+}
+
+/** Vehicle + driver off a history trip row, by the trip header's plate rule. */
+function crewOf(t: {
+  adhocVehicleNo: string | null;
+  driverName: string | null;
+  driverPhone: string | null;
+  vehicle: { vehicleNo: string } | null;
+}): Pick<AttemptHistoryEntry, "vehiclePlate" | "driverName" | "driverPhone"> {
+  return {
+    vehiclePlate: t.vehicle?.vehicleNo ?? t.adhocVehicleNo ?? null,
+    driverName: t.driverName,
+    driverPhone: t.driverPhone,
+  };
 }
 
 function sortHistory(entries: AttemptHistoryEntry[]): AttemptHistoryEntry[] {
@@ -108,7 +127,20 @@ export async function getAttemptHistories(orderIds: number[]): Promise<Map<numbe
   const trips = tripIds.length
     ? await prisma.trips.findMany({
         where: { id: { in: tripIds }, status: { not: TRIP_CANCELLED } },
-        select: { id: true, tripNumber: true, tripDate: true, createdAt: true },
+        select: {
+          id: true,
+          tripNumber: true,
+          tripDate: true,
+          createdAt: true,
+          // Vehicle + driver for the history table (2026-10-03). The plate follows
+          // the trip header's rule: vehicle_master.vehicleNo, else the typed plate.
+          // Driver name/phone are the trip's own SNAPSHOT (FLOOR_TRIPS landmine 9 —
+          // never read through vehicleId).
+          adhocVehicleNo: true,
+          driverName: true,
+          driverPhone: true,
+          vehicle: { select: { vehicleNo: true } },
+        },
       })
     : [];
   const tripById = new Map(trips.map((t) => [t.id, t]));
@@ -126,6 +158,7 @@ export async function getAttemptHistories(orderIds: number[]): Promise<Map<numbe
       reason: null,
       reasonLabel: null,
       createdAt: t.createdAt.toISOString(),
+      ...crewOf(t),
     });
   }
   for (const r of rows) {
@@ -139,6 +172,7 @@ export async function getAttemptHistories(orderIds: number[]): Promise<Map<numbe
       reason: r.reason,
       reasonLabel: redeliveryReasonLabel(r.reason),
       createdAt: r.createdAt.toISOString(),
+      ...crewOf(t),
     });
   }
   for (const [id, list] of Array.from(out.entries())) out.set(id, sortHistory(list));

@@ -43,28 +43,90 @@ export function stageLabel(stage: string): string {
   return stage.replace(/_/g, " ");
 }
 
-/** "Earlier trips" — every Orbit attempt, oldest first. Shared with the info modal. */
+/** The stage as a pill — the floor's own status colours (status-pill.tsx META). */
+export function StagePill({ stage }: { stage: string }) {
+  const cls =
+    stage === DISPATCHED
+      ? "bg-[#e2e8f0] text-[#334155]"
+      : stage === PICK_CHECKED
+        ? "bg-[#dcfce7] text-[#15803d]"
+        : "bg-[#f3f4f6] text-[#6b7280]";
+  return <span className={`whitespace-nowrap rounded-[4px] px-[7px] py-[2px] text-[10.5px] font-semibold ${cls}`}>{stageLabel(stage)}</span>;
+}
+
+/** "Original" / "Re-del · Shop / site closed". */
+function typeLabel(h: AttemptHistoryEntry): string {
+  return h.kind === "original" ? "Original" : `Re-del${h.reasonLabel ? ` · ${h.reasonLabel}` : ""}`;
+}
+
+const TH = "pb-1 text-left text-[10px] font-medium uppercase tracking-[0.05em] text-ink-400";
+const TD = "overflow-hidden text-ellipsis whitespace-nowrap border-t border-ink-50 py-[5px] pr-2 text-[11.5px] text-ink-700";
+
+/**
+ * "Earlier trips" — every Orbit attempt, oldest first, as a compact fixed table
+ * (fits the 560px dialog with no horizontal scroll; long cells ellipsise with
+ * the full text on hover). The latest row carries the warn dot. Shared with
+ * the info modal.
+ */
 export function EarlierTrips({ history }: { history: AttemptHistoryEntry[] }) {
   if (history.length === 0) {
     return <div className="mt-1.5 text-[12.5px] text-ink-500">No earlier Orbit trip</div>;
   }
   return (
-    <ul className="mt-1.5 space-y-1">
-      {history.map((h, i) => (
-        <li key={`${h.tripId}-${h.createdAt}`} className="flex items-baseline gap-2 text-[12.5px] text-ink-600">
-          <span
-            className={`relative top-[-1px] h-[7px] w-[7px] shrink-0 rounded-full ${
-              i === history.length - 1 ? "bg-warn" : "bg-ink-200"
-            }`}
-          />
-          <span className="w-[44px] shrink-0 font-medium text-ink-900">{shortDay(h.tripDate)}</span>
-          <span className="font-mono font-semibold text-ink-900">{h.tripNumber}</span>
-          <span className="text-ink-500">
-            · {h.kind === "original" ? "original" : `re-delivery${h.reasonLabel ? ` · ${h.reasonLabel}` : ""}`}
-          </span>
-        </li>
-      ))}
-    </ul>
+    <table className="mt-1.5 w-full table-fixed border-collapse">
+      <colgroup>
+        <col style={{ width: "13%" }} />
+        <col style={{ width: "20%" }} />
+        <col style={{ width: "20%" }} />
+        <col style={{ width: "25%" }} />
+        <col style={{ width: "22%" }} />
+      </colgroup>
+      <thead>
+        <tr>
+          <th className={TH}>Date</th>
+          <th className={TH}>Trip</th>
+          <th className={TH}>Vehicle</th>
+          <th className={TH}>Driver</th>
+          <th className={TH}>Type</th>
+        </tr>
+      </thead>
+      <tbody>
+        {history.map((h, i) => {
+          const latest = i === history.length - 1;
+          const driver = [h.driverName, h.driverPhone].filter(Boolean).join(" · ");
+          return (
+            <tr key={`${h.tripId}-${h.createdAt}`}>
+              <td className={TD}>
+                <span className="inline-flex items-center gap-1.5">
+                  <span className={`h-[7px] w-[7px] shrink-0 rounded-full ${latest ? "bg-warn" : "bg-ink-200"}`} />
+                  <span className="font-medium text-ink-900">{shortDay(h.tripDate)}</span>
+                </span>
+              </td>
+              <td className={`${TD} font-mono font-semibold text-ink-900`}>{h.tripNumber}</td>
+              <td className={`${TD} font-mono`} title={h.vehiclePlate ?? undefined}>{h.vehiclePlate ?? "—"}</td>
+              <td className={TD} title={driver || undefined}>
+                {h.driverName ?? "—"}
+                {h.driverPhone && <span className="tabular-nums text-ink-400"> · {h.driverPhone}</span>}
+              </td>
+              <td className={TD} title={typeLabel(h)}>{typeLabel(h)}</td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  );
+}
+
+/** One muted line: the LATEST earlier trip only (date · trip · vehicle · driver). */
+function LatestTripLine({ history }: { history: AttemptHistoryEntry[] }) {
+  const h = history.length > 0 ? history[history.length - 1] : null;
+  if (!h) return <span className="mt-0.5 block text-[11.5px] text-ink-500">No earlier Orbit trip</span>;
+  return (
+    <span className="mt-0.5 block truncate text-[11.5px] text-ink-500" title={typeLabel(h)}>
+      Latest: {shortDay(h.tripDate)} · <span className="font-mono">{h.tripNumber}</span> ·{" "}
+      <span className="font-mono">{h.vehiclePlate ?? "—"}</span> · {h.driverName ?? "—"}
+      {h.driverPhone ? ` · ${h.driverPhone}` : ""}
+    </span>
   );
 }
 
@@ -255,8 +317,19 @@ export function TripRedeliveryDialog({
           {/* ── ONE bill → the card ─────────────────────────────────────────── */}
           {single && (
             <div className="mt-3.5 rounded-[9px] border border-ink-100 px-3.5 py-3">
-              <div className="text-[14.5px] font-semibold text-ink-900">{single.customerName}</div>
-              {single.area && <div className="mt-px text-[12px] text-ink-500">{single.area}</div>}
+              {/* Top line: customer left, stage pill + volume right; area under. */}
+              <div className="flex items-start gap-3">
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-[14.5px] font-semibold text-ink-900">{single.customerName}</div>
+                  {single.area && <div className="mt-px text-[12px] text-ink-500">{single.area}</div>}
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  <StagePill stage={single.workflowStage} />
+                  {single.volumeLitres !== null && (
+                    <span className="text-[12px] tabular-nums text-ink-600">{formatLitres(single.volumeLitres)} L</span>
+                  )}
+                </div>
+              </div>
               <Facts bill={single} />
               <div className="mt-3 text-[10px] font-semibold uppercase tracking-[0.06em] text-ink-500">Earlier trips</div>
               <EarlierTrips history={single.history} />
@@ -303,11 +376,7 @@ export function TripRedeliveryDialog({
                           <span className="text-ink-500">· {stageLabel(b.workflowStage)}</span>
                           {!off && <span className="font-semibold text-warn-text">· attempt {b.attemptNo}</span>}
                         </span>
-                        {b.history.length > 0 && (
-                          <span className="mt-0.5 block text-[11.5px] text-ink-500">
-                            Earlier: {b.history.map((h) => `${shortDay(h.tripDate)} ${h.tripNumber}`).join(" · ")}
-                          </span>
-                        )}
+                        <LatestTripLine history={b.history} />
                         {off && <span className="mt-1 block text-[12px] font-semibold text-ink-700">{b.message}</span>}
                         {!off && b.verdict === "warn" && (
                           <span className="mt-1 block text-[12px] text-warn-text">{b.message}</span>
@@ -398,23 +467,15 @@ export function TripRedeliveryDialog({
   );
 }
 
+/** OBD and Invoice as a 2-column label / value grid — muted labels, mono values. */
 function Facts({ bill }: { bill: RedeliveryCandidate }) {
   return (
-    <div className="mt-2 flex flex-wrap items-center gap-x-3.5 gap-y-1 text-[12px] text-ink-600">
-      <span>
-        <span className="mr-1 text-ink-500">OBD</span>
-        <span className="font-mono text-ink-900">{bill.obdNumber}</span>
-      </span>
-      <span>
-        <span className="mr-1 text-ink-500">Invoice</span>
-        <span className="font-mono text-ink-900">{bill.invoiceNo ?? "—"}</span>
-      </span>
-      <span>
-        <span className="mr-1 text-ink-500">Stage</span>
-        <span className="text-ink-900">{stageLabel(bill.workflowStage)}</span>
-      </span>
-      {bill.volumeLitres !== null && <span className="tabular-nums">{formatLitres(bill.volumeLitres)} L</span>}
-    </div>
+    <dl className="mt-2.5 grid grid-cols-[64px_1fr] gap-x-3 gap-y-1 text-[12px]">
+      <dt className="text-ink-500">OBD</dt>
+      <dd className="font-mono text-ink-900">{bill.obdNumber}</dd>
+      <dt className="text-ink-500">Invoice</dt>
+      <dd className="font-mono text-ink-900">{bill.invoiceNo ?? "—"}</dd>
+    </dl>
   );
 }
 

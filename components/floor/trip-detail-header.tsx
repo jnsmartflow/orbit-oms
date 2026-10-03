@@ -433,19 +433,20 @@ export function TripDetailHeader({
           </span>
           {canWrite && !adding && (
             <span className="ml-auto flex items-center gap-2">
-              {/* RE-DELIVERY (2026-10-03, plan rev 5 §4.1) — left of + Add bills,
-                  the same BUTTON. Hidden on a Hand trip (truck trips only in v1);
-                  cancelled / dispatched / past days are already out via canWrite. */}
+              <button type="button" onClick={onAddBills} disabled={busy} className={`${BUTTON} gap-[5px] !pl-[10px] !pr-3 font-semibold`}>
+                <Plus size={13} strokeWidth={2.2} />
+                Add bills
+              </button>
+              {/* RE-DELIVERY (2026-10-03, plan rev 5 §4.1) — right of + Add bills
+                  (owner, 2026-10-03), the same BUTTON. Hidden on a Hand trip
+                  (truck trips only in v1); cancelled / dispatched / past days are
+                  already out via canWrite. */}
               {!trip.isHand && onAddRedelivery && (
                 <button type="button" onClick={onAddRedelivery} disabled={busy} className={`${BUTTON} gap-[5px] !pl-[10px] !pr-3 font-semibold`}>
                   <RotateCcw size={13} strokeWidth={2.2} />
                   Re-delivery
                 </button>
               )}
-              <button type="button" onClick={onAddBills} disabled={busy} className={`${BUTTON} gap-[5px] !pl-[10px] !pr-3 font-semibold`}>
-                <Plus size={13} strokeWidth={2.2} />
-                Add bills
-              </button>
             </span>
           )}
         </div>

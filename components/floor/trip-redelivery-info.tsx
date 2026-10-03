@@ -45,7 +45,7 @@ export function TripRedeliveryInfo({
         role="dialog"
         aria-modal="true"
         aria-label={`Re-delivery ${r.obdNumber}`}
-        className="flex max-h-[calc(100vh-100px)] w-[500px] max-w-full flex-col overflow-hidden rounded-xl bg-white shadow-xl"
+        className="flex max-h-[calc(100vh-100px)] w-[560px] max-w-full flex-col overflow-hidden rounded-xl bg-white shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center gap-2 border-b border-ink-100 px-5 py-3.5">
