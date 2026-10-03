@@ -1,5 +1,5 @@
 # CLAUDE_FLOOR.md — Floor Control
-# v1.8 · Schema v27.24 · September 2026 · updated 2026-09-24
+# v1.9 · Schema v27.24 · October 2026 · updated 2026-10-03
 # Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md (+ docs/CLAUDE_FLOOR_TRIPS.md for anything trip-shaped)
 
@@ -113,7 +113,7 @@ SELECT-only feeds, sequential awaits, never `prisma.$transaction` (CORE §3). Al
 | Feed | Function | Route | Scope / anchor |
 |---|---|---|---|
 | Floor board | `getFloorBoard({mode,date,scope})` | `GET /api/floor/board` | **Live:** `floorBoardWhere` (below). **History:** a two-member `OR` (below). |
-| Hold | `getFloorHold(scope)` | `GET /api/floor/hold` | `dispatchStatus="hold"`, all dates (pure open state), recent-held-first. |
+| Hold | `getFloorHold(scope, hide?, onlyIds?, extraWhere?)` | `GET /api/floor/hold` | `floorHoldWhere()` = `dispatchStatus="hold"` AND not removed, plus the hide exclusion; all dates (pure open state), recent-held-first. **`extraWhere`** is AND-ed on by two other consumers, both read-only: the Tint Manager's Hold tab (`{ orderType: "tint" }`, `app/api/tint/manager/hold/route.ts`) and **Freight Trips** (not on an active freight trip, `lib/freight-trips/pool.ts` → `CLAUDE_FREIGHT_TRIPS.md` §5). Floor passes none, so its query is unchanged. |
 | Cancelled | `getFloorCancelled(scope)` | `GET /api/floor/cancelled` | `workflowStage="cancelled"`, **today only** (IST, by the cancel log's `createdAt`). |
 
 `GET /api/floor/board` returns `{ scope, floor, pickers, routeClubs, loadPlan }` (`app/api/floor/board/route.ts`); `pickers` = `getFloorPickers()` (active roster + on-hand load), read by the detail panel's Assign/Reassign; `routeClubs` = `getRouteClubs()` (2026-09-19, §2.1 — config, every delivery type, one small read); `loadPlan` = `getLoadPlanPayload()` (2026-09-19, §2.2 — the load-plan rules by delivery type plus every route's name; never throws). Each board row also carries `routeId` (the id of the route `route` names, `area.primaryRoute`) and `stopKey` (`computeDropKey`) for the route cards. Board, hold, cancelled, marker, order detail, ship-to search and tint-operators gate on `checkAnyPermission(roles,"floor","canView")`; actions, release, ship-to save and pick-gate on `canEdit`. `load()` also fetches `GET /api/floor/trips?date=` in the same batch (`floor-page.tsx:348-351`) — trip routes → `CLAUDE_FLOOR_TRIPS.md §10`.
@@ -189,8 +189,9 @@ The **save is a rewrite, not a copy**. Support's PATCH handled four unrelated fi
 ### 4.5 Held-since — READ-SIDE rule [LIVE]
 
 `orders.heldAt` stores the bill's **arrival** date (`obdEmailDate`), NOT the moment it was held — a convention inherited from Support, which anchored its amber hold footprint to arrival. **The write was deliberately NOT changed** when Support retired: thousands of historical rows carry arrival dates, and flipping the write to `now` would make old and new rows mean different things in the same column. The Hold tab needs the opposite, so "held since" is derived on the READ side in `getFloorHold()`:
-- Take the hold **event's** wall-clock `order_status_logs.createdAt`, identified by the log **NOTE** via the shared constant `HOLD_LOG_NOTES` (`lib/floor/hold-log.ts`) — never a sentinel `toStage` (which would pollute the stage ladder). Matches the Floor note AND the two historical Support notes (`"Placed on hold by support"`, `"Placed on hold by support (bulk)"`). ⚠ **Keep both Support strings** — Support no longer writes them, but bills it held are still on hold today and would otherwise fall to the `~approximate` fallback.
-- Fallback ladder: hold log → `orders.heldAt` (rendered with a leading `~` + "approximate" tooltip; enrichment holds write no log) → unknown (banded separately under "Held date unknown"). Nothing can silently read as "held today".
+- Take the hold **event's** wall-clock `order_status_logs.createdAt`, identified by the log **NOTE** via the shared constant `HOLD_LOG_NOTES` (`lib/floor/hold-log.ts`) — never a sentinel `toStage` (which would pollute the stage ladder). **`HOLD_LOG_NOTES` holds NINE notes** (code at `876acb50`): `Held from floor`, `Held from Tint Manager`, `Held from billing`, `Held on import (Telephonic tag)`, `Held on import (CI marked in billing)`, `Held on import (mail order)`, `Held on import (billing hold on mail order)` (the last two since `e1da66f0`, Schema v27.50), and the two historical Support notes (`"Placed on hold by support"`, `"Placed on hold by support (bulk)"`). *(This line said "the Floor note AND the two Support notes" until 2026-10-03.)* Clear notes (`Hold cleared on floor` / `from billing` / `from Tint Manager`) are deliberately NOT in the list, so a re-held bill's age starts at its new hold. ⚠ **Keep both Support strings** — Support no longer writes them, but bills it held are still on hold today and would otherwise fall to the `~approximate` fallback.
+- Fallback ladder: hold log → `orders.heldAt` (rendered with a leading `~` + "approximate" tooltip; mail-order enrichment holds before `e1da66f0` wrote no log) → unknown (banded separately under "Held date unknown"). Nothing can silently read as "held today".
+- **Held from / Held by** (the same latest hold log, `efd397c4` + `876acb50`): `heldFrom` = `HOLD_SOURCE_BY_NOTE[note]` (`lib/floor/hold-log.ts`; Floor · Tint Manager · Billing · Billing · telephonic · Billing · CI · Billing · mail order · Auto (mail order) · Support · Unknown). Two cases need a second read in `getFloorHold`, each skipped when it has no ids: the telephonic note is split by `so_tag_matches → so_tags.tag` (`ci` → "Billing · CI"), and a bill with NO hold log reads "Auto (mail order)" when its SO's newest mail order is on Hold, else "Unknown". `heldByName`: the log's user; **"System"** when `changedById = 1` on an import note (`SYSTEM_PERSON_NOTES` — the mail-order auto note and the CI-marked note) **or** when `heldFrom` is "Auto (mail order)" with no person (the old no-log holds); null ("—") only when nothing is known. User 1 is both the system id and the owner's own account — `docs/ROADMAP.md` → *Hold / import — parked during the Freight Trips build* (P5).
 
 ### 4.6 Action surfaces — bottom bar · panel header · slot picker · selection/Esc [LIVE]
 
@@ -245,6 +246,26 @@ The 2026-07-26 redesign (draft `web-update-2026-07-26-floor-action-surfaces.md`)
 - **TINT / BASE word** (`0841b5c9`) — `ColourWorkBadge` from `components/picking/card-atoms` (`floor-table.tsx:1062`).
 - **Ship-to redirect** — the ORIGINAL → REDIRECT pair (`floor-table.tsx:1070`).
 - **Display date** — the OBD cell shows `resolveFloorDisplayDate(orderDateTime, obdEmailDate)` (`lib/floor/format.ts:176`, `8a4c1973`; called at `queries.ts:929`): `obdEmailDate` (the SAP punch) by default; when a mail match overwrote `orderDateTime` with the email time **on the same IST day**, the email time, flagged `isEmailTime`. Hold and Cancelled show `obdEmailDate ?? orderDateTime` (`queries.ts:1247`, `:1336`).
+
+### 4.10 The held-bills table — `components/floor/hold-table.tsx` [LIVE, SHARED]
+
+`efd397c4` + `876acb50` (2026-10-02). **ONE table, Floor-owned, for every screen that lists held bills:**
+Floor's On hold tab renders one `<HoldTable>` per age band (`hold-tab.tsx`), and **Freight Trips imports it
+unchanged** (`CLAUDE_FREIGHT_TRIPS.md` §7). Rows are `FloorHoldRow` from `getFloorHold`.
+
+- **Default columns:** ☐ · OBD (+ date) · Invoice (no + date, "—" when none) · Ship to (★ / ⚡ / site /
+  TINT·BASE / HAND / billed-to / ship-to changed) · Route · Type (delivery type) · L (`loadLitres`, gift = 0) ·
+  Kg (`loadKg`; "—" when missing) · Article (`formatArticleTag`) · Held since (`~` when approximate) ·
+  Held by (§4.5). Widths per CLAUDE_UI §27 (tick 3% + 97% re-scaled for any column subset).
+- **Held from** is NOT a default column since `876acb50` (owner); `row.heldFrom` stays in the data and a
+  caller may still ask for it through `columns`.
+- Props: `rows`, `now`, `selection?`, `onToggleRow?`, `onToggleAll?`, `onOpenRow?`, `selectable?`,
+  `columns?`. **Nothing Floor-only is inside it** — Release, ··· More, Export PDF, the bands and the toolbar
+  stay in `HoldTab`, so a caller simply does not render them.
+- `FloorHoldRow` gained `invoiceDate`, `weightKg` (0 → null), `isGift`, `heldFrom`, `heldById`,
+  `heldByName` — additive; the Tint Manager's `TintHoldRow` inherits and ignores them. The Hold PDF
+  (`lib/floor/hold-pdf.ts`), the tab counts (`lib/floor/counts.ts`), live-merge, search and sort are unchanged.
+- **Do not edit it for one caller's sake.** A change here lands on Floor and Freight at once.
 
 ---
 
@@ -385,6 +406,8 @@ Trip files are listed for completeness; their trip behaviour is **owned by `CLAU
 | `components/floor/floor-bottom-bar.tsx` | Bottom bar (Add to / Remove from trip, ✕ clear) — ✈ for what it does to a trip |
 | ✈ `components/floor/trip-rail.tsx`, `trip-bar.tsx`, `trip-detail-header.tsx`, `trip-add-band.tsx`, `trip-form.tsx`, `trip-vehicle-editor.tsx`, `trip-history.tsx`, `trip-options.ts`, `pick-gate-toggle.tsx` | Trip rail, trip header, add band, create form, vehicle editor, trip history, option lists, desk-control switch |
 | `components/floor/hold-tab.tsx`, `hold-bar.tsx`, `cancelled-tab.tsx`, `pdf-preview.tsx` | Hold + Cancelled tabs, Hold-report PDF |
+| `components/floor/hold-table.tsx` | The SHARED held-bills table (On hold tab + Freight Trips, §4.10) |
+| `lib/floor/hold-log.ts` | Hold notes (`HOLD_LOG_NOTES`, 9), `HOLD_SOURCE_BY_NOTE`, `SYSTEM_PERSON_NOTES`, `heldByLabel`, bands (§4.5) |
 | `components/floor/detail-panel.tsx`, `detail-items.tsx`, `detail-details.tsx`, `detail-activity.tsx` | Detail panel |
 | `components/floor/dispatch-slot-picker.tsx` | Slot picker (panel header, Hold bar, billing ribbon) |
 | `components/floor/search-box.tsx`, `filter-sheet.tsx`, `connection-strip.tsx`, `floor-skeleton.tsx` | Search/filter, connection strip, skeleton |
@@ -407,6 +430,15 @@ Trip files are listed for completeness; their trip behaviour is **owned by `CLAU
 | `lib/dispatch/dispatch-engine.ts` | Auto-slot engine (reused; **owned by CORE §7.4**) |
 
 ---
+
+## Change log — v1.9 (2026-10-03, the shared held-bills table + hold sources)
+
+Evidence: the code as committed — `e1da66f0` (two mail-order hold notes, Schema v27.50), `efd397c4` (shared `HoldTable`, new `FloorHoldRow` fields, held from / held by), `876acb50` (Held from off the default columns; "System" for automatic holds); Freight Trips' use of `getFloorHold` + `extraWhere` (`c430208e`).
+
+- §3 Hold row: `floorHoldWhere` + hide, and the two `extraWhere` consumers (Tint Manager, Freight Trips).
+- §4.5: **corrected** — `HOLD_LOG_NOTES` holds nine notes, not "the Floor note and two Support notes"; held from / held by derivation added.
+- New **§4.10** — `components/floor/hold-table.tsx`, shared with Freight Trips. §11 gains it and `lib/floor/hold-log.ts`.
+- Schema stamp left at v27.24 on purpose (no reconciliation pass).
 
 ## Change log — v1.8 (2026-09-24, route cards: single-open chips)
 
@@ -464,4 +496,4 @@ Evidence: 12 commits git-verified, suggest.ts/queries.ts/rail-card/picker/action
 
 ---
 
-*CLAUDE_FLOOR.md v1.8 · Schema v27.24 · OrbitOMS · updated 2026-09-24*
+*CLAUDE_FLOOR.md v1.9 · Schema v27.24 · OrbitOMS · updated 2026-10-03*

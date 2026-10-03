@@ -1,5 +1,5 @@
 # CLAUDE_CI.md — CI, Goods Return Note (CI Form)
-# v1.3 · Schema v27.24 · September 2026 · updated 2026-09-22
+# v1.4 · Schema v27.24 · October 2026 · updated 2026-10-03
 # Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md
 
@@ -325,8 +325,8 @@ itself would be a fourth opinion about who may write.
 ## 8. Billing's desk face
 
 `billing-board.tsx` is the composition root: `UniversalHeader` (never a
-hand-rolled one — `CLAUDE_CORE.md §10`; `/floor` is the one named exception in
-`CLAUDE_UI.md §6` and CI does not earn a second), over a
+hand-rolled one — `CLAUDE_CORE.md §10`; `/floor` and `/freight-trips` are the named exceptions in
+`CLAUDE_UI.md §6` and CI does not earn a third), over a
 `344px minmax(0, 1fr)` two-track grid — the same geometry MRN and `/floor` use.
 
 **Row 1** carries the counts in `stats` (the app's count idiom — pending and
@@ -837,7 +837,7 @@ Four days from first table to register export: 19 CI commits, `e8695f40`
 
 ---
 
-*CLAUDE_CI.md v1.3 · Schema v27.24 · CI / Goods Return Note · September 2026 ·
+*CLAUDE_CI.md v1.4 · Schema v27.24 · CI / Goods Return Note · updated 2026-10-03 — §8: the UniversalHeader exceptions are now two (`/floor`, `/freight-trips`), wording only. Prior, v1.3 · September 2026 ·
 updated 2026-09-22 — **§3 only:** `chk_ci_returns_source` widened to three
 values (`auto_bill_only`, CORE Schema v27.39), read live from `pg_constraint`
 2026-09-22; the code that labels it "Bill-only" is named in the row. The Schema

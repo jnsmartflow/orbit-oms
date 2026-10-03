@@ -1,9 +1,64 @@
 # ROADMAP.md — OrbitOMS Planned Work
-# Updated 2026-09-19 (canon sweep batch C — every item re-checked against code at `b574cecc` and the live results of 2026-09-18; see "Change log — canon sweep pass 2026-09-19" at the foot for what closed, re-scoped and opened. New section `## Opened by the 2026-09-18 canon sweep`, led by a 🔴 P0 credential file) · Prior: 2026-09-06 (tint + master-data access conversion — `## User-based access` gains six new items and closes one that was stale within hours: the "every tint GET still gates on a job title" bullet was overtaken by `fbbe30bd` the same day. New: 🔴 P0 `prisma/seed.ts` has never heard of `user_page_access`, so a wipe-and-reseed leaves live access EMPTY and looks like it succeeded; 🔴 P1 the SILENT-403 pattern as ONE systemic issue — `fetchAll` returns `[]` on any failure and `requireRole` fails with a 307 into an HTML page that arrives 200, which produced three separate silent failures in one week; 🔴 P1 `requireRole` has no admin arm, and the fix is NOT to add one; P1 the two unswept bypasses, which are not the same kind — `mrn/photo:167-168` is harmless, `reports/tint-summary:33` is a multi-clause GRANT that still admits Operations User to a report every other tint endpoint refuses him; P2 retire the four `/dispatcher/*` screens, reachable by nobody including all three holders of the `dispatcher` role, which also collapses `ROLE_HREF_OVERRIDES` for master data; P2 `sub-areas` CREATE now looser than its own EDIT, a parked decision whose fix is to bring PATCH and import forward; P3 the router has no `/admin/access` row; and `operator/skip`, ownership-scoped by design, recorded so nobody "fixes" it into a tick. The board-rebuild P0 QA block gains manual tint entry, whose button is **"Add to Tint"** — the rebuild renamed it, which is why the flow went untested. Record: `code-update-2026-09-06-tint-and-master-data.md`) · Prior: 2026-09-06 (Tint Manager board rebuild — new `## Tint Manager board rebuild` section: a P0 QA block for the five flows that shipped without ever being click-tested, the 8 old-Kanban capabilities with no home in the new design (the per-row StatusPopover is the significant one, and Create Split's removal means new splits cannot be created anywhere), the two cancel routes still on `prisma.$transaction`, and the Floor-vs-UI§27 row-height disagreement between two canon files) · Prior: 2026-09-04 (user-based access — new `## User-based access` section: step 6/7/8, the 13 unwired audit routes, the stale NA_IMPORT duplicate, and backfill-customers' missing maxDuration; all counts derived from the tree, not the plan) · Prior: 2026-09-03 (CI module inventory — new `## CI — Goods Return Note` section, 13 items incl. the 32-string SAP reason list; the module shipped 2026-08-31→09-03 and had no ROADMAP entry) · Prior: 2026-08-09 (articleTag rule shipped — 2 new Import items, ZINR item superseded; Picking Stage 3 closed — findings shipped) · 2026-08-05 (full item-by-item status pass, reconciliation cycle) · Lives in: orbit-oms/docs/ (manual attach — NOT auto-loaded)
+# Updated 2026-10-03 (new section `## Hold / import — parked during the Freight Trips build`: P1–P6 from `docs/prompts/drafts/web-update-2026-10-02-parked-hold-items.md` + three Freight Trips items, the freight/MIS report first) · Prior: 2026-09-19 (canon sweep batch C — every item re-checked against code at `b574cecc` and the live results of 2026-09-18; see "Change log — canon sweep pass 2026-09-19" at the foot for what closed, re-scoped and opened. New section `## Opened by the 2026-09-18 canon sweep`, led by a 🔴 P0 credential file) · Prior: 2026-09-06 (tint + master-data access conversion — `## User-based access` gains six new items and closes one that was stale within hours: the "every tint GET still gates on a job title" bullet was overtaken by `fbbe30bd` the same day. New: 🔴 P0 `prisma/seed.ts` has never heard of `user_page_access`, so a wipe-and-reseed leaves live access EMPTY and looks like it succeeded; 🔴 P1 the SILENT-403 pattern as ONE systemic issue — `fetchAll` returns `[]` on any failure and `requireRole` fails with a 307 into an HTML page that arrives 200, which produced three separate silent failures in one week; 🔴 P1 `requireRole` has no admin arm, and the fix is NOT to add one; P1 the two unswept bypasses, which are not the same kind — `mrn/photo:167-168` is harmless, `reports/tint-summary:33` is a multi-clause GRANT that still admits Operations User to a report every other tint endpoint refuses him; P2 retire the four `/dispatcher/*` screens, reachable by nobody including all three holders of the `dispatcher` role, which also collapses `ROLE_HREF_OVERRIDES` for master data; P2 `sub-areas` CREATE now looser than its own EDIT, a parked decision whose fix is to bring PATCH and import forward; P3 the router has no `/admin/access` row; and `operator/skip`, ownership-scoped by design, recorded so nobody "fixes" it into a tick. The board-rebuild P0 QA block gains manual tint entry, whose button is **"Add to Tint"** — the rebuild renamed it, which is why the flow went untested. Record: `code-update-2026-09-06-tint-and-master-data.md`) · Prior: 2026-09-06 (Tint Manager board rebuild — new `## Tint Manager board rebuild` section: a P0 QA block for the five flows that shipped without ever being click-tested, the 8 old-Kanban capabilities with no home in the new design (the per-row StatusPopover is the significant one, and Create Split's removal means new splits cannot be created anywhere), the two cancel routes still on `prisma.$transaction`, and the Floor-vs-UI§27 row-height disagreement between two canon files) · Prior: 2026-09-04 (user-based access — new `## User-based access` section: step 6/7/8, the 13 unwired audit routes, the stale NA_IMPORT duplicate, and backfill-customers' missing maxDuration; all counts derived from the tree, not the plan) · Prior: 2026-09-03 (CI module inventory — new `## CI — Goods Return Note` section, 13 items incl. the 32-string SAP reason list; the module shipped 2026-08-31→09-03 and had no ROADMAP entry) · Prior: 2026-08-09 (articleTag rule shipped — 2 new Import items, ZINR item superseded; Picking Stage 3 closed — findings shipped) · 2026-08-05 (full item-by-item status pass, reconciliation cycle) · Lives in: orbit-oms/docs/ (manual attach — NOT auto-loaded)
 
 Attach this file when planning the next phase of any module. Live "what's next" list, separated from canonical docs.
 
 Items grouped by module. Within each module: SHIPPED → P0 (blocking) → P1 (next up) → P2+ (later).
+
+---
+
+## Hold / import — parked during the Freight Trips build (opened 2026-10-03)
+
+Found while building Freight Trips (`CLAUDE_FREIGHT_TRIPS.md`). None blocks Freight Trips. Owner decision
+2026-10-02: park all, plan and fix later as one job. Already shipped from this thread: `e1da66f0`
+(Schema v27.50 — `mo_orders.heldAt/heldById`, billing ⚑ Hold stamps who, enrichment logs non-hold → hold).
+Source list: `docs/prompts/drafts/web-update-2026-10-02-parked-hold-items.md`.
+
+### P1 — Import silently overwrites hold / dispatch on older bills of the same SO (W6)
+A later OBD of the same SO makes `applyMailOrderEnrichment` rewrite the mail order's Hold/Dispatch onto
+EVERY older bill of that SO — it can clear a person's hold with no log, or re-hold a bill Floor released.
+The heldAt re-stamp loop and the `pending_support` → picking auto-advance also act on all SO bills.
+Proposed (owner leaned yes, NOT approved): fill-only status write + the "untouched fallback" exception;
+fence the heldAt loop and the auto-advance; fold heldAt into the per-bill write; `MAIL_ORDER_DISPATCH_NOTE`
+for null → dispatch on tint bills. Run the read-only SQL first (rows R2·21/22, R3, R4).
+Evidence: `docs/prompts/drafts/code-discovery-2026-10-02-enrichment-overwrite.md` — *3. CASE TABLE*,
+*4. RULE PROPOSAL*; `docs/prompts/drafts/code-discovery-2026-10-01-hold-sources.md` — *2. MAIL-ORDER AUTO HOLD*.
+
+### P2 — Priority / slot / remarks / orderDateTime ride the same overwrite
+The same `updateMany` can reset Floor's ⚡ urgent or a manual slot from a later sibling OBD. Separate
+decision. Evidence: enrichment-overwrite discovery — *Questions for Smart Flow* (Q3).
+
+### P3 — Mail-order split loses "who held"
+`app/api/mail-orders/[id]/split/route.ts` copies `dispatchStatus` to the B half without `heldAt/heldById`.
+One-line fix: enrichment-overwrite discovery — *5. SPLIT FOLLOW-UP*.
+
+### P4 — Not every Hold button stamps "who held"
+A 2026-10-02 owner test Hold showed no `heldAt/heldById`. Find every writer of
+`mo_orders.dispatchStatus = 'Hold'` and make all of them stamp; re-run the Billing ⚑ Hold hand-test
+(mail order with no OBD → `mo_orders.heldById` = the user). Evidence: hold-sources discovery — *1. EVERY HOLD WRITER*.
+
+### P5 — `changedById = 1` means both "system" and the owner's admin account
+Display rule in force (`876acb50`): user 1 reads "System" on import-path notes and no-log mail-order holds,
+the person elsewhere (`CLAUDE_FLOOR.md` §4.5). Longer term: a dedicated system user. Evidence: hold-sources
+discovery — *Questions for Smart Flow* (Q2).
+
+### P6 — Docs vs code drift (next consolidation)
+- `CLAUDE_BILLING.md` §5: the hold write is per-bill update + log and writes `heldAt` (the file says neither).
+- `CLAUDE_FLOOR_TRIPS.md`: `/api/floor/trips` has 10 route files; the `trips` model gained `vehicleSize` / `isHand`.
+- `CLAUDE_CORE.md` §5: `PageKey` count stale (55 in `ALL_PAGE_KEYS` at `fa6e5c8d`); §3 points the table
+  standard at UI §40, the real one is §27.
+- `applyNoMailOrderFallback`'s header claims a late mail order "cannot happen" — it measured mail-order
+  ARRIVAL, not SO capture.
+- *Closed in this pass:* FLOOR §4.5's hold-note count (now nine, v1.9); `reports_trip_detail` missing from
+  `ACCESS_SECTIONS` (fixed in code at `e4115e78`).
+
+### Freight Trips
+- **P1 — Freight / MIS report: not built.** See `CLAUDE_FREIGHT_TRIPS.md` *§10 Open items* — rule: an
+  active freight trip wins, else the Floor trip; the Trip Detail export excludes held bills, so the report
+  needs freight as a second source.
+- **P2 — Freight search: held-from / held-by are not searchable** (the search matches name / ship-to /
+  bill-to, OBD, invoice, SO, route). `CLAUDE_FREIGHT_TRIPS.md` *§9 Landmines*.
+- **P3 — Phone width untested** for `/freight-trips`.
 
 ---
 

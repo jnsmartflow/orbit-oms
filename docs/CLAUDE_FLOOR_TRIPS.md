@@ -1,5 +1,5 @@
 # CLAUDE_FLOOR_TRIPS.md — Floor Trips (Orbit's own truck plan)
-# v1.0 · Schema v27.24 · September 2026 · updated 2026-09-18 · Lives in: orbit-oms/docs/
+# v1.1 · Schema v27.24 · October 2026 · updated 2026-10-03 · Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md + docs/CLAUDE_FLOOR.md
 
 Trip tables / new columns are live-verified 2026-09-18; their schema version numbers are assigned in the CORE pass (batch C2).
@@ -50,7 +50,11 @@ trip: which route they call and which trip rule they apply.
 
 ## 2. The naming collision
 
-Two separate systems carry the word "trip". The code keeps them apart on purpose.
+THREE separate systems carry the word "trip" and share no table. The code keeps them apart on purpose.
+*(This said "two" until 2026-10-03.)* The third, **Freight trips** (`freight_trips` / `freight_trip_bills` /
+`freight_trip_activity`, `/api/freight-trips/*`, page key `freight_trips`), is a report-only PAPER trip over
+held bills: it never writes `trips`, `trip_drops`, `trip_activity` or any bill, and is never linked to an
+Orbit trip — owned by `CLAUDE_FREIGHT_TRIPS.md`. The table below covers the first two.
 `app/api/floor/trips/route.ts:15-23`: *"WHY THIS IS NOT `/api/trips`. That address is TAKEN, and by
 something live … the read-only NTS Trip Report mirror … nothing reconciles them."*
 
@@ -557,8 +561,9 @@ a trip never closes (`dispatch` unreachable); `isReady` and the carry rule treat
 
 ## 15. Landmines
 
-1. **Two "trip" systems.** Never mount Orbit trip code under `/api/trips` or `/trips`, and never write
-   to `trip_report` (§2).
+1. **Three "trip" systems** (§2). Never mount Orbit trip code under `/api/trips` or `/trips`, never write
+   to `trip_report`, and never let Floor-trip code read or write the freight tables (or the reverse) —
+   `CLAUDE_FREIGHT_TRIPS.md`.
 2. **A new trip status or type letter needs an ALTER first.** `status` and `typeCode` are plain
    Strings; the CHECKs are the backstop (`schema.prisma:3187-3192`). A fifth delivery type also needs
    `TYPE_CODE_BY_DELIVERY_TYPE`.
@@ -690,4 +695,4 @@ a trip never closes (`dispatch` unreachable); `isReady` and the carry rule treat
 
 ---
 
-*CLAUDE_FLOOR_TRIPS.md v1.0 · Schema v27.24 · OrbitOMS · updated 2026-09-18 — first canonical file for Orbit's own trips (trips / trip_drops / trip_activity, lib/trips, /api/floor/trips, the pick visibility gate, Send to billing). Written from the code at ec6343ba and the live results of 2026-09-18; drafts are history.*
+*CLAUDE_FLOOR_TRIPS.md v1.1 · Schema v27.24 · OrbitOMS · updated 2026-10-03 — §2 and landmine 1: THREE trip systems (Freight trips added, owned by `CLAUDE_FREIGHT_TRIPS.md`); wording only. Prior, v1.0 (2026-09-18) — first canonical file for Orbit's own trips (trips / trip_drops / trip_activity, lib/trips, /api/floor/trips, the pick visibility gate, Send to billing). Written from the code at ec6343ba and the live results of 2026-09-18; drafts are history.*
