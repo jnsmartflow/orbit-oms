@@ -867,14 +867,31 @@ function AllHeadFigures({ rows }: { rows: FloorBoardRow[] }) {
   );
 }
 
+/**
+ * The All tab's name for a row (owner, 2026-10-03). A club keeps its name. The
+ * Other routes row names what is IN it today, from its lines — the same route
+ * names its member lines use, "No route" included: "Parvat", "Parvat + Q53D",
+ * "Parvat + 2 more". Lines exist only for routes with bills, so the name
+ * always describes today's bills. The typed tabs' card keeps "Other routes".
+ */
+function allRowName(card: RouteCard): string {
+  if (card.kind !== "other") return card.name;
+  const names = card.lines.map((l) => l.name);
+  if (names.length === 0) return card.name;
+  if (names.length === 1) return names[0];
+  if (names.length === 2) return `${names[0]} + ${names[1]}`;
+  return `${names[0]} + ${names.length - 1} more`;
+}
+
 /** A club (or Other routes) row on a type card. */
 function AllClubRow({ card, onOpen }: { card: RouteCard; onOpen: () => void }) {
+  const name = allRowName(card);
   const empty = card.rows.length === 0 && card.upcoming.length === 0 && card.hand.length === 0;
   if (empty) {
     return (
       <div className={`${ALL_ROW} cursor-default`}>
         <span className="flex items-baseline gap-2 whitespace-nowrap">
-          <span className="min-w-0 truncate text-[13px] font-medium text-[#c4c7cf]">{card.name}</span>
+          <span className="min-w-0 truncate text-[13px] font-medium text-[#c4c7cf]">{name}</span>
           <span className="ml-auto text-[13px] font-medium text-[#c4c7cf]">No bills</span>
         </span>
         <span className="mt-2.5 block h-1 rounded-[2px] bg-[#f1f1f6]" aria-hidden />
@@ -886,7 +903,7 @@ function AllClubRow({ card, onOpen }: { card: RouteCard; onOpen: () => void }) {
   return (
     <button type="button" className={`${ALL_ROW} cursor-pointer hover:bg-[#fafafc]`} onClick={onOpen}>
       <span className="flex w-full items-baseline gap-2 whitespace-nowrap">
-        <span className="min-w-0 truncate text-[13px] font-semibold text-[#1a1a22]">{card.name}</span>
+        <span className="min-w-0 truncate text-[13px] font-semibold text-[#1a1a22]">{name}</span>
         {nothingDue ? (
           <span className="ml-auto text-[12px] text-[#96969f]">{card.upcoming.length > 0 ? "Upcoming only" : "Hand only"}</span>
         ) : (
