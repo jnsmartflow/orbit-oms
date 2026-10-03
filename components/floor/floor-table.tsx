@@ -236,6 +236,9 @@ function fmtDueDay(dateOnly: string, anchorIso: string): string | null {
 function liveTime(row: FloorBoardRow, nowMs: number): string | null {
   const st = rowStatus(row);
   if (st === "done") return hhmm(asStr(row.checkedAt));
+  // Direct Loading — finished, so the clock, same format as Done; the time it
+  // was loaded (it has no checkedAt: no assignment row).
+  if (st === "direct") return hhmm(asStr(row.directLoadedAt));
   if (st === "needsCheck") return shortElapsed(asStr(row.pickedAt), nowMs);
   if (st === "withPicker") return shortElapsed(asStr(row.assignedAt), nowMs);
   if (st === "tintPending") return shortElapsed(asStr(row.obdDateTime), nowMs);
@@ -798,8 +801,9 @@ export function FloorTable({
       // testing it here silently re-folds two distinct states into one pill and
       // reintroduces exactly this bug. Ask `st`.
       let histBody: ReactNode;
-      if (st === "done" || st === "dispatched") {
-        const cAt = asStr(row.checkedAt);
+      if (st === "done" || st === "direct" || st === "dispatched") {
+        // A Direct Loaded bill finished at directLoadedAt — it has no checkedAt.
+        const cAt = asStr(row.checkedAt ?? row.directLoadedAt);
         const lateDays = cAt && target ? diffDays(target, istDay(cAt)) : 0;
         const timeStr = lateDays > 0 ? fmtDateTime(cAt) : hhmm(cAt);
         histBody = (

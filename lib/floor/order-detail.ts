@@ -44,6 +44,7 @@ export async function getOrderDetail(orderId: number): Promise<FloorDetail | nul
       pickAssignment: {
         select: { picker: { select: { name: true } }, checkedBy: { select: { name: true } } },
       },
+      directLoadedBy: { select: { name: true } },
       statusLogs: {
         orderBy: { createdAt: "desc" },
         include: { changedBy: { select: { name: true } } },
@@ -221,6 +222,9 @@ export async function getOrderDetail(orderId: number): Promise<FloorDetail | nul
     isDispatched: order.workflowStage === "dispatched",
     pickerName: order.pickAssignment?.picker?.name ?? null,
     checkedByName: order.pickAssignment?.checkedBy?.name ?? null,
+    // Direct Loading (v27.52) — scalar rides the `include`; the name is the relation above.
+    directLoadedAt: order.directLoadedAt?.toISOString() ?? null,
+    directLoadedByName: order.directLoadedBy?.name ?? null,
 
     billToName: summary?.billToCustomerName ?? null,
     billToCode: summary?.billToCustomerId ?? null,

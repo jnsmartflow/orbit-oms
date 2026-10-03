@@ -685,6 +685,11 @@ export interface FloorDetail {
   isDispatched: boolean;
   pickerName: string | null;
   checkedByName: string | null;
+  /** Direct Loading (v27.52) — orders.directLoadedAt / directLoadedBy.name.
+   *  Set on a pick_checked bill the supervisor loaded from stock with no
+   *  picker; the panel header reads it before the generic Done. */
+  directLoadedAt: string | null;
+  directLoadedByName: string | null;
 
   // Details — Parties
   billToName: string | null;

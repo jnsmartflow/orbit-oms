@@ -437,9 +437,15 @@ export function floorLiveBaseWhere(todayRange: { start: Date; end: Date }): Pris
     isRemoved: false,
     OR: [
       { workflowStage: { in: PICKING_OPEN_STAGES } },
+      // Checked today — OR Direct Loaded today (v27.52): a Direct Loaded bill
+      // has no pick_assignments row, so its "finished today" fact is
+      // orders.directLoadedAt, same IST window. Mirrors lib/picking/queue.ts.
       {
         workflowStage: PICK_CHECKED,
-        pickAssignment: { checkedAt: { gte: todayRange.start, lt: todayRange.end } },
+        OR: [
+          { pickAssignment: { checkedAt: { gte: todayRange.start, lt: todayRange.end } } },
+          { directLoadedAt: { gte: todayRange.start, lt: todayRange.end } },
+        ],
       },
     ],
   };
@@ -687,6 +693,8 @@ const FLOOR_BOARD_INCLUDE = {
   dispatchWindow: { select: { id: true, windowTime: true, sortOrder: true } },
   querySnapshot: { select: { articleTag: true, totalVolume: true, totalWeight: true } },
   pickEarlyReleasedBy: { select: { name: true } },
+  // Direct Loading (v27.52) — who pressed it, for the pill / panel / card line.
+  directLoadedBy: { select: { name: true } },
   // ⚠ THE ONLY TINT READ ON THIS QUERY, AND IT IS ONE COLUMN. Measured before
   // it was added: +1 statement, 0.05 ms server-side, wall-clock delta below the
   // noise floor (interleaved n=8, alternating lead: -46 ms). `splitId: null` +
@@ -823,9 +831,12 @@ export async function getFloorBoard(
               // day's work as a pick_checked bill's — the stage it ended at does
               // not change the day it was finished on.
               workflowStage: { in: [PICK_CHECKED, DISPATCHED] },
-              pickAssignment: {
-                checkedAt: { gte: anchorRange.start, lt: anchorRange.end },
-              },
+              // ... or Direct Loaded on D (v27.52) — no assignment row, so
+              // the day it was finished is orders.directLoadedAt.
+              OR: [
+                { pickAssignment: { checkedAt: { gte: anchorRange.start, lt: anchorRange.end } } },
+                { directLoadedAt: { gte: anchorRange.start, lt: anchorRange.end } },
+              ],
             },
           ],
             },
@@ -1060,6 +1071,10 @@ export async function getFloorBoard(
       pickerId: order.pickAssignment?.pickerId ?? null,
       assignedToName: order.pickAssignment?.picker?.name ?? null,
       assignedByName: order.pickAssignment?.assignedBy?.name ?? null,
+      // Direct Loading (v27.52) — orders.directLoadedAt/By. rowStatus() reads
+      // directLoadedAt to tell a Direct Loaded bill from a checked one.
+      directLoadedAt: order.directLoadedAt?.toISOString() ?? null,
+      directLoadedByName: order.directLoadedBy?.name ?? null,
       zone,
       noDispatchDate,
       ageDays,

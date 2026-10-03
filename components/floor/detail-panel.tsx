@@ -20,7 +20,7 @@
 // surfaces — never a swallowed response.
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Building2, X } from "lucide-react";
+import { Building2, Truck, X } from "lucide-react";
 // TINT / BASE -- one owner for the word (components/picking/card-atoms.tsx).
 import { ColourWorkBadge } from "@/components/picking/card-atoms";
 import { HandBadge } from "@/components/shared/hand-badge";
@@ -84,7 +84,24 @@ function fmtDateTime(iso: string | null): string {
     .replace(",", " ·");
 }
 
-function headerStatus(d: FloorDetail, source: FloorDetailSource): { label: string; cls: string } {
+/** Direct Loading's header pill (2026-10-03) — the `direct` ink token, the time
+ *  in the board's own Done format (24h IST, floor-table.tsx `hhmm`). Asked by
+ *  BOTH the history and the floor branches below, before their Done arm. */
+function directLoadedStatus(d: FloorDetail): { label: string; cls: string; truck: true } | null {
+  if (!d.isChecked || d.isDispatched || d.directLoadedAt === null) return null;
+  const t = new Date(d.directLoadedAt).toLocaleTimeString("en-GB", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    timeZone: "Asia/Kolkata",
+  });
+  return { label: `Direct Loading · ${t}`, cls: "bg-direct text-direct-text", truck: true };
+}
+
+function headerStatus(
+  d: FloorDetail,
+  source: FloorDetailSource,
+): { label: string; cls: string; truck?: true } {
   // HISTORY FIRST, and specifically ABOVE the `d.dispatchStatus === "hold"`
   // line below — that term reads the bill's CURRENT status, so without this a
   // bill put on hold last week would render "On hold" inside the record of a
@@ -112,6 +129,8 @@ function headerStatus(d: FloorDetail, source: FloorDetailSource): { label: strin
   // shipped bill "Done" and this arm would never run.
   if (source === "history") {
     if (d.isDispatched) return { label: "Dispatched", cls: "bg-[#e2e8f0] text-[#334155]" };
+    const direct = directLoadedStatus(d);
+    if (direct) return direct;
     if (d.isChecked) return { label: "Done", cls: "bg-[#dcfce7] text-[#15803d]" };
     if (d.isDone) return { label: "Needs check", cls: "bg-[#fef3c7] text-[#b45309]" };
     if (d.isAssigned) return { label: "With picker", cls: "bg-tint-bg text-tint-700" };
@@ -120,6 +139,8 @@ function headerStatus(d: FloorDetail, source: FloorDetailSource): { label: strin
   if (source === "cancelled") return { label: "Cancelled", cls: "bg-[#fef2f2] text-[#b91c1c]" };
   if (source === "hold" || d.dispatchStatus === "hold") return { label: "On hold", cls: ON_HOLD_PILL_CLS };
   if (source === "floor") {
+    const direct = directLoadedStatus(d);
+    if (direct) return direct;
     if (d.isChecked) return { label: "Done", cls: "bg-[#dcfce7] text-[#15803d]" };
     if (d.isDone) return { label: "Needs check", cls: "bg-[#fef3c7] text-[#b45309]" };
     if (d.isAssigned) return { label: "With picker", cls: "bg-tint-bg text-tint-700" };
@@ -590,7 +611,10 @@ function PanelBody({
             added, leading the row. */}
         <div className="my-3 flex flex-wrap items-center gap-1.5">
           {hasDuplicateSo && <DuplicateSoTag variant="soft" />}
-          <span className={`rounded-[4px] px-2.5 py-1 text-[10.5px] font-semibold ${status.cls}`}>{status.label}</span>
+          <span className={`inline-flex items-center rounded-[4px] px-2.5 py-1 text-[10.5px] font-semibold ${status.cls}`}>
+            {status.truck && <Truck size={11} strokeWidth={2.4} className="mr-1 shrink-0" />}
+            {status.label}
+          </span>
           {d.isKeyCustomer && <span className="rounded-[4px] bg-[#fffbeb] px-2 py-[3px] text-[10px] font-semibold text-[#b45309]">★ Key</span>}
           {d.priorityLevel === 1 && <span className="rounded-[4px] bg-[#fef2f2] px-2 py-[3px] text-[10px] font-semibold text-[#b91c1c]">⚡ Urgent</span>}
           {d.isSite && (

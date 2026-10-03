@@ -47,11 +47,13 @@ import {
   countByStatus,
   formatLitres,
   formatWeightKg,
+  rowStatus,
   sumLitres,
   sumWeightKg,
 } from "./status-pill";
 import { FloorTable, type FloorTableVariant } from "./floor-table";
-import { NEEDS_CHECK_SEGMENT } from "./progress-bar";
+import { DIRECT_SEGMENT, NEEDS_CHECK_SEGMENT } from "./progress-bar";
+import { Truck } from "lucide-react";
 import { sortPickingQueue } from "@/lib/picking/sort";
 import { FLOOR_SPINE } from "@/lib/floor/sort";
 import type { FloorSelection } from "@/lib/floor/selection";
@@ -78,6 +80,8 @@ const OTHER_ROUTES_LABEL = "Other routes";
 // status — no words, no chips (owner). No held segment: see above.
 export const SEGMENTS = [
   { key: "done", color: "#2eb862" },
+  // Direct Loading (2026-10-03) — directly after the green done (owner).
+  { key: "direct", color: DIRECT_SEGMENT },
   { key: "needsCheck", color: NEEDS_CHECK_SEGMENT },
   { key: "picking", color: "#5b8ded" },
   { key: "waiting", color: "#d3d3dd" },
@@ -86,10 +90,12 @@ export const SEGMENTS = [
 type BarKey = (typeof SEGMENTS)[number]["key"];
 
 /**
- * The five segments, from `countByStatus` — the one owner of "what state is
+ * The six segments, from `countByStatus` — the one owner of "what state is
  * this row in" (status-pill.tsx). Every one of its buckets lands in exactly one
  * segment, so the segments always fill the bar:
- *   done       = done + dispatched (dispatched is 0 on a live board)
+ *   done       = done + dispatched (dispatched is 0 on a live board) — NOT
+ *                Direct Loaded bills, which are their own bucket
+ *   direct     = Direct Loaded (2026-10-03) — pick_checked with no picker
  *   needsCheck = picked, not checked (pick_done) — yellow since 2026-09-22
  *   picking    = with picker
  *   waiting    = waiting + tint done (the same rung: on the floor, nobody has it)
@@ -100,11 +106,22 @@ export function barCounts(rows: FloorBoardRow[]): Record<BarKey, number> {
   const c = countByStatus(rows);
   return {
     done: c.done + c.dispatched,
+    direct: c.direct,
     needsCheck: c.needsCheck,
     picking: c.withPicker,
     waiting: c.waiting + c.tintDone,
     tint: c.tinting + c.tintAssigned + c.tintPending,
   };
+}
+
+/**
+ * The Direct Loaded bills among `rows` (2026-10-03) — asked of rowStatus(), the
+ * one owner of "what state is this row in", never re-derived from the fields.
+ * They stay IN the counted rows (they ride a truck — unlike Hand); this only
+ * picks them out for the card's "N Direct Loading · kg — load from stock" line.
+ */
+export function directRows(rows: FloorBoardRow[]): FloorBoardRow[] {
+  return rows.filter((r) => rowStatus(r) === "direct");
 }
 
 export function StatusBar({ rows, className = "" }: { rows: FloorBoardRow[]; className?: string }) {
@@ -492,6 +509,8 @@ export function RouteCards({
   // The "+N Hand" line is ONE slot every card carries when ANY card has Hand
   // bills (invisible on the rest), so every card on the board stays one height.
   const handSlot = cards.some((c) => c.hand.length > 0);
+  // Same one-slot rule for the "N Direct Loading" line (2026-10-03).
+  const directSlot = cards.some((c) => directRows(c.rows).length > 0);
   const tracks = `repeat(${columns}, minmax(0, 1fr))`;
 
   return (
@@ -499,7 +518,14 @@ export function RouteCards({
       {chunk(cards, columns).map((row, i) => (
         <div key={i} className={`grid items-start gap-3 ${i === 0 ? "" : "mt-3"}`} style={{ gridTemplateColumns: tracks }}>
           {row.map((c) => (
-            <CardButton key={c.key} card={c} lineSlots={lineSlots} handSlot={handSlot} onOpen={() => onOpenCard(c.key)} />
+            <CardButton
+              key={c.key}
+              card={c}
+              lineSlots={lineSlots}
+              handSlot={handSlot}
+              directSlot={directSlot}
+              onOpen={() => onOpenCard(c.key)}
+            />
           ))}
         </div>
       ))}
@@ -580,14 +606,18 @@ function CardButton({
   card,
   lineSlots,
   handSlot,
+  directSlot,
   onOpen,
 }: {
   card: RouteCard;
   lineSlots: number;
   /** Some card on the board has Hand bills — reserve the "+N Hand" line. */
   handSlot: boolean;
+  /** Some card on the board has Direct Loaded bills — reserve that line too. */
+  directSlot: boolean;
   onOpen: () => void;
 }) {
+  const direct = directRows(card.rows);
   const spacers = Math.max(0, lineSlots - card.lines.length);
   // Nothing due, only later bills (owner, 2026-09-24): no kilos — the figures
   // count due bills only — just "Upcoming only", small and grey. A card whose
@@ -636,6 +666,23 @@ function CardButton({
             aria-hidden={card.hand.length === 0}
           >
             +{card.hand.length} Hand &middot; {kgText(card.hand)} kg — not counted
+          </span>
+        )}
+        {/* DIRECT LOADING (2026-10-03) — bills the supervisor sent straight to
+            the truck: nobody picks them in the bay, they load from stock. They
+            ARE in the kilos above (they ride this truck — unlike Hand); this
+            line only names how much of the load comes off the shelf. Normal
+            ink text + the truck, never brand. Same invisible-slot rule as Hand
+            so every card keeps one height. */}
+        {directSlot && (
+          <span
+            className={`mt-[3px] flex items-center gap-1 whitespace-nowrap text-[11.5px] font-semibold tabular-nums text-ink-900 ${
+              direct.length > 0 ? "" : "invisible"
+            }`}
+            aria-hidden={direct.length === 0}
+          >
+            <Truck size={12} strokeWidth={2.4} className="shrink-0" />
+            {direct.length} Direct Loading &middot; {kgText(direct)} kg — load from stock
           </span>
         )}
       </span>

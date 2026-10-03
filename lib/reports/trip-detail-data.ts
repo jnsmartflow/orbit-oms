@@ -134,7 +134,12 @@ const PICK_STAGE_WORD: Record<string, string> = {
   [DISPATCHED]: "Dispatched",
 };
 const LADDER_LABEL = new Map(STAGE_LADDER.map((s) => [s.stage, s.label]));
-function billStageWord(stage: string): string | null {
+/** The word for a Direct Loaded bill (pick_checked, no picker — v27.52). */
+const DIRECT_LOADING_WORD = "Direct Loading";
+function billStageWord(stage: string, directLoadedAt: Date | null = null): string | null {
+  // Before the stage map: a Direct Loaded bill sits at pick_checked but nobody
+  // picked or checked it, so "Checked" would be false on the sheet.
+  if (stage === PICK_CHECKED && directLoadedAt !== null) return DIRECT_LOADING_WORD;
   return PICK_STAGE_WORD[stage] ?? LADDER_LABEL.get(stage) ?? null;
 }
 
@@ -276,6 +281,8 @@ export async function getTripDetailRows(params: TripDetailParams): Promise<TripD
       smu: true,
       orderType: true,
       workflowStage: true,
+      // Direct Loading (v27.52) — tells a loaded-from-stock bill from a checked one.
+      directLoadedAt: true,
       grossWeight: true,
       volume: true,
       materialType: true,
@@ -429,7 +436,7 @@ export async function getTripDetailRows(params: TripDetailParams): Promise<TripD
       articles,
       litres,
       kg,
-      billStage: billStageWord(o.workflowStage),
+      billStage: billStageWord(o.workflowStage, o.directLoadedAt),
       tripNote: blank(trip.note),
       dropSeq: drop.dropSeq,
 

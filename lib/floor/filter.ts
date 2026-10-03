@@ -3,7 +3,7 @@
 // visible control (scope, slot, route get no duplicate) — so: Status (floor only)
 // + Flags. Multiple options AND together, matching the mockup's `.every`.
 
-export type FloorFilterStatus = "waiting" | "withPicker" | "needsCheck" | "done";
+export type FloorFilterStatus = "waiting" | "withPicker" | "needsCheck" | "done" | "direct";
 export type FloorFilterFlag = "key" | "urgent" | "tint" | "site" | "carried" | "redirect";
 
 export interface FloorFilters {
@@ -22,6 +22,9 @@ export const STATUS_OPTIONS: Array<[FloorFilterStatus, string]> = [
   ["withPicker", "With picker"],
   ["needsCheck", "Needs check"],
   ["done", "Done"],
+  // Direct Loading (2026-10-03) — pick_checked with no picker. Its own option:
+  // "Done" no longer matches these bills, exactly as the pill no longer says Done.
+  ["direct", "Direct Loading"],
 ];
 export const FLAG_OPTIONS: Array<[FloorFilterFlag, string]> = [
   ["key", "Key dealer"],
@@ -76,8 +79,12 @@ interface StatusRow {
   isAssigned: boolean;
   isDone: boolean;
   isChecked: boolean;
+  /** Direct Loading (v27.52). Optional: a hand-built row without it is not Direct Loaded. */
+  directLoadedAt?: Date | string | null;
 }
 function rowFilterStatus(r: StatusRow): FloorFilterStatus {
+  // Before the generic checked arm — the same order status-pill.tsx's rowStatus uses.
+  if (r.isChecked && r.directLoadedAt != null) return "direct";
   if (r.isChecked) return "done";
   if (r.isDone) return "needsCheck";
   if (r.isAssigned) return "withPicker";

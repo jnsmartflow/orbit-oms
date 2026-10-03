@@ -49,12 +49,23 @@ import type { StatusCounts } from "./status-pill";
  */
 export const NEEDS_CHECK_SEGMENT = "#fbbf24";
 
+/**
+ * Direct Loading — the `direct` token in tailwind.config.ts (#1B1826, ink-900's
+ * value). ONE value for every floor bar: this one and the route cards
+ * (route-cards.tsx). An inline style needs the hex; keep it equal to the token.
+ */
+export const DIRECT_SEGMENT = "#1B1826";
+
 const SEGMENTS: Array<{
-  key: "dispatched" | "done" | "needsCheck" | "withPicker" | "waiting" | "tintDone" | "tinting" | "tintAssigned" | "tintPending";
+  key: "dispatched" | "done" | "direct" | "needsCheck" | "withPicker" | "waiting" | "tintDone" | "tinting" | "tintAssigned" | "tintPending";
   color: string;
 }> = [
   { key: "dispatched", color: "#94a3b8" },
   { key: "done", color: "#22c55e" },
+  // Direct Loading (2026-10-03) — directly AFTER done (owner): finished, but
+  // loaded from stock. The `direct` token's own value; no lighter bar tone, a
+  // 7px sliver of ink reads plainly against the grey track.
+  { key: "direct", color: DIRECT_SEGMENT },
   { key: "needsCheck", color: NEEDS_CHECK_SEGMENT },
   { key: "withPicker", color: "#0284C7" },
   { key: "waiting", color: "#d1d5db" },

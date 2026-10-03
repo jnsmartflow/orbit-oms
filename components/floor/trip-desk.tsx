@@ -533,10 +533,16 @@ export function TripDesk({
   // A checked row with no timestamp would fall in "checked earlier" — it cannot
   // be shown as today's without a date saying so, and none exist today.
   const liveCounts = countByStatus(dueRows);
-  const stillOpen = liveCounts.total - liveCounts.done;
+  // Direct Loaded bills (2026-10-03) left the `done` bucket for their own, but
+  // they are finished: they count with the checked ones here, and their day is
+  // the day they were loaded (no assignment row, so no checkedAt).
+  const finishedLive = liveCounts.done + liveCounts.direct;
+  const stillOpen = liveCounts.total - finishedLive;
   const todayIso = istTodayIso();
-  const checkedToday = dueRows.filter((r) => r.isChecked && istDayOf(r.checkedAt) === todayIso).length;
-  const checkedEarlier = liveCounts.done - checkedToday;
+  const checkedToday = dueRows.filter(
+    (r) => r.isChecked && istDayOf(r.checkedAt ?? r.directLoadedAt) === todayIso,
+  ).length;
+  const checkedEarlier = finishedLive - checkedToday;
 
   // ── THE DATE CONTROL SPLIT IN TWO (2026-09-14) ───────────────────────────
   //

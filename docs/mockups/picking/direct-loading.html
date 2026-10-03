@@ -119,5 +119,70 @@
   </div>
 
 </div>
+
+<!-- ═══ 4 · Desktop Floor (step 4, 2026-10-03) ═══════════════════════════════
+     Route card: the bar gains a Direct Loading segment directly AFTER the green
+     done segment (done · direct · needs check · with picker · waiting · tint),
+     and a header line under the Hand line: "{N} Direct Loading · {kg} kg — load
+     from stock" in normal ink text with the truck. Direct Loaded kg IS in the
+     card total (unlike Hand). Table: the Status pill, ink + white + truck. -->
+<style>
+  .desk { margin:0 auto 40px; width:1180px; background:#fff; border-radius:12px; box-shadow:0 10px 30px rgba(16,24,40,.15); padding:22px; }
+  .desk h4 { margin:0 0 14px; font-size:13px; color:#475467; }
+  .rc { width:300px; border:1px solid #e7e7ee; border-radius:11px; display:inline-block; vertical-align:top; margin-right:14px; }
+  .rc .hd { padding:14px; }
+  .rc .nm { font-size:13px; font-weight:600; color:#61616d; }
+  .rc .kg { font-size:26px; font-weight:800; color:#1a1a22; letter-spacing:-.03em; }
+  .rc .kg small { font-size:13px; color:#96969f; font-weight:600; }
+  .rc .sm { font-size:12.5px; color:#96969f; margin-top:5px; }
+  .rc .hand { font-size:11.5px; font-weight:600; color:#8B5A2B; margin-top:3px; }
+  .rc .dl { font-size:11.5px; font-weight:600; color:#1B1826; margin-top:3px; display:flex; gap:4px; align-items:center; }
+  .rc .ln { border-top:1px solid #f1f1f6; padding:11px 14px 12px; }
+  .rc .lt { display:flex; gap:8px; align-items:baseline; font-size:14.5px; font-weight:600; margin-bottom:8px; }
+  .rc .lt span { font-size:12px; color:#96969f; font-weight:400; } .rc .lt b { margin-left:auto; font-size:14px; }
+  .bar { display:flex; height:4px; gap:1.5px; border-radius:2px; overflow:hidden; background:#f1f1f6; }
+  table.ft { border-collapse:collapse; width:760px; display:inline-table; vertical-align:top; font-size:12px; }
+  table.ft th { text-align:left; font-size:10px; text-transform:uppercase; letter-spacing:.05em; color:#9ca3af; font-weight:500; border-bottom:1px solid #ebebeb; padding:8px 12px; }
+  table.ft td { border-bottom:1px solid #f3f3f3; padding:9px 12px; }
+  .pill { display:inline-flex; align-items:center; gap:4px; border-radius:4px; padding:2px 8px; font-size:10px; font-weight:600; }
+  .pill i { font-style:normal; opacity:.7; font-size:9.5px; }
+</style>
+<div class="desk">
+  <h4>4 · Desktop Floor — route card (Local · Adajan + Olpad) and the bill table</h4>
+  <div class="rc">
+    <div class="hd">
+      <div class="nm">Adajan + Olpad</div>
+      <div class="kg">2,807<small> kg</small></div>
+      <div class="sm">9 stops · 1,640 L</div>
+      <div class="hand">+1 Hand · 120 kg — not counted</div>
+      <div class="dl"><svg class="truck" style="width:12px;height:12px"><use href="#truck"/></svg>2 Direct Loading · 940 kg — load from stock</div>
+    </div>
+    <div class="ln">
+      <div class="lt">Adajan <span>6 stops</span><b>1,960 <span>kg</span></b></div>
+      <div class="bar">
+        <span style="flex:3;background:#2eb862"></span>
+        <span style="flex:2;background:#1B1826"></span>
+        <span style="flex:1;background:#fbbf24"></span>
+        <span style="flex:2;background:#5b8ded"></span>
+        <span style="flex:2;background:#d3d3dd"></span>
+      </div>
+    </div>
+    <div class="ln">
+      <div class="lt">Olpad <span>3 stops</span><b>847 <span>kg</span></b></div>
+      <div class="bar"><span style="flex:1;background:#5b8ded"></span><span style="flex:2;background:#d3d3dd"></span></div>
+    </div>
+  </div>
+  <table class="ft">
+    <thead><tr><th>OBD</th><th>Ship to</th><th>Area</th><th>Due</th><th>Kg</th><th>Status</th></tr></thead>
+    <tbody>
+      <tr><td style="font-family:monospace">9109182230</td><td>Mohan Colour Co</td><td>Adajan</td><td>Today</td><td>310</td>
+          <td><span class="pill" style="background:#F0F9FF;color:#0369A1">With picker <i>· 24m</i></span></td></tr>
+      <tr><td style="font-family:monospace">9109182234</td><td>Shree Rang Paints</td><td>Adajan</td><td>Today</td><td>620</td>
+          <td><span class="pill" style="background:#1B1826;color:#fff"><svg class="truck" style="width:11px;height:11px"><use href="#truck"/></svg>Direct Loading <i>· 11:42</i></span></td></tr>
+      <tr><td style="font-family:monospace">9109180011</td><td>Gita Hardware</td><td>Adajan</td><td>Today</td><td>205</td>
+          <td><span class="pill" style="background:#dcfce7;color:#15803d">Done <i>· 11:20</i></span></td></tr>
+    </tbody>
+  </table>
+</div>
 </body>
 </html>

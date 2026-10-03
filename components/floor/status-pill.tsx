@@ -8,7 +8,7 @@
 // Also exports the row→status mapping and count helper reused by the progress
 // bar, slot bands and route rows so the four surfaces can never disagree.
 
-import { Check } from "lucide-react";
+import { Check, Truck } from "lucide-react";
 import { DUP_SO_BADGE_CLASS } from "@/components/shared/duplicate-so-tag";
 import type { FloorBoardRow } from "@/lib/floor/types";
 import { loadLitres } from "@/lib/orders/gift";
@@ -19,6 +19,11 @@ export type FloorStatus =
   | "needsCheck"
   | "done"
   | "dispatched"
+  // ── Direct Loading (2026-10-03, schema v27.52) ────────────────────────────
+  // A pick_checked bill the picking supervisor loaded from stock with NO
+  // picker (orders.directLoadedAt). Finished, like `done`, but nobody picked or
+  // ticked it — the planner must be able to tell the two apart at a glance.
+  | "direct"
   // ── The tint room (2026-09-13) ────────────────────────────────────────────
   // A tint order passes through the tint room BEFORE picking, and until today
   // all three of its stages fell through every guard below and rendered as grey
@@ -46,7 +51,11 @@ type StatusInput = Pick<FloorBoardRow, "isAssigned" | "isDone" | "isChecked"> &
   // which is right for every hand-built caller: the Hold and Cancelled tabs and
   // the trip counters all describe bills by their PICKING state and none of them
   // carries a tint phase. Only the board row does.
-  Partial<Pick<FloorBoardRow, "tintPhase">>;
+  Partial<Pick<FloorBoardRow, "tintPhase">> &
+  // Optional for the same reason as the two above; `undefined` reads as "not
+  // Direct Loaded", right for every hand-built caller (Hold, Cancelled, trip
+  // counters). The board row and the Tint Manager base feed carry it.
+  Partial<Pick<FloorBoardRow, "directLoadedAt">>;
 
 /**
  * The statuses that mean "ready for a picker, and nobody has it yet".
@@ -125,6 +134,10 @@ export function isTintRoomRow(row: StatusInput): boolean {
  */
 export function rowStatus(row: StatusInput): FloorStatus {
   if (row.isDispatched) return "dispatched";
+  // Direct Loading — BEFORE the generic checked → done arm, or every Direct
+  // Loaded bill reads as a picked-and-ticked Done. After `dispatched`: a bill
+  // that has shipped is shipped, however it was loaded.
+  if (row.isChecked && row.directLoadedAt != null) return "direct";
   if (row.isChecked) return "done";
   if (row.isDone) return "needsCheck";
   // ⚠ THE PICKING BOOLEANS ABOVE OUTRANK THE TINT PHASE, AND THE ORDER IS THE
@@ -206,6 +219,12 @@ const META: Record<FloorStatus, { label: string; cls: string }> = {
   // is the good outcome), not teal (reserved for the primary action,
   // CLAUDE_UI §1).
   dispatched: { label: "Dispatched", cls: "bg-[#e2e8f0] text-[#334155]" },
+  // ── Direct Loading (2026-10-03) ────────────────────────────────────────────
+  // The `direct` token (tailwind.config.ts): solid Orbit ink + white, the
+  // owner's colour. A STATUS, so never brand (CLAUDE_UI §1). Carries a truck
+  // glyph (GLYPH below) and the time it was loaded, like Done carries its check
+  // time.
+  direct: { label: "Direct Loading", cls: "bg-direct text-direct-text" },
   // ── The three tint pills (2026-09-13) ──────────────────────────────────────
   //
   // 🔴 PINK, AND NOT VIOLET. Violet is Orbit's ACTION colour (CLAUDE_UI §1) and
@@ -342,6 +361,10 @@ export function StatusPill({
       {TICKED.includes(status) && !onRed && (
         <Check size={10} strokeWidth={3} className="mr-1 shrink-0" />
       )}
+      {/* The truck on Direct Loading — kept on a duplicate row too: on the
+          shared white pill the label alone would say it, but the glyph is what
+          tells it from Done at a glance. */}
+      {status === "direct" && !heldBack && <Truck size={11} strokeWidth={2.4} className="mr-1 shrink-0" />}
       {m.label}
       {time ? (
         <>
@@ -370,6 +393,14 @@ export interface StatusCounts {
    * TripBillCounts.
    */
   dispatched: number;
+  /**
+   * Direct Loaded (2026-10-03) — pick_checked with no picker. Its OWN bucket,
+   * taken OUT of `done` (rowStatus answers "direct" first), so a bar's green
+   * segment means picked-and-checked only. Counted as finished by
+   * finishedCount(). Same rule as every key here: a key per status, and a
+   * segment per key on every bar.
+   */
+  direct: number;
   /**
    * The tint room's three buckets (2026-09-13).
    *
@@ -445,12 +476,14 @@ export function inTintingCount(c: StatusCounts): number {
  * the only predicate that admits the stage is FLOOR_HISTORY_STAGES.
  */
 export function finishedCount(counts: StatusCounts): number {
-  return counts.done + counts.dispatched;
+  // + direct (2026-10-03): a Direct Loaded bill is finished — it left the
+  // `done` bucket only so the bar can show it apart, not because it is less done.
+  return counts.done + counts.direct + counts.dispatched;
 }
 
 export function countByStatus(rows: StatusInput[]): StatusCounts {
   const c: StatusCounts = {
-    waiting: 0, withPicker: 0, needsCheck: 0, done: 0, dispatched: 0,
+    waiting: 0, withPicker: 0, needsCheck: 0, done: 0, direct: 0, dispatched: 0,
     tintPending: 0, tintAssigned: 0, tinting: 0, tintDone: 0, total: rows.length,
   };
   for (const r of rows) c[rowStatus(r)]++;
