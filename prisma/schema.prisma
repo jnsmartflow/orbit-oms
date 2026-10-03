@@ -272,6 +272,9 @@ model users {
   // Billing Hand mark (2026-09-24, Schema v27.41) — the EIGHTH named users
   // relation on `orders`. Same rule: named on both sides or generate fails.
   ordersHand                  orders[]                 @relation("OrderHandBy")
+  // Picking Direct Loading (2026-10-03, Schema v27.52) — the NINTH named users
+  // relation on `orders`. Same rule: named on both sides or generate fails.
+  ordersDirectLoaded          orders[]                 @relation("OrderDirectLoadedBy")
   // Trip module (2026-09-09) — FOUR FKs from `trips` to `users`. The largest
   // such cluster after Mrn*, and the same rule binds: all four MUST stay
   // explicitly named on BOTH sides or generate fails with an ambiguity ERROR.
@@ -1245,6 +1248,21 @@ model orders {
   handAt   DateTime? @db.Timestamptz(6)
   handById Int?
   handBy   users?    @relation("OrderHandBy", fields: [handById], references: [id], onDelete: SetNull)
+
+  // Picking Direct Loading (2026-10-03, Schema v27.52,
+  // sql/2026-10-03-orders-direct-loaded.sql). A picking supervisor sent the bill
+  // straight to pick_checked with no picker — loaded onto the vehicle from
+  // stock. Timestamp + actor, the house shape for a decision: NOT a new
+  // workflowStage value and NOT on pick_assignments (a bill with no picker has
+  // no assignment row). 🔴 NOT loadedAt/loadedById above — those are reserved
+  // for the future Vehicle Loading screen. No CHECK ties it to workflowStage:
+  // Undo clears both columns. No index — every read is already narrowed by
+  // workflowStage + a today window.
+  // Live FK orders_directLoadedById_fkey ON DELETE SET NULL (Prisma's default
+  // name, no `map:`). The NINTH FK from `orders` to `users` — named on both sides.
+  directLoadedAt   DateTime? @db.Timestamptz(6)
+  directLoadedById Int?
+  directLoadedBy   users?    @relation("OrderDirectLoadedBy", fields: [directLoadedById], references: [id], onDelete: SetNull)
 
   // Partial index created directly in Supabase, NOT expressible in Prisma
   // syntax — do NOT model it as @@index:
