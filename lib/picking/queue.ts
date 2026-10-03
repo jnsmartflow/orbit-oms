@@ -462,9 +462,18 @@ export function buildPickingWhere(
             // getPickingQueue below) — a top-level relation filter here would
             // be silently overwritten by that spread, widening every picker's
             // board to the whole depot.
+            //
+            // DIRECT LOADING (2026-10-03, v27.52): a bill the supervisor sent to
+            // PICK_CHECKED with no picker has NO pick_assignments row, so the
+            // checkedAt test can never match it. Its "checked today" fact is
+            // orders.directLoadedAt, same half-open IST window. The OR stays
+            // INSIDE this branch for the reason above — never lift it.
             {
               workflowStage: PICK_CHECKED,
-              pickAssignment: { checkedAt: { gte: checkedStart, lt: checkedEnd } },
+              OR: [
+                { pickAssignment: { checkedAt: { gte: checkedStart, lt: checkedEnd } } },
+                { directLoadedAt: { gte: checkedStart, lt: checkedEnd } },
+              ],
             },
           ],
         }
@@ -665,6 +674,7 @@ export async function getPickingQueue(
           o.pickAssignment?.assignedById ?? null,
           o.pickAssignment?.checkedById ?? null,
           o.pickEarlyReleasedById,
+          o.directLoadedById,
         ])
         .filter((id): id is number => id !== null && id !== undefined),
     ),
@@ -965,6 +975,12 @@ export async function getPickingQueue(
         order.pickAssignment?.assignedById != null
           ? (userNameById.get(order.pickAssignment.assignedById) ?? null)
           : null,
+      // Direct Loading (v27.52) — orders.directLoadedAt/ById, scalars already on
+      // `order` (`include` returns every base scalar); the name rides the same
+      // batched user Map as the three actors above.
+      directLoadedAt: order.directLoadedAt ?? null,
+      directLoadedByName:
+        order.directLoadedById != null ? (userNameById.get(order.directLoadedById) ?? null) : null,
     };
   });
 

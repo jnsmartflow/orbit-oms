@@ -6,12 +6,13 @@
 // the test reads sw.js and fails if they drift.
 //
 // Tags are set by the push senders (CLAUDE_NOTIFICATIONS.md): pick-assigned-<orderId> (to the picker),
-// pick-done-<orderId> (to supervisors), pick-cancelled-<orderId> (to the picker who held it).
+// pick-done-<orderId> (to supervisors), pick-cancelled-<orderId> (to the picker who held it),
+// pick-direct-<orderId> (to the picker who held a bill the supervisor Direct Loaded, 2026-10-03).
 
-export const PUSH_TAG_PATTERN_SOURCE = "^pick-(assigned|done|cancelled)-(\\d+)$";
+export const PUSH_TAG_PATTERN_SOURCE = "^pick-(assigned|done|cancelled|direct)-(\\d+)$";
 const PUSH_TAG_PATTERN = new RegExp(PUSH_TAG_PATTERN_SOURCE);
 
-export type PickingPushKind = "assigned" | "done" | "cancelled";
+export type PickingPushKind = "assigned" | "done" | "cancelled" | "direct";
 
 export interface OrbitPushMessage {
   type: "orbit-push";

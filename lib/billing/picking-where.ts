@@ -160,8 +160,13 @@ export async function buildBillingInvoicedInfoWhere(
         invoicedAt: null,
         // Soft-delete read (CORE §3).
         isRemoved: false,
-        // Bucket by the CHECK date — see the block comment above.
-        pickAssignment: { checkedAt: { gte: start, lt: end } },
+        // Bucket by the CHECK date — see the block comment above. A Direct
+        // Loaded bill (v27.52) has no pick_assignments row; its check date is
+        // orders.directLoadedAt, same window.
+        OR: [
+          { pickAssignment: { checkedAt: { gte: start, lt: end } } },
+          { directLoadedAt: { gte: start, lt: end } },
+        ],
         // ⚠ dispatchStatus is DELIBERATELY NOT PINNED here, unlike the pending
         // arm — OWNER DECISION: the only thing that removes a checked bill from
         // the day's record is the hide filter, nothing else. A later hold must

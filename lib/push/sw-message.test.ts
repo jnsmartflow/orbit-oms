@@ -10,6 +10,7 @@ test("parsePushTag: the three picking tags; anything else → null", () => {
   assert.deepEqual(parsePushTag("pick-assigned-17891"), { kind: "assigned", orderId: 17891 });
   assert.deepEqual(parsePushTag("pick-done-5"), { kind: "done", orderId: 5 });
   assert.deepEqual(parsePushTag("pick-cancelled-42"), { kind: "cancelled", orderId: 42 });
+  assert.deepEqual(parsePushTag("pick-direct-42"), { kind: "direct", orderId: 42 });
   assert.equal(parsePushTag("pick-deleted-42"), null); // the pick-delete push is not a picking trigger
   assert.equal(parsePushTag("orbit-test"), null);
   assert.equal(parsePushTag("pick-done-"), null);

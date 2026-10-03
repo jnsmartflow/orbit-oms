@@ -20,10 +20,14 @@
  * with the Picking feed OFF this changes nothing. Bumping this line is what makes
  * browsers install the new worker (byte-different file); skipWaiting + claim
  * above make it take over without a restart.
+ *
+ * SW_VERSION 2026-10-03.1 — Direct Loading: a fourth picking tag,
+ * pick-direct-<orderId>, sent to the picker whose bill a supervisor loaded
+ * straight onto the vehicle ("stop picking"). Same message, kind "direct".
  */
 
 // 🔴 Keep byte-identical to PUSH_TAG_PATTERN_SOURCE in lib/push/sw-message.ts (a unit test checks).
-var PICKING_PUSH_TAG = /^pick-(assigned|done|cancelled)-(\d+)$/;
+var PICKING_PUSH_TAG = /^pick-(assigned|done|cancelled|direct)-(\d+)$/;
 
 /** Tell every open Orbit window about a picking push. Never throws; never touches caches. */
 function tellWindows(tag) {

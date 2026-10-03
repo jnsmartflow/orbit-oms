@@ -179,6 +179,16 @@ export interface PickingQueueRow {
   // PICK_CHECKED is written.
   checkedAt: Date | string | null;
   checkedByName: string | null;
+  // orders.directLoadedAt / directLoadedBy.name (v27.52) — set by POST
+  // /api/picking/direct-load, cleared by its undo. A direct-loaded bill sits at
+  // PICK_CHECKED (isChecked true) with NO pick_assignments row, so checkedAt,
+  // checkedByName, pickerId and assignedToName are all null on it. Sort the
+  // Done band with doneSortAt() (lib/picking/direct-load.ts), never checkedAt.
+  // ⚠ OPTIONAL ONLY BECAUSE FloorBoardRow EXTENDS THIS TYPE and Floor's mapping
+  // (lib/floor/queries.ts) gains the two fields in Direct Loading step 4.
+  // lib/picking/queue.ts always sets both. Read `undefined` as null.
+  directLoadedAt?: Date | string | null;
+  directLoadedByName?: string | null;
   // Numeric FK, added 2026-07-17 for server-side "my bills only" scoping
   // (picker "My Picks") — a display-name match is not a scope boundary.
   // null when the row has no pick_assignments row at all.

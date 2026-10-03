@@ -111,6 +111,17 @@ const config: Config = {
           bg:      "#FFFBEB",
           text:    "#B45309",
         },
+        // Direct Loading (2026-10-03, owner) — the picking supervisor sent the bill
+        // straight to pick_checked with no picker (orders.directLoadedAt, v27.52).
+        // A STATUS, so never brand (CLAUDE_UI §1): solid Orbit ink — ink-900's
+        // exact hex — with white text. `bg-direct text-direct-text` is the pill,
+        // `bg-direct` the bar segment and the card mark. Mirrors ink-900 by value,
+        // not by reference, like every other status token here; if ink-900 ever
+        // moves, decide on purpose whether this follows.
+        direct: {
+          DEFAULT: "#1B1826",
+          text:    "#FFFFFF",
+        },
         // 🔴 NAMED `danger`, NOT `urgent`, AND THE NAME IS THE RULE.
         // CLAUDE_UI.md v5.21 (2026-09-08): red is ERROR AND DESTRUCTIVE ONLY —
         // a failed send, a bounced order, a blocked dealer, Delete/Clear/Replace,

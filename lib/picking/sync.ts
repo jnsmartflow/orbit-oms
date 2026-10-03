@@ -111,17 +111,23 @@ export async function syncPicking(body: PickingSyncBody): Promise<PickingSyncRes
   // 2. Classify — ONE statement (PK + the assignment's check time). A checked bill is on the board
   //    only on the day it was checked (the builder's checked arm), so an old pick_checked bill —
   //    most of them never leave that stage — is not worth the heavy read.
-  const facts = await prisma.$queryRaw<{ id: number; workflowStage: string; orderType: string | null; checkedAt: Date | null }[]>`
-    SELECT o.id, o."workflowStage", o."orderType", pa.checked_at AS "checkedAt"
+  //    A Direct Loaded bill (v27.52) has no assignment row — its check time is
+  //    orders."directLoadedAt", read as its OWN column (never COALESCEd with checked_at: the two
+  //    columns need not share a timestamp type) and ORed exactly as the builder's checked arm does.
+  const facts = await prisma.$queryRaw<
+    { id: number; workflowStage: string; orderType: string | null; checkedAt: Date | null; directLoadedAt: Date | null }[]
+  >`
+    SELECT o.id, o."workflowStage", o."orderType", pa.checked_at AS "checkedAt", o."directLoadedAt"
       FROM orders o
       LEFT JOIN pick_assignments pa ON pa.order_id = o.id
      WHERE o.id = ANY (${all}::int[])`;
   const { start: dayStart, end: dayEnd } = getISTDayRange();
+  const inToday = (d: Date | null) => d !== null && d >= dayStart && d < dayEnd;
   const onBoardStage = new Set(
     facts
       .filter((f) =>
         f.workflowStage === PICK_CHECKED
-          ? f.checkedAt !== null && f.checkedAt >= dayStart && f.checkedAt < dayEnd
+          ? inToday(f.checkedAt) || inToday(f.directLoadedAt)
           : BOARD_STAGES.includes(f.workflowStage),
       )
       .map((f) => f.id),

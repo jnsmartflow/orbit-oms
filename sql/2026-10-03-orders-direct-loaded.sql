@@ -6,7 +6,7 @@
 -- wrapper — BEGIN/COMMIT fails silently there (CORE §3). camelCase identifiers,
 -- quoted. Timestamps timestamptz(6).
 --
--- WRITTEN, NOT RUN. Nothing in the app reads or writes these columns yet.
+-- RUN LIVE 2026-10-03 (v27.52)
 --
 -- ── WHAT THIS FILE CHANGES (plain English) ────────────────────────────────
 --   orders gains two nullable columns:
