@@ -288,6 +288,7 @@ model users {
   tripsSentToBilling          trips[]                  @relation("TripSentToBillingBy")
   tripsBillingCopied          trips[]                  @relation("TripBillingCopiedBy")
   tripActivity               trip_activity[]          @relation("TripActivityActor")
+  tripRedeliveriesCreated     trip_redeliveries[]      @relation("TripRedeliveryCreatedBy")
   billingSettingsUpdated      billing_settings[]       @relation("BillingSettingsUpdatedBy")
   appSettingsUpdated          app_settings[]           @relation("AppSettingsUpdatedBy")
   tintSkipsAsActor            tint_skip_events[]       @relation("SkipActor")
@@ -1135,6 +1136,10 @@ model orders {
   // Freight Trips (2026-10-02, Schema v27.51) — membership rows only. A STORED
   // LINK: no freight action ever writes this order (lib/freight-trips/*).
   freightTripBills         freight_trip_bills[]      @relation("FreightTripBillOrder")
+  // Trip re-deliveries (2026-10-03, Schema v27.53) — this bill put on a LATER
+  // trip after a truck came back. A STORED LINK: no re-delivery action writes
+  // this order; its own tripDropId, stage and hold are untouched.
+  tripRedeliveries         trip_redeliveries[]       @relation("TripRedeliveryOrder")
   // TM Remove OBD (Feature 1)
   isRemoved                Boolean                   @default(false)
   removalReason            String?
@@ -3727,6 +3732,9 @@ model trips {
 
   drops    trip_drops[]
   activity trip_activity[]
+  // Re-deliveries (v27.53): TWO relations to trip_redeliveries, so both are NAMED.
+  redeliveries          trip_redeliveries[] @relation("TripRedeliveryTrip")
+  redeliveriesPrevious  trip_redeliveries[] @relation("TripRedeliveryPrevTrip")
 
   // ⚠ NO @@unique ON (tripDate, typeCode, seq) SINCE 2026-09-15. The live
   // uniqueness is the PARTIAL index trips_date_type_seq_live_key (see the header
@@ -3803,7 +3811,10 @@ model trip_drops {
   note         String?
   createdAt    DateTime               @default(now()) @db.Timestamptz(6)
 
-  orders orders[]
+  orders       orders[]
+  // Re-deliveries on this stop (v27.53). ON DELETE RESTRICT on their side: a
+  // stop holding a re-delivery cannot be deleted.
+  redeliveries trip_redeliveries[] @relation("TripRedeliveryDrop")
 
   // Live names trip_drops_trip_key_key and trip_drops_trip_seq_key. Prisma's
   // defaults would be trip_drops_tripId_dropKey_key and
@@ -3860,10 +3871,16 @@ model trip_drops {
 // never gets that far.
 //   chk_trip_activity_action CHECK (action IN ('created','bills_added',
 //     'bills_removed','vehicle_changed','details_changed','cancelled',
-//     'released','dispatched','renamed','shown','taken_back'))
+//     'released','dispatched','renamed','shown','taken_back',
+//     'sent_to_billing','taken_back_from_billing','invoices_copied',
+//     'redelivery_added','redelivery_removed'))   — 16 values, live 2026-10-03
 //   'renamed' added 2026-09-15 (slice 5) for the one-off migration that renamed
 //   already-cancelled trips to <number>-C. 'shown' and 'taken_back' added
-//   2026-09-15 (slice 8) for Show to floor and its take-back.
+//   2026-09-15 (slice 8) for Show to floor and its take-back. 'sent_to_billing',
+//   'taken_back_from_billing' and 'invoices_copied' added 2026-09-15 (slice 9,
+//   sql/2026-09-15-slice9-print-tab.sql). 'redelivery_added' and
+//   'redelivery_removed' added 2026-10-03 (Schema v27.53,
+//   sql/2026-10-03-trip-redelivery.sql).
 //
 // ⚠ BOTH 'dispatched' AND 'released' ARE STILL WRITTEN. Slice 4 was dropped and
 // Mark dispatched stays. Since slice 6 (2026-09-15) 'released' comes from
@@ -3895,6 +3912,78 @@ model trip_activity {
   // second is for a future cross-trip audit view; it has no caller today.
   @@index([tripId, createdAt], map: "trip_activity_trip_idx")
   @@index([createdAt(sort: Desc)], map: "trip_activity_created_idx")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TRIP RE-DELIVERIES (2026-10-03, Schema v27.53, sql/2026-10-03-trip-redelivery.sql)
+//
+// A bill that already went out on a truck and came back undelivered, put on a
+// LATER trip as attempt 2, 3 … One row per (trip, bill). Plan of record:
+// docs/prompts/drafts/web-update-2026-10-03-trip-redelivery.md (rev 5, §3).
+// Applied by hand in the Supabase SQL Editor 2026-10-03 11:25 IST and
+// hand-mirrored here (CORE §3).
+//
+// 🔴 NEVER WRITES `orders`. The bill keeps its own tripDropId (its FIRST trip),
+// its stage and its hold — no trip action changes a bill's status or hold
+// (CLAUDE_FLOOR_TRIPS.md §13). Every reader that reaches bills through
+// orders.tripDropId (counts, isReady, the Print tab, picking) is blind to this
+// table by construction.
+//
+// ⚠ ROWS ARE DELETED ON REMOVE. No status column in v1 (outcomes arrive with
+// the driver app), which is why the unique below is a full unique, not partial.
+//
+// 🔴 TWO LIVE CHECK CONSTRAINTS — NOT EXPRESSIBLE IN PRISMA, live text:
+//   chk_trip_redeliveries_attempt: CHECK (("attemptNo" >= 2))
+//   chk_trip_redeliveries_reason:  CHECK ((reason = ANY (ARRAY['site_closed'::text, 'wrong_dispatch'::text])))
+// A new reason = ALTER the CHECK first, then the vocabulary constant in code.
+//
+// 🔴 ON DELETE RESTRICT on trip, stop and order. Trips and orders are never
+// hard-deleted; the stop is the one that matters: app/api/floor/trips/[id]/
+// bills/route.ts deletes a stop when it holds no orders, and a stop deleted
+// under a re-delivery must FAIL LOUDLY rather than cascade the row away or
+// leave it pointing nowhere. prevTrip and createdBy keep the default rule, like
+// trips.createdById.
+//
+// ⚠ LANDMINE: tripId and tripDropId are written from the same trip_drops row;
+// nothing ties them. Two pointers that can disagree with nothing in the
+// database to catch it — the shipToOverride / shipToOverrideCustomerId shape
+// (CORE §7.3). Always write both from one drop read.
+//
+// Live-feed triggers trg_live_changes_trip_redeliveries_{ins,upd,del} (AFTER,
+// FOR EACH STATEMENT, live_changes_child_*('trip','parent','tripId')) — the
+// trip_drops pattern. TWO FKs to `trips`, so both relations are NAMED.
+// ─────────────────────────────────────────────────────────────────────────────
+model trip_redeliveries {
+  id              Int        @id @default(autoincrement())
+  tripId          Int
+  trip            trips      @relation("TripRedeliveryTrip", fields: [tripId], references: [id], onDelete: Restrict)
+  tripDropId      Int
+  tripDrop        trip_drops @relation("TripRedeliveryDrop", fields: [tripDropId], references: [id], onDelete: Restrict)
+  orderId         Int
+  order           orders     @relation("TripRedeliveryOrder", fields: [orderId], references: [id], onDelete: Restrict)
+  /// Snapshot at add time.
+  obdNumber       String
+  /// Snapshot at add time; screens read the live orders.invoiceNo.
+  invoiceNo       String?
+  /// >= 2 (chk_trip_redeliveries_attempt).
+  attemptNo       Int
+  /// The Orbit trip of the previous attempt; null if none.
+  prevTripId      Int?
+  prevTrip        trips?     @relation("TripRedeliveryPrevTrip", fields: [prevTripId], references: [id])
+  /// site_closed | wrong_dispatch (chk_trip_redeliveries_reason).
+  reason          String
+  note            String?
+  /// The same-day "Truck came back" tick was given.
+  confirmedReturn Boolean    @default(false)
+  createdAt       DateTime   @default(now()) @db.Timestamptz(6)
+  createdById     Int
+  createdBy       users      @relation("TripRedeliveryCreatedBy", fields: [createdById], references: [id])
+  updatedAt       DateTime   @default(now()) @updatedAt @db.Timestamptz(6)
+
+  // Hand-made names, so every one carries an explicit `map:`.
+  @@unique([tripId, orderId], map: "trip_redeliveries_trip_order_key")
+  @@index([tripDropId], map: "trip_redeliveries_drop_idx")
+  @@index([orderId], map: "trip_redeliveries_order_idx")
 }
 
 // ─────────────────────────────────────────────

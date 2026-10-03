@@ -1,0 +1,583 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trip re-delivery — mockup</title>
+<!--
+  MOCKUP ONLY — docs/mockups/trip-redelivery/trip-redelivery.html (2026-10-03)
+  Plan: docs/prompts/drafts/web-update-2026-10-03-trip-redelivery.md (rev 4) §4
+  Placement: docs/prompts/drafts/code-discovery-2026-10-03-trip-redelivery.md §1 D16
+
+  Styles copied from the CODE (not canon prose):
+    components/floor/trip-detail-header.tsx  — BUTTON, PRESSED, ICON_BUTTON, rows 1–6, stops bar
+    components/floor/trip-desk.tsx           — renderTripPanel stop header + stop spacing
+    components/floor/trip-rail.tsx           — trip card, number chip, badge chips, "No bills yet"
+    components/floor/trip-bar.tsx            — bar segments + legend colours
+    components/floor/floor-table.tsx         — HEAD_TH / TD / trip-number chip / widths [3,13,9,17,9,12,7,12,18]
+    components/floor/status-pill.tsx         — status pill colours
+    components/shared/hand-badge.tsx         — pill shape reference
+    components/floor/trip-add-band.tsx       — band reference (not reused: the plan asks for a dialog)
+  Tokens: tailwind.config.ts "Orbit palette" (CLAUDE_UI §2.1). RE-DEL = warn. Never red, never data.*.
+-->
+<style>
+:root{
+  /* Orbit palette — same names and values as tailwind.config.ts */
+  --brand-50:#F5F3FF; --brand-100:#EDE9FE; --brand-200:#DDD6FE; --brand-500:#8B5CF6;
+  --brand-600:#7C3AED; --brand-700:#6D28D9; --brand-800:#5B21B6;
+  --ink-0:#FFFFFF; --ink-25:#FAFAFC; --ink-50:#F4F3F8; --ink-100:#E9E7F0; --ink-200:#D6D3E0;
+  --ink-400:#9C99AC; --ink-500:#74718A; --ink-600:#514E63; --ink-700:#3A3748; --ink-900:#1B1826;
+  --ok:#059669; --ok-bg:#ECFDF5; --ok-text:#047857;
+  --warn:#D97706; --warn-bg:#FFFBEB; --warn-text:#B45309;
+  --tint-bg:#F0F9FF; --tint-700:#0369A1;
+  /* Hex literals the floor components use directly */
+  --fl-text:#1a1a22; --fl-sub:#61616d; --fl-mute:#96969f; --fl-line:#e7e7ee; --fl-dot:#ccccd6;
+  --fl-chip:#f1f1f6; --fl-btn-bd:#c6c6d4; --fl-td:#4b5563; --fl-th:#9ca3af; --fl-row:#f0f0f0;
+}
+*{box-sizing:border-box}
+body{margin:0;background:#f9fafb;font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:var(--fl-text);font-size:13px}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+.tab{font-variant-numeric:tabular-nums}
+
+/* ── Mockup chrome (not part of the design) ───────────────────────────── */
+.mk{background:#1B1826;color:#fff;padding:10px 16px;font-size:12px}
+.mk h1{font-size:13px;margin:0 0 8px;font-weight:600}
+.mk .sw{display:flex;flex-wrap:wrap;gap:6px}
+.mk button{background:#3A3748;color:#fff;border:1px solid #514E63;border-radius:6px;padding:4px 9px;font-size:11.5px;cursor:pointer}
+.mk button.on{background:var(--brand-600);border-color:var(--brand-600)}
+.mk .note{margin-top:8px;color:#D6D3E0}
+.mk .note b{color:#fff}
+
+/* ── Floor shell (simplified) ──────────────────────────────────────────── */
+.shell{display:grid;grid-template-columns:290px 1fr;min-width:1280px;height:calc(100vh - 92px);background:#fff;position:relative}
+.top{grid-column:1/-1;height:48px;border-bottom:1px solid var(--fl-line);display:flex;align-items:center;gap:14px;padding:0 18px}
+.top .t{font-size:14px;font-weight:600}
+.top .clk{font-size:11px;color:var(--fl-th)}
+.scope{display:flex;gap:4px;margin-left:18px}
+.scope span{font-size:12px;padding:3px 10px;border-radius:6px;color:var(--fl-sub);border:1px solid transparent}
+.scope span.on{border-color:var(--fl-line);background:var(--fl-chip);color:var(--fl-text);font-weight:600}
+.search{margin-left:auto;width:260px;height:30px;border:1px solid #e5e7eb;border-radius:8px;font-size:12px;color:var(--fl-th);display:flex;align-items:center;padding:0 10px}
+.body{display:contents}
+
+/* rail — trip-rail.tsx */
+.rail{border-right:1px solid var(--fl-line);background:#fafafc;padding:12px 11px 16px;overflow-y:auto}
+.rail .lbl{margin:0 4px 9px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--fl-mute)}
+.plan{margin-bottom:14px;border:1px solid var(--fl-line);border-radius:9px;background:#fff;padding:10px 12px}
+.plan .a{font-size:14.5px;font-weight:600}.plan .b{font-size:12.5px;color:var(--fl-sub);margin-top:1px}
+.card{display:flex;flex-direction:column;gap:6px;border:1px solid var(--fl-line);background:#fff;border-radius:9px;padding:11px 12px 12px;margin-bottom:8px}
+.card.sel{border-color:var(--brand-600);box-shadow:0 0 0 3px #f2edfe}
+.card .r1{display:flex;align-items:center;gap:7px}
+.tnum{flex-shrink:0;border:1px solid var(--fl-line);background:var(--fl-chip);color:var(--fl-sub);border-radius:5px;padding:1px 6px;font-size:11.5px;font-weight:600}
+.slot{font-size:11px;color:var(--fl-mute)}
+.badge{margin-left:auto;border-radius:20px;padding:2px 8px;font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em}
+.b-pick{background:#e4ecfd;color:#1d4ed8}.b-ready{background:#e2f6e9;color:#15773a}
+.card .rt{font-size:16.5px;font-weight:600;line-height:1.22;letter-spacing:-.012em}
+.card .rt i{font-style:normal;font-weight:500;color:var(--fl-mute)}
+.card .cnt{font-size:12.5px;color:var(--fl-sub)}
+.card .drv{font-size:13px;font-weight:500;color:var(--fl-sub);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.redelc{color:var(--warn-text);font-weight:600}
+
+/* trip bar — trip-bar.tsx */
+.bar{display:flex;height:7px;width:100%;gap:1.5px;overflow:hidden;border-radius:4px;background:#f1f1f6;margin-top:2px}
+.bar span{display:block;height:100%}
+.legend{display:flex;flex-wrap:wrap;gap:4px 15px;font-size:12.5px;color:var(--fl-sub)}
+.legend b{color:var(--fl-text);font-weight:600;margin-right:3px}
+.legend i{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:5px;vertical-align:0}
+
+/* trip panel — trip-detail-header.tsx */
+.panel{overflow-y:auto;position:relative}
+.hdr{padding:16px 18px 0}
+.row1{display:flex;min-height:32px;align-items:center;gap:9px;flex-wrap:wrap}
+.hnum{border:1px solid var(--fl-line);background:var(--fl-chip);border-radius:6px;padding:3px 9px;font-size:14px;font-weight:600}
+.btns{margin-left:auto;display:flex;gap:8px;align-items:center;position:relative}
+.btn{display:inline-flex;height:32px;align-items:center;border-radius:7px;border:1px solid var(--fl-btn-bd);background:#fff;padding:0 14px;font-size:13px;font-weight:500;color:var(--fl-text);cursor:pointer;font-family:inherit;gap:5px}
+.btn:hover{border-color:#a5a5ba;background:#f5f5fa}
+.btn:disabled{cursor:not-allowed;border-color:#e2e2ea;color:#adadb9;background:#fff}
+.btn.sq{width:32px;justify-content:center;padding:0}
+.btn.semi{font-weight:600;padding-left:10px;padding-right:12px}
+.route{margin-top:11px;font-size:23px;font-weight:700;line-height:1.25;letter-spacing:-.02em}
+.route i{font-style:normal;font-weight:500;color:var(--fl-mute)}
+.meta{margin-top:6px;display:flex;flex-wrap:wrap;align-items:center;gap:3px 7px;font-size:13px;color:var(--fl-sub)}
+.meta .pl{font-weight:600;color:var(--fl-text)}.meta .d{color:var(--fl-dot)}.meta .m{color:var(--fl-mute)}
+.ib{display:inline-flex;height:26px;min-width:26px;align-items:center;justify-content:center;border-radius:6px;color:var(--fl-mute);padding:0 6px;font-size:11px}
+.barwrap{margin-top:14px;display:flex;flex-direction:column;gap:7px}
+.stopsbar{margin-top:20px;display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--fl-line);padding-bottom:8px}
+.stopsbar .s{font-size:13.5px;font-weight:600}
+.stopsbar .s .sep{padding:0 1px;font-weight:400;color:#c9c9d4}
+.stopsbar .acts{margin-left:auto;display:flex;gap:8px}
+.tip{position:absolute;top:38px;left:0;z-index:5;white-space:nowrap;background:var(--ink-900);color:#fff;font-size:11.5px;padding:5px 8px;border-radius:6px}
+.tip:before{content:"";position:absolute;top:-4px;left:22px;border:4px solid transparent;border-top:0;border-bottom-color:var(--ink-900)}
+.ann{font-size:10.5px;color:var(--brand-700);font-weight:600;margin-left:6px}
+
+/* stops — trip-desk.tsx */
+.stops{padding-bottom:22px}
+.stop{margin-top:20px}.stop:first-child{margin-top:6px}
+.sh{display:flex;flex-wrap:wrap;align-items:baseline;gap:9px;border-bottom:1px solid #e7e7ee;padding:0 18px 7px}
+.sh .n{min-width:15px;font-size:11px;font-weight:600;color:var(--fl-mute)}
+.sh .c{font-size:14.5px;font-weight:600}
+.sh .x{font-size:12.5px;color:var(--fl-mute)}
+.sh .x .rd{color:var(--warn-text);font-weight:600}
+
+/* FloorTable — floor-table.tsx */
+table.ft{width:100%;table-layout:fixed;border-collapse:collapse}
+.ft th{height:31px;border-bottom:1px solid #ebebeb;padding:0 14px;text-align:left;font-size:10px;font-weight:500;text-transform:uppercase;letter-spacing:.05em;color:var(--fl-th)}
+.ft th.nw,.ft td.nw{padding:0 4px;text-align:center}
+.ft td{padding:8px 14px;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;border-bottom:1px solid var(--fl-row);color:var(--fl-td)}
+.ft input{width:13px;height:13px;accent-color:var(--brand-600);vertical-align:middle}
+.ft .obd{font-family:ui-monospace,Menlo,Consolas,monospace;color:#1f2937}
+.ft .sub{display:block;font-size:10px;color:var(--fl-th)}
+.ft .name{color:#111827;font-weight:500}
+.pill{display:inline-block;border-radius:4px;padding:2px 7px;font-size:10.5px;font-weight:600}
+.p-done{background:#dcfce7;color:#15803d}.p-chk{background:#fef3c7;color:#b45309}.p-disp{background:#e2e8f0;color:#334155}.p-pick{background:var(--tint-bg);color:var(--tint-700)}
+
+/* ── RE-DEL block (new) — plan §4.2. NOT a FloorTable: no tick column, no selection ── */
+.rdblk{margin:0 18px;border-left:2px solid #fcd9a0;background:var(--warn-bg);border-radius:0 6px 6px 0}
+.stop .rdblk{margin-top:6px}
+.rdrow{display:flex;align-items:center;gap:10px;padding:7px 12px;font-size:11.5px;color:var(--fl-td);min-height:34px}
+.rdrow + .rdrow{border-top:1px solid #f6e3c4}
+/* chip shape copied from the trip-number chip in floor-table.tsx:958 — rounded-[3px] px-[5px] py-px font-mono text-[9.5px] font-semibold */
+.redel{flex-shrink:0;border-radius:3px;padding:1px 5px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:9.5px;font-weight:600;background:#fff;color:var(--warn-text);border:1px solid #f3c27a;letter-spacing:.02em}
+.rdrow .att{font-weight:600;color:var(--fl-text)}
+.rdrow .o{font-family:ui-monospace,Menlo,Consolas,monospace;color:#1f2937}
+.rdrow .iv{font-family:ui-monospace,Menlo,Consolas,monospace;color:var(--fl-sub)}
+.rdrow .why{color:var(--fl-sub)}
+.rdrow .hist{color:var(--fl-mute);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:1}
+.rdrow .hist .tn{font-family:ui-monospace,Menlo,Consolas,monospace;color:var(--fl-sub)}
+.rdrow .d{color:var(--fl-dot)}
+.lnk{margin-left:auto;flex-shrink:0;background:none;border:0;padding:2px 4px;font-size:11.5px;font-weight:500;color:var(--fl-mute);cursor:pointer;font-family:inherit;border-radius:4px}
+.lnk:hover{color:var(--fl-text);background:#fff}
+.confirm{margin-left:auto;display:flex;align-items:center;gap:8px;flex-shrink:0}
+.confirm .q{font-weight:600;color:var(--fl-text)}
+.cbtn{height:24px;border-radius:6px;padding:0 9px;font-size:11.5px;font-weight:600;cursor:pointer;font-family:inherit}
+.cbtn.rm{background:#dc2626;border:1px solid #dc2626;color:#fff}
+.cbtn.kp{background:#fff;border:1px solid var(--fl-btn-bd);color:var(--fl-text)}
+
+/* ── Dialog (new) — modal pattern CLAUDE_UI §13 ───────────────────────── */
+.scrim{position:absolute;inset:0;background:rgba(27,24,38,.32);display:flex;align-items:flex-start;justify-content:center;padding-top:70px;z-index:20}
+.dlg{width:560px;background:#fff;border-radius:12px;box-shadow:0 20px 50px rgba(27,24,38,.25);overflow:hidden}
+.dh{display:flex;align-items:center;gap:8px;padding:14px 18px;border-bottom:1px solid var(--fl-line)}
+.dh .t{font-size:14px;font-weight:600}
+.dh .x{margin-left:auto;color:var(--fl-mute);font-size:16px;cursor:pointer}
+.db{padding:16px 18px}
+.fld{width:100%;height:38px;padding:0 12px;font-size:13px;border:1px solid #e5e7eb;border-radius:8px;font-family:ui-monospace,Menlo,Consolas,monospace;color:var(--fl-text);outline:none}
+.fld:focus,.fld.focus{border-color:var(--brand-500);box-shadow:0 0 0 2px rgba(139,92,246,.1)}
+.fld::placeholder{font-family:Inter,ui-sans-serif,system-ui;color:#d1d5db}
+.hint{margin-top:7px;font-size:11.5px;color:var(--fl-mute);line-height:1.5}
+.bc{margin-top:14px;border:1px solid var(--fl-line);border-radius:9px;padding:12px 14px}
+.bc .cn{font-size:14.5px;font-weight:600}
+.bc .ca{font-size:12px;color:var(--fl-mute);margin-top:1px}
+.facts{display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:9px;font-size:12px;color:var(--fl-sub);align-items:center}
+.facts .k{color:var(--fl-mute);margin-right:4px}
+.facts .v{font-family:ui-monospace,Menlo,Consolas,monospace;color:var(--fl-text)}
+.hh{margin-top:12px;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--fl-mute)}
+.hl{list-style:none;margin:6px 0 0;padding:0}
+.hl li{display:flex;align-items:baseline;gap:8px;font-size:12.5px;padding:4px 0;color:var(--fl-sub)}
+.hl li:before{content:"";flex-shrink:0;width:7px;height:7px;border-radius:50%;background:var(--ink-200);position:relative;top:-1px}
+.hl li.last:before{background:var(--warn)}
+.hl .dt{width:44px;flex-shrink:0;color:var(--fl-text);font-weight:500}
+.hl .tn{font-family:ui-monospace,Menlo,Consolas,monospace;color:var(--fl-text);font-weight:600}
+.hl .k{color:var(--fl-mute)}
+.nts{display:inline-block;border-radius:3px;padding:0 5px;font-size:9.5px;font-weight:700;letter-spacing:.05em;background:var(--ink-100);color:var(--ink-600);border:1px solid var(--ink-200);font-family:ui-monospace,Menlo,Consolas,monospace}
+.will{margin-top:12px;font-size:13px;font-weight:600}
+.will b{color:var(--warn-text)}
+.wn{margin-top:10px;border:1px solid #f3c27a;background:var(--warn-bg);border-radius:8px;padding:9px 11px;font-size:12.5px;color:var(--warn-text)}
+.wn label{display:flex;align-items:center;gap:7px;margin-top:7px;color:var(--fl-text);font-weight:600;cursor:pointer}
+.wn input{width:14px;height:14px;accent-color:var(--brand-600)}
+.rf{margin-top:12px;border:1px solid var(--ink-100);background:var(--ink-50);border-radius:8px;padding:9px 11px;font-size:12.5px;color:var(--ink-700)}
+.rf b{color:var(--ink-900)}
+.lab{margin-top:14px;font-size:11px;font-weight:500;color:#6b7280}
+.rs{display:flex;gap:8px;margin-top:6px}
+.rp{height:32px;border-radius:16px;border:1px solid var(--fl-btn-bd);background:#fff;padding:0 14px;font-size:12.5px;font-weight:500;cursor:pointer;font-family:inherit;color:var(--fl-text)}
+.rp.on{border-color:var(--ink-900);background:var(--ink-900);color:#fff}
+.rp:disabled{border-color:#e2e2ea;color:#adadb9;cursor:not-allowed}
+textarea.nt{width:100%;margin-top:6px;height:52px;resize:none;padding:8px 12px;font-size:12.5px;border:1px solid #e5e7eb;border-radius:8px;font-family:inherit}
+textarea.nt:disabled{background:var(--ink-25)}
+.df{display:flex;align-items:center;gap:8px;padding:12px 18px;border-top:1px solid var(--fl-line);background:var(--ink-25)}
+.df .fh{font-size:11.5px;color:var(--fl-mute)}
+.add{margin-left:auto;height:38px;border-radius:8px;padding:0 18px;font-size:13px;font-weight:600;border:1px solid var(--brand-600);background:var(--brand-600);color:#fff;cursor:pointer;font-family:inherit}
+.add:hover{background:var(--brand-700)}
+.add:disabled{background:#f3f4f6;border-color:#e5e7eb;color:#9ca3af;cursor:not-allowed}
+.cxl{height:38px;border-radius:8px;padding:0 14px;font-size:13px;border:1px solid #e5e7eb;background:#fff;color:#4b5563;cursor:pointer;font-family:inherit}
+.pick{display:flex;gap:10px;margin-top:12px}
+.pk{flex:1;border:1px solid var(--fl-line);border-radius:9px;padding:10px 12px;cursor:pointer;background:#fff;text-align:left;font-family:inherit}
+.pk:hover{border-color:var(--brand-500);box-shadow:0 0 0 3px #f2edfe}
+.pk .o{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;font-weight:600;color:var(--fl-text)}
+.pk .s{font-size:11.5px;color:var(--fl-mute);margin-top:3px}
+.back{margin-top:10px;font-size:11.5px;color:var(--brand-700);cursor:pointer;background:none;border:0;padding:0;font-family:inherit}
+.pagenote{position:absolute;right:18px;bottom:12px;font-size:11px;color:var(--fl-mute);background:#fff;border:1px dashed var(--ink-200);border-radius:6px;padding:5px 9px;z-index:3}
+</style>
+</head>
+<body>
+
+<div class="mk">
+  <h1>Trip re-delivery — mockup · plan rev 4 §4 · opened trip L-261003-04 · Sat 3 Oct 2026</h1>
+  <div class="sw" id="sw"></div>
+  <div class="note"><b>Re-delivery button hidden on Hand, cancelled and dispatched trips.</b> &nbsp;·&nbsp; Static mockup, no data is written. States 1–9 open the dialog over the trip; 10–11 change the trip panel.</div>
+</div>
+
+<div class="shell">
+  <div class="top">
+    <span class="t">Floor Control</span><span class="clk tab">Sat 3 Oct · 11:42</span>
+    <div class="scope"><span class="on">All</span><span>Local</span><span>Upcountry</span><span>IGT</span></div>
+    <div class="search">Search OBD, invoice, SO, customer…</div>
+  </div>
+  <div class="rail" id="rail"></div>
+  <div class="panel" id="panel"></div>
+  <div id="dlgHost"></div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  // ── Data ──────────────────────────────────────────────────────────────
+  var REDEL_A = { // stop 1
+    att: 3, obd: "9109148817", inv: "I536228905", reason: "Shop / site closed",
+    hist: [["1 Oct", "L-261001-04"], ["3 Oct", "L-261003-01"]]
+  };
+  var REDEL_B = { // stop 2 — re-delivery-only stop
+    att: 2, obd: "9109149902", inv: "I536229377", reason: "Wrong dispatch",
+    hist: [["2 Oct", "L-261002-06"]]
+  };
+
+  var STATES = [
+    { id: 1,  label: "1 · Empty" },
+    { id: 2,  label: "2 · Attempt 2" },
+    { id: 3,  label: "3 · Attempt 3 same day" },
+    { id: 4,  label: "4 · …ticked" },
+    { id: 5,  label: "5 · NTS history" },
+    { id: 6,  label: "6 · Invoice → 2 OBDs" },
+    { id: 7,  label: "7 · Not gone out" },
+    { id: 8,  label: "8 · Already on this trip" },
+    { id: 9,  label: "9 · Removed / not found" },
+    { id: 10, label: "10 · Re-deliveries-only trip" },
+    { id: 11, label: "11 · Remove confirm" }
+  ];
+
+  var state = 2;
+  var reason = null;     // chosen reason pill
+  var ticked = false;    // "Truck came back"
+  var picked = null;     // state 6 chosen OBD
+
+  // ── Small builders ────────────────────────────────────────────────────
+  function esc(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;"); }
+  function barHtml(segs) {
+    return '<span class="bar">' + segs.map(function (s) {
+      return '<span style="flex:' + s[0] + ';background:' + s[1] + '"></span>';
+    }).join("") + "</span>";
+  }
+  var GREEN = "#2eb862", YEL = "#fbbf24", BLUE = "#5b8ded", GREY = "#d3d3dd";
+
+  function railCard(o) {
+    return '<div class="card' + (o.sel ? " sel" : "") + '">' +
+      '<div class="r1"><span class="tnum mono">' + o.num + '</span>' +
+      (o.slot ? '<span class="slot mono">' + o.slot + "</span>" : "") +
+      (o.badge ? '<span class="badge ' + o.badge[1] + '">' + o.badge[0] + "</span>" : "") + "</div>" +
+      '<div class="rt">' + o.route + "</div>" + o.count +
+      '<div class="drv">' + o.driver + "</div>" +
+      (o.bar ? barHtml(o.bar) : '<span class="bar"></span>') + "</div>";
+  }
+
+  function renderRail() {
+    var only = state === 10;
+    var html = '<div class="lbl tab">Trips · 3</div>' +
+      '<div class="plan"><div class="a">To plan</div><div class="b tab">14 bills · 412 L</div></div>';
+    html += railCard({
+      num: only ? "L-261003-05" : "L-261003-04", sel: true, slot: "16:00",
+      badge: only ? null : ["Picking", "b-pick"],
+      route: only ? "Rander" : 'Adajan <i>+1</i>',
+      count: only
+        ? '<div class="cnt tab"><span style="color:#96969f">Re-deliveries only</span> · <span class="redelc">+1 re-del</span></div>'
+        : '<div class="cnt tab">2 stops · 2 bills · 48 L · <span class="redelc">+2 re-del</span></div>',
+      driver: only ? "Sureshbhai Rathod" : "Rameshbhai Patel",
+      bar: only ? null : [[1, GREEN], [1, YEL]]
+    });
+    html += railCard({
+      num: "L-261003-01", slot: "10:30", badge: ["Ready", "b-ready"],
+      route: 'Varachha <i>+2</i>',
+      count: '<div class="cnt tab">6 stops · 9 bills · 188 L</div>',
+      driver: "Mahesh Chaudhari", bar: [[9, GREEN]]
+    });
+    html += railCard({
+      num: "U-261003-02", slot: "18:00", badge: ["Picking", "b-pick"],
+      route: "Navsari",
+      count: '<div class="cnt tab">4 stops · 7 bills · 312 L</div>',
+      driver: "Kiran Vasava", bar: [[3, GREEN], [2, BLUE], [2, GREY]]
+    });
+    document.getElementById("rail").innerHTML = html;
+  }
+
+  // RE-DEL row — plan §4.2. Not a FloorTable row; no tick box; never in the selection.
+  function redelRow(r, confirming) {
+    var hist = r.hist.map(function (h) {
+      return h[0] + ' <span class="tn">' + h[1] + "</span>";
+    }).join(' <span class="d">·</span> ');
+    var tail = confirming
+      ? '<span class="confirm"><span class="q">Remove from this trip?</span>' +
+        '<button class="cbtn rm" type="button">Remove</button>' +
+        '<button class="cbtn kp" type="button" data-act="keep">Keep</button></span>'
+      : '<button class="lnk" type="button" data-act="rm">Remove</button>';
+    return '<div class="rdrow" title="Re-delivery — the bill stays on its first trip; this row is not tickable">' +
+      '<span class="redel">RE-DEL</span>' +
+      '<span class="att">Attempt ' + r.att + "</span>" +
+      '<span class="o">' + r.obd + "</span>" +
+      '<span class="iv">' + r.inv + "</span>" +
+      '<span class="why">' + r.reason + "</span>" +
+      '<span class="hist" title="Earlier trips">' + hist + "</span>" + tail + "</div>";
+  }
+
+  function billTable() {
+    // widths [3,13,9,17,9,12,7,12,18] — floor-table.tsx:525
+    var w = [3, 13, 9, 17, 9, 12, 7, 12, 18];
+    var cols = w.map(function (x) { return '<col style="width:' + x + '%">'; }).join("");
+    var rows = [
+      ["9109152231", "02-10 · 16:41", "I536231104", "02-10", "Shree Paints", "Adajan Gam", "Adajan", "Today", "24 L", "118 kg", "6 CTN", '<span class="pill p-done">Done</span>'],
+      ["9109152240", "03-10 · 09:12", "I536231112", "03-10", "Shree Paints", "Adajan Gam", "Adajan", "Today", "24 L", "61 kg", "3 CTN", '<span class="pill p-chk">Needs check</span>']
+    ];
+    return '<table class="ft"><colgroup>' + cols + "</colgroup><thead><tr>" +
+      '<th class="nw"><input type="checkbox" aria-label="Select all"></th><th>OBD</th><th>Invoice</th><th>Ship to</th><th>Route</th><th>Due</th><th style="text-align:right">Vol / KG</th><th>Article</th><th>Status</th>' +
+      "</tr></thead><tbody>" + rows.map(function (r) {
+        return '<tr><td class="nw"><input type="checkbox"></td>' +
+          '<td><span class="obd">' + r[0] + '</span><span class="sub">' + r[1] + "</span></td>" +
+          '<td><span class="obd">' + r[2] + '</span><span class="sub">' + r[3] + "</span></td>" +
+          '<td><span class="name">' + r[4] + '</span><span class="sub">' + r[5] + "</span></td>" +
+          "<td>" + r[6] + "</td><td>" + r[7] + '</td><td style="text-align:right" class="tab">' + r[8] + '<span class="sub">' + r[9] + "</span></td>" +
+          "<td>" + r[10] + "</td><td>" + r[11] + "</td></tr>";
+      }).join("") + "</tbody></table>";
+  }
+
+  var PLUS = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 5v14M5 12h14"/></svg>';
+  var REDO = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg>';
+  var DOTS = '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>';
+
+  function renderPanel() {
+    var only = state === 10;
+    var h = '<div class="hdr">';
+    // Row 1
+    h += '<div class="row1"><span class="hnum mono">' + (only ? "L-261003-05" : "L-261003-04") + "</span>" +
+      '<div class="btns">' +
+      (only
+        ? '<span style="position:relative;display:inline-flex"><button class="btn" type="button" disabled>Send to billing</button>' +
+          '<span class="tip">Re-deliveries only — nothing to bill</span></span>'
+        : '<button class="btn" type="button">Send to billing</button>') +
+      '<span title="Desk control is off" style="display:inline-flex"><button class="btn" type="button" disabled>Show to floor</button></span>' +
+      '<button class="btn sq" type="button" aria-label="More trip actions">' + DOTS + "</button></div></div>";
+    // Row 2 — route
+    h += '<div class="route">' + (only ? "Rander" : 'Adajan <i>+1</i>') + "</div>";
+    // Row 3 — vehicle / driver
+    h += '<div class="meta"><span class="pl mono">' + (only ? "GJ05 CD 7781" : "GJ05 AB 1234") + '</span><span class="d">·</span>' +
+      '<span class="m">Tata 407</span><span class="d">·</span><span>Shree Ganesh Roadlines</span>' +
+      '<span style="margin-left:16px">' + (only ? "Sureshbhai Rathod" : "Rameshbhai Patel") + '</span><span class="d">·</span>' +
+      '<span class="m tab">' + (only ? "98795 22018" : "98250 41234") + "</span>" +
+      '<span class="ib">✎</span><span class="ib">🕒 <b style="margin-left:3px">' + (only ? "2" : "5") + "</b></span></div>";
+    // Rows 4–5 — bar + legend (bills only; hidden when no bills, as today)
+    if (!only) {
+      h += '<div class="barwrap">' + barHtml([[1, GREEN], [1, YEL]]) +
+        '<div class="legend tab"><span><i style="background:' + GREEN + '"></i><b>1</b>Checked</span>' +
+        '<span><i style="background:' + YEL + '"></i><b>1</b>Needs check</span></div></div>';
+    }
+    // Row 6 — stops bar, "+ Add bills" and the new "Re-delivery"
+    var counts = only
+      ? ["1 stop", "0 bills", '<span style="color:var(--warn-text)">1 re-del</span>']
+      : ["2 stops", "2 bills", '<span style="color:var(--warn-text)">2 re-del</span>', "48 L", "179 kg"];
+    h += '<div class="stopsbar"><span class="s tab">' + counts.join('<span class="sep"> · </span>') + "</span>" +
+      '<div class="acts"><button class="btn semi" type="button" data-act="open">' + REDO + "Re-delivery</button>" +
+      '<button class="btn semi" type="button">' + PLUS + "Add bills</button></div></div>";
+    h += "</div>";
+
+    // Stops
+    h += '<div class="stops">';
+    if (only) {
+      h += '<div class="stop"><div class="sh"><span class="n mono">1</span><span class="c">Om Hardware</span>' +
+        '<span class="x tab">Rander · <span class="rd">1 re-del</span></span></div>' +
+        '<div class="rdblk">' + redelRow(REDEL_B, false) + "</div></div>";
+    } else {
+      h += '<div class="stop"><div class="sh"><span class="n mono">1</span><span class="c">Shree Paints</span>' +
+        '<span class="x tab">Adajan · 2 bills · <span class="rd">1 re-del</span> · 48 L</span></div>' +
+        billTable() + '<div class="rdblk">' + redelRow(REDEL_A, false) + "</div></div>";
+      h += '<div class="stop"><div class="sh"><span class="n mono">2</span><span class="c">Om Hardware</span>' +
+        '<span class="x tab">Rander · <span class="rd">1 re-del</span></span></div>' +
+        '<div class="rdblk">' + redelRow(REDEL_B, state === 11) + "</div></div>";
+    }
+    h += "</div>";
+    h += '<div class="pagenote">Re-delivery button hidden on Hand, cancelled and dispatched trips.</div>';
+    document.getElementById("panel").innerHTML = h;
+  }
+
+  // ── Dialog ────────────────────────────────────────────────────────────
+  function card(o) {
+    var h = '<div class="bc"><div class="cn">' + o.cust + '</div><div class="ca">' + o.area + "</div>" +
+      '<div class="facts"><span><span class="k">OBD</span><span class="v">' + o.obd + "</span></span>" +
+      '<span><span class="k">Invoice</span><span class="v">' + o.inv + "</span></span>" +
+      '<span><span class="k">Stage</span>' + o.stage + "</span></div>";
+    if (o.hist) {
+      h += '<div class="hh">Earlier trips</div><ul class="hl">' + o.hist.map(function (r, i) {
+        return '<li' + (i === o.hist.length - 1 ? ' class="last"' : "") + '><span class="dt">' + r[0] + "</span>" + r[1] +
+          (r[2] ? ' <span class="k">· ' + r[2] + "</span>" : "") + "</li>";
+      }).join("") + "</ul>";
+    }
+    if (o.will) h += '<div class="will">This will be <b>attempt ' + o.will + "</b></div>";
+    if (o.extra) h += o.extra;
+    return h + "</div>";
+  }
+
+  function reasonBlock(enabled) {
+    var d = enabled ? "" : " disabled";
+    return '<div class="lab">Reason</div><div class="rs">' +
+      ['Shop / site closed', 'Wrong dispatch'].map(function (r) {
+        return '<button type="button" class="rp' + (reason === r && enabled ? " on" : "") + '" data-reason="' + r + '"' + d + ">" + r + "</button>";
+      }).join("") + "</div>" +
+      '<div class="lab">Note <span style="color:#9ca3af;font-weight:400">· optional</span></div>' +
+      '<textarea class="nt" placeholder="e.g. shop shut for Navratri, reopens Monday"' + d + "></textarea>";
+  }
+
+  var ORBIT = function (num) { return '<span class="tn">' + num + "</span>"; };
+  var STAGE_DISP = '<span class="pill p-disp">Dispatched</span>';
+  var STAGE_DONE = '<span class="pill p-done">Done</span>';
+
+  function dialogBody() {
+    var q = "", body = "", addOn = false, foot = "";
+    var baseCard = {
+      cust: "Shree Paints", area: "Adajan Gam · Adajan",
+      obd: "9109148817", inv: "I536228905", stage: STAGE_DISP
+    };
+    switch (state) {
+      case 1:
+        body = '<div class="hint">Type or paste one full number — a 10-digit OBD (9109148817) or an invoice (I536228905, or just its 9 digits). Press Enter to look it up.</div>';
+        foot = "Nothing found yet";
+        break;
+      case 2:
+        q = "9109148817";
+        body = card(Object.assign({}, baseCard, {
+          hist: [["1 Oct", ORBIT("L-261001-04"), "original"]], will: 2
+        })) + reasonBlock(true);
+        addOn = reason !== null;
+        foot = addOn ? "Adds a RE-DEL row under Shree Paints" : "Pick a reason to add";
+        break;
+      case 3:
+      case 4:
+        q = "9109148817";
+        if (state === 4) ticked = true;
+        var warn = '<div class="wn">Already on <b class="mono">L-261003-01</b> today. Add only if that truck came back.' +
+          '<label><input type="checkbox" data-act="tick"' + (ticked ? " checked" : "") + "> Truck came back</label></div>";
+        body = card(Object.assign({}, baseCard, {
+          hist: [["1 Oct", ORBIT("L-261001-04"), "original"], ["3 Oct", ORBIT("L-261003-01"), "re-delivery · Shop / site closed"]],
+          will: 3, extra: warn
+        })) + reasonBlock(true);
+        addOn = ticked && reason !== null;
+        foot = addOn ? "Adds a RE-DEL row under Shree Paints"
+          : (!ticked && reason === null ? "Tick “Truck came back” and pick a reason"
+            : !ticked ? "Tick “Truck came back” to add" : "Pick a reason to add");
+        break;
+      case 5:
+        q = "9109139476";
+        body = card({
+          cust: "Jalaram Colour Centre", area: "Pal · Adajan", obd: "9109139476", inv: "I536224018", stage: STAGE_DISP,
+          hist: [["28 Sep", '<span class="nts">NTS</span> <span class="tn">4521</span> <span class="k">· GJ05 XX 9999</span>', "original · NTS truck, not an Orbit trip"]],
+          will: 2
+        }) + reasonBlock(true);
+        addOn = reason !== null;
+        foot = addOn ? "Adds a RE-DEL row under Jalaram Colour Centre" : "Pick a reason to add";
+        break;
+      case 6:
+        q = "I536230418";
+        if (picked === null) {
+          body = '<div class="hint" style="margin-top:12px">This invoice covers <b style="color:#1a1a22">2 bills</b> (a split). Pick the one going back out.</div>' +
+            '<div class="pick">' +
+            '<button class="pk" type="button" data-pick="9109151006"><div class="o">9109151006</div><div class="s">Patel Colour House · 18 L · Dispatched</div></button>' +
+            '<button class="pk" type="button" data-pick="9109151007"><div class="o">9109151007</div><div class="s">Patel Colour House · 6 L · Dispatched</div></button></div>';
+          foot = "Pick one bill";
+        } else {
+          body = card({
+            cust: "Patel Colour House", area: "Rander Road · Rander", obd: picked, inv: "I536230418", stage: STAGE_DISP,
+            hist: [["2 Oct", ORBIT("L-261002-06"), "original"]], will: 2
+          }) + '<button class="back" type="button" data-act="unpick">← Other bill on this invoice</button>' + reasonBlock(true);
+          addOn = reason !== null;
+          foot = addOn ? "Adds a RE-DEL row under Patel Colour House" : "Pick a reason to add";
+        }
+        break;
+      case 7:
+        q = "9109153318";
+        body = card({
+          cust: "Maruti Hardware", area: "Jahangirpura · Adajan", obd: "9109153318", inv: "—",
+          stage: '<span class="pill p-pick">With picker</span>',
+          extra: '<div class="rf"><b>Not gone out yet — add it to a trip normally.</b><br>It is still with a picker and has never been on a truck.</div>'
+        }) + reasonBlock(false);
+        foot = "Cannot add";
+        break;
+      case 8:
+        q = "9109149902";
+        body = card({
+          cust: "Om Hardware", area: "Rander", obd: "9109149902", inv: "I536229377", stage: STAGE_DISP,
+          hist: [["2 Oct", ORBIT("L-261002-06"), "original"]],
+          extra: '<div class="rf"><b>Already on this trip.</b> L-261003-04 carries it as a re-delivery (attempt 2, stop 2).</div>'
+        }) + reasonBlock(false);
+        foot = "Cannot add";
+        break;
+      case 9:
+        q = "9109146120";
+        body = card({
+          cust: "Shiv Shakti Paints", area: "Athwalines · Athwa", obd: "9109146120", inv: "I536226641",
+          stage: '<span class="pill" style="background:#f3f4f6;color:#6b7280">Removed</span>',
+          extra: '<div class="rf"><b>This bill was removed — it cannot be re-delivered.</b><br>Removed 2 Oct · Customer cancelled.</div>'
+        }) +
+          '<div class="rf" style="margin-top:10px">Typed a number with no bill? It reads: <b>No bill with this OBD or invoice number.</b></div>' +
+          reasonBlock(false);
+        foot = "Cannot add";
+        break;
+    }
+    var h = '<div class="dlg" role="dialog" aria-label="Re-delivery">' +
+      '<div class="dh"><span class="t">Re-delivery onto</span><span class="hnum mono" style="font-size:12.5px;padding:2px 7px">L-261003-04</span>' +
+      '<span class="x" title="Close">✕</span></div>' +
+      '<div class="db"><input class="fld' + (state === 1 ? " focus" : "") + '" placeholder="OBD or invoice no." value="' + esc(q) + '">' + body + "</div>" +
+      '<div class="df"><span class="fh">' + foot + '</span><button class="cxl" type="button">Cancel</button>' +
+      '<button class="add" type="button"' + (addOn ? "" : " disabled") + ">Add re-delivery</button></div></div>";
+    return h;
+  }
+
+  function renderDialog() {
+    var host = document.getElementById("dlgHost");
+    if (state >= 1 && state <= 9) {
+      host.innerHTML = '<div class="scrim">' + dialogBody() + "</div>";
+    } else {
+      host.innerHTML = "";
+    }
+  }
+
+  function renderSwitch() {
+    document.getElementById("sw").innerHTML = STATES.map(function (s) {
+      return '<button type="button" data-state="' + s.id + '"' + (s.id === state ? ' class="on"' : "") + ">" + s.label + "</button>";
+    }).join("");
+  }
+
+  function render() { renderSwitch(); renderRail(); renderPanel(); renderDialog(); }
+
+  // ── Events (one delegated listener; no Esc listener — Floor owns Esc) ──
+  document.addEventListener("click", function (e) {
+    var t = e.target;
+    if (!(t instanceof Element)) return;
+    var sb = t.closest("[data-state]");
+    if (sb) {
+      state = Number(sb.getAttribute("data-state"));
+      reason = null; ticked = false; picked = null;
+      render(); return;
+    }
+    var rb = t.closest("[data-reason]");
+    if (rb && !rb.hasAttribute("disabled")) { reason = rb.getAttribute("data-reason"); renderDialog(); return; }
+    var pk = t.closest("[data-pick]");
+    if (pk) { picked = pk.getAttribute("data-pick"); renderDialog(); return; }
+    var act = t.closest("[data-act]");
+    if (!act) return;
+    var a = act.getAttribute("data-act");
+    if (a === "tick") { ticked = act.checked; renderDialog(); }
+    else if (a === "unpick") { picked = null; reason = null; renderDialog(); }
+    else if (a === "open") { state = 1; reason = null; render(); }
+    else if (a === "rm") { state = 11; render(); }
+    else if (a === "keep") { state = 0; render(); }
+  });
+
+  render();
+})();
+</script>
+</body>
+</html>
