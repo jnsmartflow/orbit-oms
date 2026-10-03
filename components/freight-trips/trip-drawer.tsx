@@ -11,7 +11,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { X } from "lucide-react";
 import { formatLitres } from "@/components/floor/status-pill";
-import type { FreightOptions, FreightTripDetail, TripFields } from "./api";
+import { shortDate, todayIST, type FreightOptions, type FreightTripDetail, type TripFields } from "./api";
 
 const INPUT =
   "h-9 w-full rounded-lg border border-ink-200 bg-white px-3 text-[13px] text-ink-900 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/10";
@@ -36,7 +36,8 @@ export function TripDrawer({
   billLitres: number;
   busy: boolean;
   onClose: () => void;
-  onSubmit: (fields: TripFields) => void;
+  /** `tripDate` (YYYY-MM-DD) is read on CREATE only — the number F-YYMMDD-NN comes from it. */
+  onSubmit: (fields: TripFields, tripDate: string) => void;
 }) {
   const [usePlate, setUsePlate] = useState(mode === "edit" && trip !== null && trip.adhocVehicleNo !== null);
   const [vehicleId, setVehicleId] = useState<number | null>(trip?.vehicleId ?? null);
@@ -45,6 +46,8 @@ export function TripDrawer({
   const [driverName, setDriverName] = useState(trip?.driverName ?? "");
   const [driverPhone, setDriverPhone] = useState(trip?.driverPhone ?? "");
   const [note, setNote] = useState(trip?.note ?? "");
+  // New trip: default today IST; edit: the trip's own date, read-only.
+  const [tripDate, setTripDate] = useState(trip?.tripDate ?? todayIST());
 
   const transporterName = useMemo(
     () => new Map((options?.transporters ?? []).map((t) => [t.id, t.name])),
@@ -79,7 +82,7 @@ export function TripDrawer({
       driverName: clean(driverName),
       driverPhone: clean(driverPhone),
       note: clean(note),
-    });
+    }, tripDate);
   }
 
   return (
@@ -95,6 +98,18 @@ export function TripDrawer({
         </div>
 
         <div className="flex-1 space-y-4 overflow-y-auto px-5 py-4">
+          <div>
+            <label className={LABEL}>Trip date</label>
+            {mode === "new" ? (
+              <input type="date" className={INPUT} value={tripDate} onChange={(e) => setTripDate(e.target.value)} />
+            ) : (
+              <div className="flex h-9 items-center text-[13px] text-ink-700">
+                {shortDate(tripDate)} {tripDate.slice(0, 4)}
+                <span className="ml-2 text-[11px] text-ink-400">fixed — the trip number is built from it</span>
+              </div>
+            )}
+          </div>
+
           {mode === "new" && (
             <div className="rounded-lg border border-ink-100 bg-ink-25 px-3 py-2 text-[12.5px] text-ink-700">
               {billCount > 0
@@ -187,7 +202,7 @@ export function TripDrawer({
             <button
               type="button"
               onClick={submit}
-              disabled={busy || (usePlate && plate.trim() === "")}
+              disabled={busy || (usePlate && plate.trim() === "") || (mode === "new" && !/^\d{4}-\d{2}-\d{2}$/.test(tripDate))}
               className="h-9 rounded-lg bg-brand-600 px-4 text-[13px] font-semibold text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400"
             >
               {mode === "new" ? "Create trip" : "Save"}

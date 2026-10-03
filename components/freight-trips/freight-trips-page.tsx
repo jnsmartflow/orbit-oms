@@ -28,7 +28,6 @@ import { applySearch, parseSearch } from "@/lib/floor/search";
 import { loadKg, loadLitres } from "@/lib/orders/gift";
 import type { FloorSelection } from "@/lib/floor/selection";
 import type { FloorHoldRow, FloorRouteClub, FloorScope } from "@/lib/floor/types";
-import { rowsInScope } from "@/lib/floor/scope";
 import {
   addBills,
   cancelTrip,
@@ -37,7 +36,7 @@ import {
   fetchPool,
   fetchTrip,
   fetchTrips,
-  istDay,
+  shortDate,
   patchTrip,
   removeBills,
   type BillSkip,
@@ -52,11 +51,9 @@ import { PoolView } from "./pool-view";
 import { TripView } from "./trip-view";
 import { TripDrawer } from "./trip-drawer";
 
-const SCOPE_SEGMENTS = [
-  { id: "Local", label: "Local" },
-  { id: "Upcountry", label: "Upcountry" },
-  { id: "IGT / Cross", label: "IGT · Cross" },
-];
+// No date stepper and no delivery-type chips (owner, 2026-10-03): the rail lists
+// every active trip whatever its date, and the cards already split by type.
+const SCOPE: FloorScope = "All";
 const POLL_MS = 30_000;
 const EMPTY: FloorSelection = new Set<number>();
 
@@ -86,9 +83,6 @@ function skipToast(skipped: BillSkip[]) {
 }
 
 export function FreightTripsPage({ canEdit }: { canEdit: boolean }) {
-  const [date, setDate] = useState<Date>(() => new Date());
-  const dateStr = istDay(date);
-  const [scope, setScope] = useState<FloorScope>("All");
   const [search, setSearch] = useState("");
 
   const [trips, setTrips] = useState<FreightTripSummary[] | null>(null);
@@ -115,11 +109,12 @@ export function FreightTripsPage({ canEdit }: { canEdit: boolean }) {
   // ── Loads ──────────────────────────────────────────────────────────────
   const loadTrips = useCallback(async () => {
     try {
-      setTrips((await fetchTrips(dateStr)).trips);
+      // No date: every trip, any date (the rail shows the active ones).
+      setTrips((await fetchTrips()).trips);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not load freight trips");
     }
-  }, [dateStr]);
+  }, []);
 
   const loadPool = useCallback(async () => {
     setPoolLoading(true);
@@ -184,9 +179,8 @@ export function FreightTripsPage({ canEdit }: { canEdit: boolean }) {
 
   // ── Derived ────────────────────────────────────────────────────────────
   const parsed = useMemo(() => parseSearch(search), [search]);
-  // The chip in effect narrows the pool HERE (rowsInScope — Floor's own rule);
-  // the Held bills card and the sections count this scoped list.
-  const scopedPool = useMemo(() => rowsInScope(pool, scope), [pool, scope]);
+  // No delivery-type chips any more (2026-10-03): the whole held pool is in scope.
+  const scopedPool = pool;
   const poolRows = useMemo(
     () => (search.trim() ? applySearch(scopedPool, parsed) : scopedPool),
     [scopedPool, parsed, search],
@@ -235,12 +229,12 @@ export function FreightTripsPage({ canEdit }: { canEdit: boolean }) {
     }
   }
 
-  async function submitDrawer(fields: TripFields) {
+  async function submitDrawer(fields: TripFields, tripDate: string) {
     setBusy(true);
     try {
       if (drawer === "new") {
         const ids = Array.from(poolSel);
-        const r = await createTrip(dateStr, fields, ids);
+        const r = await createTrip(tripDate, fields, ids);
         toast.success(`${r.trip.tripNumber} created${r.added.length > 0 ? ` with ${r.added.length} bill${r.added.length === 1 ? "" : "s"}` : ""} — the bills stay on hold on the floor`);
         skipToast(r.skipped);
         setPoolSel(EMPTY);
@@ -316,7 +310,7 @@ export function FreightTripsPage({ canEdit }: { canEdit: boolean }) {
     main = (
       <div>
         <div className="border-b border-ink-100 px-4 py-2.5 text-[15px] font-semibold text-ink-900">
-          Cancelled on {dateStr} <span className="ml-2 text-[12px] font-normal text-ink-500">read only — kept as the record</span>
+          Cancelled trips <span className="ml-2 text-[12px] font-normal text-ink-500">read only — kept as the record</span>
         </div>
         {list.map((t) => (
           <button
@@ -326,6 +320,7 @@ export function FreightTripsPage({ canEdit }: { canEdit: boolean }) {
             className="flex w-full items-center gap-3 border-b border-ink-100 px-4 py-2.5 text-left hover:bg-ink-25"
           >
             <span className="font-mono text-[12px] font-semibold text-ink-700">{t.tripNumber}</span>
+            <span className="text-[12px] tabular-nums text-ink-400">{shortDate(t.tripDate)}</span>
             <span className="font-mono text-[12px] text-ink-500">{t.vehicleLabel ?? "No vehicle"}</span>
             <span className="ml-auto text-[11.5px] text-ink-400">
               cancelled{t.cancelledByName ? ` by ${t.cancelledByName}` : ""}
@@ -367,7 +362,7 @@ export function FreightTripsPage({ canEdit }: { canEdit: boolean }) {
               rows={poolRows}
               allRows={pool}
               clubs={clubs}
-              scope={scope}
+              scope={SCOPE}
               loading={poolLoading}
               error={poolError}
               selection={poolSel}
@@ -384,7 +379,7 @@ export function FreightTripsPage({ canEdit }: { canEdit: boolean }) {
         rows={poolRows}
         allRows={pool}
         clubs={clubs}
-        scope={scope}
+        scope={SCOPE}
         loading={poolLoading}
         error={poolError}
         selection={poolSel}
@@ -407,33 +402,7 @@ export function FreightTripsPage({ canEdit }: { canEdit: boolean }) {
         searchPlaceholder="Search OBD, invoice, dealer"
         searchValue={search}
         onSearchChange={setSearch}
-        // Delivery-type scope for the held pool — drawn HERE (leftExtra), not as
-        // the header's `segments`, so the header's 1-9 hotkey cannot switch it.
-        // Default: NO chip active = every type (Floor On hold's set). Clicking a
-        // chip filters; clicking the active one clears back to all (CLAUDE_UI §6:
-        // no "All" button).
-        leftExtra={
-          <span className="inline-flex gap-[2px] rounded-[7px] bg-gray-100 p-[3px]">
-            {SCOPE_SEGMENTS.map((s) => {
-              const on = scope === s.id;
-              return (
-                <button
-                  key={s.id}
-                  type="button"
-                  aria-pressed={on}
-                  onClick={() => setScope(on ? "All" : (s.id as FloorScope))}
-                  className={`rounded-[5px] px-[11px] py-[4px] text-[11px] transition-colors ${
-                    on ? "bg-brand-600 font-medium text-white" : "text-gray-500 hover:bg-white/60"
-                  }`}
-                >
-                  {s.label}
-                </button>
-              );
-            })}
-          </span>
-        }
-        currentDate={date}
-        onDateChange={(d) => { setDate(d); setView({ kind: "pool" }); }}
+        showDatePicker={false}
       />
 
       <div className="flex min-h-0 flex-1 flex-col md:flex-row">
@@ -466,7 +435,7 @@ export function FreightTripsPage({ canEdit }: { canEdit: boolean }) {
           billLitres={drawer === "new" ? poolSelRows.reduce((s, r) => s + loadLitres(r.volumeLitres, r.isGift), 0) : 0}
           busy={busy}
           onClose={() => setDrawer(null)}
-          onSubmit={(f) => void submitDrawer(f)}
+          onSubmit={(f, d) => void submitDrawer(f, d)}
         />
       )}
 

@@ -26,8 +26,16 @@ function json(method: string, payload: unknown): RequestInit {
   return { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) };
 }
 
-export function fetchTrips(date: string) {
-  return call<{ date: string; trips: FreightTripSummary[] }>(`${BASE}?date=${encodeURIComponent(date)}`);
+/** No date: every freight trip, any date (the rail). With a date: that day only. */
+export function fetchTrips(date?: string) {
+  return call<{ date: string | null; trips: FreightTripSummary[] }>(
+    date ? `${BASE}?date=${encodeURIComponent(date)}` : BASE,
+  );
+}
+
+/** "2026-10-02" → "02 Oct" (the trip's @db.Date, read as UTC — no IST shift). */
+export function shortDate(ymd: string): string {
+  return new Date(`${ymd}T00:00:00.000Z`).toLocaleDateString("en-GB", { day: "2-digit", month: "short", timeZone: "UTC" });
 }
 
 /** The pool with route ids + stop keys, and Floor's route clubs (for the route cards). */

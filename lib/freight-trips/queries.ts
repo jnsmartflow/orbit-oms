@@ -213,6 +213,26 @@ export async function getFreightTripsForDate(tripDate: Date): Promise<FreightTri
 }
 
 /**
+ * EVERY freight trip, any date (2026-10-03 — the rail lists all active trips and
+ * the "Cancelled (n)" link all cancelled ones): newest tripDate first, then
+ * newest created. Additive beside getFreightTripsForDate, which `?date=` keeps.
+ */
+export async function getAllFreightTrips(): Promise<FreightTripSummary[]> {
+  const trips = await prisma.freight_trips.findMany({
+    orderBy: [{ tripDate: "desc" }, { createdAt: "desc" }, { id: "desc" }],
+    select: TRIP_SELECT,
+  });
+  const members = await activeMembership(trips.map((t) => t.id));
+  const byTrip = new Map<number, Membership[]>();
+  for (const m of members) {
+    const list = byTrip.get(m.freightTripId) ?? [];
+    list.push(m);
+    byTrip.set(m.freightTripId, list);
+  }
+  return trips.map((t) => summaryOf(t, byTrip.get(t.id) ?? []));
+}
+
+/**
  * Rows for bills that are on a trip but NOT returned by getFloorHold (released
  * on Floor since, or hidden by a hide rule). Same FloorHoldRow shape, built from
  * one read; the hold-only facts read as "not held".

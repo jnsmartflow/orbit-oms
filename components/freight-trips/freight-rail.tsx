@@ -4,7 +4,7 @@
 // trip-rail.tsx), none of its behaviour: no type letter, no READY, no progress
 // bar, no show/billing badges. A freight trip is paper.
 //
-//   "{n} TRIPS · {m} BILLS"   ← ACTIVE trips of the date
+//   "{n} TRIPS · {m} BILLS"   ← ALL active trips, any date (newest tripDate first)
 //   [Held bills  {count} bills · {L} L]
 //   [F-261002-01  Adajan  /  3 stops · 5 bills · 820 L  /  GJ05AB1234  /  RAMESH]
 //   …
@@ -14,7 +14,7 @@
 // (the parent does the add); a hint line says so above the cards.
 
 import { formatLitres } from "@/components/floor/status-pill";
-import type { FreightTripSummary } from "./api";
+import { shortDate, type FreightTripSummary } from "./api";
 
 export type RailSelection = { kind: "pool" } | { kind: "trip"; tripId: number } | { kind: "cancelled" };
 
@@ -72,7 +72,7 @@ export function FreightRail({
       {loading && trips === null && <div className="px-1 py-4 text-center text-[11px] text-ink-400">Loading trips…</div>}
       {trips !== null && active.length === 0 && (
         <div className="px-1 py-4 text-[11px] leading-relaxed text-ink-400">
-          No freight trips on this date. Tick held bills and press + New trip.
+          No active freight trips. Tick held bills and press + New trip.
         </div>
       )}
 
@@ -89,8 +89,11 @@ export function FreightRail({
                 selected ? "border-brand-600" : adding ? "border-dashed border-ink-400 hover:border-ink-900" : "border-ink-100 hover:border-ink-200"
               }`}
             >
-              <span className="inline-block rounded-[4px] border border-ink-100 bg-ink-50 px-1.5 py-[1px] font-mono text-[11px] font-semibold text-ink-700">
-                {t.tripNumber}
+              <span className="flex items-center gap-2">
+                <span className="inline-block rounded-[4px] border border-ink-100 bg-ink-50 px-1.5 py-[1px] font-mono text-[11px] font-semibold text-ink-700">
+                  {t.tripNumber}
+                </span>
+                <span className="text-[11px] tabular-nums text-ink-400">{shortDate(t.tripDate)}</span>
               </span>
               <div className="mt-1 truncate text-[14px] font-semibold text-ink-900">
                 {t.counts.bills === 0 ? "Empty trip" : t.routeLabel ?? "No route"}

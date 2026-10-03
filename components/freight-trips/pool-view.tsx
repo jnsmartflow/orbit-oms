@@ -13,15 +13,18 @@
 //     {stops} stops"; the selected tab is brand-filled with a ✕ (= back to the
 //     cards); "Esc to go back to cards" at the right;
 //   - the selected club's bills in ROUTE SECTIONS — "{route}  {stops} stops ·
-//     {kg} kg" (+ "+N Hand · kg — not counted"), a select-all, then the SHARED
-//     held-bills table (components/floor/hold-table.tsx, as-is). Rows by invoice
-//     date OLDEST first, no invoice last (then OBD date); Hand bills after.
+//     {kg} kg" (+ "+N Hand · kg — not counted") with a select-all for the whole
+//     route; inside it, BANDS by invoice date OLDEST first ("06 Aug 2026 · n
+//     bills · L · kg", own select-all), each the SHARED held-bills table
+//     (components/floor/hold-table.tsx, as-is); "No invoice yet" last (OBD date).
 // A card HEAD opens the first club tab; a card ROW opens that club.
 //
 // Selection lives in the page, so ticks survive tab switches and going back.
 
 import { useEffect, useMemo, useState } from "react";
 import { HoldTable } from "@/components/floor/hold-table";
+import { formatLitres } from "@/components/floor/status-pill";
+import { formatDateIST } from "@/lib/floor/format";
 import { isAllIdsSelected, toggleAllIds, toggleOne, type FloorSelection } from "@/lib/floor/selection";
 import type { FloorRouteClub, FloorScope } from "@/lib/floor/types";
 import type { FreightPoolRow } from "@/lib/freight-trips/pool";
@@ -30,6 +33,7 @@ import {
   drillTabs,
   HeldCardGrid,
   kgText,
+  litresOf,
   stopCount,
   type ClubRow,
   type DrillTarget,
@@ -229,10 +233,76 @@ function RouteBlock({
           )}
         </span>
       </div>
+      {invoiceBands(list).map(([key, band]) => (
+        <InvoiceBand
+          key={key || "none"}
+          label={key === "" ? "No invoice yet" : formatDateIST(band[0].invoiceDate)}
+          rows={band}
+          now={now}
+          selectable={selectable}
+          selection={selection}
+          onSelection={onSelection}
+        />
+      ))}
+    </div>
+  );
+}
+
+/**
+ * The route's bills split into BANDS by invoice date (2026-10-03), oldest first;
+ * no invoice date → one "No invoice yet" band, last, in OBD-date order. The input
+ * is already in that order (byInvoiceDate), so insertion order is band order.
+ */
+function invoiceBands(list: FreightPoolRow[]): [string, FreightPoolRow[]][] {
+  const byKey = new Map<string, FreightPoolRow[]>();
+  for (const r of [...list].sort(byInvoiceDate)) {
+    const key = r.invoiceDate ? r.invoiceDate.slice(0, 10) : "";
+    const band = byKey.get(key) ?? [];
+    band.push(r);
+    byKey.set(key, band);
+  }
+  return Array.from(byKey.entries());
+}
+
+/** One invoice-date band: its own select-all, then the shared held-bills table. */
+function InvoiceBand({
+  label,
+  rows,
+  now,
+  selectable,
+  selection,
+  onSelection,
+}: {
+  label: string;
+  rows: FreightPoolRow[];
+  now: Date;
+  selectable: boolean;
+  selection: FloorSelection;
+  onSelection: (next: FloorSelection) => void;
+}) {
+  // L / kg count the trucked bills only — Hand bills ride no truck (Floor's rule).
+  const counted = rows.filter((r) => !r.isHand);
+  return (
+    <div>
+      <div className="flex items-center gap-2.5 border-b border-ink-100 bg-white px-3.5 py-[7px]">
+        {selectable && (
+          <input
+            type="checkbox"
+            aria-label={`Select all bills — ${label}`}
+            className="h-[13px] w-[13px] cursor-pointer accent-brand-600"
+            checked={isAllIdsSelected(selection, rows)}
+            onChange={() => onSelection(toggleAllIds(selection, rows))}
+          />
+        )}
+        <span className="text-[12.5px] font-semibold text-ink-700">{label}</span>
+        <span className="text-[12px] tabular-nums text-ink-400">
+          · {plural(rows.length, "bill", "bills")} · {formatLitres(litresOf(counted))} L · {kgText(counted)} kg
+        </span>
+      </div>
       <div className="overflow-x-auto">
         <div className="min-w-[1080px]">
           <HoldTable
-            rows={list}
+            rows={rows}
             now={now}
             selectable={selectable}
             selection={selection}

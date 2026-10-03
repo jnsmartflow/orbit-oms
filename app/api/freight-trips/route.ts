@@ -4,7 +4,7 @@ import { getTodayIST } from "@/lib/dates";
 import { freightGate, idList, optionalId, optionalText } from "@/lib/freight-trips/gate";
 import { parseFreightDate } from "@/lib/freight-trips/format";
 import { createWithFreightNumber } from "@/lib/freight-trips/number";
-import { getFreightTrip, getFreightTripsForDate } from "@/lib/freight-trips/queries";
+import { getAllFreightTrips, getFreightTrip, getFreightTripsForDate } from "@/lib/freight-trips/queries";
 import { logFreightCreated } from "@/lib/freight-trips/activity";
 import { addFreightBills } from "@/lib/freight-trips/bills";
 import { transporterExists, vehicleSnapshot } from "@/lib/freight-trips/vehicle";
@@ -17,12 +17,20 @@ export const dynamic = "force-dynamic";
 // Never orders, trips, trip_drops, trip_activity or order_status_logs.
 // Gate: page key `freight_trips` (never `floor`). Sequential awaits.
 
-/** GET ?date=YYYY-MM-DD (default today IST) — the day's freight trips, active and cancelled. */
+/**
+ * GET — NO `date` param: EVERY freight trip, any date (active and cancelled),
+ * newest tripDate first — what the rail lists (2026-10-03).
+ * GET ?date=YYYY-MM-DD — that day's freight trips only (kept).
+ */
 export async function GET(req: Request): Promise<NextResponse> {
   const gate = await freightGate("canView");
   if (!gate.ok) return gate.response;
 
-  const dateParam = new URL(req.url).searchParams.get("date") ?? getTodayIST();
+  const dateParam = new URL(req.url).searchParams.get("date");
+  if (dateParam === null) {
+    const trips = await getAllFreightTrips();
+    return NextResponse.json({ date: null, today: getTodayIST(), trips });
+  }
   let tripDate: Date;
   try {
     tripDate = parseFreightDate(dateParam);
