@@ -1562,9 +1562,8 @@ export function PickingBoardMobile(): React.JSX.Element {
   const [unassigningIds, setUnassigningIds] = useState<Set<number>>(new Set());
   // Direct Loading (2026-10-03). The SHEET path reuses `assigning` as its
   // in-flight lock, so every guard the sheet already has (backdrop, ✕, picker
-  // cards) also holds while a Direct Loading POST is out. The DETAIL button and
-  // the Done footer's Undo each carry their own per-bill set, like Unassign.
-  const [directLoadingIds, setDirectLoadingIds] = useState<Set<number>>(new Set());
+  // cards) also holds while a Direct Loading POST is out. The Done footer's
+  // Undo carries its own per-bill set, like Unassign.
   const [undoingDirectIds, setUndoingDirectIds] = useState<Set<number>>(new Set());
 
   // ── Picking tab, LEVEL 2 (2026-08-22) ─────────────────────────────────────
@@ -2915,44 +2914,6 @@ export function PickingBoardMobile(): React.JSX.Element {
       setAssigning(false);
     }
   }, [assignTarget, assigning, detailOpen, refetchQueue]);
-
-  // From the Picking tab's detail screen — one pick_assigned bill. Leaves the
-  // detail on success (the bill has left the Picking tab), like Approve.
-  const handleDirectLoadOne = useCallback(
-    async (row: PickingQueueRow) => {
-      if (directLoadingIds.has(row.orderId)) return;
-      setDirectLoadingIds((prev) => new Set(prev).add(row.orderId));
-      try {
-        const res = await fetch("/api/picking/direct-load", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ orderIds: [row.orderId] }),
-        });
-        const json = (await res.json().catch(() => ({}))) as {
-          done?: number[];
-          skipped?: { id: number; reason: string }[];
-          error?: string;
-        };
-        if (!res.ok) {
-          toast.error(json.error ?? `Request failed (${res.status})`);
-          return;
-        }
-        const done = json.done ?? [];
-        reportDirectLoad(done, json.skipped ?? []);
-        if (done.includes(row.orderId) && detailOpen) window.history.back();
-        await refetchQueue({ ids: [row.orderId] });
-      } catch (err) {
-        toast.error(err instanceof Error ? err.message : "Direct Loading failed");
-      } finally {
-        setDirectLoadingIds((prev) => {
-          const next = new Set(prev);
-          next.delete(row.orderId);
-          return next;
-        });
-      }
-    },
-    [directLoadingIds, detailOpen, refetchQueue],
-  );
 
   // Undo from the Done tab's ink footer. The row carries no invoice fields, so
   // the link always shows and the route decides: its 409 reason ("already
@@ -5053,31 +5014,21 @@ export function PickingBoardMobile(): React.JSX.Element {
             B — paddingBottom is the plain /po safe-area floor, see the
             Assign CTA's comment above for why. */}
         {detailRow && detailRow.isAssigned && (
+          // ⚠ UNDO ONLY (2026-10-03). A Direct Loading button sat beside Undo
+          // here for a few hours and was removed — two buttons confused
+          // supervisors. Do not re-add: to direct-load a bill a picker holds,
+          // Undo it, then use the Assign sheet's Direct Loading card.
           <div
-            className="shrink-0 px-3.5 pb-3.5 flex gap-2.5"
+            className="shrink-0 px-3.5 pb-3.5"
             style={{ paddingBottom: "max(env(safe-area-inset-bottom, 0px), 16px)" }}
           >
             <button
               type="button"
               onClick={() => void handleUndo(detailRow)}
-              disabled={unassigningIds.has(detailRow.orderId) || directLoadingIds.has(detailRow.orderId)}
-              className="flex-1 min-w-0 h-12 rounded-full bg-white border border-gray-200 active:bg-gray-50 text-gray-700 text-[14.5px] font-bold disabled:opacity-50"
+              disabled={unassigningIds.has(detailRow.orderId)}
+              className="w-full h-12 rounded-full bg-white border border-gray-200 active:bg-gray-50 text-gray-700 text-[14.5px] font-bold disabled:opacity-50"
             >
               {unassigningIds.has(detailRow.orderId) ? "Undoing…" : "Undo"}
-            </button>
-            {/* Direct Loading (2026-10-03) — pick_assigned only (this block's
-                own isAssigned gate; pick_done never reaches here and the route
-                refuses it anyway). One tap, no confirm: the bill goes to
-                pick_checked, the picker loses it and gets a "stop picking"
-                buzz. Ink, never brand — it is a status move, not the commit. */}
-            <button
-              type="button"
-              onClick={() => void handleDirectLoadOne(detailRow)}
-              disabled={directLoadingIds.has(detailRow.orderId) || unassigningIds.has(detailRow.orderId)}
-              className="flex-1 min-w-0 h-12 rounded-full bg-direct text-direct-text active:opacity-85 text-[14.5px] font-bold inline-flex items-center justify-center gap-2 disabled:opacity-50"
-            >
-              <Truck size={17} className="shrink-0" />
-              <span className="truncate">{directLoadingIds.has(detailRow.orderId) ? "Loading…" : "Direct Loading"}</span>
             </button>
           </div>
         )}
