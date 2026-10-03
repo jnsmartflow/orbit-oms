@@ -2,9 +2,9 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { checkAnyPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
-import { computeDropKey, dropShipToCode } from "@/lib/trips/drop-key";
+import { computeDropKey } from "@/lib/trips/drop-key";
+import { findOrCreateTripDrop } from "@/lib/trips/drop";
 import { logTripBills } from "@/lib/trips/activity";
-import { dealerDisplayName } from "@/lib/orders/dealer-name";
 
 export const dynamic = "force-dynamic";
 
@@ -140,11 +140,23 @@ export async function POST(
       }
 
       if (action === "remove") {
-        if (order.tripDropId === null) {
-          // Not on any trip — the caller asked for a state it is already in.
-          // A skip, not a failure, and NO WRITE: a no-op update would still bump
-          // updatedAt and fire a false "changed" on every board.
-          skipped.push(orderId);
+        // 🔴 THE BILL MUST BE ON THIS TRIP (2026-10-03 — closes FLOOR_TRIPS open
+        // item 4 / landmine 8). This path used to clear WHATEVER stop a bill was
+        // on, whatever trip the URL named, so a wrong call could strip a bill off
+        // its real trip. Now the bill's stop is read first: on no trip, or on a
+        // different trip → refused, NO WRITE (a no-op update would still bump
+        // updatedAt and fire a false "changed" on every board). Every floor
+        // caller already sends only bills on the URL's trip (floor-page.tsx
+        // undoAdd and removeSelectionFromTrips), so they never meet this.
+        const currentDrop =
+          order.tripDropId !== null
+            ? await prisma.trip_drops.findUnique({
+                where: { id: order.tripDropId },
+                select: { tripId: true },
+              })
+            : null;
+        if (order.tripDropId === null || currentDrop === null || currentDrop.tripId !== tripId) {
+          failed.push({ orderId, error: "Not on this trip" });
           continue;
         }
         const dropId = order.tripDropId;
@@ -218,73 +230,11 @@ export async function POST(
         continue;
       }
 
-      // Find-or-create the stop. The unique is (tripId, dropKey), so this is the
-      // natural lookup and the constraint is the backstop if two planners add
-      // bills for the same shop at once.
-      let drop = await prisma.trip_drops.findFirst({
-        where: { tripId, dropKey },
-        select: { id: true },
-      });
-
-      if (!drop) {
-        // dropSeq = max + 1, from 1. MAX+1 not COUNT+1: removing the last bill
-        // from a stop deletes the row and leaves a gap, and a count would then
-        // reuse a number the unique still holds.
-        //
-        // ⚠ GAPS ARE LEFT ALONE, deliberately. Uniqueness is on
-        // (tripId, dropSeq), never contiguity. Renumbering the survivors would
-        // change a stop order a driver may already have been given.
-        const last = await prisma.trip_drops.findFirst({
-          where: { tripId },
-          orderBy: { dropSeq: "desc" },
-          select: { dropSeq: true },
-        });
-        const dropSeq = (last?.dropSeq ?? 0) + 1;
-
-        // The customer snapshot for the sheet. Resolved through the EFFECTIVE
-        // customer — the same id `computeDropKey` keyed on, so the name and the
-        // key can never describe different shops.
-        const effectiveId = order.shipToOverrideCustomerId ?? order.customerId;
-        const customer =
-          effectiveId !== null
-            ? await prisma.delivery_point_master.findUnique({
-                where: { id: effectiveId },
-                select: {
-                  id: true,
-                  customerName: true,
-                  area: { select: { name: true, primaryRoute: { select: { name: true } } } },
-                },
-              })
-            : null;
-
-        drop = await prisma.trip_drops.create({
-          data: {
-            tripId,
-            dropSeq,
-            customerId: customer?.id ?? null,
-            // ALWAYS SAP's own code — the CHECK reads it on the fallback branch
-            // and the column is NOT NULL.
-            shipToCode: dropShipToCode(order),
-            // 🔴 chk_trip_drops_key REJECTS A WRONG VALUE. There is no default
-            // on this column; it is computed by the one module that owns the
-            // rule (lib/trips/drop-key.ts) and never inline.
-            dropKey,
-            // The name that goes on the sheet. Master name first, then the name
-            // SAP put on the bill, then the literal — the same fallback ladder
-            // lib/picking/queue.ts uses for `dealerName`, so an unmatched bill
-            // still names a real shop instead of printing "(Unmatched)" on a
-            // driver's paperwork.
-            //
-            // `nonBlank` since 2026-09-29 (dealerDisplayName): a bare `??` let an
-            // empty or whitespace-only SAP name through and made a BLANK stop.
-            // Existing snapshots are not rewritten.
-            customerName: dealerDisplayName(customer?.customerName, order.shipToCustomerName),
-            areaName: customer?.area?.name ?? null,
-            routeName: customer?.area?.primaryRoute?.name ?? null,
-          },
-          select: { id: true },
-        });
-      }
+      // Find-or-create the stop — lib/trips/drop.ts (extracted 2026-10-03, same
+      // lookup, same MAX(dropSeq)+1, same snapshot). A lost race on the
+      // (tripId, dropKey) unique throws into this bill's catch below and is
+      // reported as this bill's failure, as before.
+      const drop = await findOrCreateTripDrop(tripId, order);
 
       // ONE orders.update per bill — the only write to `orders` on this path.
       await prisma.orders.update({

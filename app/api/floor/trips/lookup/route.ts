@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { checkAnyPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
-import { getHideExclusion } from "@/lib/hide/visibility";
+import { parseBillLookupTerm, findBillsByNumber } from "@/lib/trips/find-bill";
 import { tripsOnDeskWhere, TRIP_CANCELLED } from "@/lib/trips/live-trips";
 import { parseTripDate } from "@/lib/trips/queries";
 import { getTodayIST } from "@/lib/dates";
@@ -48,44 +48,25 @@ export async function GET(req: Request): Promise<NextResponse> {
   const allowed = await checkAnyPermission(roles, "floor", "canView");
   if (!allowed) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-  const q = (new URL(req.url).searchParams.get("q") ?? "").trim().toUpperCase();
-  // Whole numbers only — the same test the client's lookupTermOf applies.
-  if (!/^\d{9,12}$/.test(q) && !/^I\d{9}$/.test(q)) {
+  // Whole numbers only — the same test the client's lookupTermOf applies. The
+  // matching rule lives in lib/trips/find-bill.ts (shared with the re-delivery
+  // search); this route keeps the trip-following part.
+  const term = parseBillLookupTerm(new URL(req.url).searchParams.get("q") ?? "");
+  if (term === null) {
     return NextResponse.json({ error: "q must be one full OBD, SO or invoice number" }, { status: 400 });
   }
+  const q = term.q;
 
-  const invoiceTerms: string[] = [];
-  if (/^I\d{9}$/.test(q)) invoiceTerms.push(q);
-  else if (/^\d{9}$/.test(q)) invoiceTerms.push(`I${q}`);
-  else if (/^1\d{9}$/.test(q)) invoiceTerms.push(`I${q.slice(1)}`);
-
-  const hide = await getHideExclusion();
-  const orders = await prisma.orders.findMany({
-    where: {
-      AND: [
-        {
-          isRemoved: false,
-          tripDropId: { not: null },
-          OR: [
-            { obdNumber: q },
-            { soNumber: q },
-            ...invoiceTerms.map((t) => ({ invoiceNo: t })),
-          ],
-        },
-        hide,
-      ],
-    },
-    select: {
+  const orders = await findBillsByNumber(
+    term,
+    {
       obdNumber: true,
       tripDrop: {
         select: { trip: { select: { id: true, tripNumber: true, tripDate: true, status: true } } },
       },
     },
-    orderBy: { obdNumber: "asc" },
-    // One SO can fan out to several OBDs; far more than a handful is not a
-    // lookup any more.
-    take: 50,
-  });
+    { onTripOnly: true },
+  );
 
   // One entry per trip, its matched OBDs listed.
   const byTrip = new Map<
