@@ -52,6 +52,7 @@ export function FloorBottomBar({
   onMenuOpenChange,
   onHold,
   onOffFloor,
+  redeliveryCount = 0,
 }: {
   count: number;
   /** Already formatted by the caller through formatLitres. */
@@ -106,6 +107,14 @@ export function FloorBottomBar({
   onHold: () => void;
   /** Open the Cancel / Raise CI form (off-floor-dialog.tsx) on the ticked bills. */
   onOffFloor: () => void;
+  /**
+   * 🔴 RE-DELIVERY ROWS TICKED (2026-10-03, plan rev 5 §4.3). When > 0 the bar
+   * offers ONLY "Remove from trip" — no Hold, no Cancel / Raise CI, no add:
+   * every other action would write the REAL bill, whose orderId belongs to its
+   * first trip. Remove splits the selection in floor-page (bills → the bills
+   * route, re-deliveries → the re-delivery route).
+   */
+  redeliveryCount?: number;
 }) {
   // 🔴 INSIDE A TRIP THE FORM IS OFFERED GREY, NOT HIDDEN (owner, 2026-09-22):
   // every bill there would be refused ("On trip … — remove it from the trip
@@ -154,6 +163,23 @@ export function FloorBottomBar({
         {busy ? "Working…" : "Remove from trip"}
       </button>
     );
+
+  // 🔴 A RE-DELIVERY IS TICKED → Remove from trip and nothing else (see the
+  // prop). Checked BEFORE the target/mode branches: no add, no ··· More.
+  if (redeliveryCount > 0) {
+    return (
+      <FloorActionBar
+        count={count}
+        figures={figures}
+        extra="Re-delivery selected — only Remove is available"
+        onClear={onClear}
+      >
+        <button type="button" onClick={onRemoveFromTrip} disabled={busy} className={BAR_PRIMARY}>
+          {busy ? "Working…" : "Remove from trip"}
+        </button>
+      </FloorActionBar>
+    );
+  }
 
   return (
     <FloorActionBar count={count} figures={figures} extra={contextLabel ?? undefined} onClear={onClear}>

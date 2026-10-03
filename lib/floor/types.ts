@@ -344,6 +344,15 @@ export interface FloorBoardRow extends PickingQueueRow {
   // the number once the breakdown landed, and a payload field with no reader is
   // the `orders.mailMatched` shape CORE §7.3 flags. Re-add it — one extra key
   // in the querySnapshot select — if a caller ever wants to sort or total by it.
+  /**
+   * CLIENT-ONLY MARK (2026-10-03): set by the trip panel on a re-delivery row it
+   * draws inside a stop table (trip-desk.tsx, from TripDetail redeliveries).
+   * The server never sets it. When present the row is selected by `rd:<id>`
+   * (lib/floor/selection.ts deskKeyOf), wears the RE-DEL chip, hides its trip
+   * tag, and offers no ⚡ and no detail panel — its orderId belongs to the
+   * bill's FIRST trip and must not reach any bill action.
+   */
+  redelivery?: { id: number; attemptNo: number } | null;
 }
 
 // ── Route clubs (2026-09-19) ─────────────────────────────────────────────────

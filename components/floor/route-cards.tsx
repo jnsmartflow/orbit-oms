@@ -56,7 +56,7 @@ import { DIRECT_SEGMENT, NEEDS_CHECK_SEGMENT } from "./progress-bar";
 import { Truck } from "lucide-react";
 import { sortPickingQueue } from "@/lib/picking/sort";
 import { FLOOR_SPINE } from "@/lib/floor/sort";
-import type { FloorSelection } from "@/lib/floor/selection";
+import type { FloorDeskKey } from "@/lib/floor/selection";
 import type { FloorBoardRow, FloorRouteClub, FloorScope } from "@/lib/floor/types";
 import { rowsInScope, scopeTypes } from "@/lib/floor/scope";
 
@@ -378,7 +378,7 @@ const sortUpcoming = (rows: FloorBoardRow[]) =>
 
 /** What each route's FloorTable needs beyond its rows — trip-desk's LeafProps. */
 interface LeafWiring {
-  selection?: FloorSelection;
+  selection?: ReadonlySet<FloorDeskKey>;
   onToggleRow?: (id: number) => void;
   onToggleAll?: (rows: FloorBoardRow[]) => void;
   onMarkUrgent: (id: number) => void;

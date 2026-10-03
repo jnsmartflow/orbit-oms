@@ -8,7 +8,7 @@
 import { ProgressBar } from "./progress-bar";
 import { FloorTable, type FloorTableVariant } from "./floor-table";
 import { countByStatus, finishedCount, formatLitres, sumLitres } from "./status-pill";
-import type { FloorSelection } from "@/lib/floor/selection";
+import type { FloorDeskKey } from "@/lib/floor/selection";
 import type { FloorBoardRow } from "@/lib/floor/types";
 
 export function RouteRow({
@@ -53,7 +53,7 @@ export function RouteRow({
   showInvoice?: boolean;
   operatorByOrderId?: Map<number, string | null>;
   variant: FloorTableVariant;
-  selection?: FloorSelection;
+  selection?: ReadonlySet<FloorDeskKey>;
   onToggleRow?: (id: number) => void;
   onToggleAll?: (rows: FloorBoardRow[]) => void;
   onMarkUrgent?: (id: number) => void;

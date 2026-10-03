@@ -39,7 +39,7 @@
 // choosing its item.
 
 import { useState } from "react";
-import { Clock, MoreHorizontal, Pencil, Plus } from "lucide-react";
+import { Clock, MoreHorizontal, Pencil, Plus, RotateCcw } from "lucide-react";
 import { TripBar, TripBarLegend, tripBarCounts } from "./trip-bar";
 import { TripHistoryList } from "./trip-history";
 import { formatLitres, formatWeightKg } from "./status-pill";
@@ -94,6 +94,7 @@ export function TripDetailHeader({
   onTakeBackFromFloor,
   onSendToBilling,
   onTakeBackFromBilling,
+  onAddRedelivery,
 }: {
   trip: TripSummary;
   busy: boolean;
@@ -125,12 +126,19 @@ export function TripDetailHeader({
   onSendToBilling: () => void;
   /** POST …/billing { sent: false } — ···, refused once billing has copied. */
   onTakeBackFromBilling: () => void;
+  /** Re-delivery (2026-10-03) — opens trip-redelivery-dialog.tsx for this trip. */
+  onAddRedelivery?: () => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
 
   const bar = tripBarCounts(trip.counts);
   const isEmpty = bar.total === 0;
+  // RE-DELIVERIES (2026-10-03) — a separate figure, never inside `counts`.
+  // A trip with no bills of its own but a re-delivery is NOT empty in wording;
+  // Send to billing still has nothing to bill (plan rev 5 §2 #8).
+  const redeliveryCount = trip.redeliveryCount ?? 0;
+  const redeliveryOnly = isEmpty && redeliveryCount > 0;
   const isClosed = trip.status === "cancelled" || trip.status === "dispatched";
   const canWrite = !isClosed && !readOnly;
   const plate = trip.vehicleNo ?? trip.adhocVehicleNo;
@@ -177,7 +185,10 @@ export function TripDetailHeader({
               ) : trip.sentToBillingAt ? (
                 <span className={PRESSED}>Sent to billing{sentTime ? ` · ${sentTime}` : ""}</span>
               ) : (
-                <span title={isEmpty ? "No bills yet" : undefined} className="inline-flex">
+                <span
+                  title={redeliveryOnly ? "Re-deliveries only — nothing to bill" : isEmpty ? "No bills yet" : undefined}
+                  className="inline-flex"
+                >
                   <button type="button" onClick={onSendToBilling} disabled={busy || isEmpty} className={BUTTON}>
                     Send to billing
                   </button>
@@ -405,13 +416,14 @@ export function TripDetailHeader({
             jump up the moment it is pressed. Other views keep their height. */}
         <div className={`mt-[20px] flex items-center gap-2.5 border-b border-[#e7e7ee] pb-2 ${adding ? "min-h-[41px]" : ""}`}>
           <span className="text-[13.5px] font-semibold tabular-nums text-[#1a1a22]">
-            {isEmpty
+            {isEmpty && !redeliveryOnly
               ? "No bills yet"
               : [
                   `${trip.dropCount} stop${trip.dropCount === 1 ? "" : "s"}`,
                   `${bar.total} bill${bar.total === 1 ? "" : "s"}`,
-                  `${formatLitres(trip.totalLitres)} L`,
-                  ...(kg ? [`${kg}${trip.weightUnknownCount > 0 ? "+" : ""} kg`] : []),
+                  ...(redeliveryCount > 0 ? [<span key="rd" className="text-warn-text">{redeliveryCount} re-del</span>] : []),
+                  ...(isEmpty ? [] : [`${formatLitres(trip.totalLitres)} L`]),
+                  ...(kg && !isEmpty ? [`${kg}${trip.weightUnknownCount > 0 ? "+" : ""} kg`] : []),
                 ].map((part, i) => (
                   <span key={i}>
                     {i > 0 && <span className="px-px font-normal text-[#c9c9d4]"> · </span>}
@@ -420,10 +432,21 @@ export function TripDetailHeader({
                 ))}
           </span>
           {canWrite && !adding && (
-            <button type="button" onClick={onAddBills} disabled={busy} className={`${BUTTON} ml-auto gap-[5px] !pl-[10px] !pr-3 font-semibold`}>
-              <Plus size={13} strokeWidth={2.2} />
-              Add bills
-            </button>
+            <span className="ml-auto flex items-center gap-2">
+              {/* RE-DELIVERY (2026-10-03, plan rev 5 §4.1) — left of + Add bills,
+                  the same BUTTON. Hidden on a Hand trip (truck trips only in v1);
+                  cancelled / dispatched / past days are already out via canWrite. */}
+              {!trip.isHand && onAddRedelivery && (
+                <button type="button" onClick={onAddRedelivery} disabled={busy} className={`${BUTTON} gap-[5px] !pl-[10px] !pr-3 font-semibold`}>
+                  <RotateCcw size={13} strokeWidth={2.2} />
+                  Re-delivery
+                </button>
+              )}
+              <button type="button" onClick={onAddBills} disabled={busy} className={`${BUTTON} gap-[5px] !pl-[10px] !pr-3 font-semibold`}>
+                <Plus size={13} strokeWidth={2.2} />
+                Add bills
+              </button>
+            </span>
           )}
         </div>
       </div>

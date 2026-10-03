@@ -33,6 +33,7 @@
 import { isVehicleSize, VEHICLE_SIZE_LABEL } from "./vehicle-size";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { redeliveryReasonLabel } from "@/lib/trips/redelivery-reasons";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // THE VOCABULARY
@@ -685,7 +686,9 @@ export async function logTripRedeliveryAdded(opts: {
     tripId: opts.tripId,
     action: TRIP_REDELIVERY_ADDED,
     actorId: opts.actorId,
-    summary: `${n} re-deliver${n === 1 ? "y" : "ies"} added — ${opts.items.map((i) => `${i.obd} (attempt ${i.attemptNo})`).join(", ")}`,
+    summary: `${n} re-deliver${n === 1 ? "y" : "ies"} added — ${opts.items
+      .map((i) => `${i.obd} (attempt ${i.attemptNo}, ${redeliveryReasonLabel(i.reason)})`)
+      .join(", ")}${opts.confirmedReturn ? " · truck came back confirmed" : ""}`,
     detail: {
       items: opts.items.map((i) => ({ orderId: i.orderId, obd: i.obd, attemptNo: i.attemptNo, reason: i.reason })),
       orderIds: opts.items.map((i) => i.orderId),
@@ -711,7 +714,9 @@ export async function logTripRedeliveryRemoved(opts: {
     tripId: opts.tripId,
     action: TRIP_REDELIVERY_REMOVED,
     actorId: opts.actorId,
-    summary: `${n} re-deliver${n === 1 ? "y" : "ies"} removed — ${opts.items.map((i) => i.obd).join(", ")}`,
+    summary: `${n} re-deliver${n === 1 ? "y" : "ies"} removed — ${opts.items
+      .map((i) => `${i.obd} (attempt ${i.attemptNo}, ${redeliveryReasonLabel(i.reason)})`)
+      .join(", ")}`,
     detail: {
       items: opts.items.map((i) => ({ orderId: i.orderId, obd: i.obd, attemptNo: i.attemptNo, reason: i.reason })),
       orderIds: opts.items.map((i) => i.orderId),

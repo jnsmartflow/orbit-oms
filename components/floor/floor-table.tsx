@@ -60,7 +60,7 @@ import {
   formatWeightKg,
   sumWeightKg,
 } from "./status-pill";
-import { isAllIdsSelected, type FloorSelection } from "@/lib/floor/selection";
+import { deskKeyOf, isAllDeskSelected, type FloorDeskKey } from "@/lib/floor/selection";
 // SOFT variant only (2026-08-25). The solid DUP_SO_* tokens are the PICKING
 // treatment and are deliberately no longer imported here: under `soft` every
 // cell, badge and pill on a duplicate row renders exactly as it does on an
@@ -280,6 +280,8 @@ export function FloorTable({
   onToggleAll,
   onMarkUrgent,
   onOpenDetail,
+  onToggleRedelivery,
+  onOpenRedelivery,
   showInvoice = true,
   operatorByOrderId,
   upcomingRows,
@@ -326,11 +328,21 @@ export function FloorTable({
    */
   selectionLocked?: boolean;
   // Wired only on the live variant; undefined on history/upcoming.
-  selection?: FloorSelection;
+  // A plain Set<number> (Hold-style callers) or the desk's Set<number | rd:id>;
+  // read-only here — the table only asks `has`.
+  selection?: ReadonlySet<FloorDeskKey>;
   onToggleRow?: (id: number) => void;
   onToggleAll?: (rows: FloorBoardRow[]) => void;
   onMarkUrgent?: (id: number) => void;
   onOpenDetail?: (id: number) => void;
+  /**
+   * RE-DELIVERY rows (2026-10-03, row.redelivery set by trip-desk.tsx). Their
+   * tick goes HERE with the trip_redeliveries id — never onToggleRow with the
+   * bill's orderId (lib/floor/selection.ts deskKeyOf). Their RE-DEL chip and ⋯
+   * open the read-only info modal; they have no ⚡ and no detail panel.
+   */
+  onToggleRedelivery?: (redeliveryId: number) => void;
+  onOpenRedelivery?: (redeliveryId: number) => void;
   /**
    * Render the Invoice column? Default true.
    *
@@ -542,7 +554,7 @@ export function FloorTable({
   // per-row `selectable` below, in a second place, which is exactly where a
   // half-done fix of this leaves a header checkbox that lies.
   const tableRows = upcoming.length > 0 ? [...rows, ...upcoming] : rows;
-  const allOn = interactive && selection ? isAllIdsSelected(selection, tableRows) : false;
+  const allOn = interactive && selection ? isAllDeskSelected(selection, tableRows) : false;
 
   return (
     <table className="w-full table-fixed border-collapse">
@@ -650,6 +662,10 @@ export function FloorTable({
     // INSIDE a column that already exists, so no cell count moves.
     // `selectionLocked` (2026-09-18) is the one exception — see the prop.
     const selectable = !selectionLocked;
+    // 🔴 A RE-DELIVERY ROW (2026-10-03) is ticked by `rd:<id>`, never by
+    // row.orderId — that id belongs to the bill's FIRST trip (deskKeyOf).
+    const rd = row.redelivery ?? null;
+    const selKey = deskKeyOf(row);
     const { isSite, isRedirect } = shipInfo(row);
     const obd = asStr(row.obdDateTime);
     const target = row.dispatchTargetDate;
@@ -846,8 +862,8 @@ export function FloorTable({
           <span className="hidden items-center gap-1 group-hover:inline-flex">
             <button
               type="button"
-              title="Open details"
-              onClick={() => onOpenDetail?.(row.orderId)}
+              title={rd ? "Re-delivery details" : "Open details"}
+              onClick={() => (rd ? onOpenRedelivery?.(rd.id) : onOpenDetail?.(row.orderId))}
               className="inline-flex h-[23px] w-[23px] items-center justify-center rounded-[5px] border border-gray-200 bg-white text-gray-400 hover:border-gray-300 hover:text-gray-600"
             >
               <MoreHorizontal size={12} />
@@ -873,6 +889,21 @@ export function FloorTable({
           {/* Row hover actions (design §7.10). ⚡ is LIVE (instant urgent
               toggle, lights red when urgent); ⋯ is INERT (detail panel is
               a later step). */}
+          {rd ? (
+            // A RE-DELIVERY row: no ⚡ (it would write the real bill) and no
+            // detail panel (its actions write the real bill too). ⋯ opens the
+            // read-only re-delivery info instead.
+            <span className="hidden items-center gap-1 group-hover:inline-flex">
+              <button
+                type="button"
+                title="Re-delivery details"
+                onClick={() => onOpenRedelivery?.(rd.id)}
+                className="inline-flex h-[23px] w-[23px] items-center justify-center rounded-[5px] border border-gray-200 bg-white text-gray-400 hover:border-gray-300 hover:text-gray-600"
+              >
+                <MoreHorizontal size={12} />
+              </button>
+            </span>
+          ) : (
           <span className="hidden items-center gap-1 group-hover:inline-flex">
             <button
               type="button"
@@ -893,6 +924,7 @@ export function FloorTable({
               <MoreHorizontal size={12} />
             </button>
           </span>
+          )}
         </span>
       );
     }
@@ -909,7 +941,7 @@ export function FloorTable({
     // (components/shared/duplicate-so-tag.tsx), which this file no longer
     // imports. The bar went 3px → 4px in the same change to carry the load.
     return (
-      <tr key={row.orderId} className="group hover:bg-[#fafafa]">
+      <tr key={String(selKey)} className="group hover:bg-[#fafafa]">
         {interactive && (
           /* FIRST CELL when the table is selectable — it carries the bar. */
           <td className={TD_NARROW} style={barStyle}>
@@ -922,8 +954,8 @@ export function FloorTable({
                 type="checkbox"
                 aria-label={`Select ${row.obdNumber}`}
                 className="h-[13px] w-[13px] cursor-pointer align-middle accent-brand-600"
-                checked={selection?.has(row.orderId) ?? false}
-                onChange={() => onToggleRow?.(row.orderId)}
+                checked={selection?.has(selKey) ?? false}
+                onChange={() => (rd ? onToggleRedelivery?.(rd.id) : onToggleRow?.(row.orderId))}
               />
             )}
           </td>
@@ -940,6 +972,20 @@ export function FloorTable({
           {/* The tag rides the OBD cell — first column a reader lands on,
               and it never displaces the Status column's own meaning. */}
           {dup && <DuplicateSoTag variant="soft" className="ml-1.5 align-[1px]" />}
+          {/* RE-DEL (2026-10-03) — a bill that came back on an earlier truck,
+              planned again on this trip. The trip-number chip's shape, in the
+              `warn` token (CLAUDE_UI §2.1 — never red, never a data.* colour).
+              A button: it opens the read-only re-delivery info. */}
+          {rd && (
+            <button
+              type="button"
+              onClick={() => onOpenRedelivery?.(rd.id)}
+              title={`Re-delivery · attempt ${rd.attemptNo} — click for its history`}
+              className="ml-1.5 rounded-[3px] border border-warn/40 bg-warn-bg px-[5px] py-px align-[1px] font-mono text-[9.5px] font-semibold text-warn-text hover:border-warn"
+            >
+              RE-DEL
+            </button>
+          )}
           {/* THE TRIP TAG (2026-09-09) — INSIDE the OBD cell, never a new
               column. This table's colgroup, header cells and FOUR width
               arrays map POSITIONALLY, so a tenth column shunts every
@@ -954,7 +1000,8 @@ export function FloorTable({
 
               Renders NOTHING when the bill is on no trip, which is most of
               the board: no empty space, no dash, no placeholder. */}
-          {row.tripNumber && !hideTripTag && (
+          {/* Never on a RE-DEL row: its tripNumber is the bill's FIRST trip. */}
+          {row.tripNumber && !hideTripTag && !rd && (
             <span
               // Just the number (slice 6). This appended the RAW stored status —
               // "· draft", "· released" — the one place the column's own word

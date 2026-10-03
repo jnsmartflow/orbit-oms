@@ -33,6 +33,8 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { toast } from "sonner";
 import { TripDesk, isPoolRow } from "./trip-desk";
+import { TripRedeliveryDialog } from "./trip-redelivery-dialog";
+import { TripRedeliveryInfo } from "./trip-redelivery-info";
 import { TripForm } from "./trip-form";
 import type { VehicleSize } from "@/lib/trips/vehicle-size";
 import { rankRouteName } from "@/lib/trips/route-label";
@@ -78,7 +80,7 @@ import {
 // 🔴 toggleAllIds / (no isSelectable), NOT the stage-gated pair (2026-09-10 d).
 // Selecting a bill on this screen means putting it on a TRIP, and trip
 // membership is not stage-gated — see the two families in lib/floor/selection.ts.
-import { toggleOne, toggleAllIds, type FloorSelection } from "@/lib/floor/selection";
+import { toggleDeskKey, toggleAllDesk, rdKey, isRdKey, rdIdOf, type FloorDeskSelection } from "@/lib/floor/selection";
 import { rowsInScope, scopeBoard } from "@/lib/floor/scope";
 import { parseSearch, applySearch, searchReport, lookupTermOf, type Searchable, type ParsedSearch } from "@/lib/floor/search";
 import { applyFloorFilters, applyFlagFilters, EMPTY_FILTERS, type FloorFilters } from "@/lib/floor/filter";
@@ -86,7 +88,7 @@ import type { DispatchWindow } from "@/components/floor/dispatch-slot-picker";
 import type { FloorScope, FloorBoardResult, FloorBoardRow, FloorPicker, FloorHoldRow, FloorCancelledRow, FloorDetailSource, FloorRouteClub } from "@/lib/floor/types";
 import type { FloorLoadPlanPayload } from "@/lib/floor/load-plan-config";
 import type { RailSelection } from "./trip-rail";
-import type { TripSummary, TripDetail } from "@/lib/trips/queries";
+import type { TripSummary, TripDetail, TripRedeliveryRow } from "@/lib/trips/queries";
 import { chooseTripTypeName } from "@/lib/trips/type-choice";
 import type {
   DeliveryTypeOption,
@@ -463,7 +465,7 @@ export function FloorPage({ canEdit = false }: { canEdit?: boolean } = {}) {
 
   // Selection (design §7.8) — a Set of orderIds; survives a re-sort, cleared on
   // any tab/scope/date change below.
-  const [selection, setSelection] = useState<FloorSelection>(new Set());
+  const [selection, setSelection] = useState<FloorDeskSelection>(new Set());
   // The bottom bar's ··· More menu (2026-09-22). Owned HERE, not in the menu,
   // because this component is the single Esc owner (FLOOR §4.6) and Esc must be
   // able to close it. Reset whenever the bar goes away (effect below barVisible).
@@ -1144,6 +1146,54 @@ export function FloorPage({ canEdit = false }: { canEdit?: boolean } = {}) {
     [load],
   );
 
+  /**
+   * Remove from trip, SPLIT (2026-10-03, plan rev 5 §4.3): the ticked bills go
+   * the existing way (bills route, unchanged); the ticked RE-DELIVERIES go to
+   * POST /api/floor/trips/[id]/redeliveries { action: "remove", redeliveryIds }
+   * on the OPEN trip — they are only ever drawn there. A re-delivery's orderId
+   * never reaches the bills route: that would take the bill off its FIRST trip.
+   */
+  const removeSelectionSplit = useCallback(
+    async (rowsToRemove: FloorBoardRow[], redeliveryIds: number[], tripId: number | null) => {
+      if (redeliveryIds.length === 0) {
+        await removeSelectionFromTrips(rowsToRemove);
+        return;
+      }
+      setTripBarBusy(true);
+      try {
+        if (tripId === null) {
+          toast.error("Open the trip the re-deliveries are on, then remove them.");
+        } else {
+          const res = await fetch(`/api/floor/trips/${tripId}/redeliveries`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "remove", redeliveryIds }),
+          });
+          const body = await res.json().catch(() => ({}));
+          const removed: number[] = body?.removed ?? [];
+          const failed: Array<{ redeliveryId: number; error: string }> = body?.failed ?? [];
+          if (removed.length > 0) {
+            toast.success(`${removed.length} re-deliver${removed.length === 1 ? "y" : "ies"} removed from the trip`);
+          }
+          if (failed.length > 0) toast.error(`${failed.length} re-delivery not removed — ${failed[0].error}`);
+          else if (!res.ok && removed.length === 0) toast.error(`Could not remove — ${body?.error ?? `HTTP ${res.status}`}`);
+        }
+      } catch {
+        toast.error("Could not remove — check your connection.");
+      } finally {
+        setTripBarBusy(false);
+      }
+      if (rowsToRemove.length > 0) {
+        // Clears the selection and reloads itself.
+        await removeSelectionFromTrips(rowsToRemove);
+      } else {
+        setSelection(new Set());
+        await load();
+      }
+    },
+    [load, removeSelectionFromTrips],
+  );
+
   // ⚠ THE CONFIRM PLAN HANDLER WENT IN SLICE 6 (2026-09-15). The button is gone
   // with the Draft / Confirmed words: entering a vehicle is what moves a trip out
   // of draft now, on the SERVER, inside the create and PATCH routes
@@ -1212,8 +1262,21 @@ export function FloorPage({ canEdit = false }: { canEdit?: boolean } = {}) {
   // the bar populated for the one render between a chip click and that clear,
   // which is exactly how it behaved when a chip click refetched.
   const rows = data?.floor.rows ?? [];
+  // 🔴 BOARD ROWS BY NUMERIC orderId ONLY. Every bill action below (add to
+  // trip, New trip, Remove, Hold, Cancel / Raise CI, the type choice) reads
+  // `selectedRows` / `selectedIdsRef`, so an `rd:` key (a ticked re-delivery)
+  // can never reach one of them — it matches no board row by construction.
   const selectedRows = rows.filter((r) => selection.has(r.orderId));
   const selectedIds = selectedRows.map((r) => r.orderId);
+  // RE-DELIVERIES ticked on the open trip (2026-10-03) — `rd:<id>` keys, resolved
+  // against the trip detail the panel draws. Only Remove from trip reads them.
+  const tripRedeliveryById = new Map<number, TripRedeliveryRow>(
+    (tripDetail?.drops ?? []).flatMap((d) => (d.redeliveries ?? []).map((r) => [r.id, r] as const)),
+  );
+  const selectedRedeliveryIds = Array.from(selection)
+    .filter(isRdKey)
+    .map(rdIdOf)
+    .filter((id) => tripRedeliveryById.has(id));
   // Keep the refs the trip handlers read in step with the render. Assigning
   // during render is safe for a ref (no subscription, no re-render) and is what
   // makes the handlers stable without going stale.
@@ -1239,8 +1302,10 @@ export function FloorPage({ canEdit = false }: { canEdit?: boolean } = {}) {
     [load],
   );
 
-  const onToggleRow = useCallback((id: number) => setSelection((s) => toggleOne(s, id)), []);
-  const onToggleAll = useCallback((tableRows: FloorBoardRow[]) => setSelection((s) => toggleAllIds(s, tableRows)), []);
+  const onToggleRow = useCallback((id: number) => setSelection((s) => toggleDeskKey(s, id)), []);
+  // A RE-DEL row ticks by `rd:<redeliveryId>` — never the bill's orderId (lib/floor/selection.ts).
+  const onToggleRedelivery = useCallback((redeliveryId: number) => setSelection((s) => toggleDeskKey(s, rdKey(redeliveryId))), []);
+  const onToggleAll = useCallback((tableRows: FloorBoardRow[]) => setSelection((s) => toggleAllDesk(s, tableRows)), []);
 
   // ── Bulk bar actions ──────────────────────────────────────────────────────
   // Bulk mark-urgent + bulk hold were RETIRED with the bulk-bar v2 rebuild —
@@ -1850,6 +1915,20 @@ export function FloorPage({ canEdit = false }: { canEdit?: boolean } = {}) {
     offFloorBusyRef.current = b;
   }, []);
 
+  // ── RE-DELIVERY dialog + info modal (2026-10-03, plan rev 5 §4.1/§4.2) ─────
+  // Both are closed by THIS page's one Esc listener (FLOOR §4.6), never their own.
+  const [redeliveryTripId, setRedeliveryTripId] = useState<number | null>(null);
+  const redeliveryBusyRef = useRef(false);
+  const closeRedeliveryDialog = useCallback(() => {
+    if (redeliveryBusyRef.current) return; // mid-request — refused, like the off-floor form
+    setRedeliveryTripId(null);
+  }, []);
+  const setRedeliveryBusy = useCallback((b: boolean) => {
+    redeliveryBusyRef.current = b;
+  }, []);
+  const [redeliveryInfoId, setRedeliveryInfoId] = useState<number | null>(null);
+  const closeRedeliveryInfo = useCallback(() => setRedeliveryInfoId(null), []);
+
   // A Cancel & CI tab row that is a CI (2026-09-22): its panel shows no
   // Restore — the return is with billing, and the actions route refuses it.
   // Read off the row already loaded, like detailHasDuplicateSo above.
@@ -1969,6 +2048,17 @@ export function FloorPage({ canEdit = false }: { canEdit?: boolean } = {}) {
   useEffect(() => {
     function onEsc(e: KeyboardEvent) {
       if (e.key !== "Escape") return;
+      // The RE-DELIVERY dialog and info modal (2026-10-03) — the top layer, and
+      // checked BEFORE the field guard below: the dialog opens with focus in its
+      // number box, and Esc must still close it from there. One layer per press.
+      if (redeliveryInfoId !== null) {
+        closeRedeliveryInfo();
+        return;
+      }
+      if (redeliveryTripId !== null) {
+        closeRedeliveryDialog();
+        return;
+      }
       // A DispatchSlotPicker popover is open (its portalled root carries this
       // marker only while open) — leave it to outside-click, as today.
       if (document.querySelector('[data-slot-popover="open"]')) return;
@@ -1998,7 +2088,7 @@ export function FloorPage({ canEdit = false }: { canEdit?: boolean } = {}) {
     }
     window.addEventListener("keydown", onEsc);
     return () => window.removeEventListener("keydown", onEsc);
-  }, [offFloorOpen, closeOffFloor, detailOpen, moreOpen, holdMoreOpen, openRouteCard, selection, closeDetail, clearSelection, addingToTripId, stopAddingTo]);
+  }, [offFloorOpen, closeOffFloor, detailOpen, moreOpen, holdMoreOpen, openRouteCard, selection, closeDetail, clearSelection, addingToTripId, stopAddingTo, redeliveryInfoId, redeliveryTripId, closeRedeliveryInfo, closeRedeliveryDialog]);
 
   // Reconcile the floor SELECTION against fresh data WITHOUT moving the visible
   // board (design §13 rules 2 + 3): drop the tick on any selected row that
@@ -2028,10 +2118,12 @@ export function FloorPage({ canEdit = false }: { canEdit?: boolean } = {}) {
         (board.floor?.rows ?? []).map((r: FloorBoardRow) => r.orderId),
       );
       setSelection((prev) => {
-        const next = new Set<number>();
+        const next: FloorDeskSelection = new Set();
         let dropped = 0;
         for (const id of Array.from(prev)) {
-          if (stillSelectable.has(id)) next.add(id);
+          // A ticked RE-DELIVERY (`rd:` key) is not a board row and is never
+          // judged here — the trip detail decides whether it still exists.
+          if (isRdKey(id) || stillSelectable.has(id)) next.add(id);
           else dropped++;
         }
         if (dropped > 0) {
@@ -2238,10 +2330,11 @@ export function FloorPage({ canEdit = false }: { canEdit?: boolean } = {}) {
     const left = new Set((body.rows ?? []).filter((r) => r.tab !== "board").map((r) => r.id));
     if (left.size === 0) return;
     setSelection((prev) => {
-      const next = new Set<number>();
+      const next: FloorDeskSelection = new Set();
       let dropped = 0;
       for (const id of Array.from(prev)) {
-        if (left.has(id)) dropped++;
+        // `rd:` keys are never board rows — kept as they are.
+        if (!isRdKey(id) && left.has(id)) dropped++;
         else next.add(id);
       }
       if (dropped === 0) return prev;
@@ -2561,8 +2654,9 @@ export function FloorPage({ canEdit = false }: { canEdit?: boolean } = {}) {
    */
   const newTripTypeName = useMemo<string | null>(() => {
     const typeById = new Map(selectedRows.map((r) => [r.orderId, r.deliveryType]));
+    // Numeric keys only — an `rd:` key is never a bill on this decision.
     const inTickOrder = Array.from(selection)
-      .filter((id) => typeById.has(id))
+      .filter((id): id is number => typeof id === "number" && typeById.has(id))
       .map((id) => typeById.get(id) ?? null);
     return chooseTripTypeName(inTickOrder, scope);
   }, [selection, selectedRows, scope]);
@@ -3123,6 +3217,9 @@ export function FloorPage({ canEdit = false }: { canEdit?: boolean } = {}) {
               onStepHistory={stepHistory}
               rowSelection={selection}
               onToggleRow={onToggleRow}
+              onToggleRedelivery={onToggleRedelivery}
+              onOpenRedelivery={setRedeliveryInfoId}
+              onAddRedelivery={setRedeliveryTripId}
               onToggleAll={onToggleAll}
               onMarkUrgent={rowMarkUrgent}
               // ── ADD MODE (2026-09-16) ────────────────────────────────────
@@ -3224,7 +3321,8 @@ export function FloorPage({ canEdit = false }: { canEdit?: boolean } = {}) {
               bottomBar={
                 barVisible ? (
                   <FloorBottomBar
-                    count={selectedRows.length}
+                    count={selectedRows.length + selectedRedeliveryIds.length}
+                    redeliveryCount={selectedRedeliveryIds.length}
                     litres={formatLitres(sumLitres(selectedRows))}
                     weight={formatWeightKg(selectionWeight.kg)}
                     weightIsPartial={selectionWeight.unknown > 0}
@@ -3235,7 +3333,13 @@ export function FloorPage({ canEdit = false }: { canEdit?: boolean } = {}) {
                     addTargetLabel={addTargetTrip?.tripNumber ?? null}
                     onAddToTarget={() => { if (addingToTripId !== null) void addSelectionToTrip(addingToTripId, { quiet: true }); }}
                     onNewTripWithSelection={() => void createTripWithSelection()}
-                    onRemoveFromTrip={() => void removeSelectionFromTrips(selectedRows)}
+                    onRemoveFromTrip={() =>
+                      void removeSelectionSplit(
+                        selectedRows,
+                        selectedRedeliveryIds,
+                        railSelection.kind === "trip" ? railSelection.tripId : null,
+                      )
+                    }
                     onClear={clearSelection}
                     contextLabel={barContextLabel}
                     menuOpen={moreOpen}
@@ -3335,6 +3439,26 @@ export function FloorPage({ canEdit = false }: { canEdit?: boolean } = {}) {
       {/* Cancel / Raise CI (2026-09-22) — above the panel, which can open it.
           The form closes itself on its Back / Done / scrim, and after an
           all-done submit; `onApplied` fixes the opener's ticks and reloads. */}
+      {/* RE-DELIVERY (2026-10-03) — the add dialog and the read-only info.
+          Closed by this page's one Esc listener; after an add the page reloads,
+          which refreshes the trips and, through them, the open trip's stops. */}
+      {redeliveryTripId !== null && (
+        <TripRedeliveryDialog
+          tripId={redeliveryTripId}
+          tripNumber={(trips ?? []).find((t) => t.id === redeliveryTripId)?.tripNumber ?? "this trip"}
+          onClose={closeRedeliveryDialog}
+          onAdded={() => void load()}
+          onBusyChange={setRedeliveryBusy}
+        />
+      )}
+      {redeliveryInfoId !== null && tripRedeliveryById.has(redeliveryInfoId) && (
+        <TripRedeliveryInfo
+          redelivery={tripRedeliveryById.get(redeliveryInfoId) as TripRedeliveryRow}
+          tripNumber={tripDetail?.tripNumber ?? ""}
+          onClose={closeRedeliveryInfo}
+        />
+      )}
+
       {offFloor && (
         <OffFloorDialog
           bills={offFloor.bills}

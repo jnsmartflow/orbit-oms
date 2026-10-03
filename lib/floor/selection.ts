@@ -77,6 +77,67 @@ export function toggleAll(sel: FloorSelection, rows: SelectableRow[]): FloorSele
   return next;
 }
 
+// ── The Floor DESK selection: bills AND re-deliveries (2026-10-03) ───────────
+//
+// 🔴 A RE-DELIVERY ROW IS KEYED `rd:<redeliveryId>`, NEVER BY ITS orderId.
+// Its row is the bill's own FloorTable row (lib/trips/queries.ts
+// TripRedeliveryRow.row), and that row's orderId / tripDropId / tripNumber
+// belong to the bill's FIRST trip. A plain-id tick would reach every bill action
+// on the desk — Remove from trip would post it to the FIRST trip and take the
+// bill off the load it really went on (plan rev 5 §4.3). Every desk consumer
+// resolves ticks against BOARD rows by numeric orderId, so an `rd:` key can
+// never match one; only the re-delivery remove path reads them (isRdKey).
+//
+// Hold, Cancelled, Freight Trips and Billing keep the plain FloorSelection
+// above — they never draw a re-delivery.
+
+export type RdKey = `rd:${number}`;
+export type FloorDeskKey = number | RdKey;
+export type FloorDeskSelection = Set<FloorDeskKey>;
+
+export function rdKey(redeliveryId: number): RdKey {
+  return `rd:${redeliveryId}`;
+}
+
+export function isRdKey(key: FloorDeskKey): key is RdKey {
+  return typeof key === "string";
+}
+
+/** The trip_redeliveries.id inside an `rd:` key. */
+export function rdIdOf(key: RdKey): number {
+  return Number(key.slice(3));
+}
+
+/** A row's selection key: `rd:<id>` on a re-delivery row, its orderId otherwise. */
+export function deskKeyOf(row: { orderId: number; redelivery?: { id: number } | null }): FloorDeskKey {
+  return row.redelivery ? rdKey(row.redelivery.id) : row.orderId;
+}
+
+export function toggleDeskKey(sel: FloorDeskSelection, key: FloorDeskKey): FloorDeskSelection {
+  const next = new Set(sel);
+  if (next.has(key)) next.delete(key);
+  else next.add(key);
+  return next;
+}
+
+type DeskRow = { orderId: number; redelivery?: { id: number } | null };
+
+/** isAllIdsSelected, by each row's DESK key — a re-delivery row counts as its `rd:` key. */
+export function isAllDeskSelected(sel: ReadonlySet<FloorDeskKey>, rows: DeskRow[]): boolean {
+  return rows.length > 0 && rows.every((r) => sel.has(deskKeyOf(r)));
+}
+
+/** toggleAllIds, by DESK key — the header tick of a stop holding re-deliveries adds `rd:` keys. */
+export function toggleAllDesk(sel: FloorDeskSelection, rows: DeskRow[]): FloorDeskSelection {
+  const next = new Set(sel);
+  if (isAllDeskSelected(sel, rows)) {
+    for (const r of rows) next.delete(deskKeyOf(r));
+  } else {
+    for (const r of rows) next.add(deskKeyOf(r));
+  }
+  return next;
+}
+
 // ── Hold / Cancelled: every row is selectable ────────────────────────────────
 // Those tabs have no "off the shelf" cutoff — a held or cancelled bill is always
 // a valid target — so they select by plain id, not the isDone/isChecked rule.

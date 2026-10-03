@@ -30,25 +30,15 @@ import { deleteTripDropIfEmpty, findOrCreateTripDrop } from "@/lib/trips/drop";
 import { logTripRedeliveryAdded, logTripRedeliveryRemoved, type RedeliveryLogItem } from "@/lib/trips/activity";
 import { dealerDisplayName } from "@/lib/orders/dealer-name";
 
-// ── Vocabulary ───────────────────────────────────────────────────────────────
-
-/** The reasons chk_trip_redeliveries_reason admits. A new one = ALTER the CHECK first. */
-export const REDELIVERY_REASONS = ["site_closed", "wrong_dispatch"] as const;
-export type RedeliveryReason = (typeof REDELIVERY_REASONS)[number];
-
-export const REDELIVERY_REASON_LABELS: Record<RedeliveryReason, string> = {
-  site_closed: "Shop / site closed",
-  wrong_dispatch: "Wrong dispatch",
-};
-
-export function isRedeliveryReason(value: unknown): value is RedeliveryReason {
-  return typeof value === "string" && (REDELIVERY_REASONS as readonly string[]).includes(value);
-}
-
-/** The label for a stored reason; the raw value when unknown (an old row after a CHECK change). */
-export function redeliveryReasonLabel(reason: string): string {
-  return isRedeliveryReason(reason) ? REDELIVERY_REASON_LABELS[reason] : reason;
-}
+// ── Vocabulary — lives in lib/trips/redelivery-reasons.ts (pure, client-safe) ──
+import { isRedeliveryReason, redeliveryReasonLabel, type RedeliveryReason } from "@/lib/trips/redelivery-reasons";
+export {
+  REDELIVERY_REASONS,
+  REDELIVERY_REASON_LABELS,
+  isRedeliveryReason,
+  redeliveryReasonLabel,
+  type RedeliveryReason,
+} from "@/lib/trips/redelivery-reasons";
 
 /** The stages a bill must be at to have "gone out" (plan §2 #1). */
 const GONE_OUT_STAGES: readonly string[] = [PICK_CHECKED, DISPATCHED];

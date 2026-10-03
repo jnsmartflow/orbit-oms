@@ -37,6 +37,12 @@ const DOT: Record<string, string> = {
   released: "bg-[#15803d]",
   dispatched: "bg-[#15803d]",
   cancelled: "bg-[#b91c1c]",
+  // Re-deliveries (2026-10-03) — the RE-DEL chip's `warn` token, so the line
+  // and the chip on the row read as one thing. Removed is the quiet slate of
+  // every other take-off. The summary (OBD, attempt, reason) is written by the
+  // server writer (lib/trips/activity.ts), never re-worded here.
+  redelivery_added: "bg-warn",
+  redelivery_removed: "bg-[#94a3b8]",
 };
 
 function dotFor(action: string): string {

@@ -398,12 +398,22 @@ function TripCard({
 
       {/* ⚠ AN EMPTY TRIP SAYS SO (2026-09-10 c) rather than "0 stops · 0 bills ·
           0 L" — an empty trip is a normal morning state (owner, slice 6). */}
-      {bar.total === 0 ? (
+      {/* RE-DELIVERIES (2026-10-03) — "+M re-del" in warn, a separate figure
+          beside the trip's own bills. A trip holding only re-deliveries is not
+          "No bills yet". */}
+      {bar.total === 0 && (trip.redeliveryCount ?? 0) === 0 ? (
         <div className="text-[12.5px] text-[#96969f]">No bills yet</div>
+      ) : bar.total === 0 ? (
+        <div className="text-[12.5px] tabular-nums text-[#96969f]">
+          Re-deliveries only · <span className="font-semibold text-warn-text">+{trip.redeliveryCount} re-del</span>
+        </div>
       ) : (
         <div className="text-[12.5px] tabular-nums text-[#61616d]">
           {trip.dropCount} stop{trip.dropCount === 1 ? "" : "s"} · {bar.total} bill
           {bar.total === 1 ? "" : "s"} · {formatLitres(trip.totalLitres)} L
+          {(trip.redeliveryCount ?? 0) > 0 && (
+            <> · <span className="font-semibold text-warn-text">+{trip.redeliveryCount} re-del</span></>
+          )}
         </div>
       )}
 

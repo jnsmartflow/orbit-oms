@@ -53,7 +53,7 @@ import {
   formatWeightKg,
   sumWeightKg,
 } from "./status-pill";
-import type { FloorSelection } from "@/lib/floor/selection";
+import { rdKey, type FloorDeskSelection } from "@/lib/floor/selection";
 import type { FloorBoardResult, FloorBoardRow, FloorRouteClub, FloorScope } from "@/lib/floor/types";
 import type { TripSummary, TripDetail } from "@/lib/trips/queries";
 
@@ -94,7 +94,7 @@ function fmtHistLabel(iso: string): string {
  * below would stop type-checking against their own props.
  */
 type LeafProps = {
-  selection?: FloorSelection;
+  selection?: FloorDeskSelection;
   onToggleRow?: (id: number) => void;
   onToggleAll?: (rows: FloorBoardRow[]) => void;
   onMarkUrgent: (id: number) => void;
@@ -149,6 +149,9 @@ export function TripDesk({
   onStepHistory,
   rowSelection,
   onToggleRow,
+  onToggleRedelivery,
+  onOpenRedelivery,
+  onAddRedelivery,
   onToggleAll,
   onMarkUrgent,
   onOpenDetail,
@@ -200,7 +203,13 @@ export function TripDesk({
   onEnterHistory: () => void;
   onExitHistory: () => void;
   onStepHistory: (delta: number) => void;
-  rowSelection: FloorSelection;
+  rowSelection: FloorDeskSelection;
+  /** Tick a RE-DEL row by its trip_redeliveries id (never the bill's orderId). */
+  onToggleRedelivery: (redeliveryId: number) => void;
+  /** Open the read-only re-delivery info modal. */
+  onOpenRedelivery: (redeliveryId: number) => void;
+  /** Open the Re-delivery dialog for a trip (header stops bar). */
+  onAddRedelivery: (tripId: number) => void;
   onToggleRow: (id: number) => void;
   onToggleAll: (rows: FloorBoardRow[]) => void;
   onMarkUrgent: (id: number) => void;
@@ -972,6 +981,7 @@ export function TripDesk({
           onTakeBackFromFloor={() => onSetTripShown(trip.id, false)}
           onSendToBilling={() => onSetTripSentToBilling(trip.id, true)}
           onTakeBackFromBilling={() => onSetTripSentToBilling(trip.id, false)}
+          onAddRedelivery={() => onAddRedelivery(trip.id)}
         />
 
         {tripDetail === null || tripDetail.id !== trip.id ? (
@@ -992,6 +1002,18 @@ export function TripDesk({
             const rows = d.orderIds
               .map((id) => rowById.get(id))
               .filter((r): r is FloorBoardRow => r !== undefined);
+            // RE-DELIVERIES (2026-10-03) — appended AFTER the stop's own bills,
+            // each its own bill's FloorTable row (built server-side by the board's
+            // row builder) marked `redelivery`, so FloorTable ticks it by `rd:<id>`
+            // and never by the orderId, which belongs to the bill's FIRST trip.
+            const redel = d.redeliveries ?? [];
+            const rdRows: FloorBoardRow[] = redel
+              .filter((r) => r.row !== null)
+              .map((r) => ({ ...(r.row as FloorBoardRow), redelivery: { id: r.id, attemptNo: r.attemptNo } }));
+            // A re-delivery the board would not draw (an admin Hide rule) still
+            // gets a line — never skipped silently.
+            const rdMissing = redel.filter((r) => r.row === null);
+            const tableRows = [...sort(rows), ...rdRows];
             return (
               // 20px between stops, the first 6px under the stops bar (design
               // spec, 2026-09-15). `i` is the stop's index in the trip's drops.
@@ -1011,16 +1033,25 @@ export function TripDesk({
                       came to read; the row wraps instead. */}
                   <span className="text-[14.5px] font-semibold text-[#1a1a22]">{d.customerName}</span>
                   <span className="text-[12.5px] tabular-nums text-[#96969f]">
-                    {d.areaName ? `${d.areaName} · ` : ""}{d.bills} bill{d.bills === 1 ? "" : "s"} ·{" "}
-                    {formatLitres(d.litres)} L
+                    {d.areaName ? `${d.areaName} · ` : ""}
+                    {/* "2 bills · 1 re-del" — the re-del part in warn (plan §4.2).
+                        A re-delivery-only stop reads "1 re-del" alone. */}
+                    {d.bills > 0 || redel.length === 0 ? (
+                      <>
+                        {d.bills} bill{d.bills === 1 ? "" : "s"}
+                        {redel.length > 0 ? " · " : ""}
+                      </>
+                    ) : null}
+                    {redel.length > 0 && <span className="font-semibold text-warn-text">{redel.length} re-del</span>}
+                    {d.bills > 0 ? ` · ${formatLitres(d.litres)} L` : ""}
                   </span>
                 </div>
-                {rows.length > 0 ? (
+                {tableRows.length > 0 && (
                   // No zone partition INSIDE a stop: a stop is one customer and
                   // its bills are read as one delivery. The Due cell on each row
                   // still says which day it is promised for.
                   <FloorTable
-                    rows={sort(rows)}
+                    rows={tableRows}
                     anchorIso={floor.date}
                     nowMs={nowMs}
                     variant={variant}
@@ -1030,8 +1061,40 @@ export function TripDesk({
                     hideTripTag
                     selectionLocked={adding}
                     {...selProps}
+                    // Re-delivery rows tick by their own id (never the History
+                    // desk, which wires no selection at all).
+                    onToggleRedelivery={isHistory ? undefined : onToggleRedelivery}
+                    onOpenRedelivery={onOpenRedelivery}
                   />
-                ) : (
+                )}
+                {rdMissing.map((r) => (
+                  <div key={`rd-missing-${r.id}`} className="flex items-center gap-2 border-b border-[#f0f0f0] px-3.5 py-2 pl-[11px] text-[11px] text-gray-500">
+                    {/* Tickable like any re-delivery, by `rd:<id>`, so it can be
+                        removed — never on History or while adding. */}
+                    <span className="inline-flex w-[15px] justify-center">
+                      {!isHistory && !adding && (
+                        <input
+                          type="checkbox"
+                          aria-label={`Select re-delivery ${r.obdNumber}`}
+                          className="h-[13px] w-[13px] cursor-pointer accent-brand-600"
+                          checked={rowSelection.has(rdKey(r.id))}
+                          onChange={() => onToggleRedelivery(r.id)}
+                        />
+                      )}
+                    </span>
+                    <span className="font-mono text-[11.5px] font-medium text-[#111827]">{r.obdNumber}</span>
+                    <button
+                      type="button"
+                      onClick={() => onOpenRedelivery(r.id)}
+                      className="rounded-[3px] border border-warn/40 bg-warn-bg px-[5px] py-px font-mono text-[9.5px] font-semibold text-warn-text hover:border-warn"
+                    >
+                      RE-DEL
+                    </button>
+                    {r.invoiceNo && <span className="font-mono text-gray-600">{r.invoiceNo}</span>}
+                    <span className="text-gray-400">· attempt {r.attemptNo} · not shown on the board (admin Hide rule)</span>
+                  </div>
+                ))}
+                {rows.length === 0 && d.bills > 0 && (
                   <div className="px-3.5 py-2.5 pl-[34px] text-[11px] text-gray-400">
                     {/* Slice 10 (2026-09-15): History now pulls a trip's bills BY
                         TRIP (floorHistoryTripBillsWhere), so on either desk this
