@@ -22,7 +22,7 @@ import { StatusPill, formatSmu } from "./board-bits";
 import { BoardSlotCell } from "./board-slot-cell";
 import { MissingShipToLine, missingRowCls, useMissingCustomers } from "./missing-customer";
 import type { DispatchSlotValue, DispatchWindow } from "@/components/floor/dispatch-slot-picker";
-import { formulaText } from "@/lib/tint/job-track";
+import { formulaRows, formulaText } from "@/lib/tint/job-track";
 import type { BoardGroup, BoardRow } from "./types";
 
 // ── Column widths ────────────────────────────────────────────────────────────
@@ -453,9 +453,10 @@ export function TintBoardRow({
 
       {/* FORMULA (Tint tab, 2026-10-03) — the first tint line's pigment values
           ("TBL 9 · WHT 12"), "+N line" when more lines carry a TI, "—" before
-          any TI is saved. Hover = every line. */}
+          any TI is saved. Hover = every line, each prefixed by its own articles
+          when there are 2+ ("14 Drum · LFY 10 · BLK 25"). */}
       {showFormula && (
-        <td className={TD} title={row.formula.length > 0 ? row.formula.map(formulaText).join("\n") : "No TI saved yet"}>
+        <td className={TD} title={row.formula.length > 0 ? formulaRows(row.formula).join("\n") : "No TI saved yet"}>
           {row.formula.length === 0 ? (
             <span className="text-[#9ca3af]">—</span>
           ) : (

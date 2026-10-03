@@ -733,6 +733,19 @@ export async function GET(req: Request): Promise<NextResponse> {
       ...tiRowsA.map((r) => ({ ...r, pigments: pigmentsOf(r as unknown as Record<string, unknown>, TINTER_REGISTER) })),
       ...tiRowsB.map((r) => ({ ...r, pigments: pigmentsOf(r as unknown as Record<string, unknown>, ACOTONE_REGISTER) })),
     ];
+    // Each TI line's own articles, for the 2+ line prefix ("14 Drum · …",
+    // 2026-10-03). ONE batched read over the lines the TI rows name.
+    const tiLineIds = Array.from(new Set(tiRows.map((r) => r.rawLineItemId).filter((id): id is number => id !== null)));
+    const tiLines = tiLineIds.length > 0
+      ? await prisma.import_raw_line_items.findMany({
+          where:  { id: { in: tiLineIds } },
+          select: { id: true, unitQty: true, articleTag: true },
+        })
+      : [];
+    const articlesByLine = new Map(tiLines.map((l) => [
+      l.id,
+      aggregateArticleTags([l.articleTag]) ?? (l.unitQty > 0 ? `${l.unitQty} tins` : null),
+    ]));
     const tiByOrder = new Map<number, TiRow[]>();
     for (const r of tiRows) {
       const list = tiByOrder.get(r.orderId) ?? [];
@@ -760,7 +773,11 @@ export async function GET(req: Request): Promise<NextResponse> {
       return Array.from(latest.values())
         .sort((a, b) => (a.rawLineItemId ?? Number.MAX_SAFE_INTEGER) - (b.rawLineItemId ?? Number.MAX_SAFE_INTEGER) || a.id - b.id)
         .filter((r) => r.pigments.length > 0)
-        .map((r) => ({ rawLineItemId: r.rawLineItemId, pigments: r.pigments }));
+        .map((r) => ({
+          rawLineItemId: r.rawLineItemId,
+          pigments:      r.pigments,
+          articles:      r.rawLineItemId !== null ? articlesByLine.get(r.rawLineItemId) ?? null : null,
+        }));
     };
 
     // ── Line items for orders (split builder modal needs these) ───────────────

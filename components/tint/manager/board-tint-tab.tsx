@@ -40,8 +40,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
-import { computeElapsedMs } from "@/lib/tint/elapsed-time";
-import { formulaText, type PauseSegment, type WorkSegment } from "@/lib/tint/job-track";
+import { formulaRows, type PauseSegment, type WorkSegment } from "@/lib/tint/job-track";
 import { aggregateArticleTags } from "@/lib/article-tag-parse";
 import type { DispatchSlotValue, DispatchWindow } from "@/components/floor/dispatch-slot-picker";
 import { BoardColGroup, BoardHeadRow, TintBoardRow } from "./board-table";
@@ -345,7 +344,12 @@ function SummaryCard({ groups, nowMs, history = false }: { groups: BoardGroup[];
 //            height either way, so every operator row lines up.
 // Segments come from the payload (row.track — lib/tint/job-track.ts). A split
 // never pauses, so it has no track: its one run is startedAt → completedAt/now.
-// Hover any block → a card that follows the cursor (HoverCard below).
+// Hover any block → a card that follows the cursor (HoverCard below): a WORK
+// block shows that stretch + the job's total worked, a PAUSE block the pause.
+// Hovering any piece of a job outlines EVERY piece of it, on both tracks
+// (2026-10-03 round 3), so the pieces read as one bill.
+// Drawing: each block is inset 1px a side (a 2px gap between touching blocks;
+// times never shift) and is at least 6px wide, centred on its real time.
 
 /** The five reason labels, as the owner worded them for this board (2026-10-03).
  *  lib/tint/pause-reasons.ts keeps its own wording for the operator screens. */
@@ -368,8 +372,10 @@ interface Block {
   b:     number;
   row:   BoardRow;
   pause: PauseSegment | null;
+  /** The real (unclipped) work stretch, for a work block. */
+  work:  WorkSegment | null;
 }
-interface Hover { row: BoardRow; pause: PauseSegment | null; x: number; y: number }
+interface Hover { row: BoardRow; pause: PauseSegment | null; work: WorkSegment | null; x: number; y: number }
 
 /** Minutes since IST midnight of the lane's day, or null when outside that day. */
 function clipToDay(fromIso: string, toIso: string | null, nowMs: number): { a: number; b: number } | null {
@@ -396,11 +402,11 @@ function blocksOf(rows: BoardRow[], nowMs: number): { work: Block[]; pauses: Blo
     const kind: BlockKind = isDone(r) ? "done" : r.status === "tinting_in_progress" ? "tinting" : "pausedWork";
     workOf(r).forEach((s, i) => {
       const c = clipToDay(s.from, s.to, nowMs);
-      if (c) work.push({ key: `${r.key}-w${i}`, kind, ...c, row: r, pause: null });
+      if (c) work.push({ key: `${r.key}-w${i}`, kind, ...c, row: r, pause: null, work: s });
     });
     (r.track?.pauses ?? []).forEach((p, i) => {
       const c = clipToDay(p.from, p.to, nowMs);
-      if (c) pauses.push({ key: `${r.key}-p${i}`, kind: "pause", ...c, row: r, pause: p });
+      if (c) pauses.push({ key: `${r.key}-p${i}`, kind: "pause", ...c, row: r, pause: p, work: null });
     });
   }
   return { work, pauses };
@@ -498,7 +504,7 @@ function OperatorsCard({
             </div>
 
             {/* middle — the two tracks */}
-            <Tracks rows={g.rows} nowMs={nowMs} showNow={!history} onHover={setHover} />
+            <Tracks rows={g.rows} nowMs={nowMs} showNow={!history} onHover={setHover} activeKey={hover?.row.key ?? null} />
 
             {/* right — this operator's tinted litres (tint lines only) + their own
                 pace (paceOf, the top card's rule). "—" before a finished job. */}
@@ -520,35 +526,42 @@ function OperatorsCard({
 }
 
 function Tracks({
-  rows, nowMs, showNow, onHover,
+  rows, nowMs, showNow, onHover, activeKey,
 }: {
   rows:    BoardRow[];
   nowMs:   number;
   showNow: boolean;
   onHover: (h: Hover | null) => void;
+  /** The hovered job's row key — every piece of it is outlined. */
+  activeKey: string | null;
 }) {
   const { work, pauses } = useMemo(() => blocksOf(rows, nowMs), [rows, nowMs]);
   const nowM = istMinutes(nowMs);
   const hours: number[] = [];
   for (let m = T0 + 60; m < T1; m += 60) hours.push(m);
 
-  const block = (b: Block) => (
-    <div
-      key={b.key}
-      className={cn(
-        "absolute inset-y-0 rounded-[3px] hover:z-[3] hover:brightness-110 hover:shadow-[0_0_0_2px_#fff,0_0_0_3px_#1B1826]",
-        b.kind === "done" ? "bg-ok" : b.kind === "tinting" ? "bg-tint-600" : b.kind === "pausedWork" ? "bg-tint-600/40" : undefined,
-      )}
-      style={{
-        left:  `${pct(b.a)}%`,
-        // At least ~3px, so a two-minute job or pause is still hoverable.
-        width: `max(3px, ${pct(b.b) - pct(b.a)}%)`,
-        ...(b.kind === "pause" ? { background: STRIPES } : {}),
-      }}
-      onMouseMove={(e) => onHover({ row: b.row, pause: b.pause, x: e.clientX, y: e.clientY })}
-      onMouseLeave={() => onHover(null)}
-    />
-  );
+  const block = (b: Block) => {
+    const w = pct(b.b) - pct(b.a);
+    const mid = (pct(b.a) + pct(b.b)) / 2;
+    return (
+      <div
+        key={b.key}
+        className={cn(
+          "absolute inset-y-0 rounded-[3px]",
+          b.row.key === activeKey && "z-[3] brightness-110 shadow-[0_0_0_2px_#fff,0_0_0_3px_#1B1826]",
+          b.kind === "done" ? "bg-ok" : b.kind === "tinting" ? "bg-tint-600" : b.kind === "pausedWork" ? "bg-tint-600/40" : undefined,
+        )}
+        style={{
+          // Inset 1px a side (the 2px gap), never under 6px, centred on its time.
+          width: `max(6px, calc(${w}% - 2px))`,
+          left:  `calc(${mid}% - max(3px, calc(${w / 2}% - 1px)))`,
+          ...(b.kind === "pause" ? { background: STRIPES } : {}),
+        }}
+        onMouseMove={(e) => onHover({ row: b.row, pause: b.pause, work: b.work, x: e.clientX, y: e.clientY })}
+        onMouseLeave={() => onHover(null)}
+      />
+    );
+  };
 
   return (
     <div className="relative mx-2.5 h-[44px] rounded-md bg-ink-25">
@@ -568,9 +581,10 @@ function Tracks({
 
 // ── Hover card ───────────────────────────────────────────────────────────────
 
-/** "1 h 38 min" / "32 min". */
+/** "1 h 38 min" / "32 min" / "under 1 min" (never "0 min"). */
 function fmtDur(min: number): string {
-  const m = Math.max(0, Math.round(min));
+  if (!(min >= 1)) return "under 1 min";
+  const m = Math.round(min);
   if (m < 60) return `${m} min`;
   return `${Math.floor(m / 60)} h ${m % 60} min`;
 }
@@ -593,18 +607,18 @@ function HoverCard({ hover, nowMs }: { hover: Hover; nowMs: number }) {
     el.style.top  = `${Math.max(8, Math.min(y + 16, window.innerHeight - h - 10))}px`;
   });
 
-  // The pause shown: the hovered one, or — on a paused job's work block — its open one.
-  const pause = hover.pause ?? (row.status === "paused" ? (row.track?.pauses.filter((p) => p.to === null).slice(-1)[0] ?? null) : null);
-  const state: "done" | "tinting" | "paused" = pause ? "paused" : isDone(row) ? "done" : "tinting";
+  // A PAUSE block shows the pause card; every WORK block — green, blue or a
+  // paused job's faded blue — shows the work card, its pill the job's state.
+  const pause = hover.pause;
+  const state: "done" | "tinting" | "paused" = isDone(row) ? "done" : row.status === "paused" ? "paused" : "tinting";
   const tint = `${fmtL(row.volumeLitres ?? 0)} L · ${row.articleTag?.replace(/, /g, " · ") ?? "—"}`;
-  const work = workOf(row);
-  const firstStart = work[0]?.from ?? row.startedAt;
+  const minsOf = (seg: WorkSegment) => ((seg.to ? ms(seg.to) : nowMs) - ms(seg.from)) / 60000;
 
   const label = "text-ink-400";
-  const grid  = "mt-2.5 grid grid-cols-[70px_1fr] gap-x-2 gap-y-1 border-t border-[#EEEDF3] pt-2.5 text-[12px]";
+  const grid  = "mt-2.5 grid grid-cols-[84px_1fr] gap-x-2 gap-y-1 border-t border-[#EEEDF3] pt-2.5 text-[12px]";
 
   let body: ReactNode;
-  if (state === "paused" && pause) {
+  if (pause) {
     const forMin = ((pause.to ? ms(pause.to) : nowMs) - ms(pause.from)) / 60000;
     body = (
       <>
@@ -623,39 +637,33 @@ function HoverCard({ hover, nowMs }: { hover: Hover; nowMs: number }) {
       </>
     );
   } else {
-    // Took: a finished job's accumulatedMinutes (its total tinting time, pauses
-    // excluded); a running one's from the shared timer helper. A split has
-    // neither — its single run's length.
-    let tookMin: number | null = null;
-    if (state === "done") {
-      tookMin = row.accumulatedMinutes ?? (row.startedAt && row.completedAt ? (ms(row.completedAt) - ms(row.startedAt)) / 60000 : null);
-    } else {
-      const e = computeElapsedMs({ status: "tinting_in_progress", startedAt: row.startedAt, accumulatedMinutes: row.accumulatedMinutes ?? 0, nowMs });
-      tookMin = e !== null ? e / 60000 : null;
-    }
+    // Total worked: a finished job's accumulatedMinutes (its canonical total,
+    // pauses excluded); otherwise the sum of its work stretches (open one to now).
+    const sumMin = workOf(row).reduce((n, seg) => n + minsOf(seg), 0);
+    const totalMin = state === "done" ? (row.accumulatedMinutes ?? sumMin) : sumMin;
+    const seg = hover.work;
+    const lines = formulaRows(row.formula);
     body = (
       <>
         <div className={grid}>
           <span className={label}>Tint</span><b>{tint}</b>
-          <span className={label}>Time</span>
-          <b>
-            {state === "done"
-              ? `${firstStart ? atOf(firstStart, nowMs) : "—"} – ${row.completedAt ? atOf(row.completedAt, nowMs) : "—"}`
-              : `started ${firstStart ? atOf(firstStart, nowMs) : "—"}`}
-          </b>
-          <span className={label}>Took</span>
-          <b>{tookMin !== null ? `${fmtDur(tookMin)}${state === "tinting" ? " so far" : ""}` : "—"}</b>
+          <span className={label}>Worked</span>
+          <b>{seg ? `${atOf(seg.from, nowMs)} – ${seg.to ? atOf(seg.to, nowMs) : "now"} · ${fmtDur(minsOf(seg))}` : "—"}</b>
+          <span className={label}>Total worked</span>
+          <b>{fmtDur(totalMin)}{state === "tinting" ? " so far" : ""}</b>
         </div>
-        <div className="mt-2.5 border-t border-[#EEEDF3] pt-2.5">
-          <div className="mb-1 text-[10.5px] font-bold uppercase tracking-[.05em] text-ink-400">Formula</div>
-          {row.formula.length === 0 ? (
-            <div className="text-[12px] text-ink-400">No TI saved yet</div>
-          ) : (
-            row.formula.map((f, i) => (
-              <div key={i} className="font-mono text-[12.5px] font-semibold text-ink-900">{formulaText(f)}</div>
-            ))
-          )}
-        </div>
+        {state !== "paused" && (
+          <div className="mt-2.5 border-t border-[#EEEDF3] pt-2.5">
+            <div className="mb-1 text-[10.5px] font-bold uppercase tracking-[.05em] text-ink-400">Formula</div>
+            {lines.length === 0 ? (
+              <div className="text-[12px] text-ink-400">No TI saved yet</div>
+            ) : (
+              lines.map((t, i) => (
+                <div key={i} className="font-mono text-[12.5px] font-semibold text-ink-900">{t}</div>
+              ))
+            )}
+          </div>
+        )}
       </>
     );
   }

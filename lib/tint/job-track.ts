@@ -137,6 +137,10 @@ export interface FormulaLine {
   rawLineItemId: number | null;
   /** Non-zero pigments in register order: [code, value]. */
   pigments:      Array<[string, number]>;
+  /** The line's own articles, "14 Drum" (aggregateArticleTags over its tag —
+   *  lib/tint/tint-lines.ts's rule), else "N tins" from unitQty, else null.
+   *  Added 2026-10-03 for the 2+ line prefix. Optional: older payloads. */
+  articles?:     string | null;
 }
 
 /** Non-zero pigment values of one TI row, in register order. */
@@ -152,4 +156,12 @@ export function pigmentsOf(row: Record<string, unknown>, register: readonly stri
 /** "OXR 100 · WHT 20" — values only, no sampling number, shade or SKU. */
 export function formulaText(line: FormulaLine): string {
   return line.pigments.map(([c, v]) => `${c} ${Math.round(v * 100) / 100}`).join(" · ");
+}
+
+/** Every line of a bill's formula, one string each. With 2+ lines each is
+ *  prefixed by its own articles — "14 Drum · LFY 10 · BLK 25" — so the lines
+ *  can be told apart; a single line stays values only. */
+export function formulaRows(lines: readonly FormulaLine[]): string[] {
+  if (lines.length < 2) return lines.map(formulaText);
+  return lines.map((l) => (l.articles ? `${l.articles} · ${formulaText(l)}` : formulaText(l)));
 }
