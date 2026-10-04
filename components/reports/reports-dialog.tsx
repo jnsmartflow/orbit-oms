@@ -233,6 +233,17 @@ export function ReportsDialog({
               {current?.id === "trip-detail" && (
                 <TripDetailPanel key="trip-detail" deliveryTypes={options.deliveryTypes} />
               )}
+              {current?.id === "freight-report" && (
+                // Same panel, the Freight Report route. Keyed for its own period and type.
+                <TripDetailPanel
+                  key="freight-report"
+                  deliveryTypes={options.deliveryTypes}
+                  endpoint="/api/reports/freight-report"
+                  title="Freight Report"
+                  description="One row per bill, NTS layout — for MIS"
+                  filePrefix="FreightReport"
+                />
+              )}
               {current?.id === "trip-detail-old" && (
                 // Same panel, the old-layout route. Keyed so switching between
                 // the two starts each with its own period and type.

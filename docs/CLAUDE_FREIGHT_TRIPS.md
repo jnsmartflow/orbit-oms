@@ -1,5 +1,5 @@
 # CLAUDE_FREIGHT_TRIPS.md — Freight Trips (report-only paper trips over held bills)
-# v1.2 · Schema v27.55 · October 2026 · updated 2026-10-04 · Lives in: orbit-oms/docs/
+# v1.3 · Schema v27.55 · October 2026 · updated 2026-10-04 · Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md + docs/CLAUDE_FLOOR.md
 
 Written from the code at `fa6e5c8d` and the owner's live hand-test of 2026-10-03. Discovery drafts are
@@ -36,7 +36,7 @@ Every freight trip has its own number: `F-261003-02` (§4).
 | Floor's own trips (`trips`, `trip_drops`, `trip_activity`, `/api/floor/trips/*`) | `CLAUDE_FLOOR_TRIPS.md` |
 | The NTS trip mirror (`trip_report`, `/trips`) | `CLAUDE_TRIP_REPORT.md` |
 | Route clubs (`getRouteClubs`, `lib/floor/route-clubs.ts`) | `CLAUDE_FLOOR.md` §2.1, CORE §7.17 |
-| The freight / MIS report | **not built** — §10 |
+| The freight / MIS report — **built 2026-10-04**: Reports popup → Trip → **Freight Report** | `lib/reports/freight-report-data.ts` (CORE §12 Reports) |
 
 ⚠ **Three systems carry the word "trip"** and share no table: Floor trips (`trips`), the NTS mirror
 (`trip_report`) and Freight trips (`freight_trips`). A freight trip is never a Floor trip and is never
@@ -284,10 +284,12 @@ without a tick.
 
 ## 10. Open items
 
-1. **The freight / MIS REPORT is not built.** Rule (owner): if a bill is on an ACTIVE freight trip, the
-   report uses that trip's vehicle / transporter / driver; otherwise its real Floor trip. ⚠ The existing
-   Trip Detail export **excludes held bills** (`lib/reports/trip-detail-data.ts`, its hold filter) — the
-   freight bills are exactly those, so the report needs freight as a second source, not just an override.
+1. ~~The freight / MIS REPORT is not built~~ — **BUILT 2026-10-04** (Reports popup → Trip → Freight Report,
+   `app/api/reports/freight-report`, `lib/reports/freight-report-data.ts`). It reads freight trips as a SOURCE of their
+   own (held bills included), not as an override. Kinds, first match wins: **1 CI** (cancelled + a live `ci_returns` row) · **2 PICK DELETED** (cancelled + an active `pick_delete_decisions` row, or the latest cancel log note's reason is "Pick delete" — Billing's own Pick delete logs "Duplicate bill", so the decision row is the reliable signal) · **3 CANCEL** (any other cancelled bill) — 1–3 win even when the bill is still on a trip · **4 FREIGHT** (on an active freight trip) · **5 FLOOR** (on a non-cancelled Floor trip; Hand and courier trips are ordinary) · anything else has no dispatch date and is not listed. isRemoved bills never.
+   Dispatch date/time (the period filters on it, IST): Freight `freight_trips.manualDispatchAt`, null → `tripDate` with no time; Floor `trips.manualDispatchAt`, null → `tripDate` + the slot's `windowTime` (the Old Format's fallback); CI → `ci_returns.submittedAt`; PICK DELETED → `decidedAt`, else the cancel log; CANCEL → the latest `toStage='cancelled'` log.
+   A freight trip's row carries its own vehicle / driver / transporter; Diesel Amt is "0" (no diesel on freight);
+   Total Dealer counts distinct `computeDropKey` stops over the trip's bills.
 2. **Phone width untested.**
 3. **Held-from / held-by are not searchable** (ROADMAP).
 4. The import / hold items parked during this build (enrichment overwrite, split, who-held stamps,
@@ -295,7 +297,7 @@ without a tick.
 
 ---
 
-*CLAUDE_FREIGHT_TRIPS.md v1.2 · Schema v27.55 · OrbitOMS · updated 2026-10-04 — the drawer rebuilt from the Floor drawer's pieces (§7); both create/edit paths named. Prior, v1.1 (2026-10-04) — **v27.55:** `freight_trips.manualDispatchAt`, required on every create and edit save (§3.1, §6, §7). Prior, v1.0 (2026-10-03) — first canonical file for
+*CLAUDE_FREIGHT_TRIPS.md v1.3 · Schema v27.55 · OrbitOMS · updated 2026-10-04 — the Freight Report is built (§1, §10.1). Prior, v1.2 (2026-10-04) — the drawer rebuilt from the Floor drawer's pieces (§7); both create/edit paths named. Prior, v1.1 (2026-10-04) — **v27.55:** `freight_trips.manualDispatchAt`, required on every create and edit save (§3.1, §6, §7). Prior, v1.0 (2026-10-03) — first canonical file for
 Freight Trips. Written from the code at `fa6e5c8d` (commits e1da66f0, efd397c4, 876acb50, c430208e,
 e4115e78, 6e459c1d, ff5ed9d4, 0d0de6a4, 50048416, a3c050cb, 21aca46e, fa6e5c8d) and the owner's live
 hand-test of 2026-10-03.*

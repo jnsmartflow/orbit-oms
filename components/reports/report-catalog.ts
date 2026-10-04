@@ -10,7 +10,7 @@
 
 import type { REPORT_PAGE_KEYS } from "@/lib/permissions";
 
-export type ReportId = "trip-detail" | "trip-detail-old" | "tint-summary" | "ti-report";
+export type ReportId = "trip-detail" | "freight-report" | "trip-detail-old" | "tint-summary" | "ti-report";
 
 export interface ReportCatalogItem {
   id: ReportId;
@@ -23,6 +23,9 @@ export interface ReportCatalogItem {
 
 export const REPORT_CATALOG: readonly ReportCatalogItem[] = [
   { id: "trip-detail",  label: "Trip Detail",  pageKey: "reports_trip_detail",  module: "Trip" },
+  // One row per bill in the NTS layout, for MIS (2026-10-04) — every bill with a
+  // dispatch date: freight, floor, CI, pick deleted, cancel. Same tick (owner).
+  { id: "freight-report", label: "Freight Report", pageKey: "reports_trip_detail", module: "Trip" },
   // Same rows, the old NTS 26-column layout. Same tick — it is the same report
   // in another shape, not a new permission.
   { id: "trip-detail-old", label: "Trip Detail — Old Format", pageKey: "reports_trip_detail", module: "Trip" },

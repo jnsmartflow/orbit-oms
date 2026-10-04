@@ -22,6 +22,17 @@ import {
   DISPATCHED,
 } from "@/lib/workflow-stages";
 import { isGiftBill, loadKg, loadLitres } from "@/lib/orders/gift";
+import {
+  billQuantities,
+  blank,
+  invTypeFor,
+  isSiteDelivery,
+  istDay,
+  loadBillToAreas,
+  loadBillToByObd,
+  loadCustomers,
+  loadSnapshots,
+} from "@/lib/reports/bill-facts";
 
 /** One bill on one trip, already resolved to what the sheet prints. `null` =
  *  unknown, which the workbook writes as NO CELL (never 0, "—" or "N/A"). */
@@ -143,69 +154,8 @@ function billStageWord(stage: string, directLoadedAt: Date | null = null): strin
   return PICK_STAGE_WORD[stage] ?? LADDER_LABEL.get(stage) ?? null;
 }
 
-/** The project SMUs — the same set Floor's own site badge uses
- *  (lib/floor/filter.ts:35, components/floor/floor-table.tsx:78,
- *  app/api/floor/order/[orderId]/route.ts:20). Here it is only the FALLBACK
- *  for a ship-to point the master has not typed — see isSiteDelivery(). */
-const PROJECT_SMUS = new Set(["Retail Offtake", "Decorative Projects"]);
-
-/**
- * Is SAP's ship-to (B) a real SITE, and a different party from the dealer
- * billed (A)? The ONE site rule — both workbooks read its answer (`site`,
- * `siteName`, `siteArea`). Owner's rule, 2026-10-01.
- *
- * 1. Same party → never a site: B's code equals A's code (SAP's own ship-to
- *    and bill-to codes).
- * 2. The PLACE decides, when the master says what it is: the ship-to point's
- *    customerType (falling back to premisesType) — "Site" is a site, anything
- *    else (Dealer / Shop …) is not. Verified 2026-10-01 over trip bills of the
- *    last 60 days: the two fields always agree (Site/Site, Dealer/Shop).
- * 3. Only when the point is UNTYPED (or not in the master) does the ORDER's
- *    SMU decide — project SMU = site. 272 of the 378 project-SMU bills on
- *    trips sat on untyped or unmatched points, so the fallback is needed.
- *
- * ⚠ Unlike Floor's badge, a ship-to REDIRECT does not unmark a site here: B is
- * SAP's ship-to, and where the floor sent it (C) is reported separately.
- */
-function isSiteDelivery(args: {
-  billToCode: string | null;
-  sapShipToCode: string | null;
-  shipToType: string | null;
-  smu: string | null;
-}): boolean {
-  const a = args.billToCode?.trim() || null;
-  const b = args.sapShipToCode?.trim() || null;
-  if (a !== null && b !== null && a === b) return false;
-  const type = args.shipToType?.trim() || null;
-  if (type !== null) return type.toLowerCase() === "site";
-  return args.smu !== null && PROJECT_SMUS.has(args.smu);
-}
-
-/**
- * orders.invoiceDate is a plain timestamp, not @db.Date. The import builds it
- * with LOCAL-time `new Date(y, m, d)` (app/api/import/obd/route.ts
- * parseDateCell), so the same SAP day lands at UTC midnight from a UTC host and
- * at 18:30 UTC the day before from an IST host. Taking the IST calendar day is
- * right for both: +5:30 keeps a UTC-midnight value on its day and moves an
- * IST-midnight value forward onto its day.
- */
-function istDay(d: Date | null): Date | null {
-  if (d === null || Number.isNaN(d.getTime())) return null;
-  const shifted = new Date(d.getTime() + 5.5 * 60 * 60 * 1000);
-  return new Date(Date.UTC(shifted.getUTCFullYear(), shifted.getUTCMonth(), shifted.getUTCDate()));
-}
-
-/** INV or PROMO for one bill — the ONE place both workbooks get it from. */
-function invTypeFor(materialType: string | null): "INV" | "PROMO" {
-  // GIFTS = free goods = PROMO; FG = ordinary finished goods = INV. Owner's rule, 2026-10-01.
-  return isGiftBill(materialType) ? "PROMO" : "INV";
-}
-
-const blank = (s: string | null | undefined): string | null => {
-  if (s === null || s === undefined) return null;
-  const t = s.trim();
-  return t === "" ? null : t;
-};
+// isSiteDelivery, istDay, invTypeFor, blank and the batched bill reads moved to
+// lib/reports/bill-facts.ts (2026-10-04), shared with the Freight Report.
 
 export async function getTripDetailRows(params: TripDetailParams): Promise<TripDetailRow[]> {
   const fromDate = parseReportDate(params.from);
@@ -291,27 +241,10 @@ export async function getTripDetailRows(params: TripDetailParams): Promise<TripD
   if (orders.length === 0) return [];
 
   // ── 4. Quantities (the import's per-OBD snapshot) ────────────────────────
-  const snaps = await prisma.import_obd_query_summary.findMany({
-    where: { orderId: { in: orders.map((o) => o.id) } },
-    select: { orderId: true, totalArticle: true, totalVolume: true, totalWeight: true },
-  });
-  const snapByOrder = new Map<number, (typeof snaps)[number]>();
-  for (const s of snaps) if (s.orderId !== null) snapByOrder.set(s.orderId, s);
+  const snapByOrder = await loadSnapshots(orders.map((o) => o.id));
 
   // ── 5. Bill-to, from SAP's raw summary — latest row wins ─────────────────
-  // Same read as lib/floor/queries.ts billToByObd(), plus the code column it
-  // does not fetch.
-  const raws = await prisma.import_raw_summary.findMany({
-    where: { obdNumber: { in: orders.map((o) => o.obdNumber) } },
-    select: { obdNumber: true, billToCustomerId: true, billToCustomerName: true },
-    orderBy: { createdAt: "desc" },
-  });
-  const billToByObd = new Map<string, { code: string | null; name: string | null }>();
-  for (const r of raws) {
-    if (!billToByObd.has(r.obdNumber)) {
-      billToByObd.set(r.obdNumber, { code: r.billToCustomerId, name: r.billToCustomerName });
-    }
-  }
+  const billToByObd = await loadBillToByObd(orders.map((o) => o.obdNumber));
 
   // ── 6. The EFFECTIVE delivery point: shipToOverrideCustomerId ?? customerId
   // (lib/trips/drop-key.ts effectiveCustomerId) ─────────────────────────────
@@ -320,45 +253,18 @@ export async function getTripDetailRows(params: TripDetailParams): Promise<TripD
   // Also SAP's own ship-to point (customerId, "B") and the redirect target
   // (shipToOverrideCustomerId, "C") — the effective id is always one of these
   // two, so one read covers all three.
-  const custIds = Array.from(
-    new Set(
-      orders
-        .flatMap((o) => [o.customerId, o.shipToOverrideCustomerId])
-        .filter((id): id is number => id !== null),
+  const custById = await loadCustomers(
+    Array.from(
+      new Set(
+        orders
+          .flatMap((o) => [o.customerId, o.shipToOverrideCustomerId])
+          .filter((id): id is number => id !== null),
+      ),
     ),
   );
-  const customers = custIds.length
-    ? await prisma.delivery_point_master.findMany({
-        where: { id: { in: custIds } },
-        select: {
-          id: true,
-          customerCode: true,
-          customerName: true,
-          area: { select: { name: true } },
-          primaryRoute: { select: { name: true } },
-          customerType: { select: { name: true } },
-          premisesType: { select: { name: true } },
-        },
-      })
-    : [];
-  const custById = new Map(customers.map((c) => [c.id, c]));
 
   // ── 7. The bill-to party's area (old layout's Customer Area) ─────────────
-  // SAP's bill-to code → delivery_point_master.customerCode → area.
-  const billToCodes = Array.from(
-    new Set(
-      Array.from(billToByObd.values())
-        .map((b) => blank(b.code))
-        .filter((c): c is string => c !== null),
-    ),
-  );
-  const billToCusts = billToCodes.length
-    ? await prisma.delivery_point_master.findMany({
-        where: { customerCode: { in: billToCodes } },
-        select: { customerCode: true, area: { select: { name: true } } },
-      })
-    : [];
-  const billToAreaByCode = new Map(billToCusts.map((c) => [c.customerCode, c.area.name]));
+  const billToAreaByCode = await loadBillToAreas(billToByObd);
 
   // ── Assemble ─────────────────────────────────────────────────────────────
   const rows: TripDetailRow[] = [];
@@ -375,21 +281,9 @@ export async function getTripDetailRows(params: TripDetailParams): Promise<TripD
     const billTo = billToByObd.get(o.obdNumber);
     const snap = snapByOrder.get(o.id);
 
-    // KG — 🔴 BLANK WHEN UNKNOWN, NEVER 0. The import writes
-    // `totalWeight = grossWeight ?? 0` (app/api/import/obd/route.ts:854), so a
-    // stored 0 is ambiguous. The test used: a snapshot 0 counts as UNKNOWN only
-    // when the order's own `grossWeight` is NULL (SAP sent no weight); if
-    // grossWeight is non-null, the 0 is a real 0 and is written as 0. With no
-    // snapshot row at all, fall back to orders.grossWeight (null → blank).
-    let kg: number | null;
-    if (snap) kg = snap.totalWeight === 0 && o.grossWeight === null ? null : snap.totalWeight;
-    else kg = o.grossWeight;
-
-    // Litres: snapshot, else the order header's volume. Articles: snapshot
-    // only — the order header has no article count (totalUnitQty is units, not
-    // articles), so a bill with no snapshot leaves the cell blank.
-    const litres = snap ? snap.totalVolume : o.volume;
-    const articles = snap ? snap.totalArticle : null;
+    // KG / litres / articles — billQuantities (lib/reports/bill-facts.ts) holds
+    // the rules: a stored 0 kg is UNKNOWN only when grossWeight is null.
+    const { kg, litres, articles } = billQuantities(snap, o);
 
     // B — SAP's own ship-to point (orders.customerId), and whether it is a site.
     const sapShipTo = o.customerId !== null ? custById.get(o.customerId) : undefined;

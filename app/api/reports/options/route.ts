@@ -30,7 +30,7 @@ export async function GET(): Promise<NextResponse> {
   // Same list and order as the trip desk's options route
   // (app/api/floor/trips/options), read here because that route gates on
   // `floor` canEdit, which a reports holder need not have.
-  const deliveryTypes = has("trip-detail")
+  const deliveryTypes = has("trip-detail") || has("freight-report")
     ? await prisma.delivery_type_master.findMany({ select: { id: true, name: true }, orderBy: { id: "asc" } })
     : [];
 

@@ -2,7 +2,10 @@
 //
 // The Trip Detail rows in the OLD NTS layout — the 28-column sheet the depot's
 // existing workbooks were built against. Read by
-// app/api/reports/trip-detail-old/route.ts and nothing else.
+// app/api/reports/trip-detail-old/route.ts. Its format helpers (ddmmyyyy,
+// hhmmss, istStamp, num, delType) are also imported by the Freight Report
+// (freight-report-data.ts / freight-report-workbook.ts, 2026-10-04) — change
+// one and both sheets change.
 //
 // 🔴 SERVER-ONLY (xlsx — see lib/ci/workbook.ts's header). Same library and
 // version as trip-detail-workbook.ts.
@@ -59,12 +62,12 @@ type Cell = string | null;
 const pad2 = (n: number) => String(n).padStart(2, "0");
 
 /** @db.Date (UTC midnight) → "21-09-2026", from the UTC parts. */
-function ddmmyyyy(d: Date): string {
+export function ddmmyyyy(d: Date): string {
   return `${pad2(d.getUTCDate())}-${pad2(d.getUTCMonth() + 1)}-${d.getUTCFullYear()}`;
 }
 
 /** "10:30" → "10:30:00"; "10:30:15" kept; anything else → blank. */
-function hhmmss(t: string | null): Cell {
+export function hhmmss(t: string | null): Cell {
   if (t === null) return null;
   const m = /^(\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(t.trim());
   if (!m) return null;
@@ -72,7 +75,7 @@ function hhmmss(t: string | null): Cell {
 }
 
 /** An instant → "21-09-2026 03:42:07 pm" in IST, the old file's Entry Date. */
-function istStamp(d: Date): string {
+export function istStamp(d: Date): string {
   const ist = new Date(d.getTime() + 5.5 * 60 * 60 * 1000);
   const h24 = ist.getUTCHours();
   const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
@@ -84,13 +87,13 @@ function istStamp(d: Date): string {
 
 /** A number as text, rounded to 3 places so a float sum never prints
  *  0.30000000000000004. null → blank. */
-function num(n: number | null): Cell {
+export function num(n: number | null): Cell {
   if (n === null || !Number.isFinite(n)) return null;
   return String(Math.round(n * 1000) / 1000);
 }
 
 /** Orbit's delivery-type names → the old file's codes. Upcountry is "UPC". */
-function delType(name: string): string {
+export function delType(name: string): string {
   const n = name.trim().toLowerCase();
   if (n === "upcountry") return "UPC";
   if (n.startsWith("cross")) return "Cross";
