@@ -48,6 +48,7 @@ import {
   findDefaultTransporter,
   type TripFieldValues,
 } from "./trip-fields";
+import { istTodayDate } from "@/lib/trips/diesel-dispatch";
 
 export function TripForm({
   tripDate,
@@ -77,7 +78,11 @@ export function TripForm({
     transporter: findDefaultTransporter(transporters),
     vehicle: null,
     vehicleSize: null,
-    docket: "",
+    // Defaults so the shared fields compile (2026-10-04). This drawer has no
+    // caller and its POST does NOT send these — they are set in the Edit drawer.
+    dispatchDate: istTodayDate(),
+    dispatchTime: "",
+    diesel: "",
     note: "",
   }));
   const [busy, setBusy] = useState(false);
@@ -101,7 +106,6 @@ export function TripForm({
           // Never both — chk_trips_vehicle_one_of.
           vehicleId: v?.kind === "master" ? v.id : null,
           adhocVehicleNo: v?.kind === "typed" ? v.plate : null,
-          transporterTripNo: values.docket.trim() === "" ? null : values.docket.trim(),
           vehicleSize: needsSize ? values.vehicleSize : null,
           note: values.note.trim() === "" ? null : values.note.trim(),
         }),

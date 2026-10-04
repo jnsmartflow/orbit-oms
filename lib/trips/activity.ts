@@ -31,6 +31,7 @@
 // Sequential awaits, never prisma.$transaction (CORE §3).
 
 import { isVehicleSize, VEHICLE_SIZE_LABEL } from "./vehicle-size";
+import { formatIstDayTime, formatIstTime, formatRupees, istDateAndTime } from "./diesel-dispatch";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { redeliveryReasonLabel } from "@/lib/trips/redelivery-reasons";
@@ -335,7 +336,15 @@ export async function logTripVehicleChanged(opts: {
 }
 
 /** The PATCH fields `details_changed` covers. The vehicle has its own action. */
-export type TripDetailField = "dispatchWindowId" | "transporterId" | "note" | "transporterTripNo" | "vehicleSize";
+export type TripDetailField =
+  | "dispatchWindowId"
+  | "transporterId"
+  | "note"
+  | "transporterTripNo"
+  | "vehicleSize"
+  // Schema v27.54 (2026-10-04): rupees as a number; the manual time as ISO.
+  | "dieselAmount"
+  | "manualDispatchAt";
 
 export interface TripDetailChange {
   field: TripDetailField;
@@ -372,6 +381,24 @@ function detailClause(c: TripDetailChange): string {
       return c.to === null ? "Transporter trip no cleared" : `Transporter trip no set to ${c.to}`;
     case "vehicleSize":
       return c.to === null ? "Vehicle size cleared" : `Vehicle size set to ${isVehicleSize(c.to) ? VEHICLE_SIZE_LABEL[c.to] : c.to}`;
+    case "dieselAmount": {
+      // "Diesel ₹0 → ₹1,250" — a blank before reads as ₹0 (Smart Flow wording).
+      if (c.to === null) return "Diesel cleared";
+      const from = typeof c.from === "number" ? c.from : 0;
+      return `Diesel ${formatRupees(from)} → ${formatRupees(Number(c.to))}`;
+    }
+    case "manualDispatchAt": {
+      // IST. "set to 4 Oct, 6:40 pm" the first time; "changed 6:40 pm → 7:10 pm"
+      // after, with the day on both sides when the day moved too.
+      if (c.to === null) return "Manual dispatch time cleared";
+      const to = String(c.to);
+      if (c.from === null) return `Manual dispatch time set to ${formatIstDayTime(to)}`;
+      const from = String(c.from);
+      const sameDay = istDateAndTime(from).date === istDateAndTime(to).date;
+      return sameDay
+        ? `Manual dispatch time changed ${formatIstTime(from)} → ${formatIstTime(to)}`
+        : `Manual dispatch time changed ${formatIstDayTime(from)} → ${formatIstDayTime(to)}`;
+    }
   }
 }
 

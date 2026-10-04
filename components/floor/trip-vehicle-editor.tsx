@@ -41,9 +41,11 @@ import {
   TripFields,
   asksVehicleSize,
   findDefaultTransporter,
+  validateTripFields,
   type TripFieldValues,
   type VehiclePick,
 } from "./trip-fields";
+import { istDateAndTime, istTodayDate, manualDispatchIso } from "@/lib/trips/diesel-dispatch";
 
 function initialVehicle(trip: TripSummary): VehiclePick | null {
   // The STORED vehicle, even when it is not in the current transporter's fleet
@@ -73,29 +75,45 @@ export function TripVehicleEditor({
   onClose: () => void;
   onSaved: () => void;
 }) {
+  // The stored manual dispatch time, shown in IST; none → today's IST date and
+  // an empty time (Smart Flow, 2026-10-04).
+  const storedDispatch = trip.manualDispatchAt !== null ? istDateAndTime(trip.manualDispatchAt) : null;
   const [values, setValues] = useState<TripFieldValues>(() => ({
     deliveryTypeId: trip.deliveryTypeId,
     dispatchWindowId: trip.dispatchWindowId,
     // A trip with no transporter opens on the default — a change on Save, by
-    // design (owner, 2026-09-21).
+    // design (owner, 2026-09-21). Not on a Hand trip: it has no transporter to
+    // pick, so it keeps exactly what it stores.
     transporter:
       trip.transporterId !== null
         ? { id: trip.transporterId, name: trip.transporterName ?? `#${trip.transporterId}` }
-        : findDefaultTransporter(transporters),
+        : trip.isHand
+          ? null
+          : findDefaultTransporter(transporters),
     vehicle: initialVehicle(trip),
     vehicleSize: trip.vehicleSize,
-    docket: trip.transporterTripNo ?? "",
+    dispatchDate: storedDispatch?.date ?? istTodayDate(),
+    dispatchTime: storedDispatch?.time ?? "",
+    diesel: trip.dieselAmount !== null ? String(trip.dieselAmount) : "",
     note: trip.note ?? "",
   }));
   const [busy, setBusy] = useState(false);
+  // Inline errors show only after a Save press, and each clears the moment its
+  // field is filled (they are recomputed from the values on every render).
+  const [attempted, setAttempted] = useState(false);
 
   const typeName =
     deliveryTypes.find((d) => d.id === trip.deliveryTypeId)?.name ?? trip.deliveryTypeName ?? trip.typeCode;
 
   // An Upcountry trip must carry a size to be saved (owner, 2026-09-21) — an
-  // older trip without one asks for it on its next edit.
-  const needsSize = asksVehicleSize(values, deliveryTypes);
-  const canSave = !busy && (!needsSize || values.vehicleSize !== null);
+  // older trip without one asks for it on its next edit. Not a Hand trip: it
+  // has no vehicle, so it has no vehicle size.
+  const needsSize = !trip.isHand && asksVehicleSize(values, deliveryTypes);
+  // 🔴 SAVE IS BLOCKED until Slot, Manual dispatch time (date AND time),
+  // Transporter and Vehicle are filled — the last two not on a Hand trip
+  // (Smart Flow, 2026-10-04). An older trip with blanks is completed here.
+  const errors = validateTripFields(values, { isHand: trip.isHand, needsSize });
+  const isValid = Object.keys(errors).length === 0;
 
   // The trip's summary, from props only. Dropped on an empty trip.
   const kg = formatWeightKg(Math.round(trip.totalWeightKg));
@@ -111,7 +129,11 @@ export function TripVehicleEditor({
       : null;
 
   async function save() {
-    if (!canSave) return;
+    if (busy) return;
+    if (!isValid) {
+      setAttempted(true);
+      return;
+    }
     setBusy(true);
     try {
       const patch: Record<string, unknown> = {};
@@ -135,10 +157,21 @@ export function TripVehicleEditor({
       const nextNote = values.note.trim() === "" ? null : values.note.trim();
       if (nextNote !== trip.note) patch.note = nextNote;
 
-      const nextDocket = values.docket.trim() === "" ? null : values.docket.trim();
-      if (nextDocket !== trip.transporterTripNo) patch.transporterTripNo = nextDocket;
+      // ⚠ NO DOCKET. The field left the drawer (2026-10-04); `transporterTripNo`
+      // is never sent from here, so a stored one is kept as it is.
 
       if (needsSize && values.vehicleSize !== trip.vehicleSize) patch.vehicleSize = values.vehicleSize;
+
+      // Compared as INSTANTS, not strings — the stored value is UTC ISO, the
+      // drawer's is `…+05:30`. Validation guarantees both inputs are filled, so
+      // the pre-filled date alone can never reach here as a change.
+      const nextDispatch = manualDispatchIso(values.dispatchDate, values.dispatchTime);
+      const storedMs = trip.manualDispatchAt !== null ? new Date(trip.manualDispatchAt).getTime() : null;
+      if (new Date(nextDispatch).getTime() !== storedMs) patch.manualDispatchAt = nextDispatch;
+
+      const dieselText = values.diesel.trim();
+      const nextDiesel = dieselText === "" ? null : Number(dieselText);
+      if (nextDiesel !== trip.dieselAmount) patch.dieselAmount = nextDiesel;
 
       if (Object.keys(patch).length === 0) {
         toast.success("Nothing changed.");
@@ -193,7 +226,9 @@ export function TripVehicleEditor({
           <button type="button" onClick={onClose} disabled={busy} className={BUTTON_SECONDARY}>
             Cancel
           </button>
-          <button type="button" onClick={() => void save()} disabled={!canSave} className={BUTTON_PRIMARY}>
+          {/* Pressable while fields are missing: the press is what shows the
+              inline errors, and save() refuses to send until they are fixed. */}
+          <button type="button" onClick={() => void save()} disabled={busy} className={BUTTON_PRIMARY}>
             {busy ? "Saving…" : "Save"}
           </button>
         </>
@@ -208,6 +243,8 @@ export function TripVehicleEditor({
         vehicles={vehicles}
         transporters={transporters}
         extraWindow={extraWindow}
+        isHand={trip.isHand}
+        errors={attempted ? errors : {}}
       />
     </TripDrawer>
   );

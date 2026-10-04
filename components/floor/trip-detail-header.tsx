@@ -44,6 +44,7 @@ import { TripBar, TripBarLegend, tripBarCounts } from "./trip-bar";
 import { TripHistoryList } from "./trip-history";
 import { formatLitres, formatWeightKg } from "./status-pill";
 import { tripMixLabel } from "@/lib/floor/scope";
+import { formatIstDayTime, formatRupees } from "@/lib/trips/diesel-dispatch";
 import type { TripSummary } from "@/lib/trips/queries";
 import type { TripActivityRow } from "@/lib/trips/activity";
 
@@ -385,6 +386,20 @@ export function TripDetailHeader({
             </button>
           </span>
         </div>
+
+        {/* Diesel and the manual dispatch time (Schema v27.54, 2026-10-04) —
+            small secondary text under the vehicle line, each part only when set.
+            The time is IST ("4 Oct, 6:40 pm"); it is for reports only and says
+            nothing about whether the trip has left. */}
+        {(trip.dieselAmount !== null || trip.manualDispatchAt !== null) && (
+          <div className="mt-[4px] flex flex-wrap items-center gap-x-[7px] text-[12.5px] text-[#96969f]">
+            {trip.dieselAmount !== null && <span className="tabular-nums">Diesel {formatRupees(trip.dieselAmount)}</span>}
+            {trip.dieselAmount !== null && trip.manualDispatchAt !== null && <span className={DOT}>·</span>}
+            {trip.manualDispatchAt !== null && (
+              <span className="tabular-nums">Manual dispatch {formatIstDayTime(trip.manualDispatchAt)}</span>
+            )}
+          </div>
+        )}
 
         {/* The note — someone typed it on purpose (owner). Only when set. */}
         {trip.note && <div className="mt-[6px] text-[12.5px] italic text-[#61616d]">{trip.note}</div>}

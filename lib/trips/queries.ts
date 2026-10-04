@@ -179,6 +179,13 @@ export interface TripSummary {
   /** A Hand trip — the dealer collects, no vehicle (2026-09-24). Set at create,
    *  never changed; only Hand bills can join it. */
   isHand: boolean;
+  /** Diesel given, rupees, or null (Schema v27.54). A number on the wire, never a Decimal. */
+  dieselAmount: number | null;
+  /**
+   * The planner's own dispatch time, ISO, or null (Schema v27.54). FOR REPORTS
+   * ONLY — not `dispatchedAt`, never moves status. Shown in IST.
+   */
+  manualDispatchAt: string | null;
   note: string | null;
   status: string;
   /** DERIVED, never stored — every bill checked and at least one bill. */
@@ -515,6 +522,8 @@ const TRIP_SELECT = {
   transporterTripNo: true,
   vehicleSize: true,
   isHand: true,
+  dieselAmount: true,
+  manualDispatchAt: true,
   note: true,
   status: true,
   releasedAt: true,
@@ -542,6 +551,9 @@ type TripRow = {
   transporterTripNo: string | null;
   vehicleSize: string | null;
   isHand: boolean;
+  /** Prisma Decimal — converted to a plain number in the mapping. */
+  dieselAmount: { toNumber(): number } | null;
+  manualDispatchAt: Date | null;
   note: string | null;
   status: string;
   releasedAt: Date | null;
@@ -788,6 +800,8 @@ function toSummary(
     transporterTripNo: t.transporterTripNo,
     vehicleSize: isVehicleSize(t.vehicleSize) ? t.vehicleSize : null,
     isHand: t.isHand,
+    dieselAmount: t.dieselAmount === null ? null : t.dieselAmount.toNumber(),
+    manualDispatchAt: t.manualDispatchAt?.toISOString() ?? null,
     note: t.note,
     status: t.status,
     // 🔴 DERIVED. `counts.total > 0` is load-bearing: an EMPTY trip is not

@@ -3691,6 +3691,13 @@ model trips {
   /// Live: boolean NOT NULL DEFAULT false. Set on create, never changed; a Hand
   /// trip refuses a vehicle/plate and so stays `draft` for life (harmless).
   isHand            Boolean               @default(false)
+  /// Diesel given for the trip, rupees (Schema v27.54, 2026-10-04). Live
+  /// numeric(10,2) + chk_trips_diesel_amount_nonneg (NULL or >= 0). Optional.
+  dieselAmount      Decimal?              @db.Decimal(10, 2)
+  /// The dispatch time the planner types, FOR REPORTS ONLY (Schema v27.54).
+  /// Required in the Edit drawer, nullable in the DB. NEVER feeds dispatchedAt,
+  /// never moves status, never closes a trip.
+  manualDispatchAt  DateTime?             @db.Timestamptz(6)
   note              String?
   status            String                @default("draft")
   releasedAt        DateTime?             @db.Timestamptz(6)

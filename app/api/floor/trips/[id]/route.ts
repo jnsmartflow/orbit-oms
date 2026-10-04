@@ -1,4 +1,5 @@
 import { parseVehicleSize } from "@/lib/trips/vehicle-size";
+import { parseDieselAmount, parseManualDispatchAt } from "@/lib/trips/diesel-dispatch";
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { checkAnyPermission } from "@/lib/permissions";
@@ -58,6 +59,13 @@ interface PatchBody {
   transporterTripNo?: string | null;
   /** gc | ace | big, or null to clear (lib/trips/vehicle-size.ts). */
   vehicleSize?: string | null;
+  /** Rupees — a number or numeric string, ≤ 2 decimals, ≥ 0, or null to clear (Schema v27.54). */
+  dieselAmount?: number | string | null;
+  /**
+   * ISO WITH an offset, e.g. "2026-10-04T18:40:00+05:30" (Schema v27.54). FOR
+   * REPORTS ONLY — never `dispatchedAt`, never status. Required: null is refused.
+   */
+  manualDispatchAt?: string | null;
   /** Accepted ONLY so it can be refused with a clear message — see below. */
   deliveryTypeId?: number;
   /** Accepted ONLY so it can be refused — a Hand trip is decided at create. */
@@ -176,6 +184,8 @@ export async function PATCH(
       transporterTripNo: true,
       vehicleSize: true,
       isHand: true,
+      dieselAmount: true,
+      manualDispatchAt: true,
       releasedAt: true,
       vehicle: { select: { vehicleNo: true } },
     },
@@ -194,6 +204,8 @@ export async function PATCH(
     note?: string | null;
     transporterTripNo?: string | null;
     vehicleSize?: string | null;
+    dieselAmount?: number | null;
+    manualDispatchAt?: Date;
     driverName?: string | null;
     driverPhone?: string | null;
     status?: string;
@@ -235,6 +247,23 @@ export async function PATCH(
     const v = parseVehicleSize(body.vehicleSize);
     if (!v.ok) return NextResponse.json({ error: "vehicleSize must be gc, ace, big or null" }, { status: 400 });
     data.vehicleSize = v.value;
+  }
+  if (has(body, "dieselAmount")) {
+    const v = parseDieselAmount(body.dieselAmount);
+    if (!v.ok) {
+      return NextResponse.json(
+        { error: "dieselAmount must be a number from 0 to 99,999,999.99 with at most 2 decimals, or null" },
+        { status: 400 },
+      );
+    }
+    data.dieselAmount = v.value;
+  }
+  // 🔴 FOR REPORTS ONLY. Written to its own column and nothing else — never
+  // `dispatchedAt`, never `status` (Smart Flow, 2026-10-04).
+  if (has(body, "manualDispatchAt")) {
+    const v = parseManualDispatchAt(body.manualDispatchAt);
+    if (!v.ok) return NextResponse.json({ error: v.error }, { status: 400 });
+    data.manualDispatchAt = v.value;
   }
 
   if (Object.keys(data).length === 0) {
@@ -385,12 +414,29 @@ export async function PATCH(
     }
 
     // Everything else, compared field by field against the row as it was.
-    const OTHER_FIELDS = ["transporterId", "dispatchWindowId", "note", "transporterTripNo", "vehicleSize"] as const;
+    const OTHER_FIELDS = [
+      "transporterId",
+      "dispatchWindowId",
+      "note",
+      "transporterTripNo",
+      "vehicleSize",
+      "dieselAmount",
+      "manualDispatchAt",
+    ] as const;
+    // The two v27.54 columns are not plain scalars: the stored diesel is a
+    // Prisma Decimal and the time a Date, so both sides are reduced to a number
+    // / an ISO string before comparing (and before going into `detail`).
+    const plain = (field: (typeof OTHER_FIELDS)[number], v: unknown): string | number | null => {
+      if (v === null || v === undefined) return null;
+      if (field === "dieselAmount") return Number(v);
+      if (v instanceof Date) return v.toISOString();
+      return v as string | number;
+    };
     const changes: TripDetailChange[] = [];
     for (const field of OTHER_FIELDS) {
       if (!has(body, field)) continue;
-      const from = trip[field] ?? null;
-      const to = data[field] ?? null;
+      const from = plain(field, trip[field]);
+      const to = plain(field, data[field]);
       if (from !== to) changes.push({ field, from, to });
     }
     // A defaulted transporter with no plate change to ride on (the same vehicle
