@@ -1,5 +1,5 @@
 # CLAUDE_FREIGHT_TRIPS.md — Freight Trips (report-only paper trips over held bills)
-# v1.1 · Schema v27.55 · October 2026 · updated 2026-10-04 · Lives in: orbit-oms/docs/
+# v1.2 · Schema v27.55 · October 2026 · updated 2026-10-04 · Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md + docs/CLAUDE_FLOOR.md
 
 Written from the code at `fa6e5c8d` and the owner's live hand-test of 2026-10-03. Discovery drafts are
@@ -220,11 +220,27 @@ control is hidden without it). Composition root `components/freight-trips/freigh
   (in-app confirm), "+ Add bills" (an add band over the pool), bills under numbered stops.
 - **Bottom bar**: the shared `FloorActionBar` shell (`components/floor/floor-action-bar.tsx`) — + New trip /
   Add to F-… / Remove from trip, with L and kg; API skips shown as a toast.
-- **Drawer** (`trip-drawer.tsx`): Trip date (new only), **Manual dispatch time** (required — date defaults to today
-  IST, time empty, 5-minute steps; edit pre-fills the saved value in IST; Save stays disabled with the inline error until
-  both are set — the shared `components/trips/manual-dispatch-field.tsx`), vehicle from options **or** a typed plate,
-  transporter (notes the all-transporters fallback), driver name / phone (prefilled, editable), note. The trip view shows
-  "Dispatch 4 Oct, 6:40 pm" under the vehicle line when set; the history names it "Dispatch time".
+- **Drawer** (`trip-drawer.tsx`) — **built from the Floor Edit drawer's pieces** so the two look the same
+  (`components/floor/trip-fields.tsx`: the `TripDrawer` shell with `overlayAttr="data-freight-overlay"`, `TRIP_GROUP` cards,
+  `TransporterVehiclePickers`; `components/trips/manual-dispatch-field.tsx`). The Floor drawer itself is unchanged.
+  - **Header**: create — "New freight trip" + "N held bills · X L" (or "An empty trip — add bills afterwards"); edit —
+    the trip number (mono) + a locked trip-date chip + "route · stops · bills · L". No delivery-type chip (freight has none).
+  - **Trip date** (create only — the number F-YYMMDD-NN is built from it).
+  - **Timing** card (clock): **Manual dispatch time \*** — date defaults to today IST, time empty, 5-minute steps; edit
+    pre-fills the saved value in IST. Create trip / Save stays disabled with the inline error until both are set. No slot.
+  - **Vehicle** card (truck): **Transporter**, then **Vehicle** — Floor's searchable pickers: the vehicle list is the chosen
+    transporter's fleet, changing the transporter clears the vehicle, and a plate not in the fleet is offered as a typed
+    plate ("Use … as typed plate", 4+ characters). **Both optional on freight** (owner, 2026-10-04 — no red \*). Then
+    **Driver name** / **Driver mobile** — filled from a picked master vehicle, editable (a typed driver wins). No diesel.
+  - **Reason / note**, then the footer: "Only the freight report uses this. The bills stay on hold on the floor." +
+    Cancel / Create trip (Save when editing).
+  - The trip view shows "Dispatch 4 Oct, 6:40 pm" under the vehicle line when set; the history names it "Dispatch time".
+- **The create and edit paths — exactly two, both through that drawer**: create = tick held bills → bottom bar
+  "+ New trip" (`freight-trips-page.tsx`, `setDrawer("new")`) → `createTrip` → `POST /api/freight-trips`; edit = ✎ on the trip
+  view → `setDrawer("edit")` → `patchTrip` → `PATCH /api/freight-trips/[id]`. Both routes refuse a missing time with a 400.
+- **2026-10-04: drawer rebuilt to match Floor's; the held-bills create path was not missed** — Smart Flow's screenshot
+  of a drawer with no dispatch time was a stale tab from before the 17:15 IST deploy of `3492862a` (after a hard reload the
+  field shows).
 - Ticks live in the page: they survive card ↔ drill-in ↔ tab switches and a search.
 - Every network call is in `components/freight-trips/api.ts` and goes to `/api/freight-trips/*` only.
 
@@ -279,7 +295,7 @@ without a tick.
 
 ---
 
-*CLAUDE_FREIGHT_TRIPS.md v1.1 · Schema v27.55 · OrbitOMS · updated 2026-10-04 — **v27.55:** `freight_trips.manualDispatchAt`, required on every create and edit save (§3.1, §6, §7). Prior, v1.0 (2026-10-03) — first canonical file for
+*CLAUDE_FREIGHT_TRIPS.md v1.2 · Schema v27.55 · OrbitOMS · updated 2026-10-04 — the drawer rebuilt from the Floor drawer's pieces (§7); both create/edit paths named. Prior, v1.1 (2026-10-04) — **v27.55:** `freight_trips.manualDispatchAt`, required on every create and edit save (§3.1, §6, §7). Prior, v1.0 (2026-10-03) — first canonical file for
 Freight Trips. Written from the code at `fa6e5c8d` (commits e1da66f0, efd397c4, 876acb50, c430208e,
 e4115e78, 6e459c1d, ff5ed9d4, 0d0de6a4, 50048416, a3c050cb, 21aca46e, fa6e5c8d) and the owner's live
 hand-test of 2026-10-03.*

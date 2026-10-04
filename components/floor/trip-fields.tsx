@@ -51,6 +51,14 @@ const ERROR_TEXT = "mt-1 text-[12px] text-red-600";
 const GROUP = "flex flex-col gap-[14px] rounded-xl border border-ink-100 bg-ink-25 p-3.5";
 const GROUP_LABEL = "flex items-center gap-1.5 text-[12px] font-medium text-gray-500";
 const REQUIRED = <span className="text-red-500">*</span>;
+/** The same styles, for the Freight trip drawer — so the two drawers cannot drift. */
+export {
+  LABEL as TRIP_LABEL,
+  INPUT as TRIP_INPUT,
+  ERROR_TEXT as TRIP_ERROR_TEXT,
+  GROUP as TRIP_GROUP,
+  GROUP_LABEL as TRIP_GROUP_LABEL,
+};
 
 export const BUTTON_SECONDARY =
   "inline-flex h-[38px] items-center rounded-lg border border-gray-200 bg-white px-4 text-[13px] font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50";
@@ -148,6 +156,7 @@ export function TripDrawer({
   meta,
   footer,
   children,
+  overlayAttr,
 }: {
   busy: boolean;
   onClose: () => void;
@@ -157,11 +166,18 @@ export function TripDrawer({
   meta?: ReactNode;
   footer: ReactNode;
   children: ReactNode;
+  /**
+   * A data attribute set on the panel while it is open — Freight passes
+   * "data-freight-overlay", which its search box and Esc handlers look for.
+   * Floor passes nothing.
+   */
+  overlayAttr?: `data-${string}`;
 }) {
+  const attr: Record<string, string> = overlayAttr ? { [overlayAttr]: "" } : {};
   return (
     <>
       <div className="fixed inset-0 z-40 bg-black/20" onClick={busy ? undefined : onClose} />
-      <aside className="fixed inset-y-0 right-0 z-50 flex w-[420px] max-w-full flex-col border-l border-gray-200 bg-white shadow-xl">
+      <aside {...attr} className="fixed inset-y-0 right-0 z-50 flex w-[420px] max-w-full flex-col border-l border-gray-200 bg-white shadow-xl">
         <header className="border-b border-gray-100 px-5 pb-3.5 pt-4">
           <div className="flex items-center gap-2">
             {title}
@@ -219,29 +235,6 @@ export function TripFields({
 
   const slotList =
     extraWindow && !windows.some((w) => w.id === extraWindow.id) ? [...windows, extraWindow] : windows;
-
-  // The selected transporter's fleet. Not set → every active vehicle.
-  const fleet = values.transporter
-    ? vehicles.filter((v) => v.transporterId === values.transporter!.id)
-    : vehicles;
-
-  function pickTransporter(t: { id: number; name: string } | null) {
-    const changed = (t?.id ?? null) !== (values.transporter?.id ?? null);
-    set({ transporter: t, ...(changed ? { vehicle: null } : {}) });
-  }
-
-  function pickVehicle(v: VehicleOption) {
-    const next: Partial<TripFieldValues> = {
-      vehicle: { kind: "master", id: v.id, plate: v.vehicleNo, driver: v.driverName },
-    };
-    // Transporter Not set: take the vehicle's own, so the screen shows what the
-    // server would default to anyway.
-    if (!values.transporter) {
-      const own = transporters.find((t) => t.id === v.transporterId);
-      if (own) next.transporter = { id: own.id, name: own.name };
-    }
-    set(next);
-  }
 
   return (
     <>
@@ -351,103 +344,15 @@ export function TripFields({
           // vehicle, and the server refuses a vehicle or plate. Nothing to pick.
           <div className="text-[13px] font-semibold text-data-brown">✋ Hand — dealer collects</div>
         ) : (
-          <>
-            <div>
-              <label className={LABEL} htmlFor="trip-transporter">
-                Transporter {REQUIRED}
-              </label>
-              <SearchSelect<TransporterOption>
-                id="trip-transporter"
-                items={transporters}
-                getKey={(t) => t.id}
-                matches={(t, q) => t.name.toLowerCase().includes(q.trim().toLowerCase())}
-                renderItem={(t, q) => (
-                  <span className="truncate">
-                    <Highlight text={t.name} query={q} />
-                  </span>
-                )}
-                selectedKey={values.transporter?.id ?? null}
-                value={values.transporter ? <span className="truncate text-gray-900">{values.transporter.name}</span> : null}
-                placeholder="Not set"
-                searchPlaceholder="Search transporter"
-                onPick={(t) => pickTransporter({ id: t.id, name: t.name })}
-                onClear={() => pickTransporter(null)}
-                emptyText={(q) => `No transporter matches “${q}”`}
-              />
-              {errors.transporter && <div className={ERROR_TEXT}>{errors.transporter}</div>}
-            </div>
-
-            <div>
-              <label className={LABEL} htmlFor="trip-vehicle">
-                Vehicle {REQUIRED}
-              </label>
-              <SearchSelect<VehicleOption>
-                id="trip-vehicle"
-                items={fleet}
-                getKey={(v) => v.id}
-                matches={(v, q) => {
-                  const nq = normPlate(q);
-                  const lq = q.trim().toLowerCase();
-                  if (!lq) return true;
-                  return (nq !== "" && normPlate(v.vehicleNo).includes(nq)) || (v.driverName ?? "").toLowerCase().includes(lq);
-                }}
-                renderItem={(v, q) => {
-                  const [s, e] = plateMatchSpan(v.vehicleNo, normPlate(q));
-                  return (
-                    <>
-                      <span className="shrink-0 font-mono">
-                        <HighlightSpan text={v.vehicleNo} start={s} end={e} />
-                      </span>
-                      {v.driverName && (
-                        <span className="truncate font-normal text-gray-500">
-                          <Highlight text={v.driverName} query={q} />
-                        </span>
-                      )}
-                    </>
-                  );
-                }}
-                selectedKey={values.vehicle?.kind === "master" ? values.vehicle.id : null}
-                value={
-                  values.vehicle ? (
-                    <>
-                      <span className="shrink-0 font-mono text-gray-900">{values.vehicle.plate}</span>
-                      {values.vehicle.kind === "master" ? (
-                        values.vehicle.driver && <span className="truncate text-gray-500">{values.vehicle.driver}</span>
-                      ) : (
-                        <span className="shrink-0 rounded-[5px] bg-warn-bg px-1.5 py-px text-[11px] font-semibold text-warn-text">
-                          typed plate
-                        </span>
-                      )}
-                    </>
-                  ) : null
-                }
-                placeholder="No vehicle yet"
-                searchPlaceholder={fleet.length > 0 ? "Search plate or driver" : "Type the plate"}
-                onPick={pickVehicle}
-                onClear={() => set({ vehicle: null })}
-                extraRow={(q) => {
-                  const nq = normPlate(q);
-                  if (nq.length < 4 || fleet.some((v) => normPlate(v.vehicleNo) === nq)) return null;
-                  return {
-                    key: "typed",
-                    render: (
-                      <>
-                        <span>
-                          Use <span className="font-mono">“{nq}”</span> as typed plate
-                        </span>
-                        <span className="ml-auto shrink-0 rounded-[5px] bg-warn-bg px-1.5 py-px text-[11px] font-semibold text-warn-text">
-                          typed
-                        </span>
-                      </>
-                    ),
-                    onPick: () => set({ vehicle: { kind: "typed", plate: nq } }),
-                  };
-                }}
-                emptyText={(q) => (q.trim() ? "Type at least 4 characters of the plate" : "Start typing a plate")}
-              />
-              {errors.vehicle && <div className={ERROR_TEXT}>{errors.vehicle}</div>}
-            </div>
-          </>
+          <TransporterVehiclePickers
+            transporter={values.transporter}
+            vehicle={values.vehicle}
+            onChange={set}
+            vehicles={vehicles}
+            transporters={transporters}
+            required
+            errors={errors}
+          />
         )}
 
         <div>
@@ -482,6 +387,164 @@ export function TripFields({
           value={values.note}
           onChange={(e) => set({ note: e.target.value })}
         />
+      </div>
+    </>
+  );
+}
+
+// ── The transporter + vehicle pickers ──────────────────────────────────────
+//
+// Floor's two searchable pickers, shared with the Freight trip drawer
+// (components/freight-trips/trip-drawer.tsx, 2026-10-04). Moved here out of
+// TripFields unchanged — the Floor drawer renders them exactly as before.
+//
+// ⚠ TRANSPORTER COMES BEFORE VEHICLE, AND THE VEHICLE LIST IS THAT
+// TRANSPORTER'S FLEET; changing the transporter clears the vehicle. Picking a
+// vehicle with no transporter set takes the vehicle's own. A plate not in the
+// fleet is offered as a TYPED plate ("Use … as typed plate", 4+ characters).
+//
+// `required` only draws the red * — the rule itself is the caller's (Floor
+// requires both off a Hand trip; Freight requires neither).
+
+export function TransporterVehiclePickers<V extends VehicleOption>({
+  transporter,
+  vehicle,
+  onChange,
+  vehicles,
+  transporters,
+  required,
+  errors = {},
+  onVehiclePicked,
+}: {
+  transporter: { id: number; name: string } | null;
+  vehicle: VehiclePick | null;
+  /** ONE patch per press, so a vehicle pick that also sets the transporter is one update. */
+  onChange: (patch: { transporter?: { id: number; name: string } | null; vehicle?: VehiclePick | null }) => void;
+  vehicles: V[];
+  transporters: TransporterOption[];
+  required: boolean;
+  errors?: { transporter?: string; vehicle?: string };
+  /** After a MASTER vehicle is picked — Freight copies its driver into its own inputs. */
+  onVehiclePicked?: (v: V) => void;
+}) {
+  // The selected transporter's fleet. Not set → every active vehicle.
+  const fleet = transporter ? vehicles.filter((v) => v.transporterId === transporter.id) : vehicles;
+
+  function pickTransporter(t: { id: number; name: string } | null) {
+    const changed = (t?.id ?? null) !== (transporter?.id ?? null);
+    onChange({ transporter: t, ...(changed ? { vehicle: null } : {}) });
+  }
+
+  function pickVehicle(v: V) {
+    const next: { transporter?: { id: number; name: string } | null; vehicle?: VehiclePick | null } = {
+      vehicle: { kind: "master", id: v.id, plate: v.vehicleNo, driver: v.driverName },
+    };
+    // Transporter Not set: take the vehicle's own, so the screen shows what the
+    // server would default to anyway.
+    if (!transporter) {
+      const own = transporters.find((t) => t.id === v.transporterId);
+      if (own) next.transporter = { id: own.id, name: own.name };
+    }
+    onChange(next);
+    onVehiclePicked?.(v);
+  }
+
+  return (
+    <>
+      <div>
+        <label className={LABEL} htmlFor="trip-transporter">
+          Transporter {required && REQUIRED}
+        </label>
+        <SearchSelect<TransporterOption>
+          id="trip-transporter"
+          items={transporters}
+          getKey={(t) => t.id}
+          matches={(t, q) => t.name.toLowerCase().includes(q.trim().toLowerCase())}
+          renderItem={(t, q) => (
+            <span className="truncate">
+              <Highlight text={t.name} query={q} />
+            </span>
+          )}
+          selectedKey={transporter?.id ?? null}
+          value={transporter ? <span className="truncate text-gray-900">{transporter.name}</span> : null}
+          placeholder="Not set"
+          searchPlaceholder="Search transporter"
+          onPick={(t) => pickTransporter({ id: t.id, name: t.name })}
+          onClear={() => pickTransporter(null)}
+          emptyText={(q) => `No transporter matches “${q}”`}
+        />
+        {errors.transporter && <div className={ERROR_TEXT}>{errors.transporter}</div>}
+      </div>
+
+      <div>
+        <label className={LABEL} htmlFor="trip-vehicle">
+          Vehicle {required && REQUIRED}
+        </label>
+        <SearchSelect<V>
+          id="trip-vehicle"
+          items={fleet}
+          getKey={(v) => v.id}
+          matches={(v, q) => {
+            const nq = normPlate(q);
+            const lq = q.trim().toLowerCase();
+            if (!lq) return true;
+            return (nq !== "" && normPlate(v.vehicleNo).includes(nq)) || (v.driverName ?? "").toLowerCase().includes(lq);
+          }}
+          renderItem={(v, q) => {
+            const [s, e] = plateMatchSpan(v.vehicleNo, normPlate(q));
+            return (
+              <>
+                <span className="shrink-0 font-mono">
+                  <HighlightSpan text={v.vehicleNo} start={s} end={e} />
+                </span>
+                {v.driverName && (
+                  <span className="truncate font-normal text-gray-500">
+                    <Highlight text={v.driverName} query={q} />
+                  </span>
+                )}
+              </>
+            );
+          }}
+          selectedKey={vehicle?.kind === "master" ? vehicle.id : null}
+          value={
+            vehicle ? (
+              <>
+                <span className="shrink-0 font-mono text-gray-900">{vehicle.plate}</span>
+                {vehicle.kind === "master" ? (
+                  vehicle.driver && <span className="truncate text-gray-500">{vehicle.driver}</span>
+                ) : (
+                  <span className="shrink-0 rounded-[5px] bg-warn-bg px-1.5 py-px text-[11px] font-semibold text-warn-text">
+                    typed plate
+                  </span>
+                )}
+              </>
+            ) : null
+          }
+          placeholder="No vehicle yet"
+          searchPlaceholder={fleet.length > 0 ? "Search plate or driver" : "Type the plate"}
+          onPick={pickVehicle}
+          onClear={() => onChange({ vehicle: null })}
+          extraRow={(q) => {
+            const nq = normPlate(q);
+            if (nq.length < 4 || fleet.some((v) => normPlate(v.vehicleNo) === nq)) return null;
+            return {
+              key: "typed",
+              render: (
+                <>
+                  <span>
+                    Use <span className="font-mono">“{nq}”</span> as typed plate
+                  </span>
+                  <span className="ml-auto shrink-0 rounded-[5px] bg-warn-bg px-1.5 py-px text-[11px] font-semibold text-warn-text">
+                    typed
+                  </span>
+                </>
+              ),
+              onPick: () => onChange({ vehicle: { kind: "typed", plate: nq } }),
+            };
+          }}
+          emptyText={(q) => (q.trim() ? "Type at least 4 characters of the plate" : "Start typing a plate")}
+        />
+        {errors.vehicle && <div className={ERROR_TEXT}>{errors.vehicle}</div>}
       </div>
     </>
   );
