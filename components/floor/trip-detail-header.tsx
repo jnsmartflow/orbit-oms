@@ -44,7 +44,7 @@ import { TripBar, TripBarLegend, tripBarCounts } from "./trip-bar";
 import { TripHistoryList } from "./trip-history";
 import { formatLitres, formatWeightKg } from "./status-pill";
 import { tripMixLabel } from "@/lib/floor/scope";
-import { formatIstDayTime, formatRupees } from "@/lib/trips/diesel-dispatch";
+import { formatRupees } from "@/lib/trips/diesel-dispatch";
 import type { TripSummary } from "@/lib/trips/queries";
 import type { TripActivityRow } from "@/lib/trips/activity";
 
@@ -387,17 +387,13 @@ export function TripDetailHeader({
           </span>
         </div>
 
-        {/* Diesel and the manual dispatch time (Schema v27.54, 2026-10-04) —
-            small secondary text under the vehicle line, each part only when set.
-            The time is IST ("4 Oct, 6:40 pm"); it is for reports only and says
-            nothing about whether the trip has left. */}
-        {(trip.dieselAmount !== null || trip.manualDispatchAt !== null) && (
-          <div className="mt-[4px] flex flex-wrap items-center gap-x-[7px] text-[12.5px] text-[#96969f]">
-            {trip.dieselAmount !== null && <span className="tabular-nums">Diesel {formatRupees(trip.dieselAmount)}</span>}
-            {trip.dieselAmount !== null && trip.manualDispatchAt !== null && <span className={DOT}>·</span>}
-            {trip.manualDispatchAt !== null && (
-              <span className="tabular-nums">Manual dispatch {formatIstDayTime(trip.manualDispatchAt)}</span>
-            )}
+        {/* Diesel (Schema v27.54, 2026-10-04) — small secondary text under the
+            vehicle line, only when set. The manual dispatch time is NOT shown
+            here (Smart Flow, 2026-10-04): it is saved, prefilled in the Edit
+            drawer and logged in the history, but the header leaves it out. */}
+        {trip.dieselAmount !== null && (
+          <div className="mt-[4px] text-[12.5px] tabular-nums text-[#96969f]">
+            Diesel {formatRupees(trip.dieselAmount)}
           </div>
         )}
 
