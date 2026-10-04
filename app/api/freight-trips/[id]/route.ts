@@ -4,6 +4,7 @@ import { freightGate, optionalId, optionalText } from "@/lib/freight-trips/gate"
 import { getFreightTrip, isCancelled } from "@/lib/freight-trips/queries";
 import { logFreightDetailsChanged, logFreightVehicleChanged } from "@/lib/freight-trips/activity";
 import { transporterExists, vehicleSnapshot } from "@/lib/freight-trips/vehicle";
+import { parseManualDispatchAt } from "@/lib/trips/diesel-dispatch";
 
 export const dynamic = "force-dynamic";
 
@@ -33,6 +34,9 @@ interface PatchBody {
   driverName?: unknown;
   driverPhone?: unknown;
   note?: unknown;
+  /** ISO WITH an offset (2026-10-04). Required: null is refused, and so is a
+   *  save that would leave the trip without one. */
+  manualDispatchAt?: unknown;
 }
 
 /**
@@ -41,6 +45,10 @@ interface PatchBody {
  * A vehicle change re-snapshots the driver from the master (null for a plate or
  * no vehicle) UNLESS driver fields are sent in the same request; it also takes
  * the vehicle's transporter unless transporterId is sent.
+ *
+ * 🔴 THE MANUAL DISPATCH TIME IS REQUIRED ON EVERY SAVE (Smart Flow,
+ * 2026-10-04), tested against the RESULTING row — an older trip with none
+ * must get one on its next save. Same parser and IST rule as Floor trips.
  */
 export async function PATCH(req: Request, { params }: { params: { id: string } }): Promise<NextResponse> {
   const gate = await freightGate("canEdit");
@@ -62,6 +70,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
       driverName: true,
       driverPhone: true,
       note: true,
+      manualDispatchAt: true,
       vehicle: { select: { vehicleNo: true } },
     },
   });
@@ -83,6 +92,18 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   if (!driverPhone.ok) return NextResponse.json({ error: "driverPhone must be a string or null" }, { status: 400 });
   const note = optionalText(body.note);
   if (!note.ok) return NextResponse.json({ error: "note must be a string or null" }, { status: 400 });
+  let sentDispatchAt: Date | null = null;
+  if (has("manualDispatchAt")) {
+    const v = parseManualDispatchAt(body.manualDispatchAt);
+    if (!v.ok) {
+      return NextResponse.json({ error: `Manual dispatch time is required — set the date and time (${v.error})` }, { status: 400 });
+    }
+    sentDispatchAt = v.value;
+  }
+  const nextDispatchAt = sentDispatchAt ?? trip.manualDispatchAt;
+  if (nextDispatchAt === null) {
+    return NextResponse.json({ error: "Manual dispatch time is required — set the date and time" }, { status: 400 });
+  }
 
   if (has("vehicleId") && has("adhocVehicleNo") && vehicleId.value !== null && adhoc.value !== null) {
     return NextResponse.json({ error: "A freight trip carries EITHER a master vehicle OR an ad-hoc plate, never both." }, { status: 400 });
@@ -137,6 +158,15 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   if (nextDriverName !== trip.driverName) details.push({ field: "driverName", from: trip.driverName, to: nextDriverName, sent: has("driverName") });
   if (nextDriverPhone !== trip.driverPhone) details.push({ field: "driverPhone", from: trip.driverPhone, to: nextDriverPhone, sent: has("driverPhone") });
   if (nextNote !== trip.note) details.push({ field: "note", from: trip.note, to: nextNote, sent: true });
+  // Compared as INSTANTS — the drawer sends `…+05:30` on every save.
+  if (nextDispatchAt.getTime() !== (trip.manualDispatchAt?.getTime() ?? null)) {
+    details.push({
+      field: "manualDispatchAt",
+      from: trip.manualDispatchAt?.toISOString() ?? null,
+      to: nextDispatchAt.toISOString(),
+      sent: true,
+    });
+  }
 
   if (!vehicleChanged && details.length === 0) {
     return NextResponse.json({ trip: await getFreightTrip(id), changed: false });
@@ -151,6 +181,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
       driverName: nextDriverName,
       driverPhone: nextDriverPhone,
       note: nextNote,
+      manualDispatchAt: nextDispatchAt,
     },
   });
 

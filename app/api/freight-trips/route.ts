@@ -9,6 +9,7 @@ import { logFreightCreated } from "@/lib/freight-trips/activity";
 import { addFreightBills } from "@/lib/freight-trips/bills";
 import { transporterExists, vehicleSnapshot } from "@/lib/freight-trips/vehicle";
 import { FREIGHT_TRIP_STATUS } from "@/lib/freight-trips/status";
+import { parseManualDispatchAt } from "@/lib/trips/diesel-dispatch";
 
 export const dynamic = "force-dynamic";
 
@@ -49,13 +50,18 @@ interface CreateBody {
   driverName?: unknown;
   driverPhone?: unknown;
   note?: unknown;
+  /** ISO WITH an offset, e.g. "2026-10-04T18:40:00+05:30" — REQUIRED (2026-10-04). */
+  manualDispatchAt?: unknown;
   orderIds?: unknown;
 }
 
 /**
  * POST — create a freight trip, then (optionally) put bills on it.
- * Body: { tripDate, vehicleId? | adhocVehicleNo?, transporterId?, driverName?,
- *         driverPhone?, note?, orderIds?: number[] }
+ * Body: { tripDate, manualDispatchAt, vehicleId? | adhocVehicleNo?, transporterId?,
+ *         driverName?, driverPhone?, note?, orderIds?: number[] }
+ * The MANUAL DISPATCH TIME is required on every create, with or without a
+ * vehicle (Smart Flow, 2026-10-04) — the Freight Report reads it. Same parser
+ * and IST rule as Floor trips (lib/trips/diesel-dispatch.ts).
  * Vehicle, transporter and driver are all optional; an empty trip is valid.
  * Driver: copied from the master vehicle, unless typed (a typed value wins —
  * also for an ad-hoc plate). Transporter: a supplied one wins, else the vehicle's.
@@ -89,6 +95,13 @@ export async function POST(req: Request): Promise<NextResponse> {
   if (!driverPhone.ok) return NextResponse.json({ error: "driverPhone must be a string or null" }, { status: 400 });
   const note = optionalText(body.note);
   if (!note.ok) return NextResponse.json({ error: "note must be a string or null" }, { status: 400 });
+  const manualDispatchAt = parseManualDispatchAt(body.manualDispatchAt);
+  if (!manualDispatchAt.ok) {
+    return NextResponse.json(
+      { error: `Manual dispatch time is required — set the date and time (${manualDispatchAt.error})` },
+      { status: 400 },
+    );
+  }
   const orderIds = idList(body.orderIds);
   if (orderIds === null) return NextResponse.json({ error: "orderIds must be an array of positive integers" }, { status: 400 });
 
@@ -130,6 +143,7 @@ export async function POST(req: Request): Promise<NextResponse> {
         driverName: finalDriverName,
         driverPhone: finalDriverPhone,
         note: note.value,
+        manualDispatchAt: manualDispatchAt.value,
         status: FREIGHT_TRIP_STATUS.active,
         createdById: userId,
       },

@@ -30,6 +30,7 @@
 import { VEHICLE_SIZES, VEHICLE_SIZE_DELIVERY_TYPE, VEHICLE_SIZE_LABEL, type VehicleSize } from "@/lib/trips/vehicle-size";
 import type { ReactNode } from "react";
 import { Clock, Truck, X } from "lucide-react";
+import { ManualDispatchField } from "@/components/trips/manual-dispatch-field";
 import { SearchSelect, Highlight, HighlightSpan } from "@/components/ui/search-select";
 import type {
   DeliveryTypeOption,
@@ -302,32 +303,14 @@ export function TripFields({
           {errors.slot && <div className={ERROR_TEXT}>{errors.slot}</div>}
         </div>
 
-        <div>
-          <label className={LABEL} htmlFor="trip-dispatch-date">
-            Manual dispatch time {REQUIRED}
-          </label>
-          <div className="flex gap-2">
-            {/* The date starts on TODAY IN IST (the caller computes it with
-                Asia/Kolkata, never the browser's UTC day); editable, so a late
-                entry can be back-dated. */}
-            <input
-              id="trip-dispatch-date"
-              type="date"
-              className={`${INPUT} h-[38px] flex-1 ${errors.dispatch && values.dispatchDate === "" ? INPUT_ERROR : ""}`}
-              value={values.dispatchDate}
-              onChange={(e) => set({ dispatchDate: e.target.value })}
-            />
-            <input
-              type="time"
-              step={300}
-              aria-label="Manual dispatch time"
-              className={`${INPUT} h-[38px] flex-1 ${errors.dispatch && values.dispatchTime === "" ? INPUT_ERROR : ""}`}
-              value={values.dispatchTime}
-              onChange={(e) => set({ dispatchTime: e.target.value })}
-            />
-          </div>
-          {errors.dispatch && <div className={ERROR_TEXT}>{errors.dispatch}</div>}
-        </div>
+        {/* Shared with the Freight drawer (components/trips/manual-dispatch-field.tsx). */}
+        <ManualDispatchField
+          id="trip-dispatch-date"
+          date={values.dispatchDate}
+          time={values.dispatchTime}
+          onChange={({ date, time }) => set({ dispatchDate: date, dispatchTime: time })}
+          error={errors.dispatch}
+        />
       </section>
 
       {/* ── Vehicle ────────────────────────────────────────────────────── */}

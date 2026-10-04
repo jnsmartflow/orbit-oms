@@ -60,6 +60,8 @@ export interface TripFields {
   driverName: string | null;
   driverPhone: string | null;
   note: string | null;
+  /** ISO WITH an offset (`…+05:30`, manualDispatchIso) — required by both routes (2026-10-04). */
+  manualDispatchAt: string;
 }
 
 export function createTrip(tripDate: string, fields: TripFields, orderIds: number[]) {

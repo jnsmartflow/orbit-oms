@@ -45,7 +45,7 @@ import {
   type TripFieldValues,
   type VehiclePick,
 } from "./trip-fields";
-import { istDateAndTime, istTodayDate, manualDispatchIso } from "@/lib/trips/diesel-dispatch";
+import { initialManualDispatch, manualDispatchIso } from "@/lib/trips/diesel-dispatch";
 
 function initialVehicle(trip: TripSummary): VehiclePick | null {
   // The STORED vehicle, even when it is not in the current transporter's fleet
@@ -77,7 +77,7 @@ export function TripVehicleEditor({
 }) {
   // The stored manual dispatch time, shown in IST; none → today's IST date and
   // an empty time (Smart Flow, 2026-10-04).
-  const storedDispatch = trip.manualDispatchAt !== null ? istDateAndTime(trip.manualDispatchAt) : null;
+  const storedDispatch = initialManualDispatch(trip.manualDispatchAt);
   const [values, setValues] = useState<TripFieldValues>(() => ({
     deliveryTypeId: trip.deliveryTypeId,
     dispatchWindowId: trip.dispatchWindowId,
@@ -92,8 +92,8 @@ export function TripVehicleEditor({
           : findDefaultTransporter(transporters),
     vehicle: initialVehicle(trip),
     vehicleSize: trip.vehicleSize,
-    dispatchDate: storedDispatch?.date ?? istTodayDate(),
-    dispatchTime: storedDispatch?.time ?? "",
+    dispatchDate: storedDispatch.date,
+    dispatchTime: storedDispatch.time,
     diesel: trip.dieselAmount !== null ? String(trip.dieselAmount) : "",
     note: trip.note ?? "",
   }));

@@ -235,6 +235,10 @@ words (`components/floor/trip-rail.tsx:35-37`).
 - **An empty trip is valid.** Create, confirm and PATCH never count bills
   (`app/api/floor/trips/route.ts:241-242`, `confirm/route.ts:43-46`).
 - **Vehicle and transporter are both optional** (`route.ts:108-111`).
+- **The manual dispatch time is required on every Edit-drawer save** (2026-10-04, Schema v27.54 column): `PATCH
+  /api/floor/trips/[id]` refuses with 400 any save whose RESULTING `manualDispatchAt` would be null ("Manual dispatch time
+  is required — set the date and time"); a press that leaves an existing value alone passes. Create stays one-click and asks
+  for no time; older trips stay blank until their next save. Report data only — never `dispatchedAt`, never status.
 - **The delivery type cannot be changed.** PATCH refuses `deliveryTypeId` with a 400, because it would
   re-number the trip (`[id]/route.ts:92-100`, `:134-143`).
 - **A cancelled trip refuses every edit** with 409 (`[id]/route.ts:107-108`).

@@ -89,6 +89,15 @@ export function istDateAndTime(iso: string): { date: string; time: string } {
   return { date: `${get("year")}-${get("month")}-${get("day")}`, time: `${get("hour")}:${get("minute")}` };
 }
 
+/**
+ * The two inputs' starting values for a trip (Floor or Freight): the stored
+ * instant shown in IST, or — nothing stored — today's IST date and an EMPTY
+ * time, so the planner must type it.
+ */
+export function initialManualDispatch(iso: string | null): { date: string; time: string } {
+  return iso !== null ? istDateAndTime(iso) : { date: istTodayDate(), time: "" };
+}
+
 /** "6:40 pm" in IST. */
 export function formatIstTime(iso: string): string {
   return new Date(iso).toLocaleTimeString("en-IN", { timeZone: IST, hour: "numeric", minute: "2-digit", hour12: true });

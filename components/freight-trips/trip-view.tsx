@@ -18,6 +18,7 @@ import { formatLitres, formatWeightKg } from "@/components/floor/status-pill";
 import { loadLitres } from "@/lib/orders/gift";
 import { toggleAllIds, toggleOne, type FloorSelection } from "@/lib/floor/selection";
 import type { FreightTripDetail, FreightStop } from "./api";
+import { formatIstDayTime } from "@/lib/trips/diesel-dispatch";
 
 export function TripView({
   trip,
@@ -87,6 +88,10 @@ export function TripView({
                 </button>
               )}
             </div>
+            {/* The manual dispatch time (v27.55), IST — only when set (an older trip may have none). */}
+            {trip.manualDispatchAt && (
+              <div className="mt-1 text-[12px] tabular-nums text-ink-500">Dispatch {formatIstDayTime(trip.manualDispatchAt)}</div>
+            )}
             {trip.note && <div className="mt-1 text-[12px] text-ink-500">{trip.note}</div>}
           </div>
           {writable && <TripMenu onCancel={onCancelTrip} />}

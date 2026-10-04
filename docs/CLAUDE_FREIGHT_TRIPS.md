@@ -1,5 +1,5 @@
 # CLAUDE_FREIGHT_TRIPS.md — Freight Trips (report-only paper trips over held bills)
-# v1.0 · Schema v27.51 · October 2026 · updated 2026-10-03 · Lives in: orbit-oms/docs/
+# v1.1 · Schema v27.55 · October 2026 · updated 2026-10-04 · Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md + docs/CLAUDE_FLOOR.md
 
 Written from the code at `fa6e5c8d` and the owner's live hand-test of 2026-10-03. Discovery drafts are
@@ -69,11 +69,19 @@ by the owner.
 Created by `sql/2026-10-02-freight-trips.sql` (run live 2026-10-02 by Smart Flow; the discovery §H DDL,
 unchanged; verified 3 tables · 23 constraints · 10 indexes). Hand-mirrored in `prisma/schema.prisma`.
 
-### 3.1 `freight_trips` (16 columns)
+### 3.1 `freight_trips` (17 columns)
 
 `id` · `tripNumber` · `tripDate` (date) · `seq` · `vehicleId?` → `vehicle_master` · `adhocVehicleNo?` ·
 `transporterId?` → `transporter_master` · `driverName?` / `driverPhone?` (**snapshots**) · `note?` ·
+`manualDispatchAt?` (timestamptz(6), **v27.55**) ·
 `status` (default `'active'`) · `cancelledAt/ById` (SET NULL) · `createdAt/ById` · `updatedAt`.
+
+**`manualDispatchAt`** (Schema v27.55, 2026-10-04; live: `timestamp with time zone · 6 · YES`) — the planner's
+dispatch date + time, IST. Nullable in the DB (older trips stay blank, no backfill) but **required on every save**:
+`POST /api/freight-trips` refuses a create without it and `PATCH /api/freight-trips/[id]` refuses a save whose
+RESULTING value would be null — with or without a vehicle. Sent as `…+05:30` and parsed by `parseManualDispatchAt`
+(`lib/trips/diesel-dispatch.ts`, the Floor rule). The coming **Freight Report** reads Dispatch Date / Time from it.
+It is report data only: it moves no status. There is **no diesel** on a freight trip.
 
 | Constraint / index | Text |
 |---|---|
@@ -161,12 +169,12 @@ page key **`freight_trips` only — never `floor`**, sequential awaits, no `$tra
 | Route | Method | Gate | Writes |
 |---|---|---|---|
 | `/api/freight-trips` | GET (no `date` = every trip, any date; `?date=` = that day) | canView | — |
-| `/api/freight-trips` | POST create `{tripDate, vehicleId? \| adhocVehicleNo?, transporterId?, driverName?, driverPhone?, note?, orderIds?}` | canEdit | `freight_trips` + bills via the add path + activity |
+| `/api/freight-trips` | POST create `{tripDate, manualDispatchAt, vehicleId? \| adhocVehicleNo?, transporterId?, driverName?, driverPhone?, note?, orderIds?}` — `manualDispatchAt` required | canEdit | `freight_trips` + bills via the add path + activity |
 | `/api/freight-trips/options` | GET | canView | — (vehicles; transporters `isRealTransporter && isActive`, else all active with `transportersFallback: true`) |
 | `/api/freight-trips/pool` | GET | canView | — |
 | `/api/freight-trips/marker` | GET | canView | — (`{count, latest}` over freight tables + the held set) |
 | `/api/freight-trips/[id]` | GET | canView | — |
-| `/api/freight-trips/[id]` | PATCH vehicle / plate / transporter / driver / note | canEdit | `freight_trips`; refuses a cancelled trip (409) |
+| `/api/freight-trips/[id]` | PATCH vehicle / plate / transporter / driver / note / `manualDispatchAt` | canEdit | `freight_trips`; refuses a cancelled trip (409) and a save that leaves `manualDispatchAt` null (400) |
 | `/api/freight-trips/[id]/bills` | POST `{action: add\|remove, orderIds}` | canEdit | `freight_trip_bills`; refuses a cancelled trip (409); returns per-bill `skipped` reasons |
 | `/api/freight-trips/[id]/cancel` | POST | canEdit | activity → ONE `updateMany` (`trip_cancelled`) → trip `cancelled` + stamps; idempotent |
 
@@ -212,8 +220,11 @@ control is hidden without it). Composition root `components/freight-trips/freigh
   (in-app confirm), "+ Add bills" (an add band over the pool), bills under numbered stops.
 - **Bottom bar**: the shared `FloorActionBar` shell (`components/floor/floor-action-bar.tsx`) — + New trip /
   Add to F-… / Remove from trip, with L and kg; API skips shown as a toast.
-- **Drawer** (`trip-drawer.tsx`): Trip date (new only), vehicle from options **or** a typed plate,
-  transporter (notes the all-transporters fallback), driver name / phone (prefilled, editable), note.
+- **Drawer** (`trip-drawer.tsx`): Trip date (new only), **Manual dispatch time** (required — date defaults to today
+  IST, time empty, 5-minute steps; edit pre-fills the saved value in IST; Save stays disabled with the inline error until
+  both are set — the shared `components/trips/manual-dispatch-field.tsx`), vehicle from options **or** a typed plate,
+  transporter (notes the all-transporters fallback), driver name / phone (prefilled, editable), note. The trip view shows
+  "Dispatch 4 Oct, 6:40 pm" under the vehicle line when set; the history names it "Dispatch time".
 - Ticks live in the page: they survive card ↔ drill-in ↔ tab switches and a search.
 - Every network call is in `components/freight-trips/api.ts` and goes to `/api/freight-trips/*` only.
 
@@ -268,7 +279,7 @@ without a tick.
 
 ---
 
-*CLAUDE_FREIGHT_TRIPS.md v1.0 · Schema v27.51 · OrbitOMS · updated 2026-10-03 — first canonical file for
+*CLAUDE_FREIGHT_TRIPS.md v1.1 · Schema v27.55 · OrbitOMS · updated 2026-10-04 — **v27.55:** `freight_trips.manualDispatchAt`, required on every create and edit save (§3.1, §6, §7). Prior, v1.0 (2026-10-03) — first canonical file for
 Freight Trips. Written from the code at `fa6e5c8d` (commits e1da66f0, efd397c4, 876acb50, c430208e,
 e4115e78, 6e459c1d, ff5ed9d4, 0d0de6a4, 50048416, a3c050cb, 21aca46e, fa6e5c8d) and the owner's live
 hand-test of 2026-10-03.*

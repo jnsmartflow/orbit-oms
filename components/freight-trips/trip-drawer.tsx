@@ -7,11 +7,20 @@
 // transporter and the driver from it; both stay editable (a typed driver wins —
 // owner, 2026-10-02). The values are SNAPSHOTS on the trip.
 // ONE brand button: Create trip / Save.
+//
+// 🔴 THE MANUAL DISPATCH TIME IS REQUIRED on create AND on every edit save,
+// with or without a vehicle (Smart Flow, 2026-10-04) — the Freight Report reads
+// it. Same input and IST rule as the Floor Edit drawer
+// (components/trips/manual-dispatch-field.tsx, lib/trips/diesel-dispatch.ts).
+// Save stays disabled, with the inline error showing, until both are set.
+// No diesel on a freight trip.
 
 import { useEffect, useMemo, useState } from "react";
 import { X } from "lucide-react";
 import { formatLitres } from "@/components/floor/status-pill";
 import { shortDate, todayIST, type FreightOptions, type FreightTripDetail, type TripFields } from "./api";
+import { ManualDispatchField } from "@/components/trips/manual-dispatch-field";
+import { initialManualDispatch, manualDispatchIso } from "@/lib/trips/diesel-dispatch";
 
 const INPUT =
   "h-9 w-full rounded-lg border border-ink-200 bg-white px-3 text-[13px] text-ink-900 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/10";
@@ -48,6 +57,11 @@ export function TripDrawer({
   const [note, setNote] = useState(trip?.note ?? "");
   // New trip: default today IST; edit: the trip's own date, read-only.
   const [tripDate, setTripDate] = useState(trip?.tripDate ?? todayIST());
+  // Edit: the saved time in IST. New (or an older trip with none): today IST + an empty time.
+  const [dispatch, setDispatch] = useState(() =>
+    initialManualDispatch(mode === "edit" ? (trip?.manualDispatchAt ?? null) : null),
+  );
+  const dispatchMissing = dispatch.date === "" || dispatch.time === "";
 
   const transporterName = useMemo(
     () => new Map((options?.transporters ?? []).map((t) => [t.id, t.name])),
@@ -74,6 +88,7 @@ export function TripDrawer({
   }
 
   function submit() {
+    if (dispatchMissing) return;
     const clean = (s: string) => (s.trim() === "" ? null : s.trim());
     onSubmit({
       vehicleId: usePlate ? null : vehicleId,
@@ -82,6 +97,7 @@ export function TripDrawer({
       driverName: clean(driverName),
       driverPhone: clean(driverPhone),
       note: clean(note),
+      manualDispatchAt: manualDispatchIso(dispatch.date, dispatch.time),
     }, tripDate);
   }
 
@@ -109,6 +125,16 @@ export function TripDrawer({
               </div>
             )}
           </div>
+
+          <ManualDispatchField
+            id="freight-dispatch-date"
+            date={dispatch.date}
+            time={dispatch.time}
+            onChange={setDispatch}
+            error={dispatchMissing ? "Enter the dispatch date and time" : undefined}
+            labelClassName={LABEL}
+            inputClassName={INPUT}
+          />
 
           {mode === "new" && (
             <div className="rounded-lg border border-ink-100 bg-ink-25 px-3 py-2 text-[12.5px] text-ink-700">
@@ -202,7 +228,7 @@ export function TripDrawer({
             <button
               type="button"
               onClick={submit}
-              disabled={busy || (usePlate && plate.trim() === "") || (mode === "new" && !/^\d{4}-\d{2}-\d{2}$/.test(tripDate))}
+              disabled={busy || dispatchMissing || (usePlate && plate.trim() === "") || (mode === "new" && !/^\d{4}-\d{2}-\d{2}$/.test(tripDate))}
               className="h-9 rounded-lg bg-brand-600 px-4 text-[13px] font-semibold text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400"
             >
               {mode === "new" ? "Create trip" : "Save"}

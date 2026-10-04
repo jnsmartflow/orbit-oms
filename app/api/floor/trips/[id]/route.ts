@@ -270,6 +270,17 @@ export async function PATCH(
     return NextResponse.json({ error: "Nothing to change." }, { status: 400 });
   }
 
+  // 🔴 THE MANUAL DISPATCH TIME IS REQUIRED ON EVERY SAVE (Smart Flow,
+  // 2026-10-04). Tested against the RESULTING row: a press that does not touch
+  // the field passes when the trip already has one, and an older trip with none
+  // must get one on its next save. An explicit null was already refused above.
+  // Only this route is gated — create stays one-click, and the trip-only writers
+  // (cancel, show, billing, print copy, confirm, dispatch) never read it.
+  const nextManualDispatchAt = has(body, "manualDispatchAt") ? (data.manualDispatchAt ?? null) : trip.manualDispatchAt;
+  if (nextManualDispatchAt === null) {
+    return NextResponse.json({ error: "Manual dispatch time is required — set the date and time" }, { status: 400 });
+  }
+
   // chk_trips_vehicle_one_of, tested against the RESULTING row rather than the
   // body — an unmentioned column keeps its stored value and can still collide.
   const nextVehicleId = has(body, "vehicleId") ? (data.vehicleId ?? null) : trip.vehicleId;

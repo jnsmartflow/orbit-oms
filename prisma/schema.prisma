@@ -4023,6 +4023,7 @@ model freight_trips {
   driverName     String? // SNAPSHOT — copied from vehicle_master or typed; never read through vehicleId
   driverPhone    String? // SNAPSHOT
   note           String?
+  manualDispatchAt DateTime? @db.Timestamptz(6) // planner's dispatch time, IST — required on save, nullable in DB (v27.55)
   status         String    @default("active") // FREIGHT_TRIP_STATUS (lib/freight-trips/status.ts)
   cancelledAt    DateTime? @db.Timestamptz(6)
   cancelledById  Int?

@@ -64,6 +64,8 @@ export interface FreightTripSummary {
   driverName: string | null;
   driverPhone: string | null;
   note: string | null;
+  /** The planner's dispatch time, ISO, or null on an older trip (v27.55). Shown in IST. */
+  manualDispatchAt: string | null;
   createdAt: string;
   createdByName: string | null;
   cancelledAt: string | null;
@@ -89,6 +91,7 @@ const TRIP_SELECT = {
   driverName: true,
   driverPhone: true,
   note: true,
+  manualDispatchAt: true,
   createdAt: true,
   cancelledAt: true,
   vehicle: { select: { vehicleNo: true } },
@@ -186,6 +189,7 @@ function summaryOf(t: TripRecord, members: Membership[]): FreightTripSummary {
     driverName: t.driverName,
     driverPhone: t.driverPhone,
     note: t.note,
+    manualDispatchAt: t.manualDispatchAt?.toISOString() ?? null,
     createdAt: t.createdAt.toISOString(),
     createdByName: t.createdBy?.name ?? null,
     cancelledAt: t.cancelledAt ? t.cancelledAt.toISOString() : null,

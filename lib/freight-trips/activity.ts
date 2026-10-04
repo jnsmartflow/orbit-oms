@@ -95,6 +95,11 @@ export async function logFreightVehicleChanged(opts: {
 }
 
 /** Transporter / driver / note changed. `fields` names what changed, before → after. */
+/** Summary wording for a changed field, where the column name is not readable. */
+const DETAIL_FIELD_LABEL: Record<string, string> = {
+  manualDispatchAt: "Dispatch time",
+};
+
 export async function logFreightDetailsChanged(opts: {
   freightTripId: number;
   actorId: number;
@@ -105,7 +110,9 @@ export async function logFreightDetailsChanged(opts: {
     freightTripId: opts.freightTripId,
     action: FREIGHT_ACTIONS.detailsChanged,
     actorId: opts.actorId,
-    summary: `Changed ${opts.changes.map((c) => c.field).join(", ")}`,
+    // Raw column names stay in `detail`; the summary names the dispatch time in
+    // floor words (2026-10-04). The other fields keep their existing wording.
+    summary: `Changed ${opts.changes.map((c) => DETAIL_FIELD_LABEL[c.field] ?? c.field).join(", ")}`,
     detail: { changes: opts.changes } as Prisma.InputJsonValue,
   });
 }
