@@ -7,12 +7,16 @@
 // Trips the planner SENT TO BILLING. Billing copies each trip's OBD NUMBERS and
 // pastes them into SAP, which prints. ORBIT PRINTS NOTHING.
 //
-//   LEFT  — one card per trip: TRIP NUMBER ONLY (never the vehicle), x/y copied,
-//           bills · stops · litres and how far copying has got. Trips with work
-//           outstanding first, from every date; then the trips billing pressed
-//           Done on the header's day ("Done today").
-//   RIGHT — the selected trip: number, a per-state summary, ONE button, and the
-//           bill table with Floor's own status pill per bill.
+//   LEFT  — trips with work outstanding, from every date, GROUPED BY TRIP TYPE
+//           (the trip number's letter: Local · UPC · IGT / Cross · Other), each
+//           group by trip number ascending. A card is TRIP NUMBER ONLY (never
+//           the vehicle), "x / y" copied and per-state chips — nothing else.
+//           Below, "Done today" — one collapsible header, collapsed by default,
+//           grouped the same way: trip number · ✓ time · who. (Polish v7,
+//           2026-10-05, docs/mockups/billing-print/billing-print-polish-mock.html.)
+//   RIGHT — the selected trip: number, a per-state summary, a progress bar,
+//           ONE button, a legend, and the bill table with Floor's own status
+//           pill per bill. Nothing on this tab truncates — long text wraps.
 //
 // ── EACH BILL HAS A STATE (lib/billing/print.ts PrintBillState) ─────────────
 //   copied  green  — copied on this trip (✓ time).
@@ -61,10 +65,39 @@ import { BillingOrderDetailPanel } from "@/components/billing/billing-order-deta
 const LIST_URL = "/api/billing/print/list";
 
 // Fixed table standard (CLAUDE_UI §27): 31px header, 10px uppercase header, 11px data.
+// 🔴 NO TRUNCATION ON THIS TAB (owner, 2026-10-05 polish): long ship-to names and
+// numbers WRAP to the next line — never an ellipsis. Pills and chips stay on one line.
 const HEAD_TH = "h-[31px] border-b border-ink-100 px-3 text-left text-[10px] font-medium uppercase tracking-[0.05em] text-ink-400";
 const HEAD_TH_C = "h-[31px] border-b border-ink-100 px-1 text-center text-[10px] font-medium uppercase tracking-[0.05em] text-ink-400";
-const TD = "border-b border-ink-50 px-3 py-2 text-[11px] text-ink-600 whitespace-nowrap overflow-hidden text-ellipsis";
-const TD_C = "border-b border-ink-50 px-1 py-2 text-center text-[11px] text-ink-400";
+const TD = "border-b border-ink-50 px-3 py-2 align-top text-[11px] text-ink-600 [overflow-wrap:anywhere]";
+const TD_C = "border-b border-ink-50 px-1 py-2 align-top text-center text-[11px] text-ink-400";
+
+// ── Trip-type groups (rail) ──────────────────────────────────────────────────
+// The trip number's first letter is its delivery type (lib/trips/number.ts:
+// Local → L, Upcountry → U, IGT → I, Cross → C — CLAUDE_FLOOR_TRIPS §5). IGT and
+// Cross share one group (owner). Anything else lands in "Other" rather than
+// vanishing.
+const TRIP_GROUPS: readonly { key: string; label: string; letters: readonly string[] }[] = [
+  { key: "local", label: "Local", letters: ["L"] },
+  { key: "upc", label: "UPC", letters: ["U"] },
+  { key: "igt", label: "IGT / Cross", letters: ["I", "C"] },
+];
+
+/** Trips grouped by type, in the fixed order, each sorted by trip number ascending; empty groups dropped. */
+function groupTrips(trips: readonly PrintTrip[]): { key: string; label: string; trips: PrintTrip[] }[] {
+  const byNumber = (a: PrintTrip, b: PrintTrip) => a.tripNumber.localeCompare(b.tripNumber);
+  const out = TRIP_GROUPS.map((g) => ({
+    key: g.key,
+    label: g.label,
+    trips: trips.filter((t) => g.letters.includes(t.tripNumber.charAt(0))).sort(byNumber),
+  }));
+  const known = new Set(TRIP_GROUPS.flatMap((g) => g.letters));
+  out.push({ key: "other", label: "Other", trips: trips.filter((t) => !known.has(t.tripNumber.charAt(0))).sort(byNumber) });
+  return out.filter((g) => g.trips.length > 0);
+}
+
+const GROUP_HEAD = "mb-1.5 mt-3 px-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-ink-400";
+const CHIP = "whitespace-nowrap rounded px-1.5 py-px text-[10.5px] font-semibold";
 
 // # 4 · OBD 14 · Invoice no 14 · Ship to 26 · Vol 8 · Picking 18 · Copy 16 = 100
 const WIDTHS = [4, 14, 14, 26, 8, 18, 16];
@@ -131,8 +164,21 @@ export function PrintPickingPill({ row, nowMs }: { row: PrintBillRow; nowMs: num
   return <StatusPill status={rowStatus(row)} time={printPillTime(row, nowMs)} onRed={row.state === "review"} />;
 }
 
-/** The header's one-line summary, in state colours. */
+/** The header's one-line summary, in state colours. A done trip says so instead. */
 function Summary({ trip }: { trip: PrintTrip }) {
+  if (trip.state === "done") {
+    const all = trip.eligible > 0 && trip.copiedCount === trip.eligible;
+    return (
+      <>
+        <span className="text-ok-text">✓ Done {hhmm(trip.billingDoneAt)}</span>
+        {trip.billingDoneByName && <span className="text-ink-500"> · {firstName(trip.billingDoneByName)}</span>}
+        <span className="text-ink-500">
+          {" · "}
+          {all ? `all ${trip.copiedCount} copied` : `${trip.copiedCount} of ${trip.eligible} copied`}
+        </span>
+      </>
+    );
+  }
   if (trip.eligible === 0) {
     return <span className="text-ink-500">{trip.held > 0 ? "Every bill is on hold" : "No bills on this trip"}</span>;
   }
@@ -200,6 +246,8 @@ export function BillingPrintTab({
   const [copiedFlash, setCopiedFlash] = useState(false);
   const [notice, setNotice] = useState<{ tone: "info" | "error"; text: string } | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
+  /** "Done today" — collapsed by default; component state only (owner). */
+  const [doneOpen, setDoneOpen] = useState(false);
   const reqRef = useRef(0);
 
   const isToday = !date || date === getTodayIST();
@@ -250,12 +298,16 @@ export function BillingPrintTab({
   const shownOrderIds = useMemo(() => [...pending, ...done].flatMap((t) => t.rows.map((r) => r.orderId)), [pending, done]);
   useBillingShownIds("print-tab-bills", "printOrders", shownOrderIds);
 
+  // The rail's order: pending grouped by trip type, then Done today grouped the same way.
+  const pendingGroups = useMemo(() => groupTrips(pending), [pending]);
+  const doneGroups = useMemo(() => groupTrips(done), [done]);
+
   // The selection is an id, so it survives a refetch; if its trip left both
-  // lists, fall back to the first card rather than showing nothing.
+  // lists, fall back to the first card ON SCREEN rather than showing nothing.
   const selected = useMemo(() => {
-    const all = [...pending, ...done];
-    return all.find((t) => t.id === selectedId) ?? all[0] ?? null;
-  }, [pending, done, selectedId]);
+    const ordered = [...pendingGroups.flatMap((g) => g.trips), ...doneGroups.flatMap((g) => g.trips)];
+    return ordered.find((t) => t.id === selectedId) ?? ordered[0] ?? null;
+  }, [pendingGroups, doneGroups, selectedId]);
 
   // The panel belongs to the selected trip; changing trip closes it.
   const selectedTripId = selected?.id ?? null;
@@ -372,20 +424,50 @@ export function BillingPrintTab({
             {pending.length === 0 && (
               <div className="px-2 py-6 text-center text-[11.5px] text-ink-400">No trip is waiting to be copied.</div>
             )}
-            {pending.map((t) => (
-              <TripCard key={t.id} trip={t} active={selected?.id === t.id} onSelect={() => setSelectedId(t.id)} />
-            ))}
-            <div className="mb-1.5 mt-3 px-1 text-[10px] font-bold uppercase tracking-[0.08em] text-ink-400">
-              {isToday ? "Done today" : `Done · ${formatDayLabel(date!)}`} · {done.length}
-            </div>
-            {done.length === 0 && (
-              <div className="px-2 py-3 text-[11px] text-ink-400">
-                {isToday ? "Nothing done yet today." : "Nothing done on this day."}
+            {pendingGroups.map((g) => (
+              <div key={g.key}>
+                <div className={GROUP_HEAD}>
+                  {g.label} · {g.trips.length}
+                </div>
+                {g.trips.map((t) => (
+                  <PendingCard key={t.id} trip={t} active={selected?.id === t.id} onSelect={() => setSelectedId(t.id)} />
+                ))}
               </div>
-            )}
-            {done.map((t) => (
-              <TripCard key={t.id} trip={t} active={selected?.id === t.id} onSelect={() => setSelectedId(t.id)} />
             ))}
+
+            {/* Done today — ONE collapsible header, collapsed by default. */}
+            <button
+              type="button"
+              onClick={() => setDoneOpen((o) => !o)}
+              aria-expanded={doneOpen}
+              className="mt-4 flex w-full items-center border-t border-ink-100 px-1 pb-1 pt-2.5 text-left text-[12px] font-semibold text-ink-600"
+            >
+              <span>
+                {isToday ? "Done today" : `Done · ${formatDayLabel(date!)}`} · {done.length}
+              </span>
+              <span className={`ml-auto text-ink-400 transition-transform ${doneOpen ? "rotate-90" : ""}`} aria-hidden>
+                ›
+              </span>
+            </button>
+            {doneOpen && (
+              <>
+                {done.length === 0 && (
+                  <div className="px-2 py-3 text-[11px] text-ink-400">
+                    {isToday ? "Nothing done yet today." : "Nothing done on this day."}
+                  </div>
+                )}
+                {doneGroups.map((g) => (
+                  <div key={g.key}>
+                    <div className={GROUP_HEAD}>
+                      {g.label} · {g.trips.length}
+                    </div>
+                    {g.trips.map((t) => (
+                      <DoneRow key={t.id} trip={t} active={selected?.id === t.id} onSelect={() => setSelectedId(t.id)} />
+                    ))}
+                  </div>
+                ))}
+              </>
+            )}
           </>
         )}
       </div>
@@ -397,14 +479,8 @@ export function BillingPrintTab({
   let caption = "";
   if (selected) {
     if (selected.state === "done") {
-      action = (
-        <span className="inline-flex h-[32px] items-center rounded-md bg-ok-bg px-3 text-[12px] font-semibold text-ok-text">
-          ✓ Trip done{selected.billingDoneAt ? ` · ${hhmm(selected.billingDoneAt)}` : ""}
-        </span>
-      );
-      caption = selected.billingDoneByName
-        ? `by ${firstName(selected.billingDoneByName)} · Floor can still take bills back`
-        : "Floor can still take bills back";
+      // A done trip has no action — the status line says it is done (mock v7).
+      action = null;
     } else if (showDone) {
       action = (
         <button type="button" onClick={() => void runDone()} disabled={busy} className={BTN_OK}>
@@ -451,19 +527,33 @@ export function BillingPrintTab({
           </div>
         ) : (
           <>
-            <div className="flex items-start gap-3 border-b border-ink-100 px-[18px] pb-3 pt-3.5">
-              <div className="min-w-0">
-                <span className="rounded-[6px] bg-ink-900 px-2.5 py-[3px] font-mono text-[12px] font-semibold tracking-[0.02em] text-white">
-                  {selected.tripNumber}
-                </span>
-                <div className="mt-2 text-[11.5px] font-semibold">
-                  <Summary trip={selected} />
+            <div className="border-b border-ink-100 px-[18px] pb-3 pt-3.5">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                <div className="min-w-0 flex-1">
+                  {/* Plain bold mono — no chip (mock v7). Wraps, never truncates. */}
+                  <span className="mr-3 font-mono text-[15px] font-semibold text-ink-900 [overflow-wrap:anywhere]">
+                    {selected.tripNumber}
+                  </span>
+                  <span className="text-[11.5px] font-semibold">
+                    <Summary trip={selected} />
+                  </span>
                 </div>
+                {(action || caption) && (
+                  <div className="ml-auto flex flex-col items-end">
+                    {action}
+                    {caption && <span className="mt-1 max-w-[360px] text-right text-[10.5px] text-ink-400">{caption}</span>}
+                  </div>
+                )}
               </div>
-              <div className="ml-auto flex flex-col items-end">
-                {action}
-                {caption && <span className="mt-1 max-w-[360px] text-right text-[10.5px] text-ink-400">{caption}</span>}
-              </div>
+              <ProgressBar trip={selected} />
+            </div>
+
+            {/* The one-line legend (mock v7). */}
+            <div className="flex flex-wrap gap-x-4 gap-y-1 border-b border-ink-100 px-[18px] py-2 text-[11px] text-ink-500">
+              <LegendItem swatch="bg-ok" label="Copied" />
+              <LegendItem swatch="bg-brand-600" label="Ready — goes in the next Copy" />
+              <LegendItem swatch="bg-danger" label="Pick finding — open it to copy" />
+              <LegendItem swatch="bg-ink-200" label="Waiting — not picked yet" />
             </div>
 
             {notice && (
@@ -479,11 +569,12 @@ export function BillingPrintTab({
               </div>
             )}
 
-            <div className="min-h-0 flex-1 overflow-y-auto">
+            {/* Phone width: the table keeps a readable minimum and scrolls inside the pane. */}
+            <div className="min-h-0 flex-1 overflow-auto">
               {selected.rows.length === 0 ? (
                 <div className="px-5 py-10 text-center text-[11.5px] text-ink-400">No bills on this trip.</div>
               ) : (
-                <table className="w-full table-fixed border-collapse">
+                <table className="w-full min-w-[640px] table-fixed border-collapse">
                   <colgroup>
                     {WIDTHS.map((w, i) => (
                       <col key={i} style={{ width: `${w}%` }} />
@@ -590,11 +681,11 @@ function BillRow({
 function CopyCell({ row: r }: { row: PrintBillRow }) {
   switch (r.state) {
     case "copied":
-      return <span className="font-semibold text-ok-text">✓ {hhmm(r.copiedAt)}</span>;
+      return <span className="whitespace-nowrap font-semibold text-ok-text">✓ {hhmm(r.copiedAt)}</span>;
     case "ready":
-      return <span className="font-semibold text-brand-700">next copy</span>;
+      return <span className={`${CHIP} bg-brand-50 text-brand-700`}>next copy</span>;
     case "review":
-      return <span className="font-semibold text-danger-text">open to copy →</span>;
+      return <span className={`${CHIP} bg-danger-bg text-danger-text`}>open to copy →</span>;
     case "waiting":
       return <span className="text-ink-400">not picked yet</span>;
     case "held":
@@ -602,52 +693,77 @@ function CopyCell({ row: r }: { row: PrintBillRow }) {
   }
 }
 
-function TripCard({ trip, active, onSelect }: { trip: PrintTrip; active: boolean; onSelect: () => void }) {
-  const done = trip.state === "done";
-  const allCopied = trip.eligible > 0 && trip.copiedCount === trip.eligible;
+/** Copied green, ready brand, the rest grey — over the non-held bills. */
+function ProgressBar({ trip }: { trip: PrintTrip }) {
+  if (trip.eligible === 0) return null;
+  const pct = (n: number) => `${(n / trip.eligible) * 100}%`;
+  return (
+    <div className="mt-2.5 flex h-[4px] overflow-hidden rounded-sm bg-ink-100" aria-hidden>
+      <span className="block h-full bg-ok" style={{ width: pct(trip.copiedCount) }} />
+      {trip.state !== "done" && <span className="block h-full bg-brand-600" style={{ width: pct(trip.readyCount) }} />}
+    </div>
+  );
+}
+
+function LegendItem({ swatch, label }: { swatch: string; label: string }) {
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <span className={`inline-block h-[9px] w-[9px] rounded-[2px] ${swatch}`} aria-hidden />
+      {label}
+    </span>
+  );
+}
+
+/**
+ * A trip with work outstanding: number + "x / y", then chips only (mock v7).
+ * Plain grey border, NO coloured edge; the selected card is an ink border.
+ */
+function PendingCard({ trip, active, onSelect }: { trip: PrintTrip; active: boolean; onSelect: () => void }) {
   return (
     <button
       type="button"
       onClick={onSelect}
-      className={`mb-1.5 block w-full rounded-[8px] border px-3 py-2.5 text-left transition-colors ${
-        active ? "border-ink-900 bg-white shadow-sm" : "border-ink-100 bg-white hover:border-ink-200"
-      } ${done && !active ? "opacity-60" : ""}`}
+      className={`mb-1.5 block w-full rounded-[8px] border bg-white px-3 py-2.5 text-left transition-colors ${
+        active ? "border-ink-900" : "border-ink-100 hover:border-ink-200"
+      }`}
     >
-      <div className="flex items-center gap-2">
-        {/* TRIP NUMBER ONLY — never the vehicle number (owner). */}
-        <span className="font-mono text-[12px] font-semibold text-ink-900">{trip.tripNumber}</span>
-        <span
-          className={`ml-auto rounded-full px-2 py-[1px] text-[9.5px] font-bold tabular-nums ${
-            allCopied ? "bg-ok-bg text-ok-text" : "bg-warn-bg text-warn-text"
-          }`}
-        >
-          {trip.copiedCount}/{trip.eligible}
+      <div className="flex items-baseline gap-2">
+        {/* TRIP NUMBER ONLY — never the vehicle number (owner). Wraps, never truncates. */}
+        <span className="min-w-0 font-mono text-[12.5px] font-semibold text-ink-900 [overflow-wrap:anywhere]">
+          {trip.tripNumber}
+        </span>
+        <span className="ml-auto whitespace-nowrap text-[11.5px] tabular-nums text-ink-500">
+          {trip.copiedCount} / {trip.eligible}
         </span>
       </div>
-      <div className="mt-1 text-[11px] tabular-nums text-ink-500">
-        {plural(trip.bills, "bill")} · {plural(trip.stops, "stop")} · {Math.round(trip.litres).toLocaleString("en-US")} L
-      </div>
-      <div className="mt-0.5 text-[11px] text-ink-500">
-        {done ? (
-          <span className="text-ink-400">
-            Done {hhmm(trip.billingDoneAt)}
-            {trip.billingDoneByName ? ` · ${firstName(trip.billingDoneByName)}` : ""}
-          </span>
-        ) : trip.eligible === 0 ? (
-          trip.held > 0 ? "every bill on hold" : "no bills"
-        ) : (
-          <>
-            {trip.copiedCount} copied · {trip.readyCount} ready
-            {trip.reviewCount > 0 && <span className="text-danger-text"> · {trip.reviewCount} to check</span>}
-            {" · "}
-            {trip.waitingCount} waiting
-            {trip.held > 0 ? ` · ${trip.held} on hold` : ""}
-          </>
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        {trip.copiedCount > 0 && <span className={`${CHIP} bg-ok-bg text-ok-text`}>{trip.copiedCount} copied</span>}
+        {trip.readyCount > 0 && <span className={`${CHIP} bg-brand-50 text-brand-700`}>{trip.readyCount} ready</span>}
+        {trip.reviewCount > 0 && <span className={`${CHIP} bg-danger-bg text-danger-text`}>{trip.reviewCount} to check</span>}
+        {trip.waitingCount > 0 && <span className={`${CHIP} bg-ink-50 text-ink-600`}>{trip.waitingCount} waiting</span>}
+        {trip.eligible === 0 && (
+          <span className={`${CHIP} bg-ink-50 text-ink-600`}>{trip.held > 0 ? "all on hold" : "no bills"}</span>
         )}
       </div>
-      {trip.state === "reopened" && (
-        <div className="mt-0.5 text-[11px] font-semibold text-brand-700">reopened · done {hhmm(trip.billingDoneAt)}</div>
-      )}
+    </button>
+  );
+}
+
+/** A Done-today row: trip number · ✓ time · who. Nothing else (mock v7). */
+function DoneRow({ trip, active, onSelect }: { trip: PrintTrip; active: boolean; onSelect: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      className={`flex w-full flex-wrap items-baseline gap-x-2.5 gap-y-0.5 rounded-[8px] px-2.5 py-2 text-left text-[12px] text-ink-600 ${
+        active ? "bg-ink-50 text-ink-900" : "hover:bg-ink-25"
+      }`}
+    >
+      <span className="font-mono text-ink-900 [overflow-wrap:anywhere]">{trip.tripNumber}</span>
+      <span className="ml-auto text-[11.5px] text-ink-400">
+        <span className="whitespace-nowrap font-semibold text-ok-text">✓ {hhmm(trip.billingDoneAt)}</span>
+        {trip.billingDoneByName ? ` · ${firstName(trip.billingDoneByName)}` : ""}
+      </span>
     </button>
   );
 }
