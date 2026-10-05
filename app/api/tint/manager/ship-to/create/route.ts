@@ -7,6 +7,7 @@ import { logAdminAction } from "@/lib/audit/log";
 import { SoSyncValidationError } from "@/lib/customers/so-sync";
 import { createCustomer } from "@/lib/customers/create-customer";
 import { MIN_ADDRESS, SO_NO_PHONE, checkReceivers } from "@/lib/customers/ship-to-rules";
+import { isOrbCode, ORB_TYPED_REFUSAL } from "@/lib/customers/orbit-code";
 
 export const dynamic = "force-dynamic";
 
@@ -75,6 +76,9 @@ export async function POST(req: Request): Promise<NextResponse> {
   if (!parsed.success) return NextResponse.json({ error: "Fill code, name, area and sales person." }, { status: 400 });
   const body = parsed.data;
   const customerCode = body.customerCode.toUpperCase();
+  // ORB- codes are made by the system for Orbit customers (2026-10-05) and
+  // must never get the keyword row this route writes — refuse before any write.
+  if (isOrbCode(customerCode)) return NextResponse.json({ error: ORB_TYPED_REFUSAL }, { status: 400 });
 
   // EVERY FIELD IS MANDATORY (2026-10-02) — the same rules as the form,
   // lib/customers/ship-to-rules.ts: address 10+ chars, at least one receiver

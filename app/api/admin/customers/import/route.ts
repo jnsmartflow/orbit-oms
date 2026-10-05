@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { requireSuperuser } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
 import { logAdminAction } from "@/lib/audit/log";
+import { isOrbCode } from "@/lib/customers/orbit-code";
 
 export const dynamic = 'force-dynamic';
 
@@ -109,6 +110,12 @@ export async function POST(req: Request) {
 
     if (!customerCode) {
       failed.push({ row: rowNum, reason: "customerCode is required." });
+      continue;
+    }
+    // Orbit customers (2026-10-05): ORB- codes are made by the system on the
+    // admin form only — never created or updated through CSV.
+    if (isOrbCode(customerCode)) {
+      failed.push({ row: rowNum, reason: "ORB- codes are Orbit customers — edit them on the Customers page, not by import." });
       continue;
     }
     if (!customerName) {

@@ -84,6 +84,9 @@ export default async function CustomersPage() {
       premisesTypes={premisesTypes}
       canEdit={perms.canEdit}
       canImport={perms.canImport}
+      // Orbit customers are created here only (/admin is superuser-only);
+      // /tint/manager/customers leaves this off (2026-10-05).
+      allowOrbitCreate
     />
   );
 }

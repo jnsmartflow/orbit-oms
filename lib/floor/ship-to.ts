@@ -134,8 +134,9 @@ export interface ShipToSearchHit {
 
 /**
  * Customer lookup for a "Change ship-to" picker. READ-ONLY. Under 2 characters
- * → []. Active delivery points whose name contains `q`, case-insensitive,
- * first 8 by name.
+ * → []. Active delivery points whose name OR code contains `q`,
+ * case-insensitive (code added 2026-10-05 so an Orbit customer's ORB- code can
+ * be typed), first 8 by name.
  */
 export async function searchShipTo(rawQ: string | null): Promise<ShipToSearchHit[]> {
   const q = rawQ?.trim() ?? "";
@@ -143,7 +144,10 @@ export async function searchShipTo(rawQ: string | null): Promise<ShipToSearchHit
 
   const matches = await prisma.delivery_point_master.findMany({
     where: {
-      customerName: { contains: q, mode: "insensitive" },
+      OR: [
+        { customerName: { contains: q, mode: "insensitive" } },
+        { customerCode: { contains: q, mode: "insensitive" } },
+      ],
       isActive: true,
     },
     select: { id: true, customerName: true, area: { select: { name: true } } },

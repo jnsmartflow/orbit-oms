@@ -22,6 +22,7 @@ import { ContactCard } from "@/components/admin/contact-card";
 import { SalesOfficersList } from "@/components/admin/sales-officers-list";
 import { AutoContactDeleteDialog } from "@/components/admin/auto-contact-delete-dialog";
 import { resolveLinkedSO } from "@/lib/customers/resolve-linked-so";
+import { isOrbCode, ORB_TYPED_REFUSAL } from "@/lib/customers/orbit-code";
 
 // ── Local types ────────────────────────────────────────────────────────────────
 export interface AreaWithType { id: number; name: string; deliveryType: { id: number; name: string } | null; primaryRoute: { id: number; name: string } | null }
@@ -53,6 +54,9 @@ export interface CustomersSplitViewProps {
   premisesTypes:    PremisesTypeOption[];
   canEdit?:         boolean;
   canImport?:       boolean;
+  /** Show the "Not in SAP — Orbit customer" tick on create. True ONLY on
+   *  /admin/customers; the server also requires a superuser (2026-10-05). */
+  allowOrbitCreate?: boolean;
 }
 
 interface ImportResult {
@@ -201,7 +205,7 @@ export function CustomersSplitView({
   initialCustomers, initialTotal,
   areas, subAreas, salesOfficers, routes, deliveryTypes,
   soGroups, contactRoles, customerTypes, premisesTypes,
-  canEdit = false, canImport = false,
+  canEdit = false, canImport = false, allowOrbitCreate = false,
 }: CustomersSplitViewProps) {
 
   // ── List state ──────────────────────────────────────────────────────────────
@@ -226,6 +230,8 @@ export function CustomersSplitView({
   const [editingFull, setEditingFull]   = useState<CustomerFull | null>(null);
   const [loadingEdit, setLoadingEdit]   = useState(false);
   const [isNew, setIsNew]               = useState(false);
+  // Orbit customer tick (create only) — the server makes the ORB- code.
+  const [orbitOnly, setOrbitOnly]       = useState(false);
   const [form, setForm]                 = useState<FormState>(EMPTY_FORM);
   const [savedForm, setSavedForm]       = useState<FormState | null>(null);
   const [fieldErrors, setFieldErrors]   = useState<Record<string, string>>({});
@@ -236,6 +242,12 @@ export function CustomersSplitView({
   const dirty = savedForm
     ? JSON.stringify(form) !== JSON.stringify(savedForm)
     : isNew && (form.customerCode !== "" || form.customerName !== "");
+
+  // ── Orbit customer (2026-10-05) ─────────────────────────────────────────────
+  // creatingOrbit: the create form with the tick on. editingOrbit: an existing
+  // ORB- row — its code is system-made and read-only.
+  const creatingOrbit = isNew && allowOrbitCreate && orbitOnly;
+  const editingOrbit  = !isNew && editingFull !== null && isOrbCode(editingFull.customerCode);
 
   // ── Confirm dialog state ────────────────────────────────────────────────────
   const [confirmOpen, setConfirmOpen]       = useState(false);
@@ -344,6 +356,7 @@ export function CustomersSplitView({
     setForm(EMPTY_FORM);
     setSavedForm(null);
     setIsNew(true);
+    setOrbitOnly(false);
     setFieldErrors({});
     setActiveTab("sec-basic");
     setTimeout(() => formScrollRef.current?.scrollTo({ top: 0 }), 0);
@@ -446,7 +459,10 @@ export function CustomersSplitView({
   // ── Validation ──────────────────────────────────────────────────────────────
   function validate(): boolean {
     const errs: Record<string, string> = {};
-    if (!form.customerCode.trim()) errs.customerCode = "Customer code is required.";
+    if (!creatingOrbit) {
+      if (!form.customerCode.trim()) errs.customerCode = "Customer code is required.";
+      else if (isNew && isOrbCode(form.customerCode)) errs.customerCode = ORB_TYPED_REFUSAL;
+    }
     if (!form.customerName.trim()) errs.customerName = "Customer name is required.";
     if (!form.areaId)              errs.areaId       = "Area is required.";
     if (form.latitude  && isNaN(parseFloat(form.latitude)))  errs.latitude  = "Must be a number.";
@@ -464,7 +480,9 @@ export function CustomersSplitView({
     if (!validate()) return;
     setSaving(true);
     const body = {
-      customerCode:           form.customerCode.trim().toUpperCase(),
+      // An Orbit customer's code is made by the server — send none.
+      customerCode:           creatingOrbit ? "" : form.customerCode.trim().toUpperCase(),
+      ...(creatingOrbit && { orbitOnly: true }),
       customerName:           form.customerName.trim(),
       address:                form.address.trim() || null,
       areaId:                 parseInt(form.areaId, 10),
@@ -503,8 +521,12 @@ export function CustomersSplitView({
       const res    = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       const data   = await res.json();
       if (!res.ok) {
-        if (res.status === 409) setFieldErrors({ customerCode: "Customer code already exists." });
-        else toast.error(data.error ?? "Failed to save.");
+        if (res.status === 409 && data.duplicate) {
+          // Orbit create: same name already in this area (hard block).
+          const d = data.duplicate as { customerName: string; customerCode: string };
+          setFieldErrors({ customerName: `Already exists in this area: ${d.customerName} (${d.customerCode}).` });
+        } else if (res.status === 409) setFieldErrors({ customerCode: "Customer code already exists." });
+        else toast.error(typeof data.error === "string" ? data.error : "Failed to save.");
         return;
       }
       toast.success(editingFull ? "Customer updated." : `Customer "${data.customerName}" created.`);
@@ -971,6 +993,11 @@ export function CustomersSplitView({
                     {editingFull.customerCode}
                   </span>
                 )}
+                {editingOrbit && (
+                  <span className="text-[10.5px] text-gray-500 bg-gray-50 border border-[#e5e7eb] px-1.5 py-0.5 rounded flex-shrink-0">
+                    Orbit customer · not in SAP
+                  </span>
+                )}
                 <div className="flex-1" />
                 {!isNew && editingFull && (
                   <span className={`text-[11px] font-medium px-2.5 py-1 rounded-full ${editingFull.isActive ? "bg-[#e8f5e9] text-[#2e7d32]" : "bg-[#f0f1f5] text-gray-500"}`}>
@@ -1046,7 +1073,29 @@ export function CustomersSplitView({
                   <div className="grid grid-cols-2 gap-3 mb-3">
                     <div>
                       <FieldLabel required>Customer code</FieldLabel>
-                      <input type="text" className={`${inputCls} font-mono`} value={form.customerCode} onChange={(e) => setField("customerCode", e.target.value.toUpperCase())} placeholder="e.g. C-00142" />
+                      {creatingOrbit ? (
+                        // Orbit customer: the server makes the ORB- code on save.
+                        <input type="text" disabled className={`${inputCls} font-mono bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed`} value="ORB-auto · generated on save" />
+                      ) : editingOrbit ? (
+                        <input type="text" readOnly className={`${inputCls} font-mono bg-gray-50 text-gray-500 cursor-default`} value={form.customerCode} />
+                      ) : (
+                        <input type="text" className={`${inputCls} font-mono`} value={form.customerCode} onChange={(e) => setField("customerCode", e.target.value.toUpperCase())} placeholder="e.g. C-00142" />
+                      )}
+                      {isNew && allowOrbitCreate && (
+                        <label className="flex items-center gap-1.5 mt-1.5 text-[11.5px] text-gray-600 cursor-pointer select-none">
+                          <input
+                            type="checkbox"
+                            className="accent-brand-600"
+                            checked={orbitOnly}
+                            onChange={(e) => {
+                              setOrbitOnly(e.target.checked);
+                              setFieldErrors((prev) => { const next = { ...prev }; delete next.customerCode; return next; });
+                            }}
+                          />
+                          Not in SAP — Orbit customer
+                        </label>
+                      )}
+                      {editingOrbit && <p className="text-[11px] text-[#9ca3af] mt-0.5">Orbit customer · not in SAP</p>}
                       {fieldErrors.customerCode && <p className="text-[11px] text-red-600 mt-0.5">{fieldErrors.customerCode}</p>}
                     </div>
                     <div>

@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { checkAnyPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { logAdminAction } from "@/lib/audit/log";
+import { isOrbCode } from "@/lib/customers/orbit-code";
 
 export const dynamic = "force-dynamic";
 
@@ -46,6 +47,14 @@ export async function PATCH(
   if (!customerCode || !customerName) {
     return NextResponse.json(
       { error: "customerCode and customerName are required" },
+      { status: 400 },
+    );
+  }
+  // This sets the BILL-TO. An Orbit customer (ORB-) is ship-to only and must
+  // never get a mo_customer_keywords row (2026-10-05) — refuse before any write.
+  if (isOrbCode(customerCode)) {
+    return NextResponse.json(
+      { error: "An Orbit customer (ORB-) is a ship-to only and cannot be a bill-to." },
       { status: 400 },
     );
   }

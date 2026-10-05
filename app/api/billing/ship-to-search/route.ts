@@ -50,6 +50,9 @@ export async function GET(req: Request): Promise<NextResponse> {
         { customerName: { contains: q, mode: "insensitive" } },
         { customerCode: { contains: q, mode: "insensitive" } },
       ],
+      // Active only (2026-10-05) — the same rule as Floor's searchShipTo, so a
+      // deactivated customer or Orbit hub cannot be picked as a ship-to.
+      isActive: true,
     },
     select: {
       id: true,

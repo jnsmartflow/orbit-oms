@@ -12,6 +12,7 @@ import {
   enforcePrimaryContactRule,
   SoSyncValidationError,
 } from "@/lib/customers/so-sync";
+import { isOrbCode, ORB_TYPED_REFUSAL } from "@/lib/customers/orbit-code";
 
 export const dynamic = 'force-dynamic';
 
@@ -164,6 +165,23 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   try {
     if (customerCode) {
       const upperCode = customerCode.trim().toUpperCase();
+
+      // Orbit codes (2026-10-05): an ORB- code is made by the system and never
+      // changes, and no code may be changed TO one. The form sends the code on
+      // every save, so an UNCHANGED code must still pass.
+      const current = await prisma.delivery_point_master.findUnique({
+        where:  { id },
+        select: { customerCode: true },
+      });
+      if (current && upperCode !== current.customerCode) {
+        if (isOrbCode(current.customerCode)) {
+          return NextResponse.json({ error: "An Orbit customer's ORB- code cannot be changed." }, { status: 400 });
+        }
+        if (isOrbCode(upperCode)) {
+          return NextResponse.json({ error: ORB_TYPED_REFUSAL }, { status: 400 });
+        }
+      }
+
       const conflict = await prisma.delivery_point_master.findFirst({
         where: { customerCode: upperCode, NOT: { id } },
       });

@@ -6,6 +6,10 @@ import { z } from "zod";
 import { checkAnyPermission } from "@/lib/permissions";
 import { SoSyncValidationError } from "@/lib/customers/so-sync";
 import { createCustomer } from "@/lib/customers/create-customer";
+import { isSuperuser } from "@/lib/rbac";
+import {
+  isOrbCode, formatOrbCode, normaliseName, ORB_TYPED_REFUSAL,
+} from "@/lib/customers/orbit-code";
 
 export const dynamic = 'force-dynamic';
 
@@ -29,7 +33,9 @@ const dismissalToggleSchema = z.object({
 });
 
 const createSchema = z.object({
-  customerCode:           z.string().min(1).max(50),
+  // Required unless orbitOnly — checked in the handler (an Orbit customer's
+  // code is made by the server, so the client sends none).
+  customerCode:           z.string().max(50).default(""),
   customerName:           z.string().min(1).max(200),
   address:                z.string().max(500).optional().nullable(),
   areaId:                 z.number().int().positive(),
@@ -55,6 +61,9 @@ const createSchema = z.object({
   // Phase 2 multi-SO sync
   salesOfficers:          z.array(salesOfficerLinkSchema).optional().default([]),
   dismissalsToToggle:     z.array(dismissalToggleSchema).optional().default([]),
+  // Orbit customer (2026-10-05) — "Not in SAP". Superuser only; the server
+  // ignores any client code and allocates ORB-NNNNN (lib/customers/orbit-code.ts).
+  orbitOnly:              z.boolean().optional().default(false),
 });
 
 const listInclude = {
@@ -159,7 +168,44 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: parsed.error.flatten().fieldErrors }, { status: 400 });
   }
 
-  const { contacts, salesOfficers, dismissalsToToggle, ...data } = parsed.data;
+  const { contacts, salesOfficers, dismissalsToToggle, orbitOnly, ...data } = parsed.data;
+
+  if (!orbitOnly) {
+    // A SAP customer: the code is typed, and the ORB- prefix is reserved.
+    if (!data.customerCode.trim()) {
+      return NextResponse.json({ error: { customerCode: ["Customer code is required."] } }, { status: 400 });
+    }
+    if (isOrbCode(data.customerCode)) {
+      return NextResponse.json({ error: ORB_TYPED_REFUSAL }, { status: 400 });
+    }
+  } else {
+    // Orbit customer — superuser only (server-enforced, decided 2026-10-05).
+    if (!isSuperuser(session)) {
+      return NextResponse.json({ error: "Only a superuser can create an Orbit customer." }, { status: 403 });
+    }
+
+    // HARD duplicate check: same area + same name after normalising, across
+    // ALL customer types (the place may already exist as a SAP row). The
+    // contains-filter narrows in SQL; the exact normalised compare is in JS.
+    const wanted = normaliseName(data.customerName);
+    const firstWord = wanted.split(" ")[0] ?? "";
+    const candidates = await prisma.delivery_point_master.findMany({
+      where:  { areaId: data.areaId, customerName: { contains: firstWord, mode: "insensitive" } },
+      select: { id: true, customerCode: true, customerName: true },
+    });
+    const dup = candidates.find((c) => normaliseName(c.customerName) === wanted);
+    if (dup) {
+      return NextResponse.json({
+        error:     `${dup.customerName} (${dup.customerCode}) already exists in this area.`,
+        duplicate: dup,
+      }, { status: 409 });
+    }
+
+    // ONE raw call — nextval is atomic, so no $transaction is needed (CORE §3).
+    // It burns a number even if the create below fails; gaps are acceptable.
+    const seq = await prisma.$queryRaw<{ n: bigint }[]>`SELECT nextval('orb_customer_code_seq') AS n`;
+    data.customerCode = formatOrbCode(Number(seq[0].n));
+  }
 
   // The create core — Stage B validate, 409, Stage A create (its pre-existing
   // $transaction wrapper kept, CORE §3 landmine policy), F → C → D → E SO sync,
@@ -171,7 +217,9 @@ export async function POST(req: Request) {
     created = await createCustomer({
       data, contacts, salesOfficers, dismissalsToToggle,
       include: fullInclude,
-      wrapCreateInTransaction: true,
+      // The Orbit path is new code, so no $transaction (CORE §3); the SAP
+      // path keeps its pre-existing wrapper verbatim.
+      wrapCreateInTransaction: !orbitOnly,
     });
   } catch (err) {
     if (err instanceof SoSyncValidationError) {
@@ -196,6 +244,7 @@ export async function POST(req: Request) {
     action: "create",
     summary:
       `${customerCode} — ${customer.customerName}` +
+      (orbitOnly ? " (Orbit customer · not in SAP)" : "") +
       (backfill.count > 0 ? `; linked ${backfill.count} orphan order(s)` : ""),
     after: {
       customerCode,
