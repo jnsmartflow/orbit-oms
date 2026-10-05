@@ -87,10 +87,31 @@ export const TRIP_TAKEN_BACK = "taken_back";
  * "New since copy" is the trip's current numbers minus the union of every
  * such row's list (lib/billing/print.ts) — so a number is never offered twice.
  * Never rewrite or delete these rows.
+ *
+ * ⚠ HISTORICAL ONCE BILLING PRINT v2's SERVER SHIPS (Schema v27.56,
+ * 2026-10-05). v2 copies OBD numbers PER BILL and records them in
+ * trip_bill_copies (one row per trip + bill) with a `bills_copied` row; a
+ * finished trip gets `billing_done`. After that nothing writes
+ * `invoices_copied`; its old rows stay (they were backfilled into
+ * trip_bill_copies as kind 'backfill') and the constant and the CHECK value stay
+ * with them. The two rules above — "never a partial set" and the take-back lock
+ * — are being REMOVED by v2 on purpose (owner, 2026-10-05). Do not restore them.
  */
 export const TRIP_SENT_TO_BILLING = "sent_to_billing";
 export const TRIP_TAKEN_BACK_FROM_BILLING = "taken_back_from_billing";
 export const TRIP_INVOICES_COPIED = "invoices_copied";
+
+/**
+ * Billing Print v2 (2026-10-05, Schema v27.56). Registered in the vocabulary
+ * and the live CHECK now; their loggers and callers arrive with the Print v2
+ * server (lib/billing/print.ts).
+ *   bills_copied — billing copied one or more bills' OBD numbers on this trip
+ *                  (bulk / single / review); the trip_bill_copies rows are the
+ *                  per-bill record, this row is the trip's history line.
+ *   billing_done — billing pressed "Done — all copied" (trips.billingDoneAt).
+ */
+export const TRIP_BILLS_COPIED = "bills_copied";
+export const TRIP_BILLING_DONE = "billing_done";
 
 /**
  * Re-deliveries (2026-10-03, Schema v27.53) — a bill that came back undelivered
@@ -139,6 +160,8 @@ export const TRIP_ACTIONS = [
   TRIP_DISPATCHED,
   TRIP_REDELIVERY_ADDED,
   TRIP_REDELIVERY_REMOVED,
+  TRIP_BILLS_COPIED,
+  TRIP_BILLING_DONE,
 ] as const;
 
 export type TripAction = (typeof TRIP_ACTIONS)[number];

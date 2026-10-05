@@ -287,8 +287,10 @@ model users {
   tripsShown                  trips[]                  @relation("TripShownBy")
   tripsSentToBilling          trips[]                  @relation("TripSentToBillingBy")
   tripsBillingCopied          trips[]                  @relation("TripBillingCopiedBy")
+  tripsBillingDone            trips[]                  @relation("TripBillingDoneBy")
   tripActivity               trip_activity[]          @relation("TripActivityActor")
   tripRedeliveriesCreated     trip_redeliveries[]      @relation("TripRedeliveryCreatedBy")
+  tripBillCopies              trip_bill_copies[]       @relation("TripBillCopyCopiedBy")
   billingSettingsUpdated      billing_settings[]       @relation("BillingSettingsUpdatedBy")
   appSettingsUpdated          app_settings[]           @relation("AppSettingsUpdatedBy")
   tintSkipsAsActor            tint_skip_events[]       @relation("SkipActor")
@@ -1140,6 +1142,9 @@ model orders {
   // trip after a truck came back. A STORED LINK: no re-delivery action writes
   // this order; its own tripDropId, stage and hold are untouched.
   tripRedeliveries         trip_redeliveries[]       @relation("TripRedeliveryOrder")
+  // Billing Print v2 (2026-10-05, Schema v27.56) — this bill copied on a trip.
+  // A STORED LINK: copying never writes this order (lib/billing/print.ts).
+  tripBillCopies           trip_bill_copies[]        @relation("TripBillCopyOrder")
   // TM Remove OBD (Feature 1)
   isRemoved                Boolean                   @default(false)
   removalReason            String?
@@ -3631,12 +3636,13 @@ model pick_delete_decisions {
 // why the CHECK pads to greatest(2, length). Do not reimplement the formatter
 // as a two-character slice, and do not narrow the CHECK back to a bare 2.
 //
-// 🔴 SEVEN FKs TO `users` — createdById / releasedById / dispatchedById /
+// 🔴 EIGHT FKs TO `users` — createdById / releasedById / dispatchedById /
 // cancelledById / shownById (slice 8) / sentToBillingById / billingCopiedById
-// (both slice 9, 2026-09-15). All seven carry an explicitly NAMED @relation on
-// BOTH sides (back-relations tripsCreated / tripsReleased / tripsDispatched /
-// tripsCancelled / tripsShown / tripsSentToBilling / tripsBillingCopied on the
-// users model). An unnamed one is a Prisma ambiguity
+// (both slice 9, 2026-09-15) / billingDoneById (Print v2, 2026-10-05, v27.56 —
+// live name trips_billingdonebyid_fkey, lowercase: created unquoted). All eight
+// carry an explicitly NAMED @relation on BOTH sides (back-relations tripsCreated
+// / tripsReleased / tripsDispatched / tripsCancelled / tripsShown /
+// tripsSentToBilling / tripsBillingCopied / tripsBillingDone on the users model). An unnamed one is a Prisma ambiguity
 // ERROR at generate time, not a warning — CORE §7.3. Same discipline as the
 // Mrn* / PickFinding* / CiReturn* clusters.
 //
@@ -3732,6 +3738,15 @@ model trips {
   billingCopiedAt   DateTime?             @db.Timestamptz(6)
   billingCopiedById Int?
   billingCopiedBy   users?                @relation("TripBillingCopiedBy", fields: [billingCopiedById], references: [id], onDelete: SetNull)
+  // BILLING DONE (Print v2, 2026-10-05, Schema v27.56). Billing's manual "Done —
+  // all copied" on the Print tab moves the trip to "Done today". Null = not done.
+  // From v2 `billingCopiedAt` above means only "the latest copy press"; which
+  // BILLS were copied lives in trip_bill_copies, one row per (trip, bill). The
+  // EIGHTH FK to `users`, named on both sides. ⚠ The live FK was created
+  // UNQUOTED, so its stored name is lowercase — hence the explicit `map:`.
+  billingDoneAt     DateTime?             @db.Timestamptz(6)
+  billingDoneById   Int?
+  billingDoneBy     users?                @relation("TripBillingDoneBy", fields: [billingDoneById], references: [id], onDelete: SetNull, map: "trips_billingdonebyid_fkey")
   createdAt        DateTime              @default(now()) @db.Timestamptz(6)
   createdById       Int
   createdBy         users                 @relation("TripCreatedBy", fields: [createdById], references: [id])
@@ -3742,6 +3757,8 @@ model trips {
   // Re-deliveries (v27.53): TWO relations to trip_redeliveries, so both are NAMED.
   redeliveries          trip_redeliveries[] @relation("TripRedeliveryTrip")
   redeliveriesPrevious  trip_redeliveries[] @relation("TripRedeliveryPrevTrip")
+  // Billing Print v2 (v27.56): the bills billing has copied on THIS trip.
+  billCopies            trip_bill_copies[]  @relation("TripBillCopyTrip")
 
   // ⚠ NO @@unique ON (tripDate, typeCode, seq) SINCE 2026-09-15. The live
   // uniqueness is the PARTIAL index trips_date_type_seq_live_key (see the header
@@ -3991,6 +4008,58 @@ model trip_redeliveries {
   @@unique([tripId, orderId], map: "trip_redeliveries_trip_order_key")
   @@index([tripDropId], map: "trip_redeliveries_drop_idx")
   @@index([orderId], map: "trip_redeliveries_order_idx")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BILLING PRINT v2 — per-bill copy (2026-10-05, Schema v27.56,
+// sql/2026-10-05-billing-print-v2.sql — applied live by Smart Flow the same day)
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// One row per (trip, bill) whose OBD number billing has copied on the Print
+// tab. Keyed per TRIP on purpose: a bill moved to another trip reads uncopied
+// there (a new truck is a new print run). NEVER writes orders — a copy is not a
+// stage event, and an orders write would fire every orders-keyed marker.
+//
+// 🔴 TWO LIVE CHECK CONSTRAINTS — NOT EXPRESSIBLE IN PRISMA, live text:
+//   chk_trip_bill_copies_kind:  CHECK ((kind = ANY (ARRAY['bulk'::text, 'single'::text, 'review'::text, 'backfill'::text])))
+//   chk_trip_bill_copies_actor: CHECK (((kind = 'backfill'::text) OR ("copiedById" IS NOT NULL)))
+// bulk = "Copy N OBDs" · single = "Copy this one" on a ready bill · review =
+// "Mark done" on a bill with a confirmed pick finding · backfill = written once
+// from the old invoices_copied rows (copiedById nullable for that kind only).
+// A new kind = ALTER the CHECK first, then the vocabulary constant in code.
+//
+// 🔴 trip_bill_copies_trip_order_key UNIQUE ("tripId","orderId") IS THE RACE
+// GUARD: two presses on one bill → the second is skipped (createMany
+// skipDuplicates). Do not drop it.
+//
+// ON DELETE RESTRICT on trip and order (trips and orders are never deleted);
+// copiedBy keeps the default rule, like trips.createdById. Three relations to
+// three different models, all NAMED anyway (the trips-family convention).
+//
+// Live-feed triggers trg_live_changes_trip_bill_copies_{ins,upd,del} (AFTER,
+// FOR EACH STATEMENT, live_changes_child_*('trip','parent','tripId')) — the
+// trip_drops / trip_redeliveries pattern.
+model trip_bill_copies {
+  id         Int      @id @default(autoincrement())
+  tripId     Int
+  trip       trips    @relation("TripBillCopyTrip", fields: [tripId], references: [id], onDelete: Restrict)
+  orderId    Int
+  order      orders   @relation("TripBillCopyOrder", fields: [orderId], references: [id], onDelete: Restrict)
+  /// Snapshot: the OBD number that went on the clipboard.
+  obdNumber  String
+  /// Snapshot at copy time; screens read the live orders.invoiceNo.
+  invoiceNo  String?
+  /// bulk | single | review | backfill (chk_trip_bill_copies_kind).
+  kind       String
+  copiedAt   DateTime @default(now()) @db.Timestamptz(6)
+  /// Null only on a 'backfill' row (chk_trip_bill_copies_actor).
+  copiedById Int?
+  copiedBy   users?   @relation("TripBillCopyCopiedBy", fields: [copiedById], references: [id], onDelete: NoAction)
+  createdAt  DateTime @default(now()) @db.Timestamptz(6)
+
+  // Hand-made names, so every one carries an explicit `map:`.
+  @@unique([tripId, orderId], map: "trip_bill_copies_trip_order_key")
+  @@index([orderId], map: "trip_bill_copies_order_idx")
 }
 
 // ─────────────────────────────────────────────
