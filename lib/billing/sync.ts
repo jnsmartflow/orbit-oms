@@ -12,10 +12,11 @@
 //   pickDelete → getPickDeleteMarker().count (lib/billing/pick-delete.ts; /api/billing/pick-delete/marker)
 //   mailOrders → touched only (the Orders tab's count is derived client-side from its own list)
 //
-// Cost when nothing of Billing's is touched: at most FOUR small statements, each keyed by the
+// Cost when nothing of Billing's is touched: at most FIVE small statements, each keyed by the
 // changed ids (orders by PK · order rows per SO on idx_orders_sonumber · so_tag_matches by
-// so_tag_matches_orderId_idx · trips by PK with one EXISTS on trip_activity) — each read only when
-// an arm that needs it is permitted and there are ids to ask about. Sequential awaits (CORE §3).
+// so_tag_matches_orderId_idx · trips by PK with one EXISTS on trip_activity · changed orders by PK
+// joined to their trip, Print v2) — each read only when an arm that needs it is permitted and there
+// are ids to ask about. Sequential awaits (CORE §3).
 
 import { prisma } from "@/lib/prisma";
 import { getISTDayRange } from "@/lib/dates";
@@ -106,10 +107,30 @@ export async function classifyBillingSync(body: SyncBody, arms: SyncArms): Promi
         ).map((t) => t.id)
       : [];
 
+  // 5. Print v2 (2026-10-05): changed ORDERS on a trip that is on the tab now (sent, not
+  //    cancelled) — a bill becoming ready, held, or getting a confirmed finding. A bill LEAVING a
+  //    trip clears its tripDropId, but the trip's bills_removed activity row arrives as a trip id
+  //    and is caught by step 4.
+  const printOrders =
+    arms.print && orderIds.length > 0
+      ? (
+          await prisma.orders.findMany({
+            where: {
+              id: { in: orderIds },
+              tripDrop: { trip: { sentToBillingAt: { not: null }, status: { not: "cancelled" } } },
+            },
+            select: { id: true },
+            take: 1,
+          })
+        ).map((o) => o.id)
+      : [];
+
   const istDay = getISTDayRange();
   return {
     picking: arms.picking && pickingTouched(facts, body.shown.pickingIds, orderIds, istDay),
-    print: arms.print && printTouched(printTrips, body.shown.printTripIds, tripIds),
+    print:
+      arms.print &&
+      printTouched(printTrips, body.shown.printTripIds, tripIds, printOrders, body.shown.printOrderIds, orderIds),
     telephonic: arms.telephonic && telephonicTouched(body.soTagChanged, matched, body.shown.telephonicOrderIds, orderIds),
     pickDelete: arms.pickDelete && pickDeleteTouched(soRowCounts, facts, body.shown.pickDeleteIds, orderIds),
     mailOrders: arms.mailOrders && body.mailOrderIds.length > 0,

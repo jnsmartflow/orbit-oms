@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
  * (live feed billing 2b-i, 2026-09-30; plan §D). READ-ONLY.
  *
  * Body: { orderIds, tripIds, soTagChanged, mailOrderIds,
- *         shown: { pickingIds, printTripIds, telephonicOrderIds, pickDeleteIds } } — every field
+ *         shown: { pickingIds, printTripIds, printOrderIds, telephonicOrderIds, pickDeleteIds } } — every field
  * optional. `shown` = the ids the client currently holds for each arm, so a row LEAVING a list is
  * seen even though its current state no longer matches.
  *

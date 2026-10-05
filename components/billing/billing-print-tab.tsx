@@ -2,6 +2,12 @@
 
 // Billing v2 — the "Print" tab (slice 9, 2026-09-15).
 //
+// ⚠ COMPILE BRIDGE (Billing Print v2 server, 2026-10-05). The server now copies
+// OBD numbers per bill (lib/billing/print.ts). This file was edited only enough
+// to compile against the new shape and post the new copy body; the next prompt
+// rewrites it (status pill, per-bill states, panel, Done button). The header
+// below still describes slice 9 until then.
+//
 // Trips the planner SENT TO BILLING. Billing copies each trip's invoice numbers
 // and pastes them into SAP, which prints. ORBIT PRINTS NOTHING.
 //
@@ -78,49 +84,27 @@ function firstName(name: string | null): string {
   return name ? name.split(" ")[0] : "";
 }
 
-/** "1 new invoice no" / "8 invoice nos". */
-function nosLabel(n: number, isNew: boolean): string {
-  return `${n} ${isNew ? "new " : ""}invoice no${n === 1 ? "" : "s"}`;
-}
-
 /** What the header button will do for this trip and this viewer. One place, used by the button AND Ctrl+C. */
 function copyPlan(trip: PrintTrip, canEdit: boolean): {
   label: string;
   numbers: string[];
+  orderIds: number[];
   records: boolean;
   enabled: boolean;
   primary: boolean;
   reason: string | null;
 } {
-  if (trip.state === "copied" || !canEdit) {
-    // Plain Copy: the whole set, recorded nowhere.
-    return {
-      label: "Copy",
-      numbers: trip.invoiceNos,
-      records: false,
-      enabled: trip.ready && trip.invoiceNos.length > 0,
-      primary: false,
-      reason: !trip.ready ? readinessReason(trip) : null,
-    };
-  }
-  const isNew = trip.state === "reopened";
-  if (!trip.ready || trip.copySet.length === 0) {
-    return {
-      label: isNew ? "Copy new invoice nos" : "Copy invoice nos",
-      numbers: [],
-      records: false,
-      enabled: false,
-      primary: true,
-      reason: readinessReason(trip),
-    };
-  }
+  // BRIDGE: the bulk Copy of every READY bill's OBD number. Without canEdit it
+  // is a plain Copy that records nothing.
+  const n = trip.readyCount;
   return {
-    label: `Copy ${nosLabel(trip.copySet.length, isNew)}`,
-    numbers: trip.copySet,
-    records: true,
-    enabled: true,
-    primary: true,
-    reason: null,
+    label: n > 0 ? `Copy ${n} OBD${n === 1 ? "" : "s"}` : "Copy · nothing ready",
+    numbers: trip.readyObds,
+    orderIds: trip.readyOrderIds,
+    records: canEdit && n > 0,
+    enabled: n > 0,
+    primary: canEdit,
+    reason: n > 0 ? null : readinessReason(trip),
   };
 }
 
@@ -129,13 +113,13 @@ function shortcutRefusal(trip: PrintTrip): string {
   if (trip.eligible === 0) {
     return trip.held > 0 ? `${trip.tripNumber}: every bill is on hold — nothing to copy` : `${trip.tripNumber} has no bills to copy`;
   }
-  const missing = trip.eligible - trip.invoiced;
-  return `${missing} bill${missing === 1 ? " has" : "s have"} no invoice number yet`;
+  if (trip.reviewCount > 0) return `${trip.reviewCount} with a pick finding — open it to copy`;
+  return `${trip.waitingCount} bill${trip.waitingCount === 1 ? " is" : "s are"} still being picked`;
 }
 
 function readinessReason(trip: PrintTrip): string {
   if (trip.eligible === 0) return trip.held > 0 ? "Every bill is on hold" : "No bills to copy";
-  return `${trip.invoiced} of ${trip.eligible} invoiced`;
+  return `${trip.copiedCount} of ${trip.eligible} copied`;
 }
 
 export function BillingPrintTab({
@@ -201,6 +185,9 @@ export function BillingPrintTab({
   // LIVE FEED (2b-ii): the trip ids this tab shows (no-op off the feed).
   const shownTripIds = useMemo(() => [...pending.map((t) => t.id), ...copied.map((t) => t.id)], [pending, copied]);
   useBillingShownIds("print-tab", "print", shownTripIds);
+  // Print v2: the bills on those trips — a stage / hold / finding change arrives as an order id.
+  const shownOrderIds = useMemo(() => [...pending, ...copied].flatMap((t) => t.rows.map((r) => r.orderId)), [pending, copied]);
+  useBillingShownIds("print-tab-bills", "printOrders", shownOrderIds);
 
   // The selection is an id, so it survives a refetch; if its trip left both
   // lists, fall back to the first card rather than showing nothing.
@@ -229,13 +216,13 @@ export function BillingPrintTab({
       const res = await fetch(`/api/billing/print/trip/${selected.id}/copy`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ invoiceNos: plan.numbers }),
+        body: JSON.stringify({ orderIds: plan.orderIds, kind: "bulk" }),
       });
-      const body = (await res.json().catch(() => ({}))) as { changed?: boolean; error?: string };
+      const body = (await res.json().catch(() => ({}))) as { alreadyCopied?: number; error?: string };
       if (!res.ok) {
         setNotice({ tone: "error", text: body.error ?? `Not recorded (HTTP ${res.status}).` });
-      } else if (!body.changed) {
-        setNotice({ tone: "info", text: `${selected.tripNumber} had already been copied — nothing new recorded.` });
+      } else if ((body.alreadyCopied ?? 0) > 0) {
+        setNotice({ tone: "info", text: `${body.alreadyCopied} already copied by someone else — not recorded again.` });
       }
     } catch {
       setNotice({ tone: "error", text: "Copied, but could not reach the server — the copy was NOT recorded. Press Copy again." });
@@ -437,9 +424,9 @@ export function BillingPrintTab({
                             ) : r.invoiceNo ? (
                               <>
                                 <span className="font-mono font-semibold text-gray-900">{r.invoiceNo}</span>
-                                {r.isNew && (
-                                  <span className="ml-1.5 rounded bg-brand-50 px-1.5 py-px text-[10px] font-bold text-brand-700">
-                                    new
+                                {r.state === "copied" && (
+                                  <span className="ml-1.5 rounded bg-ok/15 px-1.5 py-px text-[10px] font-bold text-ok-text">
+                                    copied
                                   </span>
                                 )}
                               </>
@@ -482,12 +469,12 @@ export function BillingPrintTab({
 /** "8 of 8 invoiced · ready" — and, on a copied trip, when and by whom. */
 function ReadinessText({ trip }: { trip: PrintTrip }) {
   const counted =
-    trip.eligible === 0 ? (trip.held > 0 ? "every bill on hold" : "no bills") : `${trip.invoiced} of ${trip.eligible} invoiced`;
+    trip.eligible === 0 ? (trip.held > 0 ? "every bill on hold" : "no bills") : `${trip.copiedCount} of ${trip.eligible} copied`;
   return (
     <>
-      <span className={trip.ready ? "font-semibold text-ok-text" : "font-semibold text-[#b45309]"}>
+      <span className={trip.readyCount > 0 ? "font-semibold text-ok-text" : "font-semibold text-[#b45309]"}>
         {counted}
-        {trip.ready ? " · ready" : ""}
+        {trip.readyCount > 0 ? ` · ${trip.readyCount} ready` : ""}
       </span>
       {/* Moved here from the deleted counts line, so a hold is still said out loud. */}
       {trip.held > 0 && <span className="text-[#475569]"> · {trip.held} on hold, not copied</span>}
@@ -508,17 +495,14 @@ function CaptionText({ trip, plan }: { trip: PrintTrip; plan: ReturnType<typeof 
   const bits: string[] = [];
   // Bills behind the numbers this press copies. More bills than numbers means
   // some bills share one — said out loud, so "8" next to 9 bills is not a mystery.
-  const billsBehind = plan.records ? trip.copyBillCount : trip.eligible;
-  if (billsBehind > plan.numbers.length) {
-    bits.push(`${plural(billsBehind, "bill")} · ${plural(plan.numbers.length, "invoice no")}`);
-  }
-  if (!plan.records && trip.state === "copied") bits.push("copies again, records nothing");
+  if (trip.reviewCount > 0) bits.push(`${trip.reviewCount} with a pick finding left out`);
+  if (!plan.records && plan.enabled) bits.push("copies, records nothing");
   return <>{bits.join(" · ")}</>;
 }
 
 function TripCard({ trip, active, onSelect }: { trip: PrintTrip; active: boolean; onSelect: () => void }) {
-  const done = trip.state === "copied";
-  const newCount = trip.state === "reopened" ? trip.copySet.length : 0;
+  const done = trip.state === "done";
+  const newCount = trip.state === "reopened" ? trip.eligible - trip.copiedCount : 0;
   return (
     <button
       type="button"
@@ -533,10 +517,10 @@ function TripCard({ trip, active, onSelect }: { trip: PrintTrip; active: boolean
         {!done && (
           <span
             className={`ml-auto rounded-full px-2 py-[1px] text-[9.5px] font-bold uppercase tracking-[0.06em] ${
-              trip.ready ? "bg-ok/15 text-ok-text" : "bg-amber-100 text-[#b45309]"
+              trip.canDone ? "bg-ok/15 text-ok-text" : "bg-amber-100 text-[#b45309]"
             }`}
           >
-            {trip.ready ? "ready" : `${trip.invoiced}/${trip.eligible}`}
+            {`${trip.copiedCount}/${trip.eligible}`}
           </span>
         )}
       </div>

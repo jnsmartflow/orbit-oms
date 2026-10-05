@@ -23,6 +23,7 @@ import { getISTDayRange } from "@/lib/dates";
 import { sortPickingQueue } from "@/lib/picking/sort";
 import { FLOOR_SPINE, compareCancelledRows, compareHoldRows } from "@/lib/floor/sort";
 import { resolveFloorDisplayDate } from "@/lib/floor/format";
+import { tintPhaseOf } from "@/lib/floor/tint-phase";
 import {
   STAGE_LADDER,
   PICKING_OPEN_STAGES,
@@ -117,46 +118,9 @@ const RAIL_STAGES: string[] = STAGE_LADDER
   .filter((d) => d.rank !== null && d.rank < 60)
   .map((d) => d.stage);
 
-/**
- * THE TINT ROOM'S OWN STAGES — a NEW named constant, not an edit to a shared
- * array (2026-09-13).
- *
- * ⚠ WRITTEN OUT, NOT DERIVED FROM RANK. Ranks 20-40 happen to be these three
- * today, and a rank filter would silently absorb any future mid-pipeline stage
- * into "this bill is in the tint room" — a claim about paint that a number
- * cannot make. The same argument `TINT_IN_PROGRESS_STAGES` in lib/floor/
- * release.ts makes for its own three names; a fourth here needs a person.
- *
- * ⚠ NOT ADDED TO RAIL_STAGES, PICKING_OPEN_STAGES OR ANY OTHER SHARED ARRAY.
- * Those feed predicates; this feeds a DISPLAY field and nothing else.
- */
-const TINT_PENDING_STAGE = "pending_tint_assignment";
-const TINT_ASSIGNED_STAGE = "tint_assigned";
-const TINT_MIXING_STAGE = "tinting_in_progress";
-
-/**
- * Where a bill stands with the tint room — `null` for every plain order.
- *
- * The full contract is on `FloorBoardRow.tintPhase` (lib/floor/types.ts); this
- * is its ONE implementation, so a second surface cannot invent a fourth answer.
- * "done" is deliberately the FALL-THROUGH for a tint bill: past the three tint
- * stages means the tint room is finished with it, whatever happened next.
- */
-function tintPhaseOf(
-  orderType: string,
-  workflowStage: string,
-): "pending" | "assigned" | "tinting" | "done" | null {
-  if (orderType !== "tint") return null;
-  if (workflowStage === TINT_PENDING_STAGE) return "pending";
-  // ⚠ ASSIGNED AND MIXING ARE SEPARATE ANSWERS (2026-09-14). They shared the
-  // "tinting" value until today, which made the board claim work was happening
-  // on a bill nobody had touched. One stage, one value, and a stage this
-  // function has not been taught about falls to "done" — visibly wrong on a
-  // tint bill rather than invisibly folded into a state that looks busy.
-  if (workflowStage === TINT_ASSIGNED_STAGE) return "assigned";
-  if (workflowStage === TINT_MIXING_STAGE) return "tinting";
-  return "done";
-}
+// tintPhaseOf and the three tint-room stage names moved UNCHANGED to
+// lib/floor/tint-phase.ts (2026-10-05) so Billing's Print tab shares the one
+// implementation. Imported above.
 
 /**
  * The UN-SLOTTED arm — bills the dispatch engine could not schedule.
@@ -1048,7 +1012,7 @@ export async function getFloorBoard(
       // A bypassed bill reads phase "done" and colourWork "base".
       colourWork: colourWorkByOrder.get(order.id) ?? null,
       // Which of the three tint pills this row wears, or null for a plain order.
-      // Derived HERE and only here — see tintPhaseOf above and the field's own
+      // Derived HERE and only here — see tintPhaseOf (lib/floor/tint-phase.ts) and the field's own
       // contract on FloorBoardRow. No extra query: `orderType` and
       // `workflowStage` are already on the fetched row.
       // A "Base — No Tint" bill (colour rule says base) carries NO tint phase

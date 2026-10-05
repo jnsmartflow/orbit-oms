@@ -39,6 +39,7 @@ import {
   tooManyForSync,
   type BillingArm,
   type BillingCounts,
+  type BillingShownKey,
 } from "@/lib/billing/live-rule";
 
 /** localStorage: "the Billing feed was on last time" (per browser). */
@@ -63,7 +64,7 @@ interface BillingLiveApi {
   counts: BillingCounts | null;
   register(arm: BillingArm, handle: BillingArmHandle): () => void;
   /** The ids a surface currently shows for an arm (`key` = the surface); null clears. */
-  setShown(key: string, arm: BillingArm, ids: readonly number[] | null): void;
+  setShown(key: string, arm: BillingShownKey, ids: readonly number[] | null): void;
   /** An immediate glance (≤ 1 per 3 s), e.g. when an Import on this screen finishes. */
   glanceNow(why: string): void;
 }
@@ -87,7 +88,7 @@ export function useBillingLiveCounts(): BillingCounts | null {
 }
 
 /** Report the ids this surface shows for an arm (the `shown` of POST /api/billing/sync). No-op when not live. */
-export function useBillingShownIds(key: string, arm: BillingArm, ids: readonly number[]): void {
+export function useBillingShownIds(key: string, arm: BillingShownKey, ids: readonly number[]): void {
   const api = useContext(BillingLiveContext);
   const sig = ids.join(",");
   useEffect(() => {
@@ -139,7 +140,7 @@ function ActiveBillingLiveRoot({ children, ...props }: BillingLiveRootProps) {
   propsRef.current = props;
 
   const handles = useRef(new Map<BillingArm, Set<BillingArmHandle>>());
-  const shown = useRef(new Map<string, { arm: BillingArm; ids: readonly number[] }>());
+  const shown = useRef(new Map<string, { arm: BillingShownKey; ids: readonly number[] }>());
   const [counts, setCounts] = useState<BillingCounts>({});
   const countsRef = useRef<BillingCounts>({});
   const flushingRef = useRef(false);
@@ -236,7 +237,7 @@ function ActiveBillingLiveRoot({ children, ...props }: BillingLiveRootProps) {
   );
 
   const shownByArm = useCallback(() => {
-    const out: Partial<Record<BillingArm, number[]>> = {};
+    const out: Partial<Record<BillingShownKey, number[]>> = {};
     shown.current.forEach(({ arm, ids }) => {
       (out[arm] ??= []).push(...ids);
     });
@@ -319,7 +320,7 @@ function ActiveBillingLiveRoot({ children, ...props }: BillingLiveRootProps) {
     };
   }, []);
 
-  const setShown = useCallback((key: string, arm: BillingArm, ids: readonly number[] | null) => {
+  const setShown = useCallback((key: string, arm: BillingShownKey, ids: readonly number[] | null) => {
     if (ids === null) shown.current.delete(key);
     else shown.current.set(key, { arm, ids });
   }, []);

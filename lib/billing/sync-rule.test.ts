@@ -26,7 +26,7 @@ test("parseSyncBody: absent fields are empty; ids de-duplicated", () => {
   assert.deepEqual(b.orderIds, [3, 4]);
   assert.deepEqual(b.tripIds, []);
   assert.equal(b.soTagChanged, false);
-  assert.deepEqual(b.shown, { pickingIds: [], printTripIds: [], telephonicOrderIds: [], pickDeleteIds: [] });
+  assert.deepEqual(b.shown, { pickingIds: [], printTripIds: [], printOrderIds: [], telephonicOrderIds: [], pickDeleteIds: [] });
   assert.ok(typeof parseSyncBody(null) !== "string");
 });
 
@@ -35,6 +35,7 @@ test("parseSyncBody: rejects non-integers, negatives, oversize lists and a non-b
   assert.equal(typeof parseSyncBody({ tripIds: [-1] }), "string");
   assert.equal(typeof parseSyncBody({ mailOrderIds: "1,2" }), "string");
   assert.equal(typeof parseSyncBody({ shown: { pickingIds: [0] } }), "string");
+  assert.equal(typeof parseSyncBody({ shown: { printOrderIds: [2.5] } }), "string");
   assert.equal(typeof parseSyncBody({ orderIds: Array.from({ length: SYNC_MAX_IDS + 1 }, (_, i) => i + 1) }), "string");
   assert.equal(typeof parseSyncBody({ soTagChanged: "yes" }), "string");
 });
@@ -68,8 +69,17 @@ test("telephonic: a tag change, a matched bill, or a shown bill", () => {
 });
 
 test("print: a trip that is or was sent to billing, or a shown trip", () => {
-  assert.equal(printTouched([], [], [5]), false);
-  assert.equal(printTouched([5], [], [5]), true);
-  assert.equal(printTouched([], [5], [5]), true);
-  assert.equal(printTouched([], [6], [5]), false);
+  assert.equal(printTouched([], [], [5], [], [], []), false);
+  assert.equal(printTouched([5], [], [5], [], [], []), true);
+  assert.equal(printTouched([], [5], [5], [], [], []), true);
+  assert.equal(printTouched([], [6], [5], [], [], []), false);
+});
+
+test("print v2: a changed bill on a trip on the tab, or a shown bill (stage, hold, finding)", () => {
+  // the server found the changed order on a sent trip
+  assert.equal(printTouched([], [], [], [41], [], [41]), true);
+  // a bill the open tab shows, whatever its trip now
+  assert.equal(printTouched([], [], [], [], [41, 42], [42]), true);
+  // an order on no Print trip, not shown
+  assert.equal(printTouched([], [], [], [], [41], [99]), false);
 });

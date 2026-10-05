@@ -9,7 +9,7 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { buildBillingPendingWhere } from "@/lib/billing/picking-where";
-import { getPrintWorkTripIds, loadPrintTrips } from "@/lib/billing/print";
+import { getPrintWorkTripIds } from "@/lib/billing/print";
 
 /**
  * The Picking pill: COUNT(*) over buildBillingPendingWhere() — outstanding work only, the
@@ -24,19 +24,9 @@ export async function countBillingPending(hideExclusion?: Prisma.ordersWhereInpu
 
 /**
  * The Print pill: trips with copy work outstanding — the SAME number the list's `pending` holds.
- * Never-copied trips are counted without loading them; only copied trips touched since their
- * copy are loaded, to confirm they reopened (usually none).
+ * Exact since Print v2 (2026-10-05): getPrintWorkTripIds is one statement over the per-bill copy
+ * rows, so nothing has to be loaded to confirm a reopen any more.
  */
 export async function getPrintCount(): Promise<number> {
-  const workIds = await getPrintWorkTripIds();
-  // Split the work ids: never-copied ones count as they are; copied-and-touched
-  // ones are loaded and counted only if they really reopened.
-  const touched = workIds.length
-    ? await prisma.trips.findMany({
-        where: { id: { in: workIds }, billingCopiedAt: { not: null } },
-        select: { id: true },
-      })
-    : [];
-  const reopened = (await loadPrintTrips(touched.map((t) => t.id))).filter((t) => t.state === "reopened").length;
-  return workIds.length - touched.length + reopened;
+  return (await getPrintWorkTripIds()).length;
 }

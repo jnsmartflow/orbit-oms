@@ -18,6 +18,9 @@ export interface SyncBody {
   shown: {
     pickingIds: number[];
     printTripIds: number[];
+    /** The bills on the Print trips the tab shows (Print v2, 2026-10-05) — a bill's stage
+     *  change, hold, or confirmed finding arrives as an ORDER id, not a trip id. */
+    printOrderIds: number[];
     telephonicOrderIds: number[];
     pickDeleteIds: number[];
   };
@@ -42,9 +45,10 @@ export function parseSyncBody(raw: unknown): SyncBody | string {
   const mailOrderIds = ids(b.mailOrderIds, SYNC_MAX_IDS, "mailOrderIds");
   const pickingIds = ids(s.pickingIds, SYNC_MAX_SHOWN, "shown.pickingIds");
   const printTripIds = ids(s.printTripIds, SYNC_MAX_SHOWN, "shown.printTripIds");
+  const printOrderIds = ids(s.printOrderIds, SYNC_MAX_SHOWN, "shown.printOrderIds");
   const telephonicOrderIds = ids(s.telephonicOrderIds, SYNC_MAX_SHOWN, "shown.telephonicOrderIds");
   const pickDeleteIds = ids(s.pickDeleteIds, SYNC_MAX_SHOWN, "shown.pickDeleteIds");
-  for (const r of [orderIds, tripIds, mailOrderIds, pickingIds, printTripIds, telephonicOrderIds, pickDeleteIds]) {
+  for (const r of [orderIds, tripIds, mailOrderIds, pickingIds, printTripIds, printOrderIds, telephonicOrderIds, pickDeleteIds]) {
     if (typeof r === "string") return r;
   }
   if (b.soTagChanged !== undefined && typeof b.soTagChanged !== "boolean") return "soTagChanged must be a boolean";
@@ -56,6 +60,7 @@ export function parseSyncBody(raw: unknown): SyncBody | string {
     shown: {
       pickingIds: pickingIds as number[],
       printTripIds: printTripIds as number[],
+      printOrderIds: printOrderIds as number[],
       telephonicOrderIds: telephonicOrderIds as number[],
       pickDeleteIds: pickDeleteIds as number[],
     },
@@ -119,12 +124,29 @@ export function telephonicTouched(
   return soTagChanged || matchedOrderIds.length > 0 || overlaps(changedOrderIds, shownTelephonicOrderIds);
 }
 
+/**
+ * Print: a changed trip that is or was on the tab (send, take-back, copy, Done, a bill joining or
+ * leaving), a shown trip, a changed ORDER sitting on a trip that is on the tab, or a shown bill.
+ *
+ * ⚠ THE ORDER HALF IS PRINT v2 (2026-10-05). Each bill now carries a state — picking Done, held,
+ * a confirmed finding — and every one of those changes arrives as an ORDER id (a pick_findings
+ * change too, through its live-feed trigger, entity 'order'). Before this the arm looked at trip
+ * ids only, so on the feed a bill becoming ready never refreshed the tab.
+ */
 export function printTouched(
   printRelevantTripIds: readonly number[],
   shownPrintTripIds: readonly number[],
   changedTripIds: readonly number[],
+  printRelevantOrderIds: readonly number[],
+  shownPrintOrderIds: readonly number[],
+  changedOrderIds: readonly number[],
 ): boolean {
-  return printRelevantTripIds.length > 0 || overlaps(changedTripIds, shownPrintTripIds);
+  return (
+    printRelevantTripIds.length > 0 ||
+    overlaps(changedTripIds, shownPrintTripIds) ||
+    printRelevantOrderIds.length > 0 ||
+    overlaps(changedOrderIds, shownPrintOrderIds)
+  );
 }
 
 export function overlaps(a: readonly number[], b: readonly number[]): boolean {

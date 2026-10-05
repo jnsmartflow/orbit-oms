@@ -77,34 +77,26 @@ export const TRIP_SHOWN = "shown";
 export const TRIP_TAKEN_BACK = "taken_back";
 
 /**
- * Send to billing, its take-back, and the Print tab's copy (slice 9,
- * 2026-09-15). The planner's Send to billing puts the trip on the Billing
- * screen's Print tab; billing's Copy puts the trip's invoice numbers on the
- * clipboard for SAP and records that it happened.
+ * Send to billing and its take-back (slice 9, 2026-09-15). The planner's Send
+ * to billing puts the trip on the Billing screen's Print tab.
  *
- * 🔴 `invoices_copied` CARRIES THE NUMBERS, AND THAT IS LOAD-BEARING. Its
- * `detail.invoiceNos` is the ONLY record of which numbers billing has taken.
- * "New since copy" is the trip's current numbers minus the union of every
- * such row's list (lib/billing/print.ts) — so a number is never offered twice.
- * Never rewrite or delete these rows.
- *
- * ⚠ HISTORICAL ONCE BILLING PRINT v2's SERVER SHIPS (Schema v27.56,
- * 2026-10-05). v2 copies OBD numbers PER BILL and records them in
- * trip_bill_copies (one row per trip + bill) with a `bills_copied` row; a
- * finished trip gets `billing_done`. After that nothing writes
- * `invoices_copied`; its old rows stay (they were backfilled into
- * trip_bill_copies as kind 'backfill') and the constant and the CHECK value stay
- * with them. The two rules above — "never a partial set" and the take-back lock
- * — are being REMOVED by v2 on purpose (owner, 2026-10-05). Do not restore them.
+ * ⚠ `invoices_copied` IS HISTORICAL — NOTHING WRITES IT SINCE BILLING PRINT
+ * v2 (Schema v27.56, 2026-10-05). Slice 9 copied a trip's INVOICE numbers as
+ * one set; each row's `detail.invoiceNos` was the record of what was taken.
+ * v2 copies OBD numbers PER BILL into trip_bill_copies (one row per trip +
+ * bill) with a `bills_copied` row, and a finished trip gets `billing_done`
+ * (below). The old rows were backfilled into trip_bill_copies as kind
+ * 'backfill'. They stay — never rewrite or delete them — and so do the constant
+ * and its CHECK value. Slice 9's "never a partial set" was REMOVED by v2 on
+ * purpose (owner, 2026-10-05); do not restore it.
  */
 export const TRIP_SENT_TO_BILLING = "sent_to_billing";
 export const TRIP_TAKEN_BACK_FROM_BILLING = "taken_back_from_billing";
 export const TRIP_INVOICES_COPIED = "invoices_copied";
 
 /**
- * Billing Print v2 (2026-10-05, Schema v27.56). Registered in the vocabulary
- * and the live CHECK now; their loggers and callers arrive with the Print v2
- * server (lib/billing/print.ts).
+ * Billing Print v2 (2026-10-05, Schema v27.56). Written by lib/billing/print.ts
+ * (copyTripBills, markTripBillingDone) through the two loggers below.
  *   bills_copied — billing copied one or more bills' OBD numbers on this trip
  *                  (bulk / single / review); the trip_bill_copies rows are the
  *                  per-bill record, this row is the trip's history line.
@@ -623,12 +615,13 @@ export async function logTripTakenBackFromBilling(opts: {
 }
 
 /**
- * Billing copied the trip's invoice numbers on the Print tab (slice 9).
+ * HISTORICAL — NO CALLER SINCE BILLING PRINT v2 (2026-10-05). Kept so the old
+ * rows stay explained. Billing copied the trip's invoice numbers (slice 9).
  *
  * 🔴 `invoiceNos` IS EXACTLY WHAT THIS PRESS PUT ON THE CLIPBOARD — distinct,
  * in table order. On a first copy that is every number on the trip; on a copy
  * after new bills arrived it is ONLY the new ones. The union across rows is
- * what lib/billing/print.ts subtracts to find "new since copy". A re-copy of a
+ * what slice 9's lib/billing/print.ts subtracted to find "new since copy". A re-copy of a
  * finished trip writes no row at all.
  */
 export async function logTripInvoicesCopied(opts: {
@@ -649,6 +642,50 @@ export async function logTripInvoicesCopied(opts: {
     actorId: opts.actorId,
     summary: `Billing copied ${nos}${shared} for trip ${opts.tripNumber}`,
     detail: { invoiceNos: opts.invoiceNos, billCount: opts.billCount, kind: opts.kind },
+  });
+}
+
+/**
+ * Billing copied bills' OBD numbers on the Print tab (Print v2, 2026-10-05).
+ * The trip_bill_copies rows are the per-bill record; this is the trip's history
+ * line. `orderIds` / `obdNumbers` are the bills that LANDED in this press — a
+ * bill someone else had already copied is not in them.
+ */
+export async function logTripBillsCopied(opts: {
+  tripId: number;
+  actorId: number;
+  tripNumber: string;
+  orderIds: number[];
+  obdNumbers: string[];
+  kind: "bulk" | "single" | "review";
+}): Promise<void> {
+  const n = opts.obdNumbers.length;
+  const what =
+    opts.kind === "review"
+      ? `marked ${opts.obdNumbers[0] ?? "a bill"} done (pick finding)`
+      : `copied ${n === 1 ? `OBD ${opts.obdNumbers[0]}` : `${n} OBDs`}`;
+  await writeActivity({
+    tripId: opts.tripId,
+    action: TRIP_BILLS_COPIED,
+    actorId: opts.actorId,
+    summary: `Billing ${what} for trip ${opts.tripNumber}`,
+    detail: { orderIds: opts.orderIds, obdNumbers: opts.obdNumbers, kind: opts.kind },
+  });
+}
+
+/** Billing pressed "Done — all copied" on the Print tab (Print v2, 2026-10-05). */
+export async function logTripBillingDone(opts: {
+  tripId: number;
+  actorId: number;
+  tripNumber: string;
+  copiedCount: number;
+}): Promise<void> {
+  await writeActivity({
+    tripId: opts.tripId,
+    action: TRIP_BILLING_DONE,
+    actorId: opts.actorId,
+    summary: `Billing done for trip ${opts.tripNumber} — ${bills(opts.copiedCount)} copied`,
+    detail: { copiedCount: opts.copiedCount },
   });
 }
 

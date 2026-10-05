@@ -12,13 +12,12 @@ export const dynamic = "force-dynamic";
  * for the Print pill's count and the tab's refetch.
  *
  *   count  — trips with copy work outstanding: the SAME number the list's
- *            `pending` holds. Never-copied trips are counted without loading
- *            them; only copied trips touched since their copy are loaded, to
- *            confirm they reopened (usually none).
- *   latest — lib/billing/print.ts getPrintMarkerLatest: one statement.
+ *            `pending` holds — one exact statement since Print v2 (2026-10-05).
+ *   latest — lib/billing/print.ts getPrintMarkerLatest: one statement, which
+ *            also watches confirmed pick findings and the per-bill copy rows.
  *
  * `?scope=` and `?date=` are sent by the shared marker hook and ignored: the
- * count is all-dates, and a copy on any day moves trips.updatedAt.
+ * count is all-dates, and a copy or Done on any day moves trips.updatedAt.
  *
  * READ-ONLY — never add a write here (CORE §3). Gated on `billing_print` canView.
  */

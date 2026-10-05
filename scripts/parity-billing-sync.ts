@@ -22,7 +22,7 @@ import "dotenv/config";
 import { prisma } from "@/lib/prisma";
 import { getTelephonicMarker, waitingTagWhere, type TelephonicMarker } from "@/lib/billing/telephonic";
 import { buildBillingPendingWhere } from "@/lib/billing/picking-where";
-import { getPrintWorkTripIds, loadPrintTrips } from "@/lib/billing/print";
+import { getPrintWorkTripIds } from "@/lib/billing/print";
 import { billingSync, classifyBillingSync, type SyncArms } from "@/lib/billing/sync";
 import type { SyncBody } from "@/lib/billing/sync-rule";
 import { getPickDeleteMarkerLegacy } from "./parity-pick-delete-legacy";
@@ -70,17 +70,13 @@ async function pickingCountLegacy(): Promise<number> {
   return countAgg._count;
 }
 
-/** app/api/billing/print/marker/route.ts at 29ae80a7 — the count half, verbatim. */
+/**
+ * The Print marker's count. Was the 29ae80a7 body (work ids, then load the copied ones to confirm a
+ * reopen); since Billing Print v2 (2026-10-05) getPrintWorkTripIds is EXACT and the marker counts
+ * it directly, so the old body no longer describes the marker and would report a false difference.
+ */
 async function printCountLegacy(): Promise<number> {
-  const workIds = await getPrintWorkTripIds();
-  const touched = workIds.length
-    ? await prisma.trips.findMany({
-        where: { id: { in: workIds }, billingCopiedAt: { not: null } },
-        select: { id: true },
-      })
-    : [];
-  const reopened = (await loadPrintTrips(touched.map((t) => t.id))).filter((t) => t.state === "reopened").length;
-  return workIds.length - touched.length + reopened;
+  return (await getPrintWorkTripIds()).length;
 }
 
 async function markerCounts(now: Date) {
@@ -137,7 +133,7 @@ const body = (p: Partial<SyncBody>): SyncBody => ({
   soTagChanged: false,
   mailOrderIds: [],
   ...p,
-  shown: { pickingIds: [], printTripIds: [], telephonicOrderIds: [], pickDeleteIds: [], ...(p.shown ?? {}) },
+  shown: { pickingIds: [], printTripIds: [], printOrderIds: [], telephonicOrderIds: [], pickDeleteIds: [], ...(p.shown ?? {}) },
 });
 
 (async () => {
@@ -188,7 +184,7 @@ const body = (p: Partial<SyncBody>): SyncBody => ({
     tripIds: [anyTrip],
     soTagChanged: true,
     mailOrderIds: [1],
-    shown: { pickingIds: [anyOrder], printTripIds: [anyTrip], telephonicOrderIds: [anyOrder], pickDeleteIds: [anyOrder] },
+    shown: { pickingIds: [anyOrder], printTripIds: [anyTrip], printOrderIds: [anyOrder], telephonicOrderIds: [anyOrder], pickDeleteIds: [anyOrder] },
   });
   await compare("all five arms touched", async () => [
     { picking: true, print: true, telephonic: true, pickDelete: true, mailOrders: true },

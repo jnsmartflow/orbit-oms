@@ -9,6 +9,13 @@ export const BILLING_ARMS: readonly BillingArm[] = ["picking", "print", "telepho
 
 export type BillingCounts = Partial<Record<BillingArm, number>>;
 
+/**
+ * What a surface reports as "shown" (useBillingShownIds): one of the four arms, or "printOrders" —
+ * the BILLS on the Print trips on screen (Print v2, 2026-10-05). Not an arm: it has no pill and no
+ * subscribers of its own; a match fires the Print arm.
+ */
+export type BillingShownKey = BillingArm | "printOrders";
+
 /** The feed's topics for Billing (plan §D). */
 export const BILLING_TOPICS = "order,trip,config,mail_order,so_tag";
 
@@ -28,7 +35,7 @@ const nums = (xs: readonly (number | string)[] | undefined): number[] =>
  * Order / trip ids beyond the route's cap are the caller's cue for a full refresh (see
  * `tooManyForSync`), never silently cut.
  */
-export function syncBodyFromPatch(patch: BillingPatch, shown: Partial<Record<BillingArm, readonly number[]>>): SyncBody {
+export function syncBodyFromPatch(patch: BillingPatch, shown: Partial<Record<BillingShownKey, readonly number[]>>): SyncBody {
   const cap = (xs: readonly number[] | undefined) => Array.from(new Set(xs ?? [])).slice(0, SYNC_MAX_SHOWN);
   return {
     orderIds: patch.orderIds,
@@ -38,6 +45,7 @@ export function syncBodyFromPatch(patch: BillingPatch, shown: Partial<Record<Bil
     shown: {
       pickingIds: cap(shown.picking),
       printTripIds: cap(shown.print),
+      printOrderIds: cap(shown.printOrders),
       telephonicOrderIds: cap(shown.telephonic),
       pickDeleteIds: cap(shown.pickDelete),
     },

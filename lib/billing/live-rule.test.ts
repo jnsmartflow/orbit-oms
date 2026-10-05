@@ -19,14 +19,14 @@ const ALL = { picking: true, print: true, telephonic: true, pickDelete: true };
 test("syncBodyFromPatch: ids, so_tag flag, mail-order ids, shown per arm (deduped)", () => {
   const b = syncBodyFromPatch(
     { orderIds: [1, 2], tripIds: [5], extra: { mail_order: [501, "502"], so_tag: [7] } },
-    { picking: [1, 1, 3], pickDelete: [9] },
+    { picking: [1, 1, 3], pickDelete: [9], printOrders: [41, 41, 42] },
   );
   assert.deepEqual(b, {
     orderIds: [1, 2],
     tripIds: [5],
     soTagChanged: true,
     mailOrderIds: [501, 502],
-    shown: { pickingIds: [1, 3], printTripIds: [], telephonicOrderIds: [], pickDeleteIds: [9] },
+    shown: { pickingIds: [1, 3], printTripIds: [], printOrderIds: [41, 42], telephonicOrderIds: [], pickDeleteIds: [9] },
   });
   const plain = syncBodyFromPatch({ orderIds: [], tripIds: [] }, {});
   assert.equal(plain.soTagChanged, false);
