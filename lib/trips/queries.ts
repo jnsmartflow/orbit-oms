@@ -100,9 +100,10 @@ export interface TripDropSummary {
   litres: number;
   /**
    * RE-DELIVERIES on this stop (2026-10-03, Schema v27.53) — bills that came
-   * back on an earlier truck, planned again here. NOT in `orderIds`, `bills`
-   * or `litres`: the bill's own tripDropId still points at its FIRST trip, so
-   * these are a separate list, in id order.
+   * back on an earlier truck, planned again here. NOT in `orderIds` or `bills`:
+   * the bill's own tripDropId still points at its FIRST trip, so these are a
+   * separate list, in id order. Their litres ARE in `litres` (owner,
+   * 2026-10-05) — the truck carries them.
    */
   redeliveries: TripRedeliveryRow[];
 }
@@ -214,10 +215,14 @@ export interface TripSummary {
   dispatchedCount: number;
   /**
    * Re-deliveries planned on this trip (2026-10-03, Schema v27.53). 🔴 A
-   * SEPARATE FIGURE — never inside `counts`, the buckets, `isReady`,
-   * `deliveryTypes` or the litres/kg: those describe the trip's OWN bills
-   * (orders.tripDropId), and a re-delivered bill's pointer stays on its first
-   * trip. "+1 re-del" on the rail; Send to billing still sees 0 bills.
+   * SEPARATE FIGURE — never inside `counts`, the buckets, `isReady` or
+   * `deliveryTypes`: those describe the trip's OWN bills (orders.tripDropId),
+   * and a re-delivered bill's pointer stays on its first trip. "+1 re-del" on
+   * the rail; Send to billing still sees 0 bills.
+   *
+   * 🔴 BUT THE LOAD COUNTS THEM (owner, 2026-10-05, reversing plan rev 5 for
+   * litres/kg only): `totalLitres`, `totalWeightKg` and `weightUnknownCount`
+   * include every re-delivery on the trip — the truck physically carries them.
    */
   redeliveryCount: number;
   totalLitres: number;
@@ -242,7 +247,8 @@ export interface TripSummary {
   /** `vehicle_master.category` ("Tata 407") for a master vehicle; null for a typed plate or none. */
   vehicleCategory: string | null;
   /**
-   * Total weight of the trip's non-removed bills, kg, from the same
+   * Total weight of the trip's non-removed bills PLUS its re-deliveries
+   * (2026-10-05), kg, from the same
    * import_obd_query_summary read as the litres. A bill with no snapshot row adds
    * nothing and is counted in `weightUnknownCount`, so the screen can tell a
    * true total from a partial one.
@@ -505,6 +511,42 @@ async function loadTripBills(dropIds: number[]): Promise<TripBillRow[]> {
   });
 }
 
+/** One re-delivery's physical load — the slice of TripBillRow the litres/kg sums read. */
+type RedeliveryLoad = Pick<TripBillRow, "litres" | "weightKg" | "isGift">;
+
+/**
+ * The litres / kg / gift flag of each re-delivered order, by order id
+ * (2026-10-05). TWO batched reads — orders, then import_obd_query_summary — the
+ * same source the re-delivery's own row shows (`volumeLitres` / `weightKg`
+ * off the snapshot). Never per row.
+ *
+ * ⚠ NO `isRemoved` / Hide FILTER. A re-delivery whose board row is null (an
+ * admin Hide rule) is still on the truck, so its volume still counts. SELECT-only.
+ */
+async function loadRedeliveryLoads(orderIds: number[]): Promise<Map<number, RedeliveryLoad>> {
+  const ids = Array.from(new Set(orderIds));
+  if (ids.length === 0) return new Map();
+  const orders = await prisma.orders.findMany({
+    where: { id: { in: ids } },
+    select: { id: true, materialType: true },
+  });
+  const snapshots = await prisma.import_obd_query_summary.findMany({
+    where: { orderId: { in: ids } },
+    select: { orderId: true, totalVolume: true, totalWeight: true },
+  });
+  const snapByOrderId = new Map<number, { totalVolume: number; totalWeight: number }>();
+  for (const s of snapshots) {
+    if (s.orderId !== null) snapByOrderId.set(s.orderId, s);
+  }
+  return new Map(
+    orders.map((o) => {
+      const snap = snapByOrderId.get(o.id);
+      // Same choices as loadTripBills: no snapshot → 0 L, unknown (null) kg.
+      return [o.id, { litres: snap?.totalVolume ?? 0, weightKg: snap?.totalWeight ?? null, isGift: isGiftBill(o.materialType) }];
+    }),
+  );
+}
+
 /** The trip row shape both readers select. Kept in one place so they cannot drift. */
 const TRIP_SELECT = {
   id: true,
@@ -731,6 +773,7 @@ function toSummary(
   dropCount: number,
   areaStops: readonly AreaStop[],
   redeliveryCount: number,
+  redeliveryLoads: readonly RedeliveryLoad[],
 ): TripSummary {
   const counts: TripBillCounts = { ...EMPTY_COUNTS };
   let totalLitres = 0;
@@ -748,6 +791,13 @@ function toSummary(
     // above as a bill. lib/orders/gift.ts.
     totalLitres += loadLitres(b.litres, b.isGift);
     const kg = loadKg(b.weightKg, b.isGift);
+    if (kg === null) weightUnknownCount += 1;
+    else totalWeightKg += kg;
+  }
+  // 2026-10-05 owner: re-delivery litres/kg count in physical load; NOT in bill counts or buckets. Do not remove.
+  for (const r of redeliveryLoads) {
+    totalLitres += loadLitres(r.litres, r.isGift);
+    const kg = loadKg(r.weightKg, r.isGift);
     if (kg === null) weightUnknownCount += 1;
     else totalWeightKg += kg;
   }
@@ -909,11 +959,21 @@ export async function getTripsForDate(
   // trip's area/route, plan rev 5 §2 #9).
   const redeliveryRows = await prisma.trip_redeliveries.findMany({
     where: { tripId: { in: trips.map((t) => t.id) } },
-    select: { tripId: true, tripDropId: true },
+    select: { tripId: true, tripDropId: true, orderId: true },
   });
   const redeliveryCountByTripId = new Map<number, number>();
   for (const r of redeliveryRows) {
     redeliveryCountByTripId.set(r.tripId, (redeliveryCountByTripId.get(r.tripId) ?? 0) + 1);
+  }
+  // Their physical load (2026-10-05) — one batched pair of reads for the feed.
+  const redeliveryLoadByOrderId = await loadRedeliveryLoads(redeliveryRows.map((r) => r.orderId));
+  const redeliveryLoadsByTripId = new Map<number, RedeliveryLoad[]>();
+  for (const r of redeliveryRows) {
+    const load = redeliveryLoadByOrderId.get(r.orderId);
+    if (!load) continue;
+    const arr = redeliveryLoadsByTripId.get(r.tripId) ?? [];
+    arr.push(load);
+    redeliveryLoadsByTripId.set(r.tripId, arr);
   }
   const dropIdsWithRedeliveries = new Set(redeliveryRows.map((r) => r.tripDropId));
 
@@ -950,6 +1010,7 @@ export async function getTripsForDate(
       dropCountByTripId.get(t.id) ?? 0,
       areaStopsByTripId.get(t.id) ?? [],
       redeliveryCountByTripId.get(t.id) ?? 0,
+      redeliveryLoadsByTripId.get(t.id) ?? [],
     ),
   );
 }
@@ -1062,6 +1123,12 @@ export async function getTripDetail(tripId: number): Promise<TripDetail | null> 
     arr.push(row);
     redeliveriesByDropId.set(tripDropId, arr);
   }
+  const redeliveryLoadByOrderId = await loadRedeliveryLoads(redeliveries.map((r) => r.row.orderId));
+  const redeliveryLitres = (rows: readonly TripRedeliveryRow[]) =>
+    rows.reduce((sum, r) => {
+      const load = redeliveryLoadByOrderId.get(r.orderId);
+      return load ? sum + loadLitres(load.litres, load.isGift) : sum;
+    }, 0);
 
   const billsByDropId = new Map<number, TripBillRow[]>();
   for (const b of bills) {
@@ -1087,7 +1154,8 @@ export async function getTripDetail(tripId: number): Promise<TripDetail | null> 
       orderIds: own.map((b) => b.id),
       bills: own.length,
       // `bills` above counts a gift; the litres leave it out (lib/orders/gift.ts).
-      litres: own.reduce((sum, b) => sum + loadLitres(b.litres, b.isGift), 0),
+      // Re-deliveries add their litres (owner, 2026-10-05) — never their count.
+      litres: own.reduce((sum, b) => sum + loadLitres(b.litres, b.isGift), 0) + redeliveryLitres(redel),
       redeliveries: redel,
     };
   });
@@ -1107,6 +1175,9 @@ export async function getTripDetail(tripId: number): Promise<TripDetail | null> 
           (billsByDropId.get(d.id)?.length ?? 0) > 0 || (redeliveriesByDropId.get(d.id)?.length ?? 0) > 0,
       })),
       redeliveries.length,
+      redeliveries
+        .map((r) => redeliveryLoadByOrderId.get(r.row.orderId))
+        .filter((l): l is RedeliveryLoad => l !== undefined),
     ),
     drops: dropSummaries,
     activity,

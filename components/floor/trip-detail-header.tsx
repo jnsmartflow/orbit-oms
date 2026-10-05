@@ -433,8 +433,10 @@ export function TripDetailHeader({
                   `${trip.dropCount} stop${trip.dropCount === 1 ? "" : "s"}`,
                   `${bar.total} bill${bar.total === 1 ? "" : "s"}`,
                   ...(redeliveryCount > 0 ? [<span key="rd" className="text-warn-text">{redeliveryCount} re-del</span>] : []),
-                  ...(isEmpty ? [] : [`${formatLitres(trip.totalLitres)} L`]),
-                  ...(kg && !isEmpty ? [`${kg}${trip.weightUnknownCount > 0 ? "+" : ""} kg`] : []),
+                  // L / kg include re-deliveries (owner, 2026-10-05), so a
+                  // re-delivery-only trip shows its load too.
+                  ...(isEmpty && !redeliveryOnly ? [] : [`${formatLitres(trip.totalLitres)} L`]),
+                  ...(kg && (!isEmpty || redeliveryOnly) ? [`${kg}${trip.weightUnknownCount > 0 ? "+" : ""} kg`] : []),
                 ].map((part, i) => (
                   <span key={i}>
                     {i > 0 && <span className="px-px font-normal text-[#c9c9d4]"> · </span>}

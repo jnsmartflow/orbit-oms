@@ -405,7 +405,8 @@ function TripCard({
         <div className="text-[12.5px] text-[#96969f]">No bills yet</div>
       ) : bar.total === 0 ? (
         <div className="text-[12.5px] tabular-nums text-[#96969f]">
-          Re-deliveries only · <span className="font-semibold text-warn-text">+{trip.redeliveryCount} re-del</span>
+          Re-deliveries only · <span className="font-semibold text-warn-text">+{trip.redeliveryCount} re-del</span> ·{" "}
+          {formatLitres(trip.totalLitres)} L
         </div>
       ) : (
         <div className="text-[12.5px] tabular-nums text-[#61616d]">

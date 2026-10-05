@@ -117,12 +117,15 @@ export function TripVehicleEditor({
 
   // The trip's summary, from props only. Dropped on an empty trip.
   const kg = formatWeightKg(Math.round(trip.totalWeightKg));
+  // L / kg include re-deliveries (owner, 2026-10-05); the bill count does not.
+  const redeliveryCount = trip.redeliveryCount ?? 0;
   const meta =
-    trip.counts.total > 0
+    trip.counts.total > 0 || redeliveryCount > 0
       ? [
           ...(trip.areaLabel ? [trip.areaLabel] : []),
           `${trip.dropCount} stop${trip.dropCount === 1 ? "" : "s"}`,
           `${trip.counts.total} bill${trip.counts.total === 1 ? "" : "s"}`,
+          ...(redeliveryCount > 0 ? [`${redeliveryCount} re-del`] : []),
           `${formatLitres(trip.totalLitres)} L`,
           ...(kg ? [`${kg}${trip.weightUnknownCount > 0 ? "+" : ""} kg`] : []),
         ].join(" · ")

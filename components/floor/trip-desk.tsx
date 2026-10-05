@@ -1043,7 +1043,8 @@ export function TripDesk({
                       </>
                     ) : null}
                     {redel.length > 0 && <span className="font-semibold text-warn-text">{redel.length} re-del</span>}
-                    {d.bills > 0 ? ` · ${formatLitres(d.litres)} L` : ""}
+                    {/* Litres include the re-deliveries (owner, 2026-10-05). */}
+                    {d.bills > 0 || redel.length > 0 ? ` · ${formatLitres(d.litres)} L` : ""}
                   </span>
                 </div>
                 {tableRows.length > 0 && (
