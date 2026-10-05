@@ -267,11 +267,13 @@ export interface TripSummary {
   shownAt: string | null;
   /**
    * When the planner sent this trip to billing's Print tab (slice 9), or null.
-   * `billingCopiedAt` is billing's latest Copy there. Take-back is refused once
-   * it is set (lib/trips/billing.ts).
+   * `billingCopiedAt` is billing's latest copy press there; `billingDoneAt` is
+   * billing's "Done — all copied" (Print v2, 2026-10-05). NEITHER blocks a
+   * take-back — billing Print is a copy tool only (lib/trips/billing.ts).
    */
   sentToBillingAt: string | null;
   billingCopiedAt: string | null;
+  billingDoneAt: string | null;
   createdAt: string;
 }
 
@@ -574,6 +576,7 @@ const TRIP_SELECT = {
   shownAt: true,
   sentToBillingAt: true,
   billingCopiedAt: true,
+  billingDoneAt: true,
   createdAt: true,
 } as const;
 
@@ -604,6 +607,7 @@ type TripRow = {
   shownAt: Date | null;
   sentToBillingAt: Date | null;
   billingCopiedAt: Date | null;
+  billingDoneAt: Date | null;
   createdAt: Date;
 };
 
@@ -885,6 +889,7 @@ function toSummary(
     shownAt: t.shownAt?.toISOString() ?? null,
     sentToBillingAt: t.sentToBillingAt?.toISOString() ?? null,
     billingCopiedAt: t.billingCopiedAt?.toISOString() ?? null,
+    billingDoneAt: t.billingDoneAt?.toISOString() ?? null,
     createdAt: t.createdAt.toISOString(),
   };
 }

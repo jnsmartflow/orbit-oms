@@ -4,10 +4,14 @@
 // `trips.sentToBillingAt` / `sentToBillingById`.
 //
 // The planner's Send to billing puts the trip on the Billing screen's Print tab,
-// where billing copies its invoice numbers into SAP (lib/billing/print.ts). The
-// take-back lives in the header's ··· menu and is REFUSED once billing has
-// copied anything: the numbers are already in SAP, and pulling the trip off the
-// tab would hide a record of work that happened (owner).
+// where billing copies its bills' OBD numbers into SAP (lib/billing/print.ts).
+// The take-back lives in the header's ··· menu and is ALWAYS allowed on a sent,
+// live trip — whatever billing has copied or marked done. Billing Print is a
+// copy tool only; it never holds a trip on the floor (owner, 2026-10-05). The
+// copy rows (trip_bill_copies) and the Done stamp stay on a take-back as the
+// record of work that happened; a re-send shows them again.
+//
+// 2026-10-05: the take-back lock after billing copy was removed on purpose — do not restore.
 //
 // 🔴 EVERY WRITE HERE IS TO `trips`. Never an order row: no trip action may change
 // a bill's status or its hold (the rule the rebuild follows since slice 3).
@@ -43,7 +47,7 @@ export async function setTripSentToBilling(opts: {
 }): Promise<SendToBillingOutcome> {
   const trip = await prisma.trips.findUnique({
     where: { id: opts.tripId },
-    select: { id: true, tripNumber: true, status: true, sentToBillingAt: true, billingCopiedAt: true },
+    select: { id: true, tripNumber: true, status: true, sentToBillingAt: true },
   });
   if (!trip) return { ok: false, status: 404, error: "Trip not found" };
   if (trip.status === "cancelled" || trip.status === "dispatched") {
@@ -73,13 +77,6 @@ export async function setTripSentToBilling(opts: {
 
   if (opts.sent && (view?.bills ?? 0) === 0) {
     return { ok: false, status: 409, error: `${trip.tripNumber} has no bills to send to billing.` };
-  }
-  if (!opts.sent && trip.billingCopiedAt !== null) {
-    return {
-      ok: false,
-      status: 409,
-      error: `Billing has already copied ${trip.tripNumber}'s invoice numbers — it cannot be taken back.`,
-    };
   }
 
   const updated = await prisma.trips.update({

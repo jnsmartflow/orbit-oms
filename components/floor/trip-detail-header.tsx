@@ -125,7 +125,7 @@ export function TripDetailHeader({
   onTakeBackFromFloor: () => void;
   /** POST …/billing { sent: true } — slice 9. */
   onSendToBilling: () => void;
-  /** POST …/billing { sent: false } — ···, refused once billing has copied. */
+  /** POST …/billing { sent: false } — ···, always allowed while sent (Print v2: billing copy never locks it). */
   onTakeBackFromBilling: () => void;
   /** Re-delivery (2026-10-03) — opens trip-redelivery-dialog.tsx for this trip. */
   onAddRedelivery?: () => void;
@@ -145,14 +145,16 @@ export function TripDetailHeader({
   const plate = trip.vehicleNo ?? trip.adhocVehicleNo;
   const shownTime = istTime(trip.shownAt);
   const sentTime = istTime(trip.sentToBillingAt);
-  const copiedTime = istTime(trip.billingCopiedAt);
+  const doneTime = istTime(trip.billingDoneAt);
   // Whole kilos on a trip total ("412 kg", owner's design) — a decimal on a load
   // of hundreds of kilos is noise.
   const kg = formatWeightKg(Math.round(trip.totalWeightKg));
   const mixLabel = tripMixLabel(trip);
 
   const canTakeBackFloor = gateOn && trip.shownAt !== null;
-  const canTakeBackBilling = trip.sentToBillingAt !== null && trip.billingCopiedAt === null;
+  // Always while sent (Print v2, 2026-10-05): billing's copy / Done never locks
+  // a trip on the floor (lib/trips/billing.ts).
+  const canTakeBackBilling = trip.sentToBillingAt !== null;
 
   return (
     <div>
@@ -181,8 +183,8 @@ export function TripDetailHeader({
             <div className="ml-auto flex shrink-0 items-center gap-2">
               {/* SEND TO BILLING (slice 9). An empty trip has nothing for billing
                   to copy: disabled, with the reason as the wrapper's tooltip. */}
-              {trip.billingCopiedAt ? (
-                <span className={PRESSED}>Billing copied{copiedTime ? ` · ${copiedTime}` : ""}</span>
+              {trip.sentToBillingAt && trip.billingDoneAt ? (
+                <span className={PRESSED}>Billing done{doneTime ? ` · ${doneTime}` : ""}</span>
               ) : trip.sentToBillingAt ? (
                 <span className={PRESSED}>Sent to billing{sentTime ? ` · ${sentTime}` : ""}</span>
               ) : (
@@ -254,8 +256,9 @@ export function TripDetailHeader({
                           Take back from floor
                         </button>
                       )}
-                      {/* Take back from billing (slice 9) — only until billing has
-                          copied; the server refuses it after. */}
+                      {/* Take back from billing (slice 9) — offered whenever the
+                          trip is sent; billing's copy / Done never locks it
+                          (Print v2, 2026-10-05). */}
                       {canTakeBackBilling && (
                         <button
                           type="button"
@@ -280,9 +283,7 @@ export function TripDetailHeader({
                         }}
                         className="block w-full px-3 py-2 text-left text-[12.5px] text-[#b91c1c] hover:bg-[#fef2f2] disabled:opacity-40"
                       >
-                        {/* 🔴 STILL ALLOWED ONCE BILLING HAS COPIED (owner, slice 9):
-                            the label is the warning, no prompt. */}
-                        {trip.billingCopiedAt ? "Cancel trip · billing already copied" : "Cancel trip"}
+                        Cancel trip
                       </button>
                     </div>
                   </>

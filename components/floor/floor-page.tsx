@@ -1359,8 +1359,8 @@ export function FloorPage({ canEdit = false }: { canEdit?: boolean } = {}) {
   // ── Send to billing, PER TRIP (slice 9, 2026-09-15) ───────────────────────
   // Puts the trip on the Billing screen's Print tab. Posts to
   // POST /api/floor/trips/[id]/billing, which writes the TRIP and never an order
-  // row. Take-back is refused by the server once billing has copied; the ···
-  // menu stops offering it at the same moment. Explicit refetch, as above.
+  // row. Take-back is always allowed while the trip is sent — billing's copy /
+  // Done never locks it (Print v2, 2026-10-05). Explicit refetch, as above.
   const setTripSentToBilling = useCallback(
     async (tripId: number, sent: boolean) => {
       setTripBusyId(tripId);
