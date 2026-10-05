@@ -693,14 +693,25 @@ function CopyCell({ row: r }: { row: PrintBillRow }) {
   }
 }
 
-/** Copied green, ready brand, the rest grey — over the non-held bills. */
-function ProgressBar({ trip }: { trip: PrintTrip }) {
+/**
+ * The trip's progress over its NON-HELD bills, left → right: copied (ok) ·
+ * ready (brand) · on the card also to check (danger) · the rest is the grey
+ * track. ONE implementation, two sizes:
+ *   header — 4px under the trip's status line (copied · ready, as shipped);
+ *   card   — 3px, the pending rail card's last element, adds the to-check segment.
+ */
+function ProgressBar({ trip, size = "header" }: { trip: PrintTrip; size?: "header" | "card" }) {
   if (trip.eligible === 0) return null;
   const pct = (n: number) => `${(n / trip.eligible) * 100}%`;
+  const card = size === "card";
   return (
-    <div className="mt-2.5 flex h-[4px] overflow-hidden rounded-sm bg-ink-100" aria-hidden>
+    <div
+      className={`flex overflow-hidden rounded-sm bg-ink-100 ${card ? "mt-2.5 h-[3px]" : "mt-2.5 h-[4px]"}`}
+      aria-hidden
+    >
       <span className="block h-full bg-ok" style={{ width: pct(trip.copiedCount) }} />
       {trip.state !== "done" && <span className="block h-full bg-brand-600" style={{ width: pct(trip.readyCount) }} />}
+      {card && trip.state !== "done" && <span className="block h-full bg-danger" style={{ width: pct(trip.reviewCount) }} />}
     </div>
   );
 }
@@ -745,6 +756,8 @@ function PendingCard({ trip, active, onSelect }: { trip: PrintTrip; active: bool
           <span className={`${CHIP} bg-ink-50 text-ink-600`}>{trip.held > 0 ? "all on hold" : "no bills"}</span>
         )}
       </div>
+      {/* The same bar as the header, card size — the card's last element. */}
+      <ProgressBar trip={trip} size="card" />
     </button>
   );
 }
