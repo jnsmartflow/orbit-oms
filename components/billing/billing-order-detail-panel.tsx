@@ -52,8 +52,13 @@
 import { useCallback, useEffect, useState } from "react";
 import { findingReasonLabel, mfgLabel } from "@/lib/picking/findings-reasons";
 import { smartTitleCase } from "@/lib/mail-orders/utils";
-import { useBillingMarkerPause } from "@/components/billing/billing-marker-provider";
+import {
+  useBillingMarkerPause,
+  useBillingPrintMarkerPause,
+} from "@/components/billing/billing-marker-provider";
 import type { BillingDetailLine, BillingOrderDetail } from "@/lib/billing/types";
+import type { PrintBillRow, PrintTripState } from "@/lib/billing/print";
+import { StatusPill, rowStatus } from "@/components/floor/status-pill";
 
 const DETAIL_URL = "/api/billing/picking/order";
 // The SAME route the bulk bar posts to, with a one-element array — its contract
@@ -86,7 +91,42 @@ function fmtDateTime(iso: string | null): string {
     .replace(",", " ·");
 }
 
-export function BillingOrderDetailPanel({
+// ── MODES (2026-10-05, Billing Print v2) ────────────────────────────────────
+// "picking" (the default) is the Picking tab's panel, unchanged: a caller that
+// passes no `mode` renders PickingDetailPanel exactly as before.
+// "print" is the Print tab's: it fetches /api/billing/print/order/[orderId]
+// (gated on billing_print, fenced to the trip), wears Floor's status pill, and
+// carries the Print actions — see PrintDetailPanel below. The two share the
+// line rows (DetailLineRow), so a finding reads identically on both tabs.
+
+interface PickingPanelProps {
+  mode?: "picking";
+  orderId: number;
+  canEdit?: boolean;
+  onClose: () => void;
+  onMarkedDone: (orderId: number) => void;
+}
+
+interface PrintPanelProps {
+  mode: "print";
+  orderId: number;
+  /** The trip the bill was opened from — the print route is fenced to it. */
+  tripId: number;
+  /** `billing_print`/canEdit. FALSE hides every button that RECORDS (CLAUDE_UI §10). */
+  canEdit?: boolean;
+  onClose: () => void;
+  /** Unused in print mode; accepted so one call shape serves both. */
+  onMarkedDone?: (orderId: number) => void;
+  /** Fired after the server recorded a copy of this bill. The parent refetches. */
+  onPrintRecorded?: () => void;
+}
+
+export function BillingOrderDetailPanel(props: PickingPanelProps | PrintPanelProps) {
+  if (props.mode === "print") return <PrintDetailPanel {...props} />;
+  return <PickingDetailPanel {...props} />;
+}
+
+function PickingDetailPanel({
   orderId,
   canEdit = true,
   onClose,
@@ -438,6 +478,269 @@ function DetailLineRow({ line, index }: { line: BillingDetailLine; index: number
       <span className="w-[56px] pt-[2px] text-right text-[11px] tabular-nums text-[#9ca3af]">
         {line.litres ? `${line.litres} L` : "—"}
       </span>
+    </div>
+  );
+}
+
+// ── PRINT MODE (2026-10-05, Billing Print v2) ───────────────────────────────
+//
+// Opened from a bill row on the Print tab. Same 472px aside, same line rows and
+// finding notes as the Picking panel; what differs is the source
+// (/api/billing/print/order/[orderId]?tripId=, gated on `billing_print`), the
+// header (Floor's status pill — imported, never restyled) and the actions, one
+// set per bill state (lib/billing/print.ts PrintBillState):
+//   ready   → "Copy this one"   clipboard, then POST kind "single" (records)
+//   review  → "Copy OBD"        clipboard ONLY — records nothing
+//             "Mark done"       POST kind "review" (records) — the only way a
+//                               bill with a confirmed finding is copied
+//   copied  → "Copy again"      clipboard only
+//   waiting / held → an info box, no button
+// 🔴 Every button that RECORDS is hidden without canEdit (CLAUDE_UI §10); the
+// copy route re-checks. Clipboard FIRST, then the server, as on the tab.
+// Pauses the PRINT marker (not Picking's) while a write is in flight.
+
+interface PrintDetailPayload {
+  detail: Omit<BillingOrderDetail, "isPending">;
+  bill: PrintBillRow;
+  trip: { id: number; tripNumber: string; state: PrintTripState; billingDoneAt: string | null };
+}
+
+const PRINT_DETAIL_URL = "/api/billing/print/order";
+
+const P_BTN = "inline-flex h-[34px] shrink-0 items-center rounded-md px-[13px] text-[12px] font-semibold transition-colors disabled:opacity-50";
+const P_BTN_BRAND = `${P_BTN} bg-brand-600 text-white hover:bg-brand-700`;
+const P_BTN_OK = `${P_BTN} bg-ok text-white hover:bg-ok-text`;
+const P_BTN_PLAIN = `${P_BTN} border border-ink-200 bg-white text-ink-700 hover:bg-ink-25`;
+
+function hhmmIst(iso: string | null): string {
+  if (!iso) return "";
+  return new Date(iso).toLocaleTimeString("en-GB", {
+    hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Kolkata",
+  });
+}
+
+function PrintDetailPanel({ orderId, tripId, canEdit = false, onClose, onPrintRecorded }: PrintPanelProps) {
+  const [data, setData] = useState<PrintDetailPayload | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [writing, setWriting] = useState(false);
+  const [message, setMessage] = useState<{ tone: "ok" | "warn"; text: string } | null>(null);
+
+  // The PRINT marker, under its own key — a refetch mid-write would move the
+  // tab under the operator. (The Picking marker is never touched in this mode.)
+  useBillingPrintMarkerPause("print-detail-write", writing);
+
+  const fetchDetail = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`${PRINT_DETAIL_URL}/${orderId}?tripId=${tripId}`, { cache: "no-store" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setData((await res.json()) as PrintDetailPayload);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to load");
+      setData(null);
+    } finally {
+      setLoading(false);
+    }
+  }, [orderId, tripId]);
+
+  useEffect(() => {
+    void fetchDetail();
+  }, [fetchDetail]);
+
+  // Esc closes — capture phase + stopPropagation, like the picking mode.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        onClose();
+      }
+    }
+    document.addEventListener("keydown", onKey, { capture: true });
+    return () => document.removeEventListener("keydown", onKey, { capture: true });
+  }, [onClose]);
+
+  /** Put this bill's OBD on the clipboard. False when the browser refused. */
+  const toClipboard = async (obd: string): Promise<boolean> => {
+    try {
+      await navigator.clipboard.writeText(obd);
+      return true;
+    } catch {
+      setMessage({ tone: "warn", text: "Couldn't reach the clipboard — copy blocked by the browser. Nothing was recorded." });
+      return false;
+    }
+  };
+
+  const copyOnly = async () => {
+    if (!data) return;
+    setMessage(null);
+    if (await toClipboard(data.bill.obdNumber)) {
+      setMessage({ tone: "ok", text: `Copied OBD ${data.bill.obdNumber} — not marked.` });
+    }
+  };
+
+  const record = async (kind: "single" | "review") => {
+    if (!data || writing) return;
+    setMessage(null);
+    if (!(await toClipboard(data.bill.obdNumber))) return;
+    setWriting(true);
+    try {
+      const res = await fetch(`/api/billing/print/trip/${tripId}/copy`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderIds: [data.bill.orderId], kind }),
+      });
+      const body = (await res.json().catch(() => ({}))) as { recorded?: number; error?: string };
+      if (!res.ok) {
+        setMessage({ tone: "warn", text: body.error ?? `Copied, but not recorded (HTTP ${res.status}).` });
+      } else if ((body.recorded ?? 0) === 0) {
+        setMessage({ tone: "warn", text: "Someone else had already copied this bill — not recorded again." });
+      } else {
+        setMessage({ tone: "ok", text: kind === "review" ? "Marked done — OBD copied." : `Copied OBD ${data.bill.obdNumber}.` });
+      }
+      onPrintRecorded?.();
+      await fetchDetail();
+    } catch {
+      setMessage({ tone: "warn", text: "Copied, but could not reach the server — NOT recorded." });
+    } finally {
+      setWriting(false);
+    }
+  };
+
+  const bill = data?.bill ?? null;
+  const detail = data?.detail ?? null;
+  const finding = detail?.lines.find((l) => l.finding !== null)?.finding ?? null;
+
+  return (
+    <div className="fixed inset-0 z-[110]">
+      <div className="absolute inset-0 bg-black/30" onClick={onClose} />
+      <aside className="absolute right-0 top-0 flex h-full w-[472px] flex-col bg-white shadow-[-14px_0_40px_rgba(17,24,39,0.10)]">
+        {loading && !data ? (
+          <div className="flex flex-1 items-center justify-center text-[11.5px] text-ink-400">Loading&hellip;</div>
+        ) : error && !data ? (
+          <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
+            <div className="text-[12px] text-ink-500">Couldn&rsquo;t load this bill. {error}</div>
+            <button type="button" onClick={onClose} className="rounded-md border border-ink-200 px-3 py-1.5 text-[11.5px] text-ink-600">
+              Close
+            </button>
+          </div>
+        ) : data && bill && detail ? (
+          <>
+            {/* ── Header ─────────────────────────────────────────────────── */}
+            <div className="border-b border-ink-100 px-5 pb-3.5 pt-3.5">
+              <div className="flex items-baseline gap-2.5">
+                <span className="font-mono text-[19px] font-bold leading-none tracking-[-0.02em] text-ink-900">
+                  {detail.obdNumber}
+                </span>
+                <span className="text-[11px] tabular-nums text-ink-400">{fmtDateTime(detail.obdDateTime)}</span>
+                <button type="button" onClick={onClose} aria-label="Close" className="ml-auto self-center text-ink-400 hover:text-ink-600">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M6 6l12 12M18 6L6 18" />
+                  </svg>
+                </button>
+              </div>
+              <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1">
+                <span className="text-[16px] font-bold text-ink-900">
+                  {detail.customerName ? smartTitleCase(detail.customerName) : "(Unmatched)"}
+                </span>
+                {detail.customerCode && <span className="font-mono text-[11.5px] text-ink-400">{detail.customerCode}</span>}
+              </div>
+              <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-ink-500">
+                <StatusPill status={rowStatus(bill)} onRed={bill.state === "review"} />
+                <span className="font-mono">{data.trip.tripNumber}</span>
+                <span>
+                  · Invoice {bill.invoiceNo ? <span className="font-mono text-ink-700">{bill.invoiceNo}</span> : "— not yet"}
+                </span>
+              </div>
+              {bill.state === "review" && (
+                <div className="mt-2.5 rounded-md border border-danger-bd bg-danger-bg px-3 py-2 text-[11.5px] font-medium text-danger-text">
+                  ⚠ Pick finding confirmed{finding?.recordedByName ? ` by ${finding.recordedByName}` : ""}
+                  {finding?.recordedAt ? ` at ${hhmmIst(finding.recordedAt)}` : ""} — check the red line before copying.
+                </div>
+              )}
+              {bill.state === "copied" && (
+                <div className="mt-2 text-[11px] font-semibold text-ok-text">
+                  ✓ Copied {hhmmIst(bill.copiedAt)}
+                  {bill.copiedByName ? ` by ${bill.copiedByName.split(" ")[0]}` : ""}
+                </div>
+              )}
+              {bill.copiedOnOtherTrip && (
+                <div className="mt-1 text-[11px] text-ink-400">
+                  Copied before on {bill.copiedOnOtherTrip.tripNumber} at {hhmmIst(bill.copiedOnOtherTrip.at)}
+                </div>
+              )}
+            </div>
+
+            {/* ── Items (scrolls) ────────────────────────────────────────── */}
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              {detail.lines.length === 0 ? (
+                <div className="px-5 py-10 text-center text-[11.5px] text-ink-400">No line items on this bill.</div>
+              ) : (
+                detail.lines.map((line, i) => <DetailLineRow key={line.id} line={line} index={i + 1} />)
+              )}
+            </div>
+
+            <div className="flex border-t border-ink-100 bg-ink-25 px-5 py-[11px] text-[12px] font-semibold text-ink-700">
+              <span>
+                {detail.lineCount} line{detail.lineCount === 1 ? "" : "s"}
+              </span>
+              <span className="ml-auto tabular-nums">{detail.totalLitres} L</span>
+            </div>
+
+            {/* ── Action bar ─────────────────────────────────────────────── */}
+            <div className="flex flex-wrap items-center gap-2 border-t border-ink-100 bg-white px-5 py-[11px]">
+              {message && (
+                <span className={`min-w-0 flex-1 text-[11px] leading-snug ${message.tone === "ok" ? "text-ok-text" : "text-warn-text"}`}>
+                  {message.text}
+                </span>
+              )}
+              {bill.state === "ready" &&
+                (canEdit ? (
+                  <button type="button" onClick={() => void record("single")} disabled={writing} className={`ml-auto ${P_BTN_BRAND}`}>
+                    {writing ? "Recording…" : "Copy this one"}
+                  </button>
+                ) : (
+                  <button type="button" onClick={() => void copyOnly()} className={`ml-auto ${P_BTN_PLAIN}`}>
+                    Copy OBD
+                  </button>
+                ))}
+              {bill.state === "review" && (
+                <span className="ml-auto flex gap-2">
+                  <button type="button" onClick={() => void copyOnly()} disabled={writing} className={P_BTN_PLAIN}>
+                    Copy OBD
+                  </button>
+                  {canEdit && (
+                    <button type="button" onClick={() => void record("review")} disabled={writing} className={P_BTN_OK}>
+                      {writing ? "Marking…" : "Mark done"}
+                    </button>
+                  )}
+                </span>
+              )}
+              {bill.state === "copied" && (
+                <button type="button" onClick={() => void copyOnly()} className={`ml-auto ${P_BTN_PLAIN}`}>
+                  Copy again
+                </button>
+              )}
+              {bill.state === "waiting" && (
+                <div className="w-full rounded-md bg-warn-bg px-3 py-2 text-[11.5px] text-warn-text">
+                  Waiting — not picked yet. It joins the next Copy once picking is done.
+                </div>
+              )}
+              {bill.state === "held" && (
+                <div className="w-full rounded-md bg-ink-50 px-3 py-2 text-[11.5px] text-ink-600">
+                  On hold — never copied. Release it on the floor first.
+                </div>
+              )}
+            </div>
+            {bill.state === "review" && (
+              <div className="border-t border-ink-50 bg-ink-25 px-5 py-2 text-[10.5px] text-ink-500">
+                Copy OBD only puts the OBD on the clipboard. Mark done records it as copied.
+              </div>
+            )}
+          </>
+        ) : null}
+      </aside>
     </div>
   );
 }

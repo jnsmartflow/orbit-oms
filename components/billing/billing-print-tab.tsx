@@ -1,36 +1,49 @@
 "use client";
 
-// Billing v2 — the "Print" tab (slice 9, 2026-09-15).
+// Billing v2 — the "Print" tab. Slice 9 (2026-09-15); rebuilt for Billing Print
+// v2 (2026-10-05, design docs/mockups/billing-print/billing-print-pickdelete-mock.html,
+// "MOCKUP v4"). Server rules: lib/billing/print.ts.
 //
-// ⚠ COMPILE BRIDGE (Billing Print v2 server, 2026-10-05). The server now copies
-// OBD numbers per bill (lib/billing/print.ts). This file was edited only enough
-// to compile against the new shape and post the new copy body; the next prompt
-// rewrites it (status pill, per-bill states, panel, Done button). The header
-// below still describes slice 9 until then.
+// Trips the planner SENT TO BILLING. Billing copies each trip's OBD NUMBERS and
+// pastes them into SAP, which prints. ORBIT PRINTS NOTHING.
 //
-// Trips the planner SENT TO BILLING. Billing copies each trip's invoice numbers
-// and pastes them into SAP, which prints. ORBIT PRINTS NOTHING.
+//   LEFT  — one card per trip: TRIP NUMBER ONLY (never the vehicle), x/y copied,
+//           bills · stops · litres and how far copying has got. Trips with work
+//           outstanding first, from every date; then the trips billing pressed
+//           Done on the header's day ("Done today").
+//   RIGHT — the selected trip: number, a per-state summary, ONE button, and the
+//           bill table with Floor's own status pill per bill.
 //
-//   LEFT  — one card per trip: TRIP NUMBER ONLY (never the vehicle), bills,
-//           stops, litres and how far invoicing has got. Trips with copy work
-//           outstanding first, from every date; then the trips copied on the
-//           header's day, greyed with who and when.
-//   RIGHT — the selected trip: number, counts, ONE button, and the full
-//           OBD / invoice / ship-to / route / vol table.
+// ── EACH BILL HAS A STATE (lib/billing/print.ts PrintBillState) ─────────────
+//   copied  green  — copied on this trip (✓ time).
+//   ready   brand  — picking Done (Floor's Done pill), no confirmed finding →
+//                    goes in the next bulk Copy.
+//   review  danger — picking Done WITH a confirmed pick finding → left out of the
+//                    bulk Copy; open it, read the finding, Copy OBD / Mark done.
+//   waiting grey   — not picked yet. Joins the next Copy once ready.
+//   held    struck — on hold. Shown, never copied, never counted.
+// An invoice number is NOT needed to copy; it is shown when SAP has stamped it.
 //
-// 🔴 THE BUTTON COPIES AND RECORDS IN ONE PRESS. The numbers go on the clipboard
-// first, then the server is told exactly which numbers — it records only if they
-// are still the trip's copy set (lib/billing/print.ts). A finished trip keeps a
-// plain Copy that records nothing. Ctrl+C does whatever the button does.
+// 🔴 THE PICKING PILL IS FLOOR'S OWN (components/floor/status-pill.tsx) fed the
+// facts getFloorBoard derives, so a bill can never read one way here and another
+// on Floor. Imported, never restyled.
 //
-// 🔴 NEVER A PARTIAL SET. Until every non-held bill has an invoice number the
-// button is greyed with the count as its reason, and the bills still waiting are
-// marked in the table. Held bills are shown, marked, and never copied.
+// 🔴 COPY = CLIPBOARD FIRST, THEN RECORD. "Copy N OBDs" puts every READY bill's
+// OBD on the clipboard and then tells the server exactly which bills; the server
+// records only if each is still ready (409 otherwise). Partial copies are
+// allowed — slice 9's "never a partial set" was removed on purpose (owner,
+// 2026-10-05); do not restore it. The next press copies only bills that became
+// ready since.
 //
-// Table constants are Picking's (billing-picking-tab.tsx), so the two tabs read
-// alike. TEAL is the primary Copy and the live dot only (CLAUDE_UI §1/§10).
+// 🔴 DONE IS A PRESS. When every non-held bill is copied, "Done — all copied"
+// appears and moves the trip to Done today. Nothing stamps it automatically.
+//
+// 🔴 HIDE, NEVER DISABLE, FOR PERMISSION (CLAUDE_UI §10). Without
+// `billing_print` canEdit the Copy button is a plain clipboard copy of the ready
+// OBDs that records nothing, and Done is not rendered at all. The routes
+// re-check every gate. Ctrl+C does whatever the Copy button does.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import {
   useBillingPrintMarkerSubscription,
@@ -39,27 +52,34 @@ import {
 import { toast } from "sonner";
 import { getTodayIST } from "@/lib/dates";
 import { smartTitleCase } from "@/lib/mail-orders/utils";
-import type { PrintTrip } from "@/lib/billing/print";
+import type { PrintBillRow, PrintBillState, PrintTrip } from "@/lib/billing/print";
 import { useBillingShownIds } from "@/components/billing/billing-live";
 import { GiftBadge } from "@/components/floor/gift-badge";
+import { StatusPill, rowStatus } from "@/components/floor/status-pill";
+import { BillingOrderDetailPanel } from "@/components/billing/billing-order-detail-panel";
 
 const LIST_URL = "/api/billing/print/list";
 
-const HEAD_TH = "h-[31px] border-b border-[#ebebeb] px-3.5 text-left text-[10px] font-medium uppercase tracking-[0.05em] text-[#9ca3af]";
-const HEAD_TH_C = "h-[31px] border-b border-[#ebebeb] px-1 text-center text-[10px] font-medium uppercase tracking-[0.05em] text-[#9ca3af]";
-const TD = "border-b border-[#f0f0f0] px-3.5 py-2 text-[11px] text-[#4b5563] whitespace-nowrap overflow-hidden text-ellipsis";
-const TD_C = "border-b border-[#f0f0f0] px-1 py-2 text-center text-[11px] text-[#9ca3af]";
+// Fixed table standard (CLAUDE_UI §27): 31px header, 10px uppercase header, 11px data.
+const HEAD_TH = "h-[31px] border-b border-ink-100 px-3 text-left text-[10px] font-medium uppercase tracking-[0.05em] text-ink-400";
+const HEAD_TH_C = "h-[31px] border-b border-ink-100 px-1 text-center text-[10px] font-medium uppercase tracking-[0.05em] text-ink-400";
+const TD = "border-b border-ink-50 px-3 py-2 text-[11px] text-ink-600 whitespace-nowrap overflow-hidden text-ellipsis";
+const TD_C = "border-b border-ink-50 px-1 py-2 text-center text-[11px] text-ink-400";
 
-// # 5 · OBD 17 · Invoice no 21 · Ship to 31 · Route 16 · Vol 10 = 100
-const WIDTHS = [5, 17, 21, 31, 16, 10];
+// # 4 · OBD 14 · Invoice no 14 · Ship to 26 · Vol 8 · Picking 18 · Copy 16 = 100
+const WIDTHS = [4, 14, 14, 26, 8, 18, 16];
 
-const PRIMARY =
-  "inline-flex h-[32px] items-center rounded-md bg-brand-600 px-[15px] text-[12px] font-semibold text-white transition-colors hover:bg-brand-700 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400";
-const PLAIN =
-  "inline-flex h-[32px] items-center rounded-md border border-gray-300 bg-white px-[13px] text-[12px] font-medium text-gray-700 transition-colors hover:border-gray-400 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50";
+// One brand button per surface (CLAUDE_UI §10): Copy is the brand action; Done
+// wears ok green (a finished state's action); disabled is grey, never faded.
+const BTN = "inline-flex h-[32px] items-center rounded-md px-[15px] text-[12px] font-semibold transition-colors";
+const BTN_BRAND = `${BTN} bg-brand-600 text-white hover:bg-brand-700`;
+const BTN_OK = `${BTN} bg-ok text-white hover:bg-ok-text`;
+const BTN_PLAIN = `${BTN} border border-ink-200 bg-white text-ink-700 hover:bg-ink-25`;
+const BTN_OFF = `${BTN} cursor-not-allowed border border-ink-100 bg-ink-50 text-ink-400`;
 
 interface PrintList {
   pending: PrintTrip[];
+  /** Trips billing pressed Done on, for the header's day (wire name kept from slice 9). */
   copied: PrintTrip[];
 }
 
@@ -84,43 +104,73 @@ function firstName(name: string | null): string {
   return name ? name.split(" ")[0] : "";
 }
 
-/** What the header button will do for this trip and this viewer. One place, used by the button AND Ctrl+C. */
-function copyPlan(trip: PrintTrip, canEdit: boolean): {
-  label: string;
-  numbers: string[];
-  orderIds: number[];
-  records: boolean;
-  enabled: boolean;
-  primary: boolean;
-  reason: string | null;
-} {
-  // BRIDGE: the bulk Copy of every READY bill's OBD number. Without canEdit it
-  // is a plain Copy that records nothing.
-  const n = trip.readyCount;
-  return {
-    label: n > 0 ? `Copy ${n} OBD${n === 1 ? "" : "s"}` : "Copy · nothing ready",
-    numbers: trip.readyObds,
-    orderIds: trip.readyOrderIds,
-    records: canEdit && n > 0,
-    enabled: n > 0,
-    primary: canEdit,
-    reason: n > 0 ? null : readinessReason(trip),
-  };
+/** "12m" / "3h" — Floor's elapsed style for an in-progress pill. */
+function shortElapsed(iso: string | null, nowMs: number): string | null {
+  if (!iso) return null;
+  const mins = Math.max(0, Math.floor((nowMs - new Date(iso).getTime()) / 60000));
+  if (mins < 60) return `${mins}m`;
+  const hrs = Math.floor(mins / 60);
+  return hrs < 24 ? `${hrs}h` : `${Math.floor(hrs / 24)}d`;
 }
 
-/** The Ctrl+C toast on a trip that cannot be copied — "3 bills have no invoice number yet". */
-function shortcutRefusal(trip: PrintTrip): string {
+/**
+ * The pill's time, by Floor's liveTime rule (components/floor/floor-table.tsx):
+ * finished → the clock, in progress → elapsed. Tint done carries none here.
+ */
+export function printPillTime(r: PrintBillRow, nowMs: number): string | null {
+  const st = rowStatus(r);
+  if (st === "done") return hhmm(r.checkedAt) || null;
+  if (st === "direct") return hhmm(r.directLoadedAt) || null;
+  if (st === "needsCheck") return shortElapsed(r.pickedAt, nowMs);
+  if (st === "withPicker") return shortElapsed(r.assignedAt, nowMs);
+  return null;
+}
+
+/** Floor's pill for one bill — on a review bill, the shared red reading. */
+export function PrintPickingPill({ row, nowMs }: { row: PrintBillRow; nowMs: number }) {
+  return <StatusPill status={rowStatus(row)} time={printPillTime(row, nowMs)} onRed={row.state === "review"} />;
+}
+
+/** The header's one-line summary, in state colours. */
+function Summary({ trip }: { trip: PrintTrip }) {
   if (trip.eligible === 0) {
-    return trip.held > 0 ? `${trip.tripNumber}: every bill is on hold — nothing to copy` : `${trip.tripNumber} has no bills to copy`;
+    return <span className="text-ink-500">{trip.held > 0 ? "Every bill is on hold" : "No bills on this trip"}</span>;
   }
-  if (trip.reviewCount > 0) return `${trip.reviewCount} with a pick finding — open it to copy`;
-  return `${trip.waitingCount} bill${trip.waitingCount === 1 ? " is" : "s are"} still being picked`;
+  return (
+    <>
+      <span className="text-ok-text">{trip.copiedCount} copied</span>
+      <span className="text-ink-400"> · </span>
+      <span className="text-brand-700">{trip.readyCount} ready</span>
+      {trip.reviewCount > 0 && (
+        <>
+          <span className="text-ink-400"> · </span>
+          <span className="text-danger-text">{trip.reviewCount} to check</span>
+        </>
+      )}
+      <span className="text-ink-400"> · </span>
+      <span className="text-ink-500">{trip.waitingCount} waiting</span>
+      {trip.held > 0 && <span className="text-ink-400"> · {trip.held} on hold, not copied</span>}
+    </>
+  );
 }
 
-function readinessReason(trip: PrintTrip): string {
-  if (trip.eligible === 0) return trip.held > 0 ? "Every bill is on hold" : "No bills to copy";
-  return `${trip.copiedCount} of ${trip.eligible} copied`;
+/** Why there is nothing to copy — the grey button's caption and the Ctrl+C toast. */
+function nothingReadyReason(trip: PrintTrip): string {
+  if (trip.eligible === 0) return trip.held > 0 ? "Every bill is on hold." : "No bills on this trip.";
+  const bits: string[] = [];
+  if (trip.reviewCount > 0) bits.push(`${trip.reviewCount} with a pick finding — open it to copy.`);
+  if (trip.waitingCount > 0) bits.push(`${trip.waitingCount} still being picked.`);
+  if (bits.length === 0) return "Every bill is copied.";
+  return bits.join(" ");
 }
+
+const ROW_CLS: Record<PrintBillState, { row: string; edge: string }> = {
+  copied: { row: "bg-ok-bg", edge: "border-l-ok" },
+  ready: { row: "", edge: "border-l-brand-600" },
+  review: { row: "bg-danger-bg", edge: "border-l-danger" },
+  waiting: { row: "bg-ink-25", edge: "border-l-ink-200" },
+  held: { row: "", edge: "border-l-transparent" },
+};
 
 export function BillingPrintTab({
   date,
@@ -129,27 +179,36 @@ export function BillingPrintTab({
 }: {
   date?: string;
   /**
+   * Does this viewer hold `billing_print`/canEdit? FALSE → Copy is a plain
+   * clipboard copy that records nothing, and Done is hidden.
+   * ⚠ NOT AUTHORISATION — the routes re-check.
+   */
+  canEdit?: boolean;
+  /**
    * The page's 320px left-column slot (review-view.tsx), where the trip list is
    * drawn. Null → no list is drawn; ReviewView always provides it on the billing
    * face, mounted before this tab can be opened.
    */
   railSlot?: HTMLElement | null;
-  /**
-   * Does this viewer hold `billing_print`/canEdit? FALSE → the button is a plain
-   * Copy that records nothing. ⚠ NOT AUTHORISATION — the copy route re-checks.
-   */
-  canEdit?: boolean;
 }) {
   const [data, setData] = useState<PrintList | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [openBillId, setOpenBillId] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [copiedFlash, setCopiedFlash] = useState(false);
   const [notice, setNotice] = useState<{ tone: "info" | "error"; text: string } | null>(null);
+  const [nowMs, setNowMs] = useState(() => Date.now());
   const reqRef = useRef(0);
 
   const isToday = !date || date === getTodayIST();
+
+  // The pills' elapsed times move once a minute.
+  useEffect(() => {
+    const id = window.setInterval(() => setNowMs(Date.now()), 60_000);
+    return () => window.clearInterval(id);
+  }, []);
 
   const load = useCallback(async () => {
     const seq = ++reqRef.current;
@@ -176,113 +235,129 @@ export function BillingPrintTab({
   }, [load]);
 
   useBillingPrintMarkerSubscription(load);
-  // No refetch under a copy in flight — the list would move under the press.
-  useBillingPrintMarkerPause("print-tab-copy", busy);
+  // Never move the ground under a hand: no refetch while a write is in flight
+  // or a bill's panel is open.
+  useBillingPrintMarkerPause("print-tab-write", busy);
+  useBillingPrintMarkerPause("print-tab-panel", openBillId !== null);
 
   const pending = useMemo(() => data?.pending ?? [], [data]);
-  const copied = useMemo(() => data?.copied ?? [], [data]);
+  const done = useMemo(() => data?.copied ?? [], [data]);
 
-  // LIVE FEED (2b-ii): the trip ids this tab shows (no-op off the feed).
-  const shownTripIds = useMemo(() => [...pending.map((t) => t.id), ...copied.map((t) => t.id)], [pending, copied]);
+  // LIVE FEED: the trip ids, and the bills on them (a stage / hold / finding
+  // change arrives as an ORDER id). No-ops off the feed.
+  const shownTripIds = useMemo(() => [...pending.map((t) => t.id), ...done.map((t) => t.id)], [pending, done]);
   useBillingShownIds("print-tab", "print", shownTripIds);
-  // Print v2: the bills on those trips — a stage / hold / finding change arrives as an order id.
-  const shownOrderIds = useMemo(() => [...pending, ...copied].flatMap((t) => t.rows.map((r) => r.orderId)), [pending, copied]);
+  const shownOrderIds = useMemo(() => [...pending, ...done].flatMap((t) => t.rows.map((r) => r.orderId)), [pending, done]);
   useBillingShownIds("print-tab-bills", "printOrders", shownOrderIds);
 
   // The selection is an id, so it survives a refetch; if its trip left both
   // lists, fall back to the first card rather than showing nothing.
   const selected = useMemo(() => {
-    const all = [...pending, ...copied];
+    const all = [...pending, ...done];
     return all.find((t) => t.id === selectedId) ?? all[0] ?? null;
-  }, [pending, copied, selectedId]);
+  }, [pending, done, selectedId]);
 
-  const plan = selected ? copyPlan(selected, canEdit) : null;
+  // The panel belongs to the selected trip; changing trip closes it.
+  const selectedTripId = selected?.id ?? null;
+  useEffect(() => {
+    setOpenBillId(null);
+  }, [selectedTripId]);
 
+  const showDone = !!selected && canEdit && selected.canDone;
+  const readyN = selected?.readyCount ?? 0;
+
+  // Bulk Copy: clipboard FIRST, then record (canEdit only).
   const runCopy = useCallback(async () => {
-    if (!selected || !plan || !plan.enabled || busy) return;
+    if (!selected || busy || selected.readyCount === 0) return;
     setNotice(null);
     try {
-      await navigator.clipboard.writeText(plan.numbers.join("\n"));
+      await navigator.clipboard.writeText(selected.readyObds.join("\n"));
     } catch {
       setNotice({ tone: "error", text: "Couldn't reach the clipboard — copy blocked by the browser. Nothing was recorded." });
       return;
     }
     setCopiedFlash(true);
     window.setTimeout(() => setCopiedFlash(false), 1600);
-    if (!plan.records) return;
+    if (!canEdit) return;
 
     setBusy(true);
     try {
       const res = await fetch(`/api/billing/print/trip/${selected.id}/copy`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ orderIds: plan.orderIds, kind: "bulk" }),
+        body: JSON.stringify({ orderIds: selected.readyOrderIds, kind: "bulk" }),
       });
       const body = (await res.json().catch(() => ({}))) as { alreadyCopied?: number; error?: string };
       if (!res.ok) {
-        setNotice({ tone: "error", text: body.error ?? `Not recorded (HTTP ${res.status}).` });
+        setNotice({ tone: "error", text: body.error ?? `Copied, but not recorded (HTTP ${res.status}).` });
       } else if ((body.alreadyCopied ?? 0) > 0) {
-        setNotice({ tone: "info", text: `${body.alreadyCopied} already copied by someone else — not recorded again.` });
+        setNotice({ tone: "info", text: `${plural(body.alreadyCopied ?? 0, "bill")} had already been copied by someone else — not recorded again.` });
       }
     } catch {
-      setNotice({ tone: "error", text: "Copied, but could not reach the server — the copy was NOT recorded. Press Copy again." });
+      setNotice({ tone: "error", text: "Copied, but could not reach the server — NOT recorded. Press Copy again." });
     } finally {
       setBusy(false);
     }
     await load();
-  }, [selected, plan, busy, load]);
+  }, [selected, busy, canEdit, load]);
 
-  // Ctrl+C — the same action as the button, nothing else. Mounted only while
-  // this tab is on screen; the Orders tab's smart copy stands down on every
-  // other tab (mail-orders-page.tsx onCtrlKey), so the two never both answer.
-  // A text selection or a focused field keeps the browser's own copy.
+  const runDone = useCallback(async () => {
+    if (!selected || busy || !canEdit) return;
+    setNotice(null);
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/billing/print/trip/${selected.id}/done`, { method: "POST" });
+      const body = (await res.json().catch(() => ({}))) as { changed?: boolean; error?: string };
+      if (!res.ok) setNotice({ tone: "error", text: body.error ?? `Not saved (HTTP ${res.status}).` });
+      else if (!body.changed) setNotice({ tone: "info", text: `${selected.tripNumber} was already done.` });
+      else toast.success(`${selected.tripNumber} moved to Done today`);
+    } catch {
+      setNotice({ tone: "error", text: "Could not reach the server — Done was not saved." });
+    } finally {
+      setBusy(false);
+    }
+    await load();
+  }, [selected, busy, canEdit, load]);
+
+  // Ctrl+C — the bulk Copy, nothing else. Mounted only while this tab is on
+  // screen; the Orders tab's smart copy stands down on every other tab. A text
+  // selection or a focused field keeps the browser's own copy; an open panel
+  // keeps the page's hands off.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== "c" || e.shiftKey || e.altKey) return;
       const tag = (document.activeElement?.tagName ?? "").toUpperCase();
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
       if ((window.getSelection()?.toString() ?? "").length > 0) return;
-      if (!selected || !plan) return;
-      // 🔴 NEVER SILENT (owner). A greyed button explains itself with its
-      // caption; a shortcut that does nothing reads as a broken shortcut. So a
-      // press on a trip that cannot be copied says WHY, briefly.
-      if (!plan.enabled) {
-        e.preventDefault();
-        e.stopPropagation();
-        // One toast per press — a held key's auto-repeat must not stack them.
-        if (!e.repeat) toast.info(shortcutRefusal(selected));
-        return;
-      }
+      if (!selected || openBillId !== null) return;
       e.preventDefault();
       e.stopPropagation();
+      // 🔴 NEVER SILENT (owner): a shortcut that does nothing reads as broken.
+      if (selected.readyCount === 0) {
+        if (!e.repeat) toast.info(`${selected.tripNumber}: ${nothingReadyReason(selected)}`);
+        return;
+      }
       void runCopy();
     }
     document.addEventListener("keydown", onKey, { capture: true });
     return () => document.removeEventListener("keydown", onKey, { capture: true });
-  }, [selected, plan, runCopy]);
+  }, [selected, openBillId, runCopy]);
 
   // ── Rail ───────────────────────────────────────────────────────────────
-  // 🔴 DRAWN INTO THE PAGE'S LEFT COLUMN, NOT BESIDE THE DETAIL (owner). On
-  // Orders and Picking the page is [320px inbox rail][right pane]; drawn in here
-  // this list pushed the tab bar 320px left on Print and back on leaving it.
-  // ReviewView owns a 320px slot with the inbox rail's exact classes (width,
-  // border) and hands it over as `railSlot`; this list is portalled into it, so
-  // its state, selection and copy wiring stay in this one component and only
-  // its DOM moves. No width, border or tint of its own — the slot owns those.
+  // 🔴 DRAWN INTO THE PAGE'S LEFT COLUMN, NOT BESIDE THE DETAIL (owner). ReviewView
+  // owns a 320px slot with the inbox rail's exact classes and hands it over as
+  // `railSlot`; this list is portalled into it, so its state stays here and
+  // only its DOM moves. No width, border or tint of its own — the slot owns them.
   const rail = (
     <div className="flex min-h-0 flex-1 flex-col">
-      {/* The inbox rail head's classes, exactly (review-view.tsx: px-3 py-2
-          border-b around an h-[28px] row), so the two bottom borders land on
-          the same line — only one is ever on screen, and a few pixels of
-          difference would read as the page moving. */}
+      {/* The inbox rail head's classes, exactly, so the bottom borders line up. */}
       <div className="px-3 py-2 border-b border-gray-200">
         <div className="flex h-[28px] items-center gap-2">
-          <span className="text-[12.5px] font-bold text-gray-800">
+          <span className="text-[12.5px] font-bold text-ink-900">
             {loading ? "Loading…" : `${plural(pending.length, "trip")} to copy`}
           </span>
-          {/* The header date moves the Copied section, NEVER this list (owner) —
-              without the note, stepping back a day looks like a stuck screen. */}
-          {!loading && <span className="-ml-1 text-[11px] text-gray-400">· any date</span>}
+          {/* The header date moves Done today, NEVER this list (owner). */}
+          {!loading && <span className="-ml-1 text-[11px] text-ink-400">· any date</span>}
           <span className="ml-auto flex items-center gap-1.5 text-[11px] font-semibold text-ok-text">
             <span className="h-[7px] w-[7px] rounded-full bg-ok ring-[3px] ring-ok/15" />
             live
@@ -290,34 +365,71 @@ export function BillingPrintTab({
         </div>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto p-2">
-          {error ? (
-            <div className="px-2 py-8 text-center text-[11.5px] text-gray-400">Couldn&rsquo;t load. {error}</div>
-          ) : loading ? null : (
-            <>
-              {pending.length === 0 && (
-                <div className="px-2 py-6 text-center text-[11.5px] text-gray-400">
-                  No trip is waiting to be copied.
-                </div>
-              )}
-              {pending.map((t) => (
-                <TripCard key={t.id} trip={t} active={selected?.id === t.id} onSelect={() => setSelectedId(t.id)} />
-              ))}
-              <div className="mb-1.5 mt-3 px-1 text-[10px] font-bold uppercase tracking-[0.08em] text-gray-400">
-                {isToday ? "Copied today" : `Copied · ${formatDayLabel(date!)}`} · {copied.length}
+        {error ? (
+          <div className="px-2 py-8 text-center text-[11.5px] text-ink-400">Couldn&rsquo;t load. {error}</div>
+        ) : loading ? null : (
+          <>
+            {pending.length === 0 && (
+              <div className="px-2 py-6 text-center text-[11.5px] text-ink-400">No trip is waiting to be copied.</div>
+            )}
+            {pending.map((t) => (
+              <TripCard key={t.id} trip={t} active={selected?.id === t.id} onSelect={() => setSelectedId(t.id)} />
+            ))}
+            <div className="mb-1.5 mt-3 px-1 text-[10px] font-bold uppercase tracking-[0.08em] text-ink-400">
+              {isToday ? "Done today" : `Done · ${formatDayLabel(date!)}`} · {done.length}
+            </div>
+            {done.length === 0 && (
+              <div className="px-2 py-3 text-[11px] text-ink-400">
+                {isToday ? "Nothing done yet today." : "Nothing done on this day."}
               </div>
-              {copied.length === 0 && (
-                <div className="px-2 py-3 text-[11px] text-gray-400">
-                  {isToday ? "Nothing copied yet today." : "Nothing copied on this day."}
-                </div>
-              )}
-              {copied.map((t) => (
-                <TripCard key={t.id} trip={t} active={selected?.id === t.id} onSelect={() => setSelectedId(t.id)} />
-              ))}
-            </>
-          )}
+            )}
+            {done.map((t) => (
+              <TripCard key={t.id} trip={t} active={selected?.id === t.id} onSelect={() => setSelectedId(t.id)} />
+            ))}
+          </>
+        )}
       </div>
     </div>
   );
+
+  // ── The one action ──────────────────────────────────────────────────────
+  let action: ReactNode = null;
+  let caption = "";
+  if (selected) {
+    if (selected.state === "done") {
+      action = (
+        <span className="inline-flex h-[32px] items-center rounded-md bg-ok-bg px-3 text-[12px] font-semibold text-ok-text">
+          ✓ Trip done{selected.billingDoneAt ? ` · ${hhmm(selected.billingDoneAt)}` : ""}
+        </span>
+      );
+      caption = selected.billingDoneByName
+        ? `by ${firstName(selected.billingDoneByName)} · Floor can still take bills back`
+        : "Floor can still take bills back";
+    } else if (showDone) {
+      action = (
+        <button type="button" onClick={() => void runDone()} disabled={busy} className={BTN_OK}>
+          {busy ? "Saving…" : "Done — all copied"}
+        </button>
+      );
+      caption = "Every bill is copied. Press Done to close the trip.";
+    } else if (readyN > 0) {
+      action = (
+        <button type="button" onClick={() => void runCopy()} disabled={busy} className={canEdit ? BTN_BRAND : BTN_PLAIN}>
+          {busy ? "Recording…" : copiedFlash ? "Copied" : `Copy ${readyN} OBD${readyN === 1 ? "" : "s"}`}
+        </button>
+      );
+      caption = canEdit
+        ? `Copies OBD nos of picked bills only.${selected.reviewCount > 0 ? " Red bills are left out — open them to copy." : ""}`
+        : "Copies to the clipboard only — records nothing.";
+    } else {
+      action = (
+        <button type="button" disabled className={BTN_OFF}>
+          Copy · nothing ready
+        </button>
+      );
+      caption = nothingReadyReason(selected);
+    }
+  }
 
   return (
     <div className="flex min-h-0 flex-1 overflow-hidden bg-white">
@@ -325,13 +437,13 @@ export function BillingPrintTab({
 
       {/* ── Detail ───────────────────────────────────────────────────────── */}
       <div className="flex min-w-0 flex-1 flex-col">
-        {!selected || !plan ? (
+        {!selected ? (
           <div className="px-5 py-14 text-center">
             {!loading && !error && (
               <>
-                <div className="text-[28px] leading-none text-gray-300">○</div>
-                <h4 className="mt-2 text-[13px] font-semibold text-gray-900">No trips sent to billing</h4>
-                <p className="mt-1.5 text-[11.5px] leading-relaxed text-gray-400">
+                <div className="text-[28px] leading-none text-ink-200">○</div>
+                <h4 className="mt-2 text-[13px] font-semibold text-ink-900">No trips sent to billing</h4>
+                <p className="mt-1.5 text-[11.5px] leading-relaxed text-ink-400">
                   A trip appears here when the planner presses Send to billing on the floor.
                 </p>
               </>
@@ -339,38 +451,28 @@ export function BillingPrintTab({
           </div>
         ) : (
           <>
-            <div className="flex items-start gap-3 border-b border-gray-200 px-[18px] pb-3 pt-3.5">
+            <div className="flex items-start gap-3 border-b border-ink-100 px-[18px] pb-3 pt-3.5">
               <div className="min-w-0">
-                <span className="rounded-[6px] bg-gray-900 px-2.5 py-[3px] font-mono text-[12px] font-semibold tracking-[0.02em] text-white">
+                <span className="rounded-[6px] bg-ink-900 px-2.5 py-[3px] font-mono text-[12px] font-semibold tracking-[0.02em] text-white">
                   {selected.tripNumber}
                 </span>
-                {/* No counts line here (owner): the selected card beside it
-                    already says bills · stops · litres. */}
-                <div className="mt-2 text-[11.5px] text-gray-500">
-                  <ReadinessText trip={selected} />
+                <div className="mt-2 text-[11.5px] font-semibold">
+                  <Summary trip={selected} />
                 </div>
               </div>
               <div className="ml-auto flex flex-col items-end">
-                <button
-                  type="button"
-                  onClick={() => void runCopy()}
-                  disabled={!plan.enabled || busy}
-                  className={plan.primary ? PRIMARY : PLAIN}
-                >
-                  {busy ? "Recording…" : copiedFlash ? "Copied" : plan.label}
-                </button>
-                <span className="mt-1 text-right text-[10.5px] text-gray-400">
-                  <CaptionText trip={selected} plan={plan} />
-                </span>
+                {action}
+                {caption && <span className="mt-1 max-w-[360px] text-right text-[10.5px] text-ink-400">{caption}</span>}
               </div>
             </div>
 
             {notice && (
               <div
+                role="alert"
                 className={`border-b px-[18px] py-2 text-[11.5px] ${
                   notice.tone === "error"
-                    ? "border-red-200 bg-red-50 text-red-700"
-                    : "border-amber-200 bg-amber-50 text-amber-700"
+                    ? "border-danger-bd bg-danger-bg text-danger-text"
+                    : "border-warn/30 bg-warn-bg text-warn-text"
                 }`}
               >
                 {notice.text}
@@ -379,7 +481,7 @@ export function BillingPrintTab({
 
             <div className="min-h-0 flex-1 overflow-y-auto">
               {selected.rows.length === 0 ? (
-                <div className="px-5 py-10 text-center text-[11.5px] text-gray-400">No bills on this trip.</div>
+                <div className="px-5 py-10 text-center text-[11.5px] text-ink-400">No bills on this trip.</div>
               ) : (
                 <table className="w-full table-fixed border-collapse">
                   <colgroup>
@@ -393,68 +495,22 @@ export function BillingPrintTab({
                       <th className={HEAD_TH}>OBD</th>
                       <th className={HEAD_TH}>Invoice no</th>
                       <th className={HEAD_TH}>Ship to</th>
-                      <th className={HEAD_TH}>Route</th>
                       <th className={HEAD_TH}>Vol</th>
+                      <th className={HEAD_TH}>Picking</th>
+                      <th className={HEAD_TH}>Copy</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {selected.rows.map((r, i) => {
-                      const awaiting = !r.held && r.invoiceNo === null;
-                      // The edge marks the row that needs attention: amber for a
-                      // missing number (this is what blocks the copy), slate for
-                      // a hold (a decision, not a fault — Floor's hold colour).
-                      const edge = awaiting
-                        ? "border-l-[3px] border-l-[#f59e0b]"
-                        : r.held
-                          ? "border-l-[3px] border-l-[#94a3b8]"
-                          : "border-l-[3px] border-l-transparent";
-                      const dim = r.held ? " !text-gray-400" : "";
-                      return (
-                        <tr key={r.orderId} className={awaiting ? "bg-amber-50/40" : ""}>
-                          <td className={`${TD_C} ${edge}`}>{i + 1}</td>
-                          <td className={`${TD} font-mono${dim}`}>{r.obdNumber}</td>
-                          <td className={`${TD}${dim}`}>
-                            {r.held ? (
-                              <>
-                                {r.invoiceNo && <span className="mr-1.5 font-mono">{r.invoiceNo}</span>}
-                                <span className="rounded bg-slate-100 px-1.5 py-px text-[10px] font-semibold text-slate-600">
-                                  On hold · not copied
-                                </span>
-                              </>
-                            ) : r.invoiceNo ? (
-                              <>
-                                <span className="font-mono font-semibold text-gray-900">{r.invoiceNo}</span>
-                                {r.state === "copied" && (
-                                  <span className="ml-1.5 rounded bg-ok/15 px-1.5 py-px text-[10px] font-bold text-ok-text">
-                                    copied
-                                  </span>
-                                )}
-                              </>
-                            ) : (
-                              <span className="font-semibold text-[#b45309]">awaiting invoice no</span>
-                            )}
-                          </td>
-                          <td className={`${TD}${dim}`} title={r.shipToName ?? undefined}>
-                            {r.shipToName ? smartTitleCase(r.shipToName) : "—"}
-                            {/* GIFT — SAP material type GIFTS; Floor's own pill. */}
-                            {r.isGift && (
-                              <span className="ml-1.5 inline-block align-[-1px]">
-                                <GiftBadge />
-                              </span>
-                            )}
-                          </td>
-                          <td className={`${TD}${dim}`}>{r.routeName ?? "—"}</td>
-                          {/* A GIFT's litres are left out of the trip total above —
-                              shown, but muted to ink-400 so they read as not counted. */}
-                          <td
-                            className={`${TD} tabular-nums${r.isGift && !r.held ? " !text-ink-400" : dim}`}
-                            title={r.isGift ? "Gift — not counted in L / kg" : undefined}
-                          >
-                            {r.litres > 0 ? `${Math.round(r.litres).toLocaleString("en-US")} L` : ""}
-                          </td>
-                        </tr>
-                      );
-                    })}
+                    {selected.rows.map((r, i) => (
+                      <BillRow
+                        key={r.orderId}
+                        row={r}
+                        index={i + 1}
+                        nowMs={nowMs}
+                        open={openBillId === r.orderId}
+                        onOpen={() => setOpenBillId(r.orderId)}
+                      />
+                    ))}
                   </tbody>
                 </table>
               )}
@@ -462,89 +518,135 @@ export function BillingPrintTab({
           </>
         )}
       </div>
+
+      {selected && openBillId !== null && (
+        <BillingOrderDetailPanel
+          mode="print"
+          orderId={openBillId}
+          tripId={selected.id}
+          canEdit={canEdit}
+          onClose={() => setOpenBillId(null)}
+          onMarkedDone={() => {
+            setOpenBillId(null);
+            void load();
+          }}
+          onPrintRecorded={() => void load()}
+        />
+      )}
     </div>
   );
 }
 
-/** "8 of 8 invoiced · ready" — and, on a copied trip, when and by whom. */
-function ReadinessText({ trip }: { trip: PrintTrip }) {
-  const counted =
-    trip.eligible === 0 ? (trip.held > 0 ? "every bill on hold" : "no bills") : `${trip.copiedCount} of ${trip.eligible} copied`;
+function BillRow({
+  row: r,
+  index,
+  nowMs,
+  open,
+  onOpen,
+}: {
+  row: PrintBillRow;
+  index: number;
+  nowMs: number;
+  open: boolean;
+  onOpen: () => void;
+}) {
+  const cls = ROW_CLS[r.state];
+  const held = r.state === "held";
+  const muted = held || r.state === "waiting" ? " !text-ink-400" : "";
+  const strike = held ? " line-through" : "";
   return (
-    <>
-      <span className={trip.readyCount > 0 ? "font-semibold text-ok-text" : "font-semibold text-[#b45309]"}>
-        {counted}
-        {trip.readyCount > 0 ? ` · ${trip.readyCount} ready` : ""}
-      </span>
-      {/* Moved here from the deleted counts line, so a hold is still said out loud. */}
-      {trip.held > 0 && <span className="text-[#475569]"> · {trip.held} on hold, not copied</span>}
-      {trip.billingCopiedAt && (
-        <span>
-          {" "}
-          · copied {hhmm(trip.billingCopiedAt)}
-          {trip.billingCopiedByName ? ` by ${firstName(trip.billingCopiedByName)}` : ""}
-        </span>
-      )}
-    </>
+    <tr onClick={onOpen} className={`cursor-pointer ${open ? "bg-brand-50" : cls.row} hover:bg-brand-50/60`}>
+      <td className={`${TD_C} border-l-[3px] ${cls.edge}`}>{index}</td>
+      <td className={`${TD} font-mono${r.state === "ready" ? " font-semibold text-ink-900" : ""}${muted}${strike}`}>
+        {r.obdNumber}
+      </td>
+      <td className={`${TD}${muted}${strike}`}>
+        {r.invoiceNo ? <span className="font-mono">{r.invoiceNo}</span> : <span className="text-ink-400">— not yet</span>}
+      </td>
+      <td className={`${TD}${muted}${strike}`} title={r.shipToName ?? undefined}>
+        {r.shipToName ? smartTitleCase(r.shipToName) : "—"}
+        {r.isGift && (
+          <span className="ml-1.5 inline-block align-[-1px]">
+            <GiftBadge />
+          </span>
+        )}
+      </td>
+      <td
+        className={`${TD} tabular-nums${r.isGift && !held ? " !text-ink-400" : muted}${strike}`}
+        title={r.isGift ? "Gift — not counted in L / kg" : undefined}
+      >
+        {r.litres > 0 ? `${Math.round(r.litres).toLocaleString("en-US")} L` : ""}
+      </td>
+      <td className={TD}>
+        <PrintPickingPill row={r} nowMs={nowMs} />
+      </td>
+      <td className={TD}>
+        <CopyCell row={r} />
+      </td>
+    </tr>
   );
 }
 
-/** Under the button: why it is greyed, or that bills share numbers, or who copied. */
-function CaptionText({ trip, plan }: { trip: PrintTrip; plan: ReturnType<typeof copyPlan> }) {
-  if (plan.reason) return <>{plan.reason}</>;
-  const bits: string[] = [];
-  // Bills behind the numbers this press copies. More bills than numbers means
-  // some bills share one — said out loud, so "8" next to 9 bills is not a mystery.
-  if (trip.reviewCount > 0) bits.push(`${trip.reviewCount} with a pick finding left out`);
-  if (!plan.records && plan.enabled) bits.push("copies, records nothing");
-  return <>{bits.join(" · ")}</>;
+function CopyCell({ row: r }: { row: PrintBillRow }) {
+  switch (r.state) {
+    case "copied":
+      return <span className="font-semibold text-ok-text">✓ {hhmm(r.copiedAt)}</span>;
+    case "ready":
+      return <span className="font-semibold text-brand-700">next copy</span>;
+    case "review":
+      return <span className="font-semibold text-danger-text">open to copy →</span>;
+    case "waiting":
+      return <span className="text-ink-400">not picked yet</span>;
+    case "held":
+      return <span className="text-ink-400">on hold · not copied</span>;
+  }
 }
 
 function TripCard({ trip, active, onSelect }: { trip: PrintTrip; active: boolean; onSelect: () => void }) {
   const done = trip.state === "done";
-  const newCount = trip.state === "reopened" ? trip.eligible - trip.copiedCount : 0;
+  const allCopied = trip.eligible > 0 && trip.copiedCount === trip.eligible;
   return (
     <button
       type="button"
       onClick={onSelect}
       className={`mb-1.5 block w-full rounded-[8px] border px-3 py-2.5 text-left transition-colors ${
-        active ? "border-gray-900 bg-white shadow-sm" : "border-gray-200 bg-white hover:border-gray-300"
+        active ? "border-ink-900 bg-white shadow-sm" : "border-ink-100 bg-white hover:border-ink-200"
       } ${done && !active ? "opacity-60" : ""}`}
     >
       <div className="flex items-center gap-2">
         {/* TRIP NUMBER ONLY — never the vehicle number (owner). */}
-        <span className="font-mono text-[12px] font-semibold text-gray-900">{trip.tripNumber}</span>
-        {!done && (
-          <span
-            className={`ml-auto rounded-full px-2 py-[1px] text-[9.5px] font-bold uppercase tracking-[0.06em] ${
-              trip.canDone ? "bg-ok/15 text-ok-text" : "bg-amber-100 text-[#b45309]"
-            }`}
-          >
-            {`${trip.copiedCount}/${trip.eligible}`}
-          </span>
-        )}
+        <span className="font-mono text-[12px] font-semibold text-ink-900">{trip.tripNumber}</span>
+        <span
+          className={`ml-auto rounded-full px-2 py-[1px] text-[9.5px] font-bold tabular-nums ${
+            allCopied ? "bg-ok-bg text-ok-text" : "bg-warn-bg text-warn-text"
+          }`}
+        >
+          {trip.copiedCount}/{trip.eligible}
+        </span>
       </div>
-      <div className="mt-1 text-[11px] tabular-nums text-gray-500">
+      <div className="mt-1 text-[11px] tabular-nums text-ink-500">
         {plural(trip.bills, "bill")} · {plural(trip.stops, "stop")} · {Math.round(trip.litres).toLocaleString("en-US")} L
       </div>
-      <div className="mt-0.5 text-[11px] text-gray-500">
-        {trip.eligible === 0 ? (
+      <div className="mt-0.5 text-[11px] text-ink-500">
+        {done ? (
+          <span className="text-ink-400">
+            Done {hhmm(trip.billingDoneAt)}
+            {trip.billingDoneByName ? ` · ${firstName(trip.billingDoneByName)}` : ""}
+          </span>
+        ) : trip.eligible === 0 ? (
           trip.held > 0 ? "every bill on hold" : "no bills"
         ) : (
           <>
-            {trip.invoiced} of {trip.eligible} invoiced
+            {trip.copiedCount} copied · {trip.readyCount} ready
+            {trip.reviewCount > 0 && <span className="text-danger-text"> · {trip.reviewCount} to check</span>}
+            {" · "}
+            {trip.waitingCount} waiting
             {trip.held > 0 ? ` · ${trip.held} on hold` : ""}
           </>
         )}
       </div>
-      {trip.billingCopiedAt && (
-        <div className={`mt-0.5 text-[11px] ${done ? "text-gray-400" : "font-semibold text-brand-700"}`}>
-          {done
-            ? `Copied ${hhmm(trip.billingCopiedAt)}${trip.billingCopiedByName ? ` · ${firstName(trip.billingCopiedByName)}` : ""}`
-            : `copied ${hhmm(trip.billingCopiedAt)}${
-                newCount > 0 ? ` · ${newCount} new since` : ` · ${trip.eligible - trip.invoiced} awaiting invoice no`
-              }`}
-        </div>
+      {trip.state === "reopened" && (
+        <div className="mt-0.5 text-[11px] font-semibold text-brand-700">reopened · done {hhmm(trip.billingDoneAt)}</div>
       )}
     </button>
   );
