@@ -59,7 +59,8 @@ import { smartTitleCase } from "@/lib/mail-orders/utils";
 import type { PrintBillRow, PrintBillState, PrintTrip } from "@/lib/billing/print";
 import { useBillingShownIds } from "@/components/billing/billing-live";
 import { GiftBadge } from "@/components/floor/gift-badge";
-import { StatusPill, rowStatus } from "@/components/floor/status-pill";
+import { StatusPill, countByStatus, rowStatus, type FloorStatus, type StatusCounts } from "@/components/floor/status-pill";
+import { ProgressBar as FloorProgressBar } from "@/components/floor/progress-bar";
 import { BillingOrderDetailPanel } from "@/components/billing/billing-order-detail-panel";
 
 const LIST_URL = "/api/billing/print/list";
@@ -98,6 +99,43 @@ function groupTrips(trips: readonly PrintTrip[]): { key: string; label: string; 
 
 const GROUP_HEAD = "mb-1.5 mt-3 px-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-ink-400";
 const CHIP = "whitespace-nowrap rounded px-1.5 py-px text-[10.5px] font-semibold";
+
+// ── The NOT-PICKED bucket, split by Floor's own status (2026-10-05) ─────────
+// A "waiting" Print bill is one whose picking is not Done. Floor already says
+// WHERE each one is (rowStatus): needs check, with picker, waiting, the tint
+// phases. The split is Floor's: counts from countByStatus(), colours from
+// Floor's own components — the chips ARE Floor's StatusPill and the bar's tail
+// IS Floor's ProgressBar (components/floor/progress-bar.tsx). No colour is
+// declared here; Floor stays the one source.
+//
+// Floor's own left→right bar order for the not-picked statuses
+// (progress-bar.tsx SEGMENTS). Keys only — the order chips are listed in.
+const NOT_PICKED_ORDER: readonly FloorStatus[] = [
+  "needsCheck",
+  "withPicker",
+  "waiting",
+  "tintDone",
+  "tinting",
+  "tintAssigned",
+  "tintPending",
+];
+
+/** Floor status counts over the trip's NOT-PICKED (state "waiting") bills. */
+function notPickedCounts(trip: PrintTrip): StatusCounts {
+  return countByStatus(trip.rows.filter((r) => r.state === "waiting"));
+}
+
+/** One chip per Floor status present — Floor's own pill, the count in its time slot. */
+function NotPickedPills({ trip }: { trip: PrintTrip }) {
+  const c = notPickedCounts(trip);
+  return (
+    <>
+      {NOT_PICKED_ORDER.filter((k) => c[k as keyof StatusCounts] > 0).map((k) => (
+        <StatusPill key={k} status={k} time={String(c[k as keyof StatusCounts])} />
+      ))}
+    </>
+  );
+}
 
 // # 4 · OBD 14 · Invoice no 14 · Ship to 26 · Vol 8 · Picking 18 · Copy 16 = 100
 const WIDTHS = [4, 14, 14, 26, 8, 18, 16];
@@ -193,8 +231,15 @@ function Summary({ trip }: { trip: PrintTrip }) {
           <span className="text-danger-text">{trip.reviewCount} to check</span>
         </>
       )}
-      <span className="text-ink-400"> · </span>
-      <span className="text-ink-500">{trip.waitingCount} waiting</span>
+      {trip.waitingCount > 0 && (
+        <>
+          <span className="text-ink-400"> · </span>
+          {/* Not picked yet, split the way Floor shows it. */}
+          <span className="inline-flex flex-wrap gap-1 align-middle">
+            <NotPickedPills trip={trip} />
+          </span>
+        </>
+      )}
       {trip.held > 0 && <span className="text-ink-400"> · {trip.held} on hold, not copied</span>}
     </>
   );
@@ -695,23 +740,29 @@ function CopyCell({ row: r }: { row: PrintBillRow }) {
 
 /**
  * The trip's progress over its NON-HELD bills, left → right: copied (ok) ·
- * ready (brand) · on the card also to check (danger) · the rest is the grey
- * track. ONE implementation, two sizes:
- *   header — 4px under the trip's status line (copied · ready, as shipped);
- *   card   — 3px, the pending rail card's last element, adds the to-check segment.
+ * ready (brand) · to check (danger) · then the NOT-PICKED bills split by
+ * Floor's own status — that tail IS Floor's ProgressBar (fed only those bills),
+ * so its segments, order and colours are Floor's. ONE implementation, two
+ * heights: header 4px, card 3px (the pending rail card's last element).
  */
 function ProgressBar({ trip, size = "header" }: { trip: PrintTrip; size?: "header" | "card" }) {
   if (trip.eligible === 0) return null;
   const pct = (n: number) => `${(n / trip.eligible) * 100}%`;
-  const card = size === "card";
+  const live = trip.state !== "done";
   return (
     <div
-      className={`flex overflow-hidden rounded-sm bg-ink-100 ${card ? "mt-2.5 h-[3px]" : "mt-2.5 h-[4px]"}`}
+      className={`flex overflow-hidden rounded-sm bg-ink-100 ${size === "card" ? "mt-2.5 h-[3px]" : "mt-2.5 h-[4px]"}`}
       aria-hidden
     >
       <span className="block h-full bg-ok" style={{ width: pct(trip.copiedCount) }} />
-      {trip.state !== "done" && <span className="block h-full bg-brand-600" style={{ width: pct(trip.readyCount) }} />}
-      {card && trip.state !== "done" && <span className="block h-full bg-danger" style={{ width: pct(trip.reviewCount) }} />}
+      {live && <span className="block h-full bg-brand-600" style={{ width: pct(trip.readyCount) }} />}
+      {live && <span className="block h-full bg-danger" style={{ width: pct(trip.reviewCount) }} />}
+      {live && trip.waitingCount > 0 && (
+        <span className="block h-full" style={{ width: pct(trip.waitingCount) }}>
+          {/* Floor's bar, squared off to this bar's height. */}
+          <FloorProgressBar counts={notPickedCounts(trip)} className="!h-full !rounded-none" />
+        </span>
+      )}
     </div>
   );
 }
@@ -751,7 +802,7 @@ function PendingCard({ trip, active, onSelect }: { trip: PrintTrip; active: bool
         {trip.copiedCount > 0 && <span className={`${CHIP} bg-ok-bg text-ok-text`}>{trip.copiedCount} copied</span>}
         {trip.readyCount > 0 && <span className={`${CHIP} bg-brand-50 text-brand-700`}>{trip.readyCount} ready</span>}
         {trip.reviewCount > 0 && <span className={`${CHIP} bg-danger-bg text-danger-text`}>{trip.reviewCount} to check</span>}
-        {trip.waitingCount > 0 && <span className={`${CHIP} bg-ink-50 text-ink-600`}>{trip.waitingCount} waiting</span>}
+        {trip.waitingCount > 0 && <NotPickedPills trip={trip} />}
         {trip.eligible === 0 && (
           <span className={`${CHIP} bg-ink-50 text-ink-600`}>{trip.held > 0 ? "all on hold" : "no bills"}</span>
         )}
