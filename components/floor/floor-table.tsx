@@ -79,6 +79,16 @@ export type FloorTableVariant = "live" | "history" | "upcoming";
 // data issue — deliberately NOT handled here.
 const PROJECT_SMUS = new Set(["Retail Offtake", "Decorative Projects"]);
 
+// THE SEARCH HIT (2026-10-06). Floor search lights the row it jumped to by
+// setting `data-search-hit="on"` on it (floor-page.tsx, found by the row's
+// `data-order-id`). This is that light: the board's own SELECTED look —
+// brand-50 ground + the 3px brand bar on the first cell, as the block row and
+// Tint Manager's selected row wear it — no new colour. The colour transition
+// is the fade when the attribute is removed. Exported so the Hold and Cancel &
+// CI tables wear the identical class.
+export const SEARCH_HIT_ROW_CLS =
+  "transition-colors duration-700 data-[search-hit=on]:bg-brand-50 data-[search-hit=on]:[&>td:first-child]:shadow-[inset_3px_0_0_theme(colors.brand.600)]";
+
 // Exported so the Hold and Cancelled tabs mark a site bill / a redirect by the
 // SAME rule the floor table uses (design §7.5). Shared predicate, not shared
 // markup — each table owns its own cell, but the rule can never drift.
@@ -1148,7 +1158,7 @@ export function FloorTable({
           : "group hover:bg-[#fafafa]";
     const stop = (e: React.MouseEvent) => e.stopPropagation();
     return (
-      <tr key={String(selKey)} className={rowCls} {...blockRowProps}>
+      <tr key={String(selKey)} className={`${rowCls} ${SEARCH_HIT_ROW_CLS}`} data-order-id={row.orderId} {...blockRowProps}>
         {tickColumn && (
           /* FIRST CELL when the table is selectable — it carries the bar. */
           <td className={TD_NARROW} style={barStyle}>

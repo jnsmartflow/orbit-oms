@@ -85,7 +85,7 @@ import { rowsInScope, scopeBoard } from "@/lib/floor/scope";
 import { parseSearch, applySearch, searchReport, lookupTermOf, type Searchable, type ParsedSearch } from "@/lib/floor/search";
 import { applyFloorFilters, applyFlagFilters, EMPTY_FILTERS, type FloorFilters } from "@/lib/floor/filter";
 import type { DispatchWindow } from "@/components/floor/dispatch-slot-picker";
-import type { FloorScope, FloorBoardResult, FloorBoardRow, FloorPicker, FloorHoldRow, FloorCancelledRow, FloorDetailSource, FloorRouteClub } from "@/lib/floor/types";
+import type { FloorScope, FloorBoardResult, FloorBoardRow, FloorPicker, FloorHoldRow, FloorCancelledRow, FloorDetailSource, FloorRouteClub, FloorSearchHit } from "@/lib/floor/types";
 import type { FloorLoadPlanPayload } from "@/lib/floor/load-plan-config";
 import type { RailSelection } from "./trip-rail";
 import type { TripSummary, TripDetail, TripRedeliveryRow } from "@/lib/trips/queries";
@@ -209,8 +209,47 @@ export interface LookupTrip {
  *  day and the page is switching to History for it — see `openLookupTrip`. */
 export type LookupState =
   | { term: string; status: "loading" | "none" | "error" }
-  | { term: string; status: "many"; trips: LookupTrip[] }
-  | { status: "opening" | "open-failed"; trip: LookupTrip; reason?: string };
+  // GET /api/floor/search (2026-10-06): several bills (a shared invoice), or one
+  // during a targeted add (the page does not jump then) — each one a button.
+  | { term: string; status: "many"; hits: FloorSearchHit[] }
+  | { status: "opening" | "open-failed"; trip: LookupTrip; reason?: string }
+  // The server named a live tab, but the loaded list no longer holds the bill.
+  | { status: "moved"; message: string };
+
+/** A search hit's trip, in the shape `openLookupTrip` takes (the trip jump is
+ *  the 2026-09-29 lookup's, unchanged). */
+function lookupTripOf(h: FloorSearchHit): LookupTrip | null {
+  if (!h.trip) return null;
+  return {
+    tripId: h.trip.id,
+    tripNumber: h.trip.number,
+    tripDate: h.trip.date,
+    status: h.trip.status,
+    obdNumber: h.obdNumber,
+    obdNumbers: [h.obdNumber],
+    onLiveDesk: h.trip.onLiveDesk,
+  };
+}
+
+/** "pick_assigned" → "pick assigned"; a held bill reads "on hold". For the
+ *  "No longer on hold — now: …" line. */
+function stageWords(h: FloorSearchHit): string {
+  if (h.dispatchStatus === "hold") return "on hold";
+  return h.workflowStage.replace(/_/g, " ");
+}
+
+/**
+ * A search jump in flight (2026-10-06). `resolve` — waiting for the target
+ * tab's rows to be loaded so the bill can be checked against them; `highlight`
+ * — the row is (or will be) on screen: scroll to it and light it.
+ * `staleData` — the board that was on screen when the jump had to leave
+ * History; the live check waits until a newer board has replaced it.
+ */
+interface SearchFocus {
+  hit: FloorSearchHit;
+  phase: "resolve" | "highlight";
+  staleData?: BoardData | null;
+}
 
 /** Which board a load() is for — live, or History on one day. Two loads with
  *  different keys answer different questions (the stale-answer guard). */
@@ -491,6 +530,15 @@ export function FloorPage({ canEdit = false }: { canEdit?: boolean } = {}) {
    * new search, a clear, or a load for a different view (the planner moved on).
    */
   const pendingOpenRef = useRef<LookupTrip | null>(null);
+  /** The search jump in flight, or null (2026-10-06 — see SearchFocus). */
+  const [searchFocus, setSearchFocus] = useState<SearchFocus | null>(null);
+  /**
+   * A Cancel & CI bill the search found OUTSIDE today's list (2026-10-06): the
+   * tab shows these rows, read-only, under a "Search result · {date}" banner
+   * instead of today's — the way History shows an old trip. Null = today's list.
+   * Cleared by Clear search and by any new search.
+   */
+  const [cancelSearch, setCancelSearch] = useState<{ rows: FloorCancelledRow[]; label: string } | null>(null);
 
   // ── THE STALE-ANSWER GUARD (owner, 2026-09-29) ────────────────────────────
   // load() had no guard, and on a slow link a LIVE refresh that started before
@@ -1593,7 +1641,11 @@ export function FloorPage({ canEdit = false }: { canEdit?: boolean } = {}) {
     [data, topTab],
   );
   const activePool: Searchable[] =
-    topTab === "hold" ? scopedHold ?? [] : topTab === "cancelled" ? scopedCancelled ?? [] : searchableFloorRows;
+    topTab === "hold"
+      ? scopedHold ?? []
+      : topTab === "cancelled"
+        ? cancelSearch?.rows ?? scopedCancelled ?? []
+        : searchableFloorRows;
   const tabSearchReport = useMemo(
     () => searchReport(activePool, parsed, tripBillRows),
     [activePool, parsed, tripBillRows],
@@ -1659,28 +1711,71 @@ export function FloorPage({ canEdit = false }: { canEdit?: boolean } = {}) {
     [selectRail, load],
   );
 
-  const runLookup = useCallback(
-    async (term: string) => {
+  /**
+   * Jump to the tab a search hit belongs on (2026-10-06, owner). A trip hit is
+   * the 2026-09-29 lookup's jump, unchanged (live desk, or History on the
+   * trip's day). Floor / Tinting / On hold are LIVE ONLY — the page leaves
+   * History for them — and are checked against the loaded rows before the row
+   * is lit (the `resolve` effect below). Cancel & CI reaches all history.
+   */
+  const goToHit = useCallback(
+    (hit: FloorSearchHit) => {
+      setCancelSearch(null);
+      setLookup(null);
+      if (hit.target === "trip") {
+        const t = lookupTripOf(hit);
+        if (t) openLookupTrip(t);
+        setSearchFocus({ hit, phase: "highlight" });
+        return;
+      }
+      if (hit.target === "cancel_ci") {
+        setTopTab("cancelled");
+        setSearchFocus({ hit, phase: "resolve" });
+        return;
+      }
+      // Live only. Leaving History: the board on screen is that day's, so the
+      // check must wait for the live one (`staleData`). viewKeyRef is moved now
+      // for the same reason openLookupTrip moves it.
+      let staleData: BoardData | null | undefined;
+      if (viewKeyRef.current !== "live") {
+        staleData = dataRef.current;
+        viewKeyRef.current = "live";
+        setViewMode("live");
+      }
+      setTopTab(hit.target === "hold" ? "hold" : hit.target === "tinting" ? "tinting" : "floor");
+      setSearchFocus({ hit, phase: "resolve", staleData });
+    },
+    [openLookupTrip],
+  );
+
+  /**
+   * GET /api/floor/search — for ONE full number (2026-10-06; replaced the trip
+   * lookup's call here). One bill → jump to it, unless `navigate` is false (a
+   * targeted add is open: jumping would end it, so the hit is offered as a
+   * button instead). Several bills (a shared invoice) → listed, each a button.
+   */
+  const runSearch = useCallback(
+    async (term: string, navigate: boolean) => {
       const seq = ++lookupSeq.current;
       setLookup({ term, status: "loading" });
       try {
-        const res = await fetch(`/api/floor/trips/lookup?q=${encodeURIComponent(term)}`, { cache: "no-store" });
+        const res = await fetch(`/api/floor/search?q=${encodeURIComponent(term)}`, { cache: "no-store" });
         if (seq !== lookupSeq.current) return;
         if (!res.ok) {
           setLookup({ term, status: "error" });
           return;
         }
-        const body = (await res.json()) as { trips?: LookupTrip[] };
+        const body = (await res.json()) as { hits?: FloorSearchHit[] };
         if (seq !== lookupSeq.current) return;
-        const found = body.trips ?? [];
-        if (found.length === 0) setLookup({ term, status: "none" });
-        else if (found.length === 1) openLookupTrip(found[0]);
-        else setLookup({ term, status: "many", trips: found });
+        const hits = body.hits ?? [];
+        if (hits.length === 0) setLookup({ term, status: "none" });
+        else if (hits.length === 1 && navigate) goToHit(hits[0]);
+        else setLookup({ term, status: "many", hits });
       } catch {
         if (seq === lookupSeq.current) setLookup({ term, status: "error" });
       }
     },
-    [openLookupTrip],
+    [goToHit],
   );
 
   const commitSearch = useCallback(
@@ -1726,6 +1821,8 @@ export function FloorPage({ canEdit = false }: { canEdit?: boolean } = {}) {
       // Any earlier lookup is void the moment a new search is committed.
       lookupSeq.current++;
       setLookup(null);
+      setSearchFocus(null);
+      setCancelSearch(null);
       earlyLookupRawRef.current = null;
       pendingOpenRef.current = null;
       if (p.mode === "none") return;
@@ -1738,7 +1835,7 @@ export function FloorPage({ canEdit = false }: { canEdit?: boolean } = {}) {
         const early = lookupTermOf(raw);
         if (early !== null) {
           earlyLookupRawRef.current = raw;
-          void runLookup(early);
+          void runSearch(early, addingToTripId === null);
         }
         return;
       }
@@ -1755,18 +1852,24 @@ export function FloorPage({ canEdit = false }: { canEdit?: boolean } = {}) {
       if (hits.length === 1 && !poolHit && addingToTripId === null && topTab === "floor") {
         selectRail({ kind: "trip", tripId: hits[0].tripId });
       }
-      // Nothing on the loaded desk at all, and ONE full number → ask the server
-      // which trip it is on, any day.
+      // ONE full number → ask the server where the bill is, ALWAYS (2026-10-06).
+      // It used to ask only when the loaded desk found nothing, but On hold and
+      // Cancel & CI may not be loaded at all under the live feed, and an old
+      // cancel is never in the loaded list — so a local "0 hits" proved nothing.
+      // The local filter above still runs first and instantly; the answer then
+      // switches tab and lights the row.
       const term = lookupTermOf(raw);
-      if (term !== null && applySearch(data.floor.rows, p).length === 0) void runLookup(term);
+      if (term !== null) void runSearch(term, addingToTripId === null);
     },
-    [topTab, scopedData, data, trips, railSelection, addingToTripId, tripDetail, selectRail, runLookup],
+    [topTab, scopedData, data, trips, railSelection, addingToTripId, tripDetail, selectRail, runSearch],
   );
   const clearSearch = useCallback(() => {
     setSearchQuery("");
     setSelection(new Set());
     lookupSeq.current++;
     setLookup(null);
+    setSearchFocus(null);
+    setCancelSearch(null);
     earlyLookupRawRef.current = null;
     pendingOpenRef.current = null;
   }, []);
@@ -1783,6 +1886,125 @@ export function FloorPage({ canEdit = false }: { canEdit?: boolean } = {}) {
     earlyLookupRawRef.current = null;
     if (applySearch(data.floor.rows, parseSearch(raw)).length > 0) commitSearch(raw);
   }, [data, commitSearch]);
+
+  // ── A search jump, step 1: check the bill against the loaded rows ─────────
+  // (2026-10-06.) Waits until the target tab's rows exist (On hold and Cancel &
+  // CI load lazily under the live feed; the live board after leaving History),
+  // then decides where the row actually is NOW:
+  //   On hold   — in the Hold rows → light it; else "No longer on hold — now: …".
+  //   Floor /
+  //   Tinting   — found on the live board → the tab its row really belongs on
+  //               (isTintRoomRow, the tabs' own split), the pool or its trip on
+  //               the rail; else "No longer tinting / Not on the live board".
+  //   Cancel&CI — in today's list → light it there; otherwise the server's own
+  //               row (any date) under the "Search result" banner.
+  // A scope chip or a Flags filter hiding the row is cleared, so the row the
+  // planner asked for is never lit somewhere he cannot see.
+  useEffect(() => {
+    const f = searchFocus;
+    if (f === null || f.phase !== "resolve") return;
+    const { hit } = f;
+    const id = hit.orderId;
+    const moved = (what: string) => {
+      setSearchFocus(null);
+      setLookup({ status: "moved", message: `${hit.obdNumber} — ${what} — now: ${stageWords(hit)}` });
+    };
+    const light = () => setSearchFocus({ hit, phase: "highlight" });
+
+    if (hit.target === "cancel_ci") {
+      if (cancelledRows === null) return; // still loading (lazy tab / first load)
+      const today = cancelledRows.find((r) => r.orderId === id);
+      if (today) {
+        if (rowsInScope([today], scope).length === 0) setScope("All");
+        if (applyFlagFilters([today], filters).length === 0) setFilters(EMPTY_FILTERS);
+        light();
+        return;
+      }
+      if (hit.cancelRow === null) {
+        moved("no Cancel & CI record found");
+        return;
+      }
+      const at = hit.cancelRow.at;
+      const label = at
+        ? new Date(at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })
+        : "date unknown";
+      setCancelSearch({ rows: [hit.cancelRow], label });
+      light();
+      return;
+    }
+
+    if (hit.target === "hold") {
+      if (holdRows === null) return;
+      const row = holdRows.find((r) => r.orderId === id);
+      if (!row) {
+        moved("no longer on hold");
+        return;
+      }
+      if (rowsInScope([row], scope).length === 0) setScope("All");
+      if (applyFlagFilters([row], filters).length === 0) setFilters(EMPTY_FILTERS);
+      light();
+      return;
+    }
+
+    // floor / tinting — the LIVE board, and a board newer than the one on
+    // screen when the jump left History.
+    if (viewMode !== "live" || loading || !data || (f.staleData !== undefined && data === f.staleData)) return;
+    const row = data.floor.rows.find((r) => r.orderId === id);
+    if (!row) {
+      moved(hit.target === "tinting" ? "no longer tinting" : "not on the live board");
+      return;
+    }
+    if (row.tripDropId !== null && row.tripNumber) {
+      const t = findTripByNumber(trips ?? [], row.tripNumber);
+      setTopTab("floor");
+      if (t) selectRail({ kind: "trip", tripId: t.id });
+    } else {
+      const tab: TopTab = isTintRoomRow(row) ? "tinting" : "floor";
+      setTopTab(tab);
+      // The pool is where a no-trip row is listed — not during a targeted add,
+      // which already shows the pool and must not be ended by a jump.
+      if (tab === "floor" && railSelection.kind !== "pool" && addingToTripId === null) selectRail({ kind: "pool" });
+    }
+    if (rowsInScope([row], scope).length === 0) setScope("All");
+    if (applyFloorFilters([row], filters).length === 0) setFilters(EMPTY_FILTERS);
+    light();
+  }, [searchFocus, cancelledRows, holdRows, data, loading, viewMode, trips, scope, filters, railSelection, addingToTripId, selectRail]);
+
+  // ── A search jump, step 2: scroll to the row and light it ─────────────────
+  // The row is found in the DOM by `data-order-id` (floor-table / hold-table /
+  // cancelled-tab rows carry it), retried while the tab, the trip's stops or a
+  // History day finish loading. It wears `data-search-hit="on"`, which those
+  // rows style as the board's own SELECTED look (brand-50 + the 3px brand bar,
+  // CLAUDE_UI §63 / floor-table's block row) — no new colour. It fades after a
+  // few seconds; Clear search or the next search drops it at once (cleanup).
+  useEffect(() => {
+    const f = searchFocus;
+    if (f === null || f.phase !== "highlight") return;
+    const sel = `[data-order-id="${f.hit.orderId}"]`;
+    let lit: HTMLElement[] = [];
+    let tries = 0;
+    let fade: ReturnType<typeof setTimeout> | null = null;
+    const poll = setInterval(() => {
+      tries++;
+      const els = Array.from(document.querySelectorAll<HTMLElement>(sel)).filter((el) => el.offsetParent !== null);
+      if (els.length > 0) {
+        clearInterval(poll);
+        lit = els;
+        els[0].scrollIntoView({ block: "center", behavior: "smooth" });
+        for (const el of els) el.setAttribute("data-search-hit", "on");
+        fade = setTimeout(() => {
+          for (const el of lit) el.removeAttribute("data-search-hit");
+        }, 4000);
+      } else if (tries >= 60) {
+        clearInterval(poll); // ~30 s — a History day on a slow link; then give up quietly
+      }
+    }, 500);
+    return () => {
+      clearInterval(poll);
+      if (fade) clearTimeout(fade);
+      for (const el of lit) el.removeAttribute("data-search-hit");
+    };
+  }, [searchFocus]);
 
   // ── Detail panel (design §10) — open state + single-bill action handlers ──
   // Additive wiring only: the panel is mounted at the end; every write REUSES an
@@ -1809,8 +2031,14 @@ export function FloorPage({ canEdit = false }: { canEdit?: boolean } = {}) {
       // which IS the history payload in history mode. So Prev/Next steps
       // through the viewed day's rows and can never reach a live row — the two
       // never coexist in one payload.
-      case "floor":
       case "history":
+        // A Cancel & CI search result opens read-only (2026-10-06) — its pager
+        // walks the search rows, never the board.
+        if (cancelSearch?.rows.some((r) => r.orderId === detail.orderId)) {
+          return cancelSearch.rows.map((r) => r.orderId);
+        }
+        return (filteredFloor?.rows ?? []).map((r) => r.orderId);
+      case "floor":
         // Every row the desk lists, upcoming included (2026-09-10 b). The pager
         // must not be stricter than a tap: an upcoming row is openable from the
         // list, so Prev/Next has to be able to reach it and leave it.
@@ -1824,7 +2052,7 @@ export function FloorPage({ canEdit = false }: { canEdit?: boolean } = {}) {
       default:
         return [];
     }
-  }, [detail, filteredFloor, filteredHold, filteredCancelled]);
+  }, [detail, filteredFloor, filteredHold, filteredCancelled, cancelSearch]);
 
   // Duplicate-SO flag for the OPEN bill, taken from the row that is ALREADY
   // loaded — no second fetch and no new field on /api/floor/order/[orderId],
@@ -1848,9 +2076,10 @@ export function FloorPage({ canEdit = false }: { canEdit?: boolean } = {}) {
       (data?.floor.rows ?? []).find((r) => r.orderId === id)?.isHand ??
       (holdRows ?? []).find((r) => r.orderId === id)?.isHand ??
       (cancelledRows ?? []).find((r) => r.orderId === id)?.isHand ??
+      (cancelSearch?.rows ?? []).find((r) => r.orderId === id)?.isHand ??
       false
     );
-  }, [detail, data, holdRows, cancelledRows]);
+  }, [detail, data, holdRows, cancelledRows, cancelSearch]);
 
   const detailHasDuplicateSo = useMemo(() => {
     if (!detail) return false;
@@ -3149,7 +3378,7 @@ export function FloorPage({ canEdit = false }: { canEdit?: boolean } = {}) {
         tripHits={topTab === "floor" ? tripSearchHits : []}
         onOpenTrip={(tripId) => selectRail({ kind: "trip", tripId })}
         lookup={lookup}
-        onPickLookup={openLookupTrip}
+        onPickHit={goToHit}
         // A failed History jump retries the same trip (it reloads that day).
         onRetryOpen={openLookupTrip}
       />
@@ -3275,14 +3504,29 @@ export function FloorPage({ canEdit = false }: { canEdit?: boolean } = {}) {
                     }
                   />
                 ) : topTab === "cancelled" ? (
-                  <CancelledTab
-                    rows={filteredCancelled}
-                    loading={(loading || sideTabLoading === "cancelled") && filteredCancelled === null}
-                    error={error ?? sideError}
-                    scope={scope}
-                    onRestore={cancelledRestore}
-                    onOpenDetail={(id) => openDetail(id, "cancelled")}
-                  />
+                  cancelSearch !== null ? (
+                    // A search result from another day (2026-10-06): the found
+                    // row(s) only, READ-ONLY — no ticks, and the panel opens as
+                    // "history" — like History's old trip. Clear → today's list.
+                    <CancelledTab
+                      rows={cancelSearch.rows}
+                      loading={false}
+                      error={null}
+                      scope="All"
+                      onRestore={cancelledRestore}
+                      onOpenDetail={(id) => openDetail(id, "history")}
+                      searchResult={{ label: cancelSearch.label, onClear: clearSearch }}
+                    />
+                  ) : (
+                    <CancelledTab
+                      rows={filteredCancelled}
+                      loading={(loading || sideTabLoading === "cancelled") && filteredCancelled === null}
+                      error={error ?? sideError}
+                      scope={scope}
+                      onRestore={cancelledRestore}
+                      onOpenDetail={(id) => openDetail(id, "cancelled")}
+                    />
+                  )
                 ) : null
               }
               tintOperators={tintOperators}

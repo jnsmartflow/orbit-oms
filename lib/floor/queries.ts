@@ -1469,10 +1469,20 @@ export async function getFloorCancelled(
   // OPTIONAL IST day "YYYY-MM-DD" (2026-10-02, the Tint Manager's history): the
   // same feed for a PAST day. Omitted → today, exactly as before (Floor passes nothing).
   date?: string,
+  // OPTIONAL (2026-10-06, Floor search): ANY DATE, for these `onlyIds` only —
+  // the search jumps to a bill cancelled or returned weeks ago and needs it in
+  // THIS row shape. Honoured ONLY together with `onlyIds` (never a whole-history
+  // read). It drops the day fence from both reads, lists a live CI on a bill
+  // that is NOT cancelled (the search's "has a live CI" rule), and gives a
+  // cancelled bill with no cancel log a cancel row of its own (by · when from
+  // the order's updatedAt — the nearest fact there is). Omitted → unchanged.
+  anyDate?: boolean,
 ): Promise<FloorCancelledRow[]> {
   const hide = hideExclusion ?? (await getHideExclusion());
   const today = getISTDayRange(date);
   const idFilter = onlyIds ? { orderId: { in: onlyIds } } : {};
+  const allDates = anyDate === true && onlyIds !== undefined;
+  const dayFence = allDates ? {} : { createdAt: { gte: today.start, lt: today.end } };
 
   // ── a) Today's CIs on CANCELLED bills — EVERY source ─────────────────────
   // Widened 2026-09-24 (design web-update-2026-09-24-billing-mo-actions.md §3.7,
@@ -1485,8 +1495,8 @@ export async function getFloorCancelled(
       ...idFilter,
       isVoided: false,
       status: { not: "draft" },
-      createdAt: { gte: today.start, lt: today.end },
-      order: { workflowStage: "cancelled", isRemoved: false },
+      ...dayFence,
+      order: allDates ? { isRemoved: false } : { workflowStage: "cancelled", isRemoved: false },
     },
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     select: {
@@ -1525,7 +1535,7 @@ export async function getFloorCancelled(
   // "Latest cancel log is today" ⇔ "there is a cancel log today": a later
   // one could only be later today. Newest first, so the first per order wins.
   const logs = await prisma.order_status_logs.findMany({
-    where: { ...idFilter, toStage: "cancelled", createdAt: { gte: today.start, lt: today.end } },
+    where: { ...idFilter, toStage: "cancelled", ...dayFence },
     orderBy: { createdAt: "desc" },
     select: { orderId: true, createdAt: true, note: true, changedBy: { select: { name: true } } },
   });
@@ -1536,7 +1546,11 @@ export async function getFloorCancelled(
   }
 
   // ── The orders behind both, in one read ──────────────────────────────────
-  const ids = Array.from(new Set([...Array.from(ciByOrder.keys()), ...Array.from(cancelByOrder.keys())]));
+  // Any date: every asked-for id is read, so a cancelled bill with no cancel log
+  // still gets its row (the no-log fallback below).
+  const ids = allDates
+    ? Array.from(new Set(onlyIds ?? []))
+    : Array.from(new Set([...Array.from(ciByOrder.keys()), ...Array.from(cancelByOrder.keys())]));
   if (ids.length === 0) return [];
   const orders = await prisma.orders.findMany({
     where: { AND: extraWhere ? [{ id: { in: ids }, isRemoved: false }, hide, extraWhere] : [{ id: { in: ids }, isRemoved: false }, hide] },
@@ -1558,7 +1572,10 @@ export async function getFloorCancelled(
   const rows: FloorCancelledRow[] = [];
   for (const order of orders) {
     const ci = ciByOrder.get(order.id) ?? null;
-    const cancel = ci === null ? cancelByOrder.get(order.id) ?? null : null;
+    let cancel = ci === null ? cancelByOrder.get(order.id) ?? null : null;
+    if (cancel === null && ci === null && allDates && order.workflowStage === "cancelled") {
+      cancel = { createdAt: order.updatedAt, note: null, name: null };
+    }
     if (ci === null && cancel === null) continue;
     // A cancel row is a bill that is STILL cancelled — one cancelled and then
     // restored today has a log today but is back on the board.

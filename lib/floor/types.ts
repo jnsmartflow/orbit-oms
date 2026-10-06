@@ -555,6 +555,33 @@ export interface FloorCancelledRow extends FloorPartyFields {
   at: string | null;
 }
 
+// ── Floor search — GET /api/floor/search (2026-10-06, owner) ─────────────────
+// ONE full OBD / invoice / SO number → every bill it names (an invoice can name
+// two), each with the Floor tab it belongs on. Precedence, first match wins:
+//   cancel_ci — cancelled, or carries a live CI (status <> 'draft', not voided)
+//   hold      — dispatchStatus = 'hold'
+//   tinting   — a tint bill still waiting for / assigned to an operator
+//   trip      — on a non-cancelled Orbit trip
+//   floor     — anything else
+// The server's word is a STARTING POINT for the live tabs: the page re-checks
+// the loaded rows (a bill can move between the answer and the jump).
+export type FloorSearchTarget = "floor" | "tinting" | "hold" | "cancel_ci" | "trip";
+
+export interface FloorSearchHit {
+  orderId: number;
+  obdNumber: string;
+  invoiceNo: string | null;
+  soNumber: string | null;
+  dealer: string;
+  workflowStage: string;
+  dispatchStatus: string | null;
+  target: FloorSearchTarget;
+  trip: { id: number; number: string; date: string; status: string; onLiveDesk: boolean } | null;
+  cis: Array<{ id: number; ciNumber: string | null; status: string }>;
+  /** target "cancel_ci" only — the Cancel & CI tab's own row, any date. */
+  cancelRow: FloorCancelledRow | null;
+}
+
 // ── Detail panel (design §10) ────────────────────────────────────────────────
 // Which surface the panel was opened FROM — drives the context-primary action
 // and which list Prev/Next walks (design §10.3 / §10.5).

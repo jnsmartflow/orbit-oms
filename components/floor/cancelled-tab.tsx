@@ -29,7 +29,7 @@ import { FloorSkeleton } from "./floor-skeleton";
 // TINT / BASE — one owner for the word (components/picking/card-atoms.tsx).
 import { ColourWorkBadge } from "@/components/picking/card-atoms";
 import { HandBadge } from "@/components/shared/hand-badge";
-import { shipMarkers } from "./floor-table";
+import { shipMarkers, SEARCH_HIT_ROW_CLS } from "./floor-table";
 import { formatLitres, formatWeightKg } from "./status-pill";
 import { FloorActionBar, BAR_PRIMARY, type BarFigure } from "./floor-action-bar";
 import { countArticles } from "@/lib/floor/format";
@@ -66,6 +66,7 @@ export function CancelledTab({
   scope,
   onRestore,
   onOpenDetail,
+  searchResult,
 }: {
   rows: FloorCancelledRow[] | null;
   loading: boolean;
@@ -73,19 +74,29 @@ export function CancelledTab({
   scope: string;
   onRestore: (orderIds: number[]) => Promise<void>;
   onOpenDetail: (id: number) => void;
+  /**
+   * SEARCH RESULT MODE (2026-10-06): `rows` are bills Floor search found on
+   * ANOTHER day, not today's list. The header becomes "Search result · {label}"
+   * with a Clear button (back to today's list), and the tab is READ-ONLY — no
+   * tick boxes, so no Restore — like History's old trip. By · when shows the
+   * date too, since it is not today.
+   */
+  searchResult?: { label: string; onClear: () => void };
 }) {
   const [selection, setSelection] = useState<FloorSelection>(new Set());
   const [busy, setBusy] = useState(false);
   const [filter, setFilter] = useState<Filter>("all");
 
+  const readOnly = searchResult !== undefined;
   const all = rows ?? [];
   const cancelCount = all.filter((r) => r.action === "cancel").length;
   const ciCount = all.length - cancelCount;
-  const list = filter === "all" ? all : all.filter((r) => r.action === filter);
+  const list = filter === "all" || readOnly ? all : all.filter((r) => r.action === filter);
 
   // 🔴 ONLY CANCEL ROWS ARE TICKABLE — a CI row has no box at all, and the
-  // header's select-all reaches only the Cancel rows on screen.
-  const tickable = list.filter((r) => r.action === "cancel");
+  // header's select-all reaches only the Cancel rows on screen. None at all in
+  // search result mode (read-only).
+  const tickable = readOnly ? [] : list.filter((r) => r.action === "cancel");
   const selectedRows = all.filter((r) => r.action === "cancel" && selection.has(r.orderId));
   const selectedIds = selectedRows.map((r) => r.orderId);
   const clear = () => setSelection(new Set());
@@ -126,6 +137,20 @@ export function CancelledTab({
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
       {/* Header line — what today holds, and the Action filter. */}
+      {searchResult ? (
+        <div className="flex items-center gap-2 border-b border-gray-200 bg-[#fcfcfd] px-3.5 py-[7px]">
+          <span className="text-[11px] text-gray-400">
+            <span className="font-semibold text-gray-700">Search result</span> · {searchResult.label} · read-only
+          </span>
+          <button
+            type="button"
+            onClick={searchResult.onClear}
+            className="ml-auto text-[11px] font-semibold text-brand-600 hover:text-brand-700"
+          >
+            Clear · back to today
+          </button>
+        </div>
+      ) : (
       <div className="flex items-center gap-2 border-b border-gray-200 bg-[#fcfcfd] px-3.5 py-[7px]">
         {!loading && !error && (
           <span className="text-[11px] text-gray-400">
@@ -139,6 +164,7 @@ export function CancelledTab({
           {chip("ci", "CI")}
         </span>
       </div>
+      )}
 
       <div className={`min-h-0 flex-1 overflow-y-auto ${selectedIds.length > 0 ? "pb-[84px]" : ""}`}>
         {loading ? (
@@ -196,9 +222,14 @@ export function CancelledTab({
                 const { isSite, isRedirect } = shipMarkers(row);
                 const weightStr = formatWeightKg(row.weightKg);
                 return (
-                  <tr key={row.orderId} className="cursor-pointer hover:bg-[#fafafa]" onClick={() => onOpenDetail(row.orderId)}>
-                    <td className={TD_C} onClick={(e) => row.action === "cancel" && e.stopPropagation()}>
-                      {row.action === "cancel" && (
+                  <tr
+                    key={row.orderId}
+                    data-order-id={row.orderId}
+                    className={`cursor-pointer hover:bg-[#fafafa] ${SEARCH_HIT_ROW_CLS}`}
+                    onClick={() => onOpenDetail(row.orderId)}
+                  >
+                    <td className={TD_C} onClick={(e) => !readOnly && row.action === "cancel" && e.stopPropagation()}>
+                      {!readOnly && row.action === "cancel" && (
                         <input
                           type="checkbox"
                           aria-label={`Select ${row.obdNumber}`}
@@ -313,7 +344,7 @@ export function CancelledTab({
                     </td>
                     <td className={`${TD} text-[#6b7280]`}>
                       {row.byName ?? "—"}
-                      <div className="text-[10px] text-[#9ca3af]">{hhmm(row.at)}</div>
+                      <div className="text-[10px] text-[#9ca3af]">{readOnly ? fmtDateTime(row.at) : hhmm(row.at)}</div>
                     </td>
                   </tr>
                 );

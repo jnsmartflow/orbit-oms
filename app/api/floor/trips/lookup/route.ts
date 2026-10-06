@@ -14,9 +14,13 @@ export const dynamic = "force-dynamic";
  * (2026-09-29, owner.) READ-ONLY: no write of any kind on this path.
  *
  * The Floor search box works over the rows already loaded for the day in view,
- * so a bill whose trip left the desk days ago is simply not there. The client
- * calls this ONLY when the typed text is one full number AND the loaded desk
- * found nothing (components/floor/floor-page.tsx `commitSearch`).
+ * so a bill whose trip left the desk days ago is simply not there.
+ *
+ * ⚠ NO UI CALLER SINCE 2026-10-06. Floor's `commitSearch` now asks
+ * GET /api/floor/search, which answers per BILL for every tab (trip hits
+ * included) on the same matching rule (lib/trips/find-bill.ts). This route is
+ * kept, unchanged, as the plain "which trip is this bill on" API — not deleted
+ * (no-delete rule; retire it only on the owner's word).
  *
  * Matches `orders` (isRemoved = false, admin hide rules applied as the board
  * applies them) where the WHOLE number equals the OBD, the SO or the invoice.

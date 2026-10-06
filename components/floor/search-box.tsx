@@ -8,11 +8,28 @@ import { useState, useEffect } from "react";
 import { Search } from "lucide-react";
 import type { ParsedSearch, SearchReport } from "@/lib/floor/search";
 import type { TripSearchHit, LookupState, LookupTrip } from "./floor-page";
+import type { FloorSearchHit } from "@/lib/floor/types";
 
 /** "2026-09-24" → "24 Sep" — a trip's own day, for the lookup's choice list. */
 function formatTripDay(iso: string): string {
   const [y, m, d] = iso.split("-").map(Number);
   return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" });
+}
+
+/** Where a search hit lives, in the tabs' own words (2026-10-06). */
+function hitPlace(h: FloorSearchHit): string {
+  switch (h.target) {
+    case "cancel_ci":
+      return h.cis.length > 0 ? `CI ${h.cis[0].ciNumber ?? ""}`.trim() : "Cancelled";
+    case "hold":
+      return "On hold";
+    case "tinting":
+      return "Tinting";
+    case "trip":
+      return h.trip ? `${h.trip.number} · ${formatTripDay(h.trip.date)}` : "On a trip";
+    default:
+      return "Floor";
+  }
 }
 
 export function SearchBox({
@@ -73,8 +90,10 @@ export function SearchBox({
 // 2026-09-29 (owner): bills that sit on TRIPS are not pool hits. They get one
 // line per trip — "1 bill on L-260929-03 ›" — that opens the trip, and a
 // numbers chip found only there reads "on a trip" instead of "not found". The
-// other-days lookup (GET /api/floor/trips/lookup) reports here too: looking,
-// nothing on any trip, or a short list to choose from when several trips match.
+// The search (GET /api/floor/search, 2026-10-06 — it replaced the trip-only
+// lookup here) reports here too: looking, no bill with that number, a bill that
+// has moved since, or one button per bill when the number names several (a
+// shared invoice) — each jumps to its tab.
 export function SearchHits({
   parsed,
   report,
@@ -82,7 +101,7 @@ export function SearchHits({
   tripHits = [],
   onOpenTrip,
   lookup = null,
-  onPickLookup,
+  onPickHit,
   onRetryOpen,
 }: {
   parsed: ParsedSearch;
@@ -91,7 +110,7 @@ export function SearchHits({
   tripHits?: TripSearchHit[];
   onOpenTrip?: (tripId: number) => void;
   lookup?: LookupState | null;
-  onPickLookup?: (trip: LookupTrip) => void;
+  onPickHit?: (hit: FloorSearchHit) => void;
   /** Retry a History jump whose load failed ("open-failed"). */
   onRetryOpen?: (trip: LookupTrip) => void;
 }) {
@@ -138,11 +157,12 @@ export function SearchHits({
           · {h.count} bill{h.count === 1 ? "" : "s"} on {h.tripNumber} ›
         </button>
       ))}
-      {lookup?.status === "loading" && <span className="text-[#6b7280]">· Looking on other days…</span>}
-      {lookup?.status === "none" && <span className="text-[#6b7280]">· Not on any trip on other days</span>}
+      {lookup?.status === "loading" && <span className="text-[#6b7280]">· Looking it up…</span>}
+      {lookup?.status === "none" && <span className="text-[#6b7280]">· No bill with that number</span>}
       {lookup?.status === "error" && (
-        <span className="font-semibold text-[#b91c1c]">· Could not check other days</span>
+        <span className="font-semibold text-[#b91c1c]">· Could not look it up</span>
       )}
+      {lookup?.status === "moved" && <span className="font-semibold text-[#b91c1c]">· {lookup.message}</span>}
       {/* The History jump (2026-09-29): up from the lookup's answer until that
           day's board and trips have landed with the trip selected. On a slow
           link that is many seconds, and a silent gap reads as "nothing
@@ -169,15 +189,18 @@ export function SearchHits({
       )}
       {lookup?.status === "many" && (
         <span className="inline-flex flex-wrap items-center gap-1.5">
-          <span className="text-[#6b7280]">· On {lookup.trips.length} trips:</span>
-          {lookup.trips.map((t) => (
+          <span className="text-[#6b7280]">
+            · {lookup.hits.length === 1 ? "Found:" : `${lookup.hits.length} bills:`}
+          </span>
+          {lookup.hits.map((h) => (
             <button
-              key={t.tripId}
+              key={h.orderId}
               type="button"
-              onClick={() => onPickLookup?.(t)}
+              onClick={() => onPickHit?.(h)}
+              title={h.dealer}
               className="rounded-[4px] border border-brand-100 bg-white px-2 py-[2px] font-mono text-[10.5px] text-brand-700 hover:border-brand-500"
             >
-              {t.tripNumber} · {formatTripDay(t.tripDate)}
+              {h.obdNumber} · {hitPlace(h)}
             </button>
           ))}
         </span>

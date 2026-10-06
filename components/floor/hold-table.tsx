@@ -18,7 +18,7 @@
 import { Building2 } from "lucide-react";
 import { ColourWorkBadge } from "@/components/picking/card-atoms";
 import { HandBadge } from "@/components/shared/hand-badge";
-import { shipMarkers } from "./floor-table";
+import { shipMarkers, SEARCH_HIT_ROW_CLS } from "./floor-table";
 import { InvoiceLines, ObdDateLine } from "./bill-ref-cells";
 import { formatLitres, formatWeightKg } from "./status-pill";
 import { formatArticleTag } from "@/lib/floor/format";
@@ -251,7 +251,10 @@ export function HoldTable({
         {rows.map((row) => (
           <tr
             key={row.orderId}
-            className={onOpenRow ? "cursor-pointer hover:bg-[#fafafa]" : "hover:bg-[#fafafa]"}
+            // data-order-id + SEARCH_HIT_ROW_CLS: Floor search's row light
+            // (floor-table.tsx). Inert for Freight Trips, which never sets it.
+            data-order-id={row.orderId}
+            className={`${onOpenRow ? "cursor-pointer hover:bg-[#fafafa]" : "hover:bg-[#fafafa]"} ${SEARCH_HIT_ROW_CLS}`}
             onClick={onOpenRow ? () => onOpenRow(row.orderId) : undefined}
           >
             {selectable && (
