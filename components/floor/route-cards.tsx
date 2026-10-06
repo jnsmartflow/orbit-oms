@@ -217,8 +217,9 @@ export interface RouteCardModel {
    * Always the last card. Null when there is nothing unclubbed at all.
    *
    * ⚠ DISPLAY-ONLY GROUPING. It is not a club and nothing is written for it:
-   * Parvat stays unclubbed in route_club_members. It is built here, from the
-   * rows, every render.
+   * the routes on it are simply the ones in no route_club_members row (Q53D
+   * today; Parvat joined Ghod Dod + Udhana on 2026-10-06). It is built here,
+   * from the rows, every render.
    */
   otherCard: RouteCard | null;
 }
@@ -518,7 +519,7 @@ export function RouteCards({
   return (
     <div className="px-3.5 py-3.5">
       {chunk(cards, columns).map((row, i) => (
-        <div key={i} className={`grid items-start gap-3 ${i === 0 ? "" : "mt-3"}`} style={{ gridTemplateColumns: tracks }}>
+        <div key={i} className={`grid items-stretch gap-3 ${i === 0 ? "" : "mt-3"}`} style={{ gridTemplateColumns: tracks }}>
           {row.map((c) => (
             <CardButton
               key={c.key}
@@ -584,13 +585,17 @@ function Chip({ card, isOpen, onClick }: { card: RouteCard; isOpen: boolean; onC
 // head — name, big kilos, "N stops · L" — then one line per route with its
 // bar. A one-route club has one line.
 //
-// ⚠ EQUAL HEIGHT IS BUILT, NOT STRETCHED. Each card is:
+// ⚠ EQUAL HEIGHT IS BUILT, THEN STRETCHED. Each card is:
 //     head  (always three rows: name, big figure, summary)
-//     spacer lines  (lineSlots − its own lines; invisible)
 //     its route lines  (each reserving its bar's height, bar or not)
-// so every card has the same parts at the same sizes. The spacers sit BETWEEN
-// the head and the lines: the head stays at the top, the last bar lands on the
-// bottom edge, and the spare space is in the middle. Nothing is stretched.
+//     spacer lines  (lineSlots − its own lines; invisible)
+// so every card has the same parts at the same sizes, across the whole board.
+// The route lines start directly under the head, so the rows line up across
+// cards, and the spare slots sit at the bottom. The grid row also stretches
+// every card (`items-stretch` + `h-full`) to the tallest in its row, which
+// absorbs any sub-pixel difference the slots leave.
+// 2026-10-06: spacers moved from above the lines to below them; before this,
+// short cards showed their routes pushed to the bottom. Do not revert.
 //
 // ⚠ A real <button>, so Tab and Enter/Space work with no key listener of ours:
 // the floor has ONE window-level key listener and it is floor-page's (FLOOR
@@ -601,7 +606,7 @@ function Chip({ card, isOpen, onClick }: { card: RouteCard; isOpen: boolean; onC
 // numbers stay whole.
 
 const CARD =
-  "block w-full min-w-0 cursor-pointer rounded-[11px] border border-[#e7e7ee] bg-white text-left hover:border-[#cfcfda]";
+  "block h-full w-full min-w-0 cursor-pointer rounded-[11px] border border-[#e7e7ee] bg-white text-left hover:border-[#cfcfda]";
 const LINE = "block border-t border-[#f1f1f6] px-3.5 pb-3 pt-[11px]";
 
 function CardButton({
@@ -688,14 +693,14 @@ function CardButton({
           </span>
         )}
       </span>
-      {Array.from({ length: spacers }, (_, i) => (
-        <span key={`spacer:${i}`} className={`${LINE} invisible`} aria-hidden>
-          <RouteLineBody line={{ key: "", name: "·", rows: [], upcoming: [], hand: [], reachLabel: null }} />
-        </span>
-      ))}
       {card.lines.map((l) => (
         <span key={l.key} className={LINE}>
           <RouteLineBody line={l} />
+        </span>
+      ))}
+      {Array.from({ length: spacers }, (_, i) => (
+        <span key={`spacer:${i}`} className={`${LINE} invisible`} aria-hidden>
+          <RouteLineBody line={{ key: "", name: "·", rows: [], upcoming: [], hand: [], reachLabel: null }} />
         </span>
       ))}
     </button>
@@ -997,8 +1002,9 @@ function AllHeadFigures({ rows }: { rows: FloorBoardRow[] }) {
 /**
  * The All tab's name for a row (owner, 2026-10-03). A club keeps its name. The
  * Other routes row names what is IN it today, from its lines — the same route
- * names its member lines use, "No route" included: "Parvat", "Parvat + Q53D",
- * "Parvat + 2 more". Lines exist only for routes with bills, so the name
+ * names its member lines use, "No route" included: "Q53D", "Q53D + No route",
+ * "Q53D + 2 more" (Parvat left it for Ghod Dod + Udhana on 2026-10-06 — club
+ * membership is data). Lines exist only for routes with bills, so the name
  * always describes today's bills. The typed tabs' card keeps "Other routes".
  */
 function allRowName(card: RouteCard): string {
