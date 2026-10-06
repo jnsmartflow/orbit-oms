@@ -8,6 +8,7 @@ import { notifyHandSet } from "@/lib/push/hand";
 import { BILLING_CLEAR_HOLD_NOTE, BILLING_HOLD_NOTE } from "@/lib/floor/hold-log";
 import { FLOOR_CLEAR_HOLD_STAGES } from "@/lib/floor/release-stages";
 import { findLiveCi, liveCiRefusal } from "@/lib/ci/live-ci";
+import { NOT_CHALLAN_LINKED } from "@/lib/workflow-stages";
 
 export const dynamic = "force-dynamic";
 
@@ -292,7 +293,11 @@ export async function POST(req: Request): Promise<NextResponse> {
   if (soNumber && action !== "ci") {
     const bills = await prisma.orders.findMany({
       // isRemoved: false — soft-delete read rule (CORE §3).
-      where: { soNumber, isRemoved: false },
+      // NOT_CHALLAN_LINKED (Challan orders slice 2, 2026-10-06): a SAP bill
+      // linked to a challan order is never written by this SO-keyed path — a
+      // Hold / Release here would put it on the Hold tab or back on picking
+      // (design D9). Left out of the read, so it is not even reported as skipped.
+      where: { soNumber, isRemoved: false, ...NOT_CHALLAN_LINKED },
       orderBy: { id: "asc" },
       select: {
         id: true,

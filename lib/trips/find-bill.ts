@@ -25,6 +25,8 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getHideExclusion } from "@/lib/hide/visibility";
+import { NOT_CHALLAN_LINKED } from "@/lib/workflow-stages";
+import { isOrbNumber } from "@/lib/challan-orders/orb-number";
 
 /** A typed term, normalised: the upper-cased whole number, plus the invoice forms to try. */
 export interface BillLookupTerm {
@@ -34,10 +36,16 @@ export interface BillLookupTerm {
 
 /**
  * Normalise what was typed, or null when it is not ONE full number — the same
- * test the client's lookupTermOf applies (OBD / SO 9-12 digits, or `I` + 9).
+ * test the client's lookupTermOf applies (OBD / SO 9-12 digits, `I` + 9, or a
+ * challan order's ORB number).
+ *
+ * ORB-YYYY-NNNNN (Challan orders slice 2, 2026-10-06) — a challan order's own
+ * number, held in obdNumber (lib/challan-orders/orb-number.ts). It is never an
+ * invoice, so no invoice forms are tried; it matches the obdNumber arm.
  */
 export function parseBillLookupTerm(raw: string): BillLookupTerm | null {
   const q = raw.trim().toUpperCase();
+  if (isOrbNumber(q)) return { q, invoiceTerms: [] };
   if (!/^\d{9,12}$/.test(q) && !/^I\d{9}$/.test(q)) return null;
 
   const invoiceTerms: string[] = [];
@@ -62,6 +70,11 @@ export async function billLookupWhere(
     AND: [
       {
         isRemoved: false,
+        // 🔴 A SAP bill linked to a challan order is FOUND BY NOTHING here
+        // (Challan orders slice 2, 2026-10-06, design D9): not by the Floor
+        // search box, the trip lookup or the re-delivery search — typing its SO
+        // would otherwise surface a bill that is on no board. NOT NULL column.
+        ...NOT_CHALLAN_LINKED,
         ...(opts.onTripOnly ? { tripDropId: { not: null } } : {}),
         OR: [
           { obdNumber: term.q },

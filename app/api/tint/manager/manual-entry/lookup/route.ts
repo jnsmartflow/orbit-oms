@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { checkAnyPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
-import { MANUAL_TINT_PULLABLE_STAGES } from "@/lib/workflow-stages";
+import { CHALLAN_LINKED, MANUAL_TINT_PULLABLE_STAGES } from "@/lib/workflow-stages";
 
 export const dynamic = "force-dynamic";
 
@@ -12,7 +12,8 @@ type ErrorCode =
   | "ALREADY_TINT"
   | "PAST_TINT"
   | "TOO_OLD"
-  | "INVALID_SMU";
+  | "INVALID_SMU"
+  | "CHALLAN_ORDER";
 
 const ELIGIBLE_SMUS = ["Retail Offtake", "Decorative Projects"];
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
@@ -56,6 +57,22 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
   if (!order) {
     return err("NOT_FOUND", `No order found for OBD ${obd}`, 404);
+  }
+
+  // 🔴 CHALLAN ORDERS ARE NON-TINT IN PHASE 1 (2026-10-06, Challan orders slice 2,
+  // design D5). An ORB order (the challan itself) is refused outright, and so is
+  // a SAP bill already linked to one ('challan_linked' — off every board; the
+  // MANUAL_TINT_PULLABLE_STAGES test below would refuse it too, but as "already
+  // picked", which is the wrong reason). Checked BEFORE the tint-type test so the
+  // operator is told the real reason. The modal maps the code to its message.
+  if (order.isChallanOrder || order.workflowStage === CHALLAN_LINKED) {
+    return err(
+      "CHALLAN_ORDER",
+      order.isChallanOrder
+        ? "Challan orders are non-tint in Phase 1"
+        : "This bill is linked to a challan order and cannot be pulled into tinting",
+      400,
+    );
   }
 
   if (order.orderType !== "non_tint") {

@@ -124,6 +124,15 @@ export const DISPATCHED = "dispatched";
  */
 export const CHALLAN_LINKED = "challan_linked";
 
+/**
+ * The ONE "leave linked challan bills out" filter (Challan orders slice 2,
+ * 2026-10-06), AND-ed into every reader / SO-keyed writer that must never see
+ * a linked SAP OBD: floorHoldWhere, the bill lookup (lib/trips/find-bill.ts),
+ * Billing's actions route. `workflowStage` is NOT NULL, so the `not` needs no
+ * null arm (CORE §13). A plain object, so this file stays import-free.
+ */
+export const NOT_CHALLAN_LINKED = { workflowStage: { not: CHALLAN_LINKED } };
+
 /** Position of a stage on the ladder. null for BOTH unknown stages and
  *  explicitly off-ladder terminal stages ('cancelled', 'challan_linked') — callers must not
  *  read null as "unknown"; use isSupportDone() to test cancelled by name. */

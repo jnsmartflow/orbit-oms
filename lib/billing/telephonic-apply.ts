@@ -66,6 +66,7 @@ import { prisma } from "@/lib/prisma";
 import { raiseBillOnlyCi } from "@/lib/ci/bill-only";
 import { TELEPHONIC_HOLD_NOTE } from "@/lib/floor/hold-log";
 import { billingRefusal } from "@/lib/billing/refusal";
+import { CHALLAN_LINKED } from "@/lib/workflow-stages";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -102,7 +103,7 @@ export interface TagPlanMatch {
 }
 
 export type SoTagDecision<O extends TagPlanOrder = TagPlanOrder, T extends TagPlanTag = TagPlanTag> =
-  | { action: "skip"; order: O; reason: "no SO number" | "no live tag" | "already matched" }
+  | { action: "skip"; order: O; reason: "no SO number" | "no live tag" | "already matched" | "challan linked" }
   | { action: "record_only"; order: O; tag: T; reason: string }
   | { action: "hold"; order: O; tag: T }
   | { action: "ci_cancel"; order: O; tag: T };
@@ -187,6 +188,14 @@ export function planSoTagApplications<O extends TagPlanOrder, T extends TagPlanT
   const matched = new Set(existingMatches.map((m) => `${m.soTagId}:${m.orderId}`));
 
   return orders.map((order): SoTagDecision<O, T> => {
+    // 🔴 FIRST, before anything reads the tag (Challan orders slice 2,
+    // 2026-10-06, design D9). A SAP bill linked to a challan order is never
+    // held, CI'd or cancelled by a tag, and no match row is CLAIMED for it — a
+    // skip writes nothing. The same skip reaches all three callers of
+    // applySoTagHolds: the import hook, a late tag on the Telephonic tab
+    // (lib/billing/telephonic.ts) and Billing's CI press (lib/billing/mo-ci-tag.ts).
+    if (order.workflowStage === CHALLAN_LINKED) return { action: "skip", order, reason: "challan linked" };
+
     const so = normaliseSo(order.soNumber);
     if (so === null) return { action: "skip", order, reason: "no SO number" };
 

@@ -19,6 +19,8 @@
 // ⚠ SO IS SEARCHED, NEVER SHOWN (owner decision 2026-09-29). It rides the Floor
 // rows (FloorBoardRow / FloorHoldRow / FloorCancelledRow) for this file alone.
 
+import { isOrbNumber } from "@/lib/challan-orders/orb-number";
+
 export interface ParsedSearch {
   mode: "none" | "text" | "numbers";
   text: string; // lowercased, text mode only
@@ -168,5 +170,8 @@ export function searchReport<T extends Searchable>(
  */
 export function lookupTermOf(raw: string): string | null {
   const q = raw.trim().toUpperCase();
+  // A challan order's ORB number (2026-10-06) is ONE full number too — the
+  // server's parseBillLookupTerm (lib/trips/find-bill.ts) accepts the same shape.
+  if (isOrbNumber(q)) return q;
   return /^\d{9,12}$/.test(q) || /^I\d{9}$/.test(q) ? q : null;
 }

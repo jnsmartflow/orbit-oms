@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { computeDropKey } from "@/lib/trips/drop-key";
 import { deleteTripDropIfEmpty, findOrCreateTripDrop } from "@/lib/trips/drop";
 import { logTripBills } from "@/lib/trips/activity";
+import { CHALLAN_LINKED } from "@/lib/workflow-stages";
 
 export const dynamic = "force-dynamic";
 
@@ -132,6 +133,8 @@ export async function POST(
           shipToCustomerName: true,
           // The Hand mark — a Hand bill rides only a Hand trip (add branch).
           handAt: true,
+          // The challan-link refusal (add branch, 2026-10-06).
+          workflowStage: true,
         },
       });
       if (!order || order.isRemoved) {
@@ -182,6 +185,21 @@ export async function POST(
       }
 
       // ── add ────────────────────────────────────────────────────────────────
+      // 🔴 A SAP BILL LINKED TO A CHALLAN ORDER NEVER JOINS A TRUCK (Challan
+      // orders slice 2, 2026-10-06, design D9). Its goods already left on the
+      // ORB order's own trip; putting the SAP bill on a trip too is the double
+      // dispatch this feature exists to stop. NOT a stage guard in the sense of
+      // the header (membership stays open at every working stage) — it refuses
+      // the one stage that is off every board by design. Checked before the
+      // already-on-a-stop branch so the planner is told the real reason. No write.
+      if (order.workflowStage === CHALLAN_LINKED) {
+        failed.push({
+          orderId,
+          error: `${order.obdNumber} is billed against a challan order — its goods already went out on the challan. It never goes on a trip.`,
+        });
+        continue;
+      }
+
       const dropKey = computeDropKey(order);
 
       if (order.tripDropId !== null) {

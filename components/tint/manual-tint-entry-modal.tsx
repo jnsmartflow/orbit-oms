@@ -51,6 +51,9 @@ const ERROR_MESSAGES: Record<string, string> = {
   INVALID_REASON:        "Please select a valid reason.",
   REASON_NOTES_REQUIRED: "Notes are required when reason is \"Other\".",
   INACTIVE_ORDER:        "This order is no longer active.",
+  // Challan orders slice 2 (2026-10-06) — the server refuses an ORB order and a
+  // bill linked to one with the same code.
+  CHALLAN_ORDER:         "Challan orders are non-tint in Phase 1 — this bill cannot be pulled into tinting.",
   BAD_REQUEST:           "Invalid request. Please reload and try again.",
   INTERNAL_ERROR:        "Server error. Please try again.",
 };

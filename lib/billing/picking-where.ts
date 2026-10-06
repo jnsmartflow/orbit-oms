@@ -76,6 +76,15 @@ export async function buildBillingPendingWhere(
         // Soft-delete read (CORE §3).
         isRemoved: false,
         dispatchStatus: "dispatch",
+        // 🔴 CHALLAN ORDERS NEVER REACH BILLING (2026-10-06, Challan orders
+        // slice 2, design D6). An ORB order is the challan itself — goods sent
+        // with no SAP bill — so there is nothing to invoice; its SAP bill comes
+        // later and is linked on the Challan orders screen. One term here covers
+        // the list, the pill count, the marker, mark-done and the detail panel's
+        // isPending, which all build from this function. NOT NULL column, so no
+        // null arm (CORE §13). The info arm below needs nothing: an ORB order
+        // never carries an invoiceNo.
+        isChallanOrder: false,
       },
       hide,
     ],

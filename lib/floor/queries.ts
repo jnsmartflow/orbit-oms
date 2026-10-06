@@ -33,6 +33,7 @@ import {
   PICK_DONE,
   PICK_CHECKED,
   DISPATCHED,
+  NOT_CHALLAN_LINKED,
 } from "@/lib/workflow-stages";
 // Rule 2's oil-paint definition lives in the ENGINE, not here and not in the
 // database — grouping.ts is pure (no prisma, no clock), so importing it into a
@@ -1340,7 +1341,13 @@ export async function getFloorBoard(
  * on by each caller, exactly as the feed does.
  */
 export function floorHoldWhere(): Prisma.ordersWhereInput {
-  return { dispatchStatus: "hold", isRemoved: false };
+  // 🔴 A SAP bill linked to a challan order ('challan_linked', Challan orders
+  // slice 2, 2026-10-06) is never on the Hold tab, even if an SO-keyed writer
+  // ever held it — it belongs to the Challan orders screen alone (design D9).
+  // The same term reaches every reader of this predicate: the tab, its count
+  // (lib/floor/counts.ts), the Freight Trips pool and marker, and the Tint
+  // Manager's hold arm. workflowStage is NOT NULL, so no null arm (CORE §13).
+  return { dispatchStatus: "hold", isRemoved: false, ...NOT_CHALLAN_LINKED };
 }
 
 export async function getFloorHold(
