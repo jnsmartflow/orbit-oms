@@ -249,11 +249,19 @@ interface UseFindingRecorderOptions {
   /** report mode only — the admin view-as passthrough. Ignored by the server
    *  for a real picker, whose session id always wins. */
   pickerId?: number | null;
-  /** Merge the saved row into the caller's own lineItems. */
-  onSaved: (rawLineItemId: number, finding: PickingLineFinding) => void;
+  /** Merge the saved rows into the caller's own lineItems. ONE entry for a
+   *  single-line row; one PER RAW LINE for a merged row (2026-10-06), whose
+   *  save the server splits across its lineIds. */
+  onSaved: (saved: SavedFinding[], orderId: number) => void;
   /** A 409 — the server knows something the screen does not. The caller
    *  should force a re-read of the bill. */
   onConflict: () => void;
+}
+
+/** One raw line's saved finding, as both write routes return it. */
+export interface SavedFinding {
+  rawLineItemId: number;
+  finding: PickingLineFinding;
 }
 
 export interface FindingRecorder {
@@ -361,6 +369,11 @@ export function useFindingRecorder({
         body: JSON.stringify({
           orderId,
           rawLineItemId: line.id,
+          // A MERGED row (several SAP batch lines — 2026-10-06) also sends every
+          // id it stands for; the server splits qtyFound across them in lineId
+          // order (lib/picking/allocate-finding.ts). A single-line row omits
+          // the key, so its body is exactly what it always was.
+          ...(line.lineIds.length > 1 ? { rawLineItemIds: line.lineIds } : {}),
           qtyFound: qtyNum,
           reason,
           // Sent ONLY on the old_mfg branch. On short_quantity the keys are
@@ -379,6 +392,7 @@ export function useFindingRecorder({
       });
       const json = (await res.json().catch(() => ({}))) as {
         finding?: PickingLineFinding;
+        findings?: SavedFinding[];
         error?: string;
       };
       if (!res.ok) {
@@ -391,7 +405,10 @@ export function useFindingRecorder({
         }
         return;
       }
-      if (json.finding) onSaved(line.id, json.finding);
+      // `findings` covers every line written; `finding` alone is the fallback
+      // for a response without it (the single-line shape).
+      if (json.findings && json.findings.length > 0) onSaved(json.findings, orderId);
+      else if (json.finding) onSaved([{ rawLineItemId: line.id, finding: json.finding }], orderId);
       toast.success(`${line.sku} — found ${qtyNum} of ${line.qty}`);
       setTarget(null);
     } catch (err) {

@@ -321,9 +321,11 @@ export interface PickingDetailLine {
    * `import_raw_line_items.id` of the FIRST contributing line — a real PK, the
    * findings FK target, and the React key. Always equal to `lineIds[0]`.
    *
-   * Safe as a findings target ONLY because a row carrying a finding is never
-   * merged (the route splits such a group back out) and both boards block
-   * recording a new finding on a merged row.
+   * Safe as a findings target ONLY on a single-line row. A row carrying a
+   * finding is never merged (the route splits such a group back out), and a
+   * merged row records against ALL of `lineIds` (2026-10-06 — the recorder
+   * sends them as `rawLineItemIds`; lib/picking/allocate-finding.ts splits the
+   * number), never against this id alone.
    */
   id:      number;
   /**

@@ -11,6 +11,7 @@ import {
   FindingStatusBadge,
   findingState,
   useFindingRecorder,
+  type SavedFinding,
 } from "./finding-recorder";
 import { FindingTriangleButton } from "./finding-recorder";
 import { useMobileShell } from "@/components/shared/mobile-shell-context";
@@ -416,10 +417,44 @@ export function PickerMyPicksBoard({
   // used after a 409, where the server knows something this screen does not.
   const [lineItemsReloadKey, setLineItemsReloadKey] = useState(0);
 
-  const applyFinding = useCallback((rawLineItemId: number, finding: PickingLineFinding) => {
+  // The bill the detail screen shows NOW — read by the quiet re-read below so a
+  // late response cannot paint one bill's lines onto another.
+  const detailOrderIdRef = useRef(detailOrderId);
+  detailOrderIdRef.current = detailOrderId;
+
+  // Every saved line is applied, not just one (2026-10-06). A single-line row
+  // gets its finding in place exactly as before. A MERGED row's save wrote one
+  // finding per raw line, and the route un-merges a group that carries one
+  // (group-lines.ts), so the screen cannot show it honestly from here — the
+  // summed row has no per-line quantities to split. It is left as is and the
+  // bill is re-read QUIETLY: no spinner and no blanking. His ticks live in
+  // their own store keyed on raw line ids, so they carry over to the
+  // un-merged rows unchanged.
+  const applyFinding = useCallback((saved: SavedFinding[], orderId: number) => {
+    const byId = new Map(saved.map((s) => [s.rawLineItemId, s.finding]));
     setLineItems((prev) =>
-      prev === null ? prev : prev.map((li) => (li.id === rawLineItemId ? { ...li, finding } : li)),
+      prev === null
+        ? prev
+        : prev.map((li) => {
+            if (li.lineIds.length > 1) return li;
+            const finding = byId.get(li.id);
+            return finding ? { ...li, finding } : li;
+          }),
     );
+    if (saved.length > 1) {
+      void (async () => {
+        try {
+          const res = await fetch(`/api/picking/order/${orderId}`);
+          if (!res.ok) throw new Error(`Request failed (${res.status})`);
+          const json = (await res.json()) as { lines?: LineItem[] };
+          if (detailOrderIdRef.current === orderId) setLineItems(json.lines ?? []);
+        } catch {
+          // The findings ARE saved; only the redraw failed. Fall back to the
+          // loud re-read rather than leave a stale merged row on screen.
+          if (detailOrderIdRef.current === orderId) setLineItemsReloadKey((k) => k + 1);
+        }
+      })();
+    }
   }, []);
 
   const recorder = useFindingRecorder({
@@ -2089,23 +2124,22 @@ export function PickerMyPicksBoard({
                 const isTicked = li.lineIds.every((id) => tickedLineIds.has(id));
                 // ⚠ ONE place decides amber vs red — findingState(), shared.
                 const state = findingState(li.finding);
-                // A merged row (several raw lines behind one SKU — 2026-08-10).
-                const isMerged = li.lineIds.length > 1;
                 // Tappable when the mode is armed, OR when something is already
                 // recorded — the mockup's "always tappable" rule for a flagged
                 // row, which is also how he corrects a number he mistyped.
                 //
-                // ⚠ NOT ON A MERGED ROW. pick_findings is UNIQUE on
-                // rawLineItemId, so a shortage recorded against a summed row
-                // would have to land on ONE of its lines, arbitrarily — and
-                // "found 22 of 31" says nothing about which batch was short.
-                // Recording against a merged row is DEFERRED pending a real
-                // design (spread the shortfall across the lines? a group-level
-                // findings row?); until that exists the honest behaviour is no
-                // entry point rather than a write to an arbitrary line. A row
-                // that already HAS a finding is never merged (the route splits
-                // it back out), so nothing recorded is hidden by this.
-                const rowTappable = !isMerged && (recorder.recordMode || state !== "none");
+                // ✅ A MERGED ROW IS TAPPABLE TOO (2026-10-06). Until this date
+                // it had no entry point — the tap silently did nothing, which
+                // the floor reported as "findings won't save for some SKUs".
+                // Now it opens the same popup against the MERGED total; the
+                // recorder sends the row's lineIds and the report route splits
+                // the one number across them in lineId order, shortfall on the
+                // last lines (lib/picking/allocate-finding.ts), one
+                // pick_findings row per raw line. After the save the bill is
+                // re-read and the row un-merges into its lines, each with its
+                // own finding — group-lines.ts never merges a group that
+                // carries one, so nothing recorded is hidden by this.
+                const rowTappable = recorder.recordMode || state !== "none";
                 // The hardener's OWN tick — its own set, keyed by this row's
                 // id. Never read off tickedLineIds (see hardenerTickedIds).
                 const isHardenerTicked = hardenerTickedIds.has(li.id);
@@ -2227,8 +2261,10 @@ export function PickerMyPicksBoard({
 
                     ⚠ NOT TAPPABLE FOR FINDINGS, and structurally cannot be:
                     the findings onClick sits on the sibling row above, not on
-                    this card. Same precedent as a merged row — no entry point
-                    rather than a write to an arbitrary raw line.
+                    this card. A hardener has no raw line of its own, so there
+                    is nothing to write against. (A merged row used to share
+                    this rule; since 2026-10-06 it records, split across its
+                    raw lines — it HAS lines, a hardener does not.)
 
                     ⚠ THE CIRCLE IS AMBER, NOT THE SLATE OF A LINE TICK, AND
                     THAT IS THE SIGNAL. Every other tick on this screen marks

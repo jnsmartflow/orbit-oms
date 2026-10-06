@@ -84,6 +84,7 @@ import {
   FindingTriangleButton,
   findingState,
   useFindingRecorder,
+  type SavedFinding,
 } from "./finding-recorder";
 // Plain-text WhatsApp share (2026-09-05) — the builder AND the share call live
 // there, not here: this file owns no message formatting and no feature
@@ -1693,10 +1694,44 @@ export function PickingBoardMobile(): React.JSX.Element {
     setSelected((prev) => pruneSelection(prev, data.rows) as Set<number>);
   }, [live, data]);
 
-  const applyFinding = useCallback((rawLineItemId: number, finding: PickingLineFinding) => {
+  // The bill the detail screen shows NOW — read by the quiet re-read below so a
+  // late response cannot paint one bill's lines onto another.
+  const detailOrderIdRef = useRef(detailOrderId);
+  detailOrderIdRef.current = detailOrderId;
+
+  // Every saved line is applied, not just one (2026-10-06). A single-line row
+  // gets its finding in place exactly as before. A MERGED row's save wrote one
+  // finding per raw line, and the route un-merges a group that carries one
+  // (group-lines.ts), so the screen cannot show it honestly from here — the
+  // summed row has no per-line quantities to split. It is left as is and the
+  // bill is re-read QUIETLY: no spinner, no blanking, and none of the line
+  // ticks or hardener ticks the reload-key effect clears (they are keyed on raw
+  // line ids, so they carry over to the un-merged rows unchanged).
+  const applyFinding = useCallback((saved: SavedFinding[], orderId: number) => {
+    const byId = new Map(saved.map((s) => [s.rawLineItemId, s.finding]));
     setLineItems((prev) =>
-      prev === null ? prev : prev.map((li) => (li.id === rawLineItemId ? { ...li, finding } : li)),
+      prev === null
+        ? prev
+        : prev.map((li) => {
+            if (li.lineIds.length > 1) return li;
+            const finding = byId.get(li.id);
+            return finding ? { ...li, finding } : li;
+          }),
     );
+    if (saved.length > 1) {
+      void (async () => {
+        try {
+          const res = await fetch(`/api/picking/order/${orderId}`);
+          if (!res.ok) throw new Error(`Request failed (${res.status})`);
+          const json = (await res.json()) as { lines?: LineItem[] };
+          if (detailOrderIdRef.current === orderId) setLineItems(json.lines ?? []);
+        } catch {
+          // The findings ARE saved; only the redraw failed. Fall back to the
+          // loud re-read rather than leave a stale merged row on screen.
+          if (detailOrderIdRef.current === orderId) setLineItemsReloadKey((k) => k + 1);
+        }
+      })();
+    }
   }, []);
 
   const recorder = useFindingRecorder({
@@ -4689,8 +4724,6 @@ export function PickingBoardMobile(): React.JSX.Element {
                   detailRow?.isDone === true && li.lineIds.every((id) => checkedLineIds.has(id));
                 // ⚠ ONE place decides none/pending/confirmed — findingState().
                 const state = findingState(li.finding);
-                // A merged row (several raw lines behind one SKU — 2026-08-10).
-                const isMerged = li.lineIds.length > 1;
                 // A PENDING line is tappable regardless of the mode: the
                 // picker already flagged it and confirming is the supervisor's
                 // job, so it must not hide behind an extra toggle (the
@@ -4698,19 +4731,19 @@ export function PickingBoardMobile(): React.JSX.Element {
                 // An untouched line needs the mode armed; a CONFIRMED line
                 // stays tappable so a wrong number can be corrected.
                 //
-                // ⚠ NOT ON A MERGED ROW. pick_findings is UNIQUE on
-                // rawLineItemId, so a shortage recorded against a summed row
-                // would have to pick ONE of its lines to land on, arbitrarily —
-                // and "found 22 of 31" says nothing about which batch was
-                // short. Recording a shortage against a merged row is DEFERRED:
-                // it needs a real design (distribute across lines? a
-                // group-level findings row?), and that design does not exist
-                // yet. Until it does, the honest behaviour is no entry point.
-                // A row that already HAS a finding is never merged (the route
-                // splits it back out), so nothing recorded is ever hidden here.
+                // ✅ A MERGED ROW IS TAPPABLE TOO (2026-10-06). Until this date
+                // it had no entry point — the tap silently did nothing, which
+                // the floor reported as "findings won't save for some SKUs".
+                // Now it opens the same popup against the MERGED total; the
+                // recorder sends the row's lineIds and the confirm route splits
+                // the one number across them in lineId order, shortfall on the
+                // last lines (lib/picking/allocate-finding.ts), one
+                // pick_findings row per raw line. After the save the bill is
+                // re-read and the row un-merges into its lines, each with its
+                // own finding — group-lines.ts never merges a group that
+                // carries one, so nothing recorded is ever hidden here.
                 const rowTappable =
                   detailRow?.isDone === true &&
-                  !isMerged &&
                   (recorder.recordMode || state !== "none");
                 // The hardener's OWN tick — its own set, keyed by this row's id.
                 // Gated on isDone like the line ticks: a `pick_checked` bill on
@@ -4842,7 +4875,9 @@ export function PickingBoardMobile(): React.JSX.Element {
 
                     ⚠ NOT TAPPABLE FOR FINDINGS, and structurally cannot be —
                     the findings onClick sits on the sibling row above, not on
-                    this card. Same precedent as a merged row.
+                    this card. (A merged row stopped being the precedent on
+                    2026-10-06 — it now records, split across its raw lines. A
+                    hardener has no raw line at all, so it still cannot.)
 
                     ⚠ THE TICK GATES APPROVE, unlike the picker's identical-
                     looking one, which gates nothing (§5.4.1). Amber rather

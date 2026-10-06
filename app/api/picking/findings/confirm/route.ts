@@ -2,8 +2,9 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { checkAnyPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
-import { isFindingReason, isMfgMonth, isMfgYear } from "@/lib/picking/findings-reasons";
+import { isFindingReason, isMfgMonth, isMfgYear, type FindingReason } from "@/lib/picking/findings-reasons";
 import { reconcileAutoCi, type CiAutoOrder } from "@/lib/ci/auto";
+import { allocateFoundQty, normaliseLineIds } from "@/lib/picking/allocate-finding";
 
 export const dynamic = "force-dynamic";
 
@@ -11,7 +12,19 @@ export const dynamic = "force-dynamic";
  * POST /api/picking/findings/confirm — the SUPERVISOR signs off what was
  * actually found on one line.
  *
- * Body: { orderId, rawLineItemId, qtyFound, reason, mfgMonth?, mfgYear? }
+ * Body: { orderId, rawLineItemId | rawLineItemIds, qtyFound, reason, mfgMonth?,
+ *         mfgYear? }
+ *
+ * MERGED ROWS (2026-10-06) — the same shape report/route.ts takes, through the
+ * same two helpers (lib/picking/allocate-finding.ts): both body shapes become
+ * one id array, ONE qtyFound against the merged total is split across the
+ * lines in lineId order, every line is checked before the first write, and
+ * each line goes through the one per-line write (writeLine below). The auto-CI
+ * runs ONCE after every line is written. A single-line row still sends
+ * `rawLineItemId` and is a one-element array all the way through.
+ *
+ * Response: { ok, finding, findings: [{ rawLineItemId, finding }] } — `finding`
+ * is the first line's (lineId order), kept for any caller that reads only it.
  *
  * `mfgMonth` / `mfgYear` are REQUIRED when reason is 'old_mfg' and FORCED TO
  * NULL when it is 'short_quantity' — the SAME rule, in the same shape, as
@@ -74,6 +87,7 @@ export async function POST(req: Request): Promise<NextResponse> {
   const body = (await req.json().catch(() => ({}))) as {
     orderId?:       number;
     rawLineItemId?: number;
+    rawLineItemIds?: number[];
     qtyFound?:      number;
     reason?:        string;
     remarks?:       string | null;
@@ -86,10 +100,12 @@ export async function POST(req: Request): Promise<NextResponse> {
     return NextResponse.json({ error: "orderId is required" }, { status: 400 });
   }
 
-  const rawLineItemId = body.rawLineItemId;
-  if (typeof rawLineItemId !== "number" || !Number.isInteger(rawLineItemId) || rawLineItemId <= 0) {
-    return NextResponse.json({ error: "rawLineItemId is required" }, { status: 400 });
+  // One array from either body shape — a single-line row is [rawLineItemId].
+  const idsResult = normaliseLineIds(body);
+  if (!idsResult.ok) {
+    return NextResponse.json({ error: idsResult.error }, { status: 400 });
   }
+  const rawLineItemIds = idsResult.ids;
 
   const qtyFound = body.qtyFound;
   if (typeof qtyFound !== "number" || !Number.isInteger(qtyFound) || qtyFound < 0) {
@@ -191,34 +207,48 @@ export async function POST(req: Request): Promise<NextResponse> {
   // ⚠ THE LINE MUST BELONG TO THIS BILL. rawLineItemId arrives from the client
   // and there is no FK from `orders` to its line items (matched on the plain
   // obdNumber string), so without this a finding could be attached to a
-  // completely different bill's line. Same guard report/route.ts makes.
-  const rawLine = await prisma.import_raw_line_items.findUnique({
-    where: { id: rawLineItemId },
+  // completely different bill's line. Same guard report/route.ts makes. A
+  // merged row has every one of its lines checked, in the order sent, before
+  // anything is written.
+  const foundLines = await prisma.import_raw_line_items.findMany({
+    where: { id: { in: rawLineItemIds } },
     select: { id: true, obdNumber: true, lineId: true, skuCodeRaw: true, unitQty: true, lineStatus: true },
   });
-  if (!rawLine || rawLine.obdNumber !== order.obdNumber) {
-    return NextResponse.json({ error: "That line does not belong to this bill." }, { status: 400 });
+  const lineById = new Map(foundLines.map((l) => [l.id, l]));
+  const rawLines: RawLine[] = [];
+  for (const id of rawLineItemIds) {
+    const rawLine = lineById.get(id);
+    if (!rawLine || rawLine.obdNumber !== order.obdNumber) {
+      return NextResponse.json({ error: "That line does not belong to this bill." }, { status: 400 });
+    }
+    if (rawLine.lineStatus !== "active") {
+      return NextResponse.json(
+        { error: "That line is no longer active on this bill." },
+        { status: 409 },
+      );
+    }
+    rawLines.push(rawLine);
   }
-  if (rawLine.lineStatus !== "active") {
-    return NextResponse.json(
-      { error: "That line is no longer active on this bill." },
-      { status: 409 },
-    );
+  // A merged row is ONE SKU by construction (group-lines.ts keys on the SAP
+  // code), so lines of different SKUs are not a row the screen could show.
+  if (rawLines.some((l) => l.skuCodeRaw !== rawLines[0].skuCodeRaw)) {
+    return NextResponse.json({ error: "Those lines are not the same SKU." }, { status: 400 });
   }
 
   // Found-more-than-ordered is a typo, not a finding. Same bound report/route.ts
-  // applies — kept in code, not the DB, so relaxing it is a one-line change.
-  if (qtyFound > rawLine.unitQty) {
-    return NextResponse.json(
-      { error: `qtyFound cannot exceed the ${rawLine.unitQty} ordered` },
-      { status: 400 },
-    );
+  // applies — kept in code, not the DB, so relaxing it is a one-line change. On
+  // a merged row the bound is the MERGED total, split across the lines by the
+  // SAME helper report/route.ts uses (lib/picking/allocate-finding.ts).
+  const allocation = allocateFoundQty(rawLines, qtyFound);
+  if (!allocation.ok) {
+    return NextResponse.json({ error: allocation.error }, { status: 400 });
   }
 
-  const existing = await prisma.pick_findings.findUnique({
-    where: { rawLineItemId },
-    select: { id: true },
+  const existingRows = await prisma.pick_findings.findMany({
+    where: { rawLineItemId: { in: rawLineItemIds } },
+    select: { rawLineItemId: true },
   });
+  const existingLineIds = new Set(existingRows.map((e) => e.rawLineItemId));
 
   const now = new Date();
 
@@ -227,62 +257,86 @@ export async function POST(req: Request): Promise<NextResponse> {
     mfgMonth: true, mfgYear: true,
     reportedById: true, reportedAt: true, recordedById: true, recordedAt: true,
   } as const;
+  const bill = order;
+  // Pinned: the isFindingReason narrowing does not reach into writeLine.
+  const findingReason: FindingReason = reason;
 
-  if (existing) {
-    const updated = await prisma.pick_findings.update({
-      where: { rawLineItemId },
-      // ⚠ reportedById / reportedAt are ABSENT from this data object on
-      // purpose — Prisma leaves an omitted field untouched, which is exactly
-      // what preserves the original reporter. Do not add them "for
-      // completeness"; adding them is the bug.
+  // THE per-line write. A single-line row calls it once; a merged row calls it
+  // once per line. There is no second write path.
+  async function writeLine(rawLine: RawLine, lineQtyFound: number) {
+    const rawLineItemId = rawLine.id;
+    if (existingLineIds.has(rawLineItemId)) {
+      return prisma.pick_findings.update({
+        where: { rawLineItemId },
+        // ⚠ reportedById / reportedAt are ABSENT from this data object on
+        // purpose — Prisma leaves an omitted field untouched, which is exactly
+        // what preserves the original reporter. Do not add them "for
+        // completeness"; adding them is the bug.
+        data: {
+          qtyFound: lineQtyFound,
+          reason: findingReason,
+          // Unconditional — see the validation block above. This is what clears a
+          // picker's date when the supervisor re-files the line as a shortage.
+          mfgMonth,
+          mfgYear,
+          recordedById,
+          recordedAt: now,
+          ...(remarksProvided ? { remarks: remarksValue } : {}),
+        },
+        select: SAVED_SELECT,
+      });
+    }
+
+    return prisma.pick_findings.create({
       data: {
-        qtyFound,
-        reason,
-        // Unconditional — see the validation block above. This is what clears a
-        // picker's date when the supervisor re-files the line as a shortage.
+        orderId: bill.id,
+        rawLineItemId,
+        // Denormalised copies — they must survive the line being soft-removed by
+        // a later re-import (CLAUDE_CORE.md §7.4). `lineId` is TEXT here and Int
+        // on import_raw_line_items, hence the String().
+        obdNumber:  bill.obdNumber,
+        lineId:     String(rawLine.lineId),
+        skuCodeRaw: rawLine.skuCodeRaw,
+        qtyOrdered: rawLine.unitQty,
+        qtyFound: lineQtyFound,
+        reason: findingReason,
+        // Both null unless reason is old_mfg — the validation block above is the
+        // only thing that sets them. Every line of a merged row gets the same.
         mfgMonth,
         mfgYear,
+        remarks: remarksProvided ? remarksValue : null,
+        // No picker report behind this one — the supervisor found it himself.
+        // reportedById / reportedAt stay NULL, and that NULL is meaningful:
+        // it is how "nobody on the floor flagged this" is recorded.
         recordedById,
         recordedAt: now,
-        ...(remarksProvided ? { remarks: remarksValue } : {}),
       },
       select: SAVED_SELECT,
     });
-    // The confirm is written. Everything below is the side effect.
-    await raiseAutoCi(order, recordedById, rawLineItemId);
-    return NextResponse.json({ ok: true, finding: updated });
   }
 
-  const created = await prisma.pick_findings.create({
-    data: {
-      orderId,
-      rawLineItemId,
-      // Denormalised copies — they must survive the line being soft-removed by
-      // a later re-import (CLAUDE_CORE.md §7.4). `lineId` is TEXT here and Int
-      // on import_raw_line_items, hence the String().
-      obdNumber:  order.obdNumber,
-      lineId:     String(rawLine.lineId),
-      skuCodeRaw: rawLine.skuCodeRaw,
-      qtyOrdered: rawLine.unitQty,
-      qtyFound,
-      reason,
-      // Both null unless reason is old_mfg — the validation block above is the
-      // only thing that sets them.
-      mfgMonth,
-      mfgYear,
-      remarks: remarksProvided ? remarksValue : null,
-      // No picker report behind this one — the supervisor found it himself.
-      // reportedById / reportedAt stay NULL, and that NULL is meaningful:
-      // it is how "nobody on the floor flagged this" is recorded.
-      recordedById,
-      recordedAt: now,
-    },
-    select: SAVED_SELECT,
-  });
+  // One line at a time, in lineId order — sequential awaits, never $transaction.
+  const findings: { rawLineItemId: number; finding: Awaited<ReturnType<typeof writeLine>> }[] = [];
+  for (const part of allocation.lines) {
+    const rawLine = lineById.get(part.id)!;
+    findings.push({ rawLineItemId: rawLine.id, finding: await writeLine(rawLine, part.qtyFound) });
+  }
 
-  // The confirm is written. Everything below is the side effect.
-  await raiseAutoCi(order, recordedById, rawLineItemId);
-  return NextResponse.json({ ok: true, finding: created });
+  // The confirm is written — EVERY line of it. Everything below is the side
+  // effect, run ONCE for the whole save: reconcileAutoCi re-derives the bill's
+  // due lines from all its confirmed findings, so once per order is complete.
+  await raiseAutoCi(order, recordedById, rawLineItemIds);
+  return NextResponse.json({ ok: true, finding: findings[0].finding, findings });
+}
+
+/** The `import_raw_line_items` columns this route reads for each line. */
+interface RawLine {
+  id: number;
+  obdNumber: string;
+  lineId: number;
+  skuCodeRaw: string;
+  unitQty: number;
+  lineStatus: string;
 }
 
 /**
@@ -308,14 +362,17 @@ export async function POST(req: Request): Promise<NextResponse> {
 async function raiseAutoCi(
   order: CiAutoOrder,
   supervisorId: number,
-  rawLineItemId: number,
+  // Only for the log line — a merged row's save covers several raw lines.
+  rawLineItemIds: readonly number[],
 ): Promise<void> {
   try {
     await reconcileAutoCi(order, supervisorId);
   } catch (err) {
+    const which =
+      rawLineItemIds.length === 1 ? `line ${rawLineItemIds[0]}` : `lines ${rawLineItemIds.join(", ")}`;
     console.error(
       `[picking/findings/confirm] auto-CI reconcile FAILED for order #${order.id} ` +
-        `/ OBD ${order.obdNumber} (line ${rawLineItemId}). The finding IS saved; the ` +
+        `/ OBD ${order.obdNumber} (${which}). The finding IS saved; the ` +
         `CI is not. Raise it by hand from /ci if goods came back:`,
       err,
     );
