@@ -305,6 +305,20 @@ export type PageKey =
   // ⚠ Deliberately NOT in PAGE_NAV_MAP (a control, not a route). It IS in
   // ACTION_PAGES.canEdit, or /admin/access could not grant it.
   | "place_order_ship_to"
+  // Challan orders (2026-10-06, Schema v27.60 — design
+  // docs/prompts/drafts/web-update-2026-10-06-challan-orders.md §7).
+  //   place_order_challan — "Create challan order" on the desktop /place-order
+  //     cart (and its three-way Ship-to, M3). canEdit is its only meaning.
+  //   challan_orders — the ONE shared Challan orders screen, mounted in Billing,
+  //     Floor and Place Order (D8). canView = see it; canEdit = paste SO / Link /
+  //     Unlink (hidden without it, never disabled).
+  // ⚠ REGISTERED ONLY — nothing reads either yet, no screen gates on them and no
+  // user_page_access rows exist. ALL_PAGE_KEYS / ACCESS_SECTIONS / ACTION_PAGES
+  // are left for the access slice: adding them would put two rows on
+  // /admin/access (and its "page rows missing" banner) before there is anything
+  // to grant. Deliberately NOT in PAGE_NAV_MAP or ICON_MAP (a control and a tab).
+  | "place_order_challan"
+  | "challan_orders"
   | "trip_report"
   | "mail_orders"
   // billing_picking — the BILLING Picking tab (bills checked on the floor and
@@ -655,6 +669,10 @@ const PAGE_LABEL_OVERRIDES: Record<string, string> = {
   // "Purchase Order ·" prefix keeps it apart from "Billing · Ship-to" above —
   // a different screen and a different key.
   place_order_ship_to: "Purchase Order · Ship-to",
+  // Challan orders (2026-10-06). Not in PAGE_NAV_MAP. Ready for when the access
+  // slice adds the keys to ALL_PAGE_KEYS / ACCESS_SECTIONS.
+  place_order_challan: "Purchase Order · Create challan order",
+  challan_orders:      "Challan orders",
   // Not in PAGE_NAV_MAP. The "Tint Manager · Panel:" prefix keeps the three
   // reading as tabs of that one screen, directly under its own row.
   tint_panel_items:    "Tint Manager · Panel: Items",

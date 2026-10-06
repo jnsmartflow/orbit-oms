@@ -330,6 +330,11 @@ model users {
   // EXPLICITLY NAMED ON BOTH SIDES (CORE §7.3).
   soAccessGranted             so_order_access[]        @relation("SoOrderAccessGrantedBy")
   soAccessRevoked             so_order_access[]        @relation("SoOrderAccessRevokedBy")
+  // Challan orders — SO links (2026-10-06, Schema v27.60) — TWO FKs from
+  // `challan_order_so_links` to `users`: linkedById / unlinkedById. BOTH MUST
+  // STAY EXPLICITLY NAMED ON BOTH SIDES (CORE §7.3).
+  challanSoLinksLinked        challan_order_so_links[] @relation("ChallanSoLinkLinkedBy")
+  challanSoLinksUnlinked      challan_order_so_links[] @relation("ChallanSoLinkUnlinkedBy")
   // Per-user page access (2026-09-04). One FK to `users`, so the relation is
   // deliberately UNNAMED — same call as pushSubscriptions and adminAuditLogs
   // above, and the opposite of the Mrn*/PickFinding*/CiReturn* clusters, which
@@ -1274,6 +1279,38 @@ model orders {
   directLoadedById Int?
   directLoadedBy   users?    @relation("OrderDirectLoadedBy", fields: [directLoadedById], references: [id], onDelete: SetNull)
 
+  // ── CHALLAN ORDERS (2026-10-06, Schema v27.60, sql/2026-10-06-challan-orders-ddl.sql,
+  // run live by the owner the same day). Design:
+  // docs/prompts/drafts/web-update-2026-10-06-challan-orders.md.
+  //
+  // isChallanOrder — TRUE on an ORB order (the challan itself, made on desktop
+  // /place-order; obdNumber is ORB-YYYY-NNNNN). Live: boolean NOT NULL DEFAULT false.
+  //
+  // challanOrderId — on the SAP OBD that billing linked to a challan: the ORB
+  // order it was billed against. The PER-OBD link (one SO can yield several
+  // OBDs). Such a bill sits at workflowStage 'challan_linked' (lib/workflow-stages.ts),
+  // which keeps it off every dispatch board.
+  //
+  // 🔴 A SELF-RELATION, so it is NAMED on both sides ("OrderChallanOrder").
+  // onDelete: Restrict IS SPELLED OUT because the live FK orders_challanOrderId_fkey
+  // is ON DELETE RESTRICT and Prisma's default for an OPTIONAL relation is SetNull.
+  //
+  // 🔴 THE FIRST CHECK CONSTRAINTS ON orders — NOT EXPRESSIBLE IN PRISMA. Live
+  // pg_get_constraintdef text, read back 2026-10-06:
+  //   chk_orders_challan_role:     CHECK ((NOT ("isChallanOrder" AND ("challanOrderId" IS NOT NULL))))
+  //   chk_orders_challan_not_self: CHECK ((("challanOrderId" IS NULL) OR ("challanOrderId" <> id)))
+  //   chk_orders_orb_number:       CHECK ((("isChallanOrder" AND ("obdNumber" ~ '^ORB-[0-9]{4}-[0-9]{5}$'::text)) OR ((NOT "isChallanOrder") AND ("obdNumber" !~ '^ORB-'::text))))
+  // A writer that breaks one fails its write. The ORB shape is enforced by the
+  // database: a SAP OBD can never carry an ORB- number, and an ORB order must.
+  isChallanOrder      Boolean                  @default(false)
+  challanOrderId      Int?
+  challanOrder        orders?                  @relation("OrderChallanOrder", fields: [challanOrderId], references: [id], onDelete: Restrict)
+  challanLinkedOrders orders[]                 @relation("OrderChallanOrder")
+  // The SO-link rows (challan_order_so_links): TWO FKs from that table to
+  // `orders`, so both relations are NAMED on both sides (CORE §7.3).
+  challanSoLinks         challan_order_so_links[] @relation("ChallanSoLinkOrbOrder")
+  challanSoLinksAsLinked challan_order_so_links[] @relation("ChallanSoLinkLinkedOrder")
+
   // Partial index created directly in Supabase, NOT expressible in Prisma
   // syntax — do NOT model it as @@index:
   //   orders_billing_pending_idx ON orders ("workflowStage")
@@ -1298,6 +1335,9 @@ model orders {
   // `ready` state and the trip sheet all ask. Prisma's default name for this
   // shape is exactly `orders_tripDropId_idx`, so no `map:` is needed.
   @@index([tripDropId])
+  // Challan orders (2026-10-06, v27.60) — orders_challanOrderId_idx, Prisma's
+  // default name, so no `map:`. Backs the FK and "the SAP bills of this challan".
+  @@index([challanOrderId])
 }
 
 // ─────────────────────────────────────────────
@@ -3515,6 +3555,77 @@ model so_tag_matches {
   // The referencing side of the orderId FK — Postgres does not index it, and
   // without it a delete on orders scans this table to enforce the RESTRICT.
   @@index([orderId])
+}
+
+// ── CHALLAN ORDERS — SO links (2026-10-06, Schema v27.60) ────────────────────
+//
+// One row per SO number billing pastes against an ORB order (a challan order,
+// orders.isChallanOrder). The SO is pasted BEFORE the SAP OBD exists (design
+// D10), so it cannot live on `orders`. One ORB order → many SOs (part-billing,
+// F5); one SO → one ORB order among rows that are not unlinked (F5).
+// Design: docs/prompts/drafts/web-update-2026-10-06-challan-orders.md.
+// DDL: sql/2026-10-06-challan-orders-ddl.sql — RUN LIVE 2026-10-06 by the owner
+// and verified; the text below is the live read-back. Never db push / db pull.
+//
+// status:
+//   'waiting'  — SO pasted, its OBD not imported yet
+//   'linked'   — the import found an OBD for the SO. linkedOrderId is the FIRST
+//                such OBD only; every SAP bill carries its own
+//                orders.challanOrderId, which is the per-OBD truth.
+//   'unlinked' — billing took a wrong SO off (M5), from 'waiting' only. The row
+//                is KEPT as the audit trail; it is never hard-deleted.
+//
+// 🔴 FOUR LIVE CHECK CONSTRAINTS — NOT EXPRESSIBLE IN PRISMA, live text:
+//   chk_challan_order_so_links_status:   CHECK ((status = ANY (ARRAY['waiting'::text, 'linked'::text, 'unlinked'::text])))
+//   chk_challan_order_so_links_so_shape: CHECK (("soNumber" ~ '^[0-9]{10}$'::text))
+//   chk_challan_order_so_links_shape:    CHECK ((((status = 'waiting'::text) AND ("linkedOrderId" IS NULL) AND ("obdLinkedAt" IS NULL) AND ("unlinkedAt" IS NULL) AND ("unlinkedById" IS NULL)) OR ((status = 'linked'::text) AND ("linkedOrderId" IS NOT NULL) AND ("obdLinkedAt" IS NOT NULL) AND ("unlinkedAt" IS NULL) AND ("unlinkedById" IS NULL)) OR ((status = 'unlinked'::text) AND ("linkedOrderId" IS NULL) AND ("obdLinkedAt" IS NULL) AND ("unlinkedAt" IS NOT NULL))))
+//   chk_challan_order_so_links_not_self: CHECK ((("linkedOrderId" IS NULL) OR ("linkedOrderId" <> "orbOrderId")))
+// A new status value = ALTER the CHECK first, then the vocabulary in code
+// (CORE §3's status-string rule).
+//
+// 🔴 A PARTIAL UNIQUE INDEX — NOT EXPRESSIBLE IN PRISMA, live text:
+//   CREATE UNIQUE INDEX "challan_order_so_links_soNumber_live_key" ON
+//     public.challan_order_so_links USING btree ("soNumber") WHERE (status <> 'unlinked'::text)
+//   F5 and the import's lookup index. Do NOT model it as @@unique([soNumber]) —
+//   an unlinked row frees its SO for a fresh paste. Consequence: no findUnique by
+//   soNumber; use findFirst with status: { not: 'unlinked' }. Same class as
+//   so_tags_soNumber_live_key.
+//
+// FOUR relations, all NAMED on both sides: two FKs to `orders` (orbOrderId,
+// linkedOrderId) and two to `users` (linkedById, unlinkedById) — CORE §7.3.
+// onDelete is spelled out to match live: orders RESTRICT ×2, linkedBy RESTRICT,
+// unlinkedBy SET NULL. Every constraint and index name is Prisma's default, so
+// no `map:` anywhere.
+//
+// Live-feed triggers trg_live_changes_challan_order_so_links_{ins,upd,del}
+// (AFTER, FOR EACH STATEMENT, live_changes_child_*('order','parent','orbOrderId'))
+// — the so_tag_matches pattern: a paste / link / unlink writes no orders row.
+model challan_order_so_links {
+  id            Int       @id @default(autoincrement())
+  orbOrderId    Int
+  orbOrder      orders    @relation("ChallanSoLinkOrbOrder", fields: [orbOrderId], references: [id], onDelete: Restrict)
+  // 10 digits — chk_challan_order_so_links_so_shape (normaliseSoNumber's rule).
+  soNumber      String
+  // 'waiting' | 'linked' | 'unlinked' — chk_challan_order_so_links_status.
+  status        String    @default("waiting")
+  linkedOrderId Int?
+  linkedOrder   orders?   @relation("ChallanSoLinkLinkedOrder", fields: [linkedOrderId], references: [id], onDelete: Restrict)
+  obdLinkedAt   DateTime? @db.Timestamptz(6)
+  // RESTRICT: who pasted the SO is the record of who linked it.
+  linkedById    Int
+  linkedBy      users     @relation("ChallanSoLinkLinkedBy", fields: [linkedById], references: [id], onDelete: Restrict)
+  linkedAt      DateTime  @default(now()) @db.Timestamptz(6)
+  // SET NULL: an optional actor stamp; status + unlinkedAt still say what happened.
+  unlinkedById  Int?
+  unlinkedBy    users?    @relation("ChallanSoLinkUnlinkedBy", fields: [unlinkedById], references: [id], onDelete: SetNull)
+  unlinkedAt    DateTime? @db.Timestamptz(6)
+  createdAt     DateTime  @default(now()) @db.Timestamptz(6)
+  // No trigger on the live column (NOT NULL DEFAULT now()) — @updatedAt advances it.
+  updatedAt     DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+
+  // Prisma's default names = the live ones, so no `map:`.
+  @@index([orbOrderId])
+  @@index([linkedOrderId])
 }
 
 // ─────────────────────────────────────────────

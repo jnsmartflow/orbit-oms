@@ -17,9 +17,9 @@
 
 export type StageDef = {
   stage: string;           // exact DB value
-  rank: number | null;     // null for terminal stages (cancelled)
+  rank: number | null;     // null for terminal stages (cancelled, challan_linked)
   label: string;           // human-readable; not wired to any UI yet
-  terminal?: true;         // cancelled only
+  terminal?: true;         // cancelled and challan_linked only
   supportMayEdit: boolean; // a PLAIN FLAG per stage — never derived from rank
 };
 
@@ -52,6 +52,9 @@ export const STAGE_LADDER: StageDef[] = [
   { stage: "pick_checked",            rank: 90, label: "Checked",                supportMayEdit: false },
   { stage: "dispatched",              rank: 100, label: "Dispatched",            supportMayEdit: false },
   { stage: "cancelled", rank: null, label: "Cancelled", terminal: true, supportMayEdit: false },
+  // A SAP OBD billed against a challan order — off every dispatch board, seen only on the
+  // Challan orders screen (design docs/prompts/drafts/web-update-2026-10-06-challan-orders.md, D9).
+  { stage: "challan_linked", rank: null, label: "Linked to challan", terminal: true, supportMayEdit: false },
 ];
 
 /** The stage Support (and its automated equivalents, e.g. mail-order
@@ -108,8 +111,21 @@ export const PICK_CHECKED = "pick_checked";
  */
 export const DISPATCHED = "dispatched";
 
+/**
+ * The SAP OBD that billing linked to a challan order (Challan orders, Schema
+ * v27.60). Terminal and off the ladder (rank null), like 'cancelled': it is in
+ * no picking / Floor / rail stage set, so every board leaves it out by
+ * construction. Written only by the import catch and the pull-back (later
+ * slices), together with orders.challanOrderId.
+ *
+ * 🔴 A workflowStage VALUE, NOT a dispatchStatus one: SO-number writers
+ * (enrichment, Billing's actions route, Telephonic) rewrite dispatchStatus and
+ * would put the bill back on picking. Nothing writes this stage yet.
+ */
+export const CHALLAN_LINKED = "challan_linked";
+
 /** Position of a stage on the ladder. null for BOTH unknown stages and
- *  explicitly off-ladder terminal stages ('cancelled') — callers must not
+ *  explicitly off-ladder terminal stages ('cancelled', 'challan_linked') — callers must not
  *  read null as "unknown"; use isSupportDone() to test cancelled by name. */
 export function stageRank(stage: string | null): number | null {
   if (stage === null) return null;
