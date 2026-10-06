@@ -9,8 +9,8 @@
 // toggle). The ⋯ (details) button stays INERT — the detail panel is a later
 // step. On history/upcoming variants everything stays read-only.
 //
-// COLUMNS: ☐ · OBD+date · Invoice · Ship to · Route · Due · Vol/KG · Article
-//          · Status
+// COLUMNS: ☐ · OBD+date · Invoice · Ship to · Route · Due · Vol/KG · Article tag
+//          · Article (supervisor's article no., 2026-10-06) · Status
 //  - The # and Picker columns were REMOVED 2026-09-10 with the trip desk. See
 //    the width arrays for the before/after counts.
 //  - 🔴 DUE IS THE OLD `showSlot` COLUMN PROMOTED, not a new one beside it.
@@ -638,15 +638,32 @@ export function FloorTable({
   //   5  Route
   //   6  Due
   //   7  Vol / KG
-  //   8  Article
-  //   9  Status
+  //   8  Article tag  (SAP's plan — header was "Article" until 2026-10-06)
+  //   9  Article      (2026-10-06 — the supervisor's article no.)
+  //  10  Status
   //
   // A `{cond && <td>}` that is false renders NOTHING — it does not leave a
   // gap — so one missing cell shifts every column to its right by one and the
   // headers quietly describe the wrong values. That is exactly what happened
   // to Route between e656ad80 and this fix; see the note on its cell.
   //
-  //                        ☐  OBD INV Ship Rt Due V/KG Art Status
+  //                        ☐  OBD INV Ship Rt Due V/KG Tag Art Status
+  //
+  // ── 2026-10-06 — ARTICLE TAG + ARTICLE (owner) ────────────────────────────
+  // The old "Article" column is now headed "Article tag" (content unchanged,
+  // formatArticleTag — what SAP says should go out). A NEW narrow "Article"
+  // column follows it: pick_assignments.articleCount, the number the
+  // supervisor wrote on the drum (Schema v27.58). Every arm gains ONE entry,
+  // 6%, taken from the columns with slack in THAT arm — Ship to (it ellipsises
+  // by design), the article tag, and a point of Due/Area/OBD where needed.
+  // BEFORE → AFTER, each = 100:
+  //   ship-to block          [20,14,13,14,10,13,16]        → [18,14,12,13,10,11,6,16]
+  //   interactive + extra    [3,13,9,17,9,12,7,12,18]      → [3,13,9,13,9,11,7,11,6,18]
+  //   interactive, no extra  [3,14,21,9,12,7,14,20]        → [3,14,17,9,12,7,12,6,20]
+  //   read-only + extra      [14,10,19,9,12,7,12,17]       → [14,10,15,9,11,7,11,6,17]
+  //   read-only, no extra    [15,23,10,13,8,14,17]         → [15,19,10,13,8,12,6,17]
+  // Status keeps its width everywhere — the 2026-09-10 measurement ("Needs
+  // check · 16m" + the hover buttons) still binds.
   // ⚠ ONE CONDITION, NOT TWO. Invoice and Operator share the third slot and are
   // mutually exclusive (see `operatorByOrderId`), so the matrix stays at four
   // arms and the colgroup, the <th> row and the <td>s all test THIS.
@@ -657,18 +674,18 @@ export function FloorTable({
   // the block's ticks sit at the OBD column's left edge instead. Ship to is
   // gone (the block header names it); Area is back, in the Route/Area slot.
   // ONE arm, live and History alike — `tickColumn` is false on both.
-  //                    OBD INV Area Due V/KG Art Status
+  //                    OBD INV Area Due V/KG Tag Art Status
   const tickColumn = interactive && !shipToBlock;
   const areaCol = showArea || shipToBlock;
   const widths = shipToBlock
-    ? [20, 14, 13, 14, 10, 13, 16] //                                  = 100
+    ? [18, 14, 12, 13, 10, 11, 6, 16] //   OBD INV Area Due V/KG Tag Art Status = 100
     : interactive
     ? hasExtra
-      ? [3, 13, 9, 17, 9, 12, 7, 12, 18] //                                = 100
-      : [3, 14, 21, 9, 12, 7, 14, 20] //   ☐ OBD Ship Rt Due V/KG Art Status = 100
+      ? [3, 13, 9, 13, 9, 11, 7, 11, 6, 18] // ☐ OBD INV Ship Rt Due V/KG Tag Art Status = 100
+      : [3, 14, 17, 9, 12, 7, 12, 6, 20] //   ☐ OBD Ship Rt Due V/KG Tag Art Status = 100
     : hasExtra
-      ? [14, 10, 19, 9, 12, 7, 12, 17] //  OBD INV Ship Rt Due V/KG Art Status = 100
-      : [15, 23, 10, 13, 8, 14, 17]; //    OBD Ship Rt Due V/KG Art Status   = 100
+      ? [14, 10, 15, 9, 11, 7, 11, 6, 17] //  OBD INV Ship Rt Due V/KG Tag Art Status = 100
+      : [15, 19, 10, 13, 8, 12, 6, 17]; //    OBD Ship Rt Due V/KG Tag Art Status   = 100
   // ⚠ THE HEADER CHECKBOX COVERS BOTH HALVES OF THIS TABLE. Select-all is
   // per-TABLE (lib/floor/selection.ts documents it as per band), and the
   // upcoming rows are in this table — so a select-all that skipped them would
@@ -732,7 +749,11 @@ export function FloorTable({
           <th className={HEAD_TH}>{areaCol ? "Area" : "Route"}</th>
           <th className={HEAD_TH}>Due</th>
           <th className={`${HEAD_TH} text-right`}>Vol / KG</th>
-          <th className={HEAD_TH}>Article</th>
+          <th className={HEAD_TH}>Article tag</th>
+          {/* 2026-10-06 — the supervisor's article no. In EVERY arm, Tinting's
+              Operator arm included (its bills are never checked, so the cells
+              are empty there): one column set, no new width arm. */}
+          <th className={`${HEAD_TH} text-right`}>Article</th>
           <th className={HEAD_TH}>Status</th>
         </tr>
       </thead>
@@ -1454,6 +1475,28 @@ export function FloorTable({
           <span className="text-[#6b7280]">
             {row.articleTag ? formatArticleTag(row.articleTag) : "—"}
           </span>
+        </td>
+        {/* ── ARTICLE — the supervisor's article no. (2026-10-06) ─────────────
+            pick_assignments.articleCount, entered on Approve. NOT the tag to
+            its left (SAP's plan) — a separate, counted fact.
+
+            🔴 GATED ON rowStatus, NEVER isChecked — the same `st` the Status
+            pill reads. `done` (checked) and `dispatched` show the number, or
+            a muted "—" when it is NULL (approved before 2026-10-06). Every
+            other status renders an EMPTY cell, including `direct`: a Direct
+            Loaded bill never goes through Approve and has no article no. by
+            design, so a dash there would read as "missing". Never "0".
+
+            Colour is SWAPPED on TD, never stacked — same rule as the Vol/KG
+            cell above. */}
+        <td
+          className={`${
+            (st === "done" || st === "dispatched") && row.articleCount != null
+              ? TD.replace("text-[#4b5563]", "text-ok-text font-semibold")
+              : TD.replace("text-[#4b5563]", "text-ink-400")
+          } text-right tabular-nums`}
+        >
+          {st === "done" || st === "dispatched" ? (row.articleCount ?? "—") : null}
         </td>
         <td className={TD}>{statusCell}</td>
       </tr>
