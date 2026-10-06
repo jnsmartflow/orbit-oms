@@ -4,12 +4,12 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Challan badge — Picking + Floor (mockup)</title>
-<!-- Mockup for slices 2 + 4 of docs/prompts/drafts/web-update-2026-10-06-challan-orders.md (D3 badge, D6, D7, D8).
+<!-- Mockup for slices 2 + 4 of docs/prompts/drafts/web-update-2026-10-06-challan-orders.md (D3 badge, D6, D8; M2, M8 — v2: print parked per D7).
      Picking card copied from components/picking/picking-board-mobile.tsx PickingCard (variant "assign")
      + card-atoms.tsx (CardShelf, CARD_SHADOW_V2, RouteDot); type scale CLAUDE_UI §60.
      Floor row copied from components/floor/floor-table.tsx (HEAD_TH, TD, the interactive+Invoice width arm
      [3,13,9,13,9,11,7,11,6,18], trip tag, StatusPill "Done").
-     NEW: the CHALLAN badge, the read-only "Billed:" line, the "Print challan" button. -->
+     NEW: the CHALLAN badge and, on Floor only, the read-only "Billed:" line. (v2: Print challan removed — D7 parked; Picking "Billed:" line removed — M8.) -->
 <style>
   :root{
     --brand50:#F5F3FF; --brand600:#7C3AED; --brand700:#6D28D9; --brand800:#5B21B6;
@@ -81,9 +81,6 @@
   .chip{font-size:10.5px;font-weight:600;border-radius:7px;padding:3px 8px;color:#667085;background:#eef1f5;white-space:nowrap}
   .arrow{min-width:44px;display:flex;align-items:center;justify-content:center;padding-left:6px}
   .arrow span{width:30px;height:30px;border-radius:50%;background:#eceff3;display:flex;align-items:center;justify-content:center;color:#8b93a0}
-  .billedline{border-top:1px solid #eef1f4;padding:8px 16px;font-size:11.5px;color:#667085;display:flex;gap:6px;align-items:center;flex-wrap:wrap}
-  .billedline b{font-weight:600;color:#475467}
-  .billedline .m{font-family:var(--mono);font-size:11px;color:#475467}
   .tabbar{display:flex;border-top:1px solid #eceef2;background:#fff}
   .tabbar span{flex:1;text-align:center;padding:9px 0 11px;font-size:11px;font-weight:600;color:var(--g400);position:relative}
   .tabbar span.on{color:var(--ink900)}
@@ -114,8 +111,6 @@
   .dn{font-size:11.5px;font-weight:500;color:#111827}
   .kg{font-size:10px;color:#9ca3af}
   .stpill{display:inline-block;border-radius:5px;padding:2px 8px;font-size:11px;font-weight:600;background:#dcfce7;color:#15803d}
-  .prt{margin-left:8px;height:23px;padding:0 8px;border-radius:5px;border:1px solid var(--g200);background:#fff;color:var(--g600);font-size:11px;font-weight:500;display:inline-flex;align-items:center;gap:5px;vertical-align:middle}
-  .prt:hover{border-color:var(--g300);color:var(--g900)}
   .art{color:var(--oktext);font-weight:600}
   tr.billed td{padding:0 14px 9px 14px;border-bottom:1px solid #f0f0f0;background:#fff;white-space:normal}
   tr.challanrow td{border-bottom:0}
@@ -125,7 +120,6 @@
   .bline .sep{color:#d1d5db}
   .bline .ok{color:var(--oktext);font-weight:600}
   .bline .ro{margin-left:auto;font-size:10px;color:#9ca3af}
-  .pl{font-size:10px;color:#9ca3af;margin-top:5px}
 </style>
 </head>
 <body>
@@ -134,8 +128,8 @@
   <h1>Challan badge — Picking card + Floor row</h1>
   <p class="sub">
     An ORB order carries a small <b>CHALLAN</b> badge wherever a bill shows, beside the badges the row already draws.
-    The badge needs no tick. Billing’s link shows to everyone else <b>read-only</b> (“Billed: SO · OBD · Inv”).
-    Only Floor prints the paper (D7), behind its own tick (“Floor · Print challan”).
+    The badge needs no tick. On Floor, Billing’s link shows <b>read-only</b> (“Billed: SO · OBD · Inv”); Picking shows the badge only (M8).
+    Printing the challan is <b>parked</b> (D7) — no print button anywhere in Phase 1.
   </p>
 
   <h2>The badge beside its neighbours</h2>
@@ -188,7 +182,6 @@
             <div class="ttl"><span class="n">Ganesh Paint House</span><span class="s" style="font-size:12px;font-weight:600;color:#667085">36<i style="font-style:normal;font-size:10.5px;color:#98a2b3;font-weight:500">L</i></span></div>
             <div class="where"><span class="l"><span class="rd"></span><span class="rt">Udhna</span></span></div>
           </div>
-          <div class="billedline"><b>Billed:</b><span>SO</span><span class="m">4409811, 4409840</span><span style="color:#d8dce1">·</span><span>Inv</span><span class="m">I26004512…</span></div>
         </div>
       </div>
       <div class="tabbar"><span class="on">Assign</span><span>Picking</span><span>Done</span></div>
@@ -198,7 +191,7 @@
       <li><b>Where it sits:</b> in the caption, after the number, the same slot TINT / BASE / GIFT / HAND use — <code>shrink-0</code>, so the time truncates before the word does.</li>
       <li><b>The number:</b> an ORB order has no OBD — the ORB number sits in the OBD slot (D1), so the caption already reads differently; the badge is what says <i>why</i>.</li>
       <li><b>Behaviour is unchanged:</b> tap selects, the arrow opens the bill, Assign is the commit. No new violet on the card (CLAUDE_UI §59.9).</li>
-      <li><b>Second card (checked, Done tab):</b> once Billing has linked the SO, the read-only “Billed:” line takes the footer slot. On phone width the OBD drops off the line — the detail screen shows all three numbers.</li>
+      <li><b>Second card (checked, Done tab):</b> the badge and nothing else — no “Billed:” line on Picking (M8). The billing state lives on the shared Challan orders screen.</li>
       <li>The linked SAP OBD itself never appears on Picking (D9).</li>
     </ul>
   </div>
@@ -238,7 +231,7 @@
           <td class="r"><div>18 L</div><div class="kg">&mdash;</div></td>
           <td><span style="color:#6b7280;font-size:10.5px">3 C</span></td>
           <td class="r art">3</td>
-          <td><span class="stpill">Done</span><button class="prt" title="Printed 2× — last by Ramesh, 06 Oct 14:10"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>Print challan</button></td>
+          <td><span class="stpill">Done</span></td>
         </tr>
         <tr class="billed">
           <td colspan="10">
@@ -248,7 +241,7 @@
               <span>OBD</span><span class="m">9109331207</span><span class="sep">·</span>
               <span>Inv</span><span class="m">I26004512</span><span class="sep">·</span>
               <span class="ok">✅ lines match</span>
-              <span class="ro">read-only — linked by Billing · printed 2×, last Ramesh 06 Oct 14:10</span>
+              <span class="ro">read-only — linked by Billing</span>
             </div>
           </td>
         </tr>
@@ -258,10 +251,10 @@
   </div>
   <ul class="side-notes" style="margin-top:14px">
     <li><b>Badge:</b> rides the <b>Ship to</b> cell — where TINT / BASE / GIFT / HAND already sit on this table — so no new column and the four width arrays in <code>floor-table.tsx</code> stay as they are. It goes <b>before</b> the dealer name, not after like its siblings: the cell ellipsises, and at 13% a badge placed after a long name is clipped away (it was, in the first draw of this mockup). In front, the name truncates instead.</li>
-    <li><b>⚠ Found while drawing:</b> <code>ORB-2026-00001</code> is 14 characters against an OBD’s 10, so in the 13% OBD track the trip tag no longer fits beside it. This mockup drops the tag to the date line on ORB rows only; slice 4 has to choose that or a width change.</li>
+    <li><b>⚠ Found while drawing:</b> <code>ORB-2026-00001</code> is 14 characters against an OBD’s 10, so in the 13% OBD track the trip tag no longer fits beside it. On ORB rows the tag moves to the date line (M2).</li>
     <li><b>Invoice cell:</b> empty, as for any bill SAP has not stamped — the ORB row has no invoice of its own. The SAP numbers live on the “Billed:” line.</li>
     <li><b>“Billed:” line:</b> a full-width line under the row, only once Billing has linked at least one SO. Before that the row is just the row. With two SOs it lists both: “SO 4409811, 4409840 · OBD 2 · Inv 2”.</li>
-    <li><b>Print challan:</b> a white secondary button in the Status cell — always shown on an ORB row for a holder of the tick, never brand (the Floor panel’s brand button stays on its real job). Every print is logged; the count and last printer are on the button’s tooltip and the Billed line. A reprint does not ask.</li>
+    <li><b>No Print challan button</b> — printing is parked (D7). The paper design is kept in <code>challan-paper.html</code> for later.</li>
     <li>The linked SAP OBD never appears on Floor — no row, no Hold tab, no Cancelled tab (D9).</li>
   </ul>
 </div>

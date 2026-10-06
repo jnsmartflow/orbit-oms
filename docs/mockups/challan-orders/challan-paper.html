@@ -25,6 +25,9 @@
   button{font-family:inherit;cursor:pointer}
   .wrap{max-width:900px;margin:0 auto}
   .back{font-size:12px;color:var(--brand700);text-decoration:none}
+  /* screen-only; hidden from print by the visibility isolation below */
+  .parked{margin-bottom:16px;background:#fffbeb;border:1px solid #fde68a;color:#b45309;border-radius:8px;padding:10px 14px;font-size:12.5px;line-height:1.5}
+  .parked b{font-weight:800;letter-spacing:.02em}
   h1{font-size:20px;font-weight:800;margin-top:8px;letter-spacing:-.01em}
   .sub{font-size:12.5px;color:var(--g500);margin-top:6px;line-height:1.55}
   .sub b{color:var(--g700)}
@@ -62,6 +65,7 @@
 </head>
 <body data-ship="same">
 <div class="wrap">
+  <div class="parked" role="note"><b>PARKED — not in Phase 1 (D7).</b> Kept as the design for later. Nothing in Phase 1 prints a challan; the Floor “Print challan” button is gone from the other mockups.</div>
   <a class="back" href="index.html">← Challan orders mockups</a>
   <h1>Challan paper — A4 print preview</h1>
   <p class="sub">
