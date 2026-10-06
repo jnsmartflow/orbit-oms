@@ -653,20 +653,21 @@ export function FloorTable({
   //   1  ☐        only when `interactive`
   //   2  OBD
   //   3  Invoice  only when `showInvoice`
-  //   4  Ship to
-  //   5  Route
-  //   6  Due
-  //   7  Vol / KG
-  //   8  Article tag  (SAP's plan — header was "Article" until 2026-10-06)
-  //   9  Article      (2026-10-06 — the supervisor's article no.)
-  //  10  Status
+  //   4  Ship to  NOT on `shipToBlock`
+  //   5  SO       (2026-10-06 — the Sales Officer; every arm)
+  //   6  Route    (Area on `showArea` / `shipToBlock`)
+  //   7  Due
+  //   8  Vol / KG
+  //   9  Article tag  (SAP's plan — header was "Article" until 2026-10-06)
+  //  10  Article      (2026-10-06 — the supervisor's article no.)
+  //  11  Status
   //
   // A `{cond && <td>}` that is false renders NOTHING — it does not leave a
   // gap — so one missing cell shifts every column to its right by one and the
   // headers quietly describe the wrong values. That is exactly what happened
   // to Route between e656ad80 and this fix; see the note on its cell.
   //
-  //                        ☐  OBD INV Ship Rt Due V/KG Tag Art Status
+  //                        ☐  OBD INV Ship SO Rt Due V/KG Tag Art Status
   //
   // ── 2026-10-06 — ARTICLE TAG + ARTICLE (owner) ────────────────────────────
   // The old "Article" column is now headed "Article tag" (content unchanged,
@@ -693,18 +694,30 @@ export function FloorTable({
   // the block's ticks sit at the OBD column's left edge instead. Ship to is
   // gone (the block header names it); Area is back, in the Route/Area slot.
   // ONE arm, live and History alike — `tickColumn` is false on both.
-  //                    OBD INV Area Due V/KG Tag Art Status
+  //                    OBD INV SO Area Due V/KG Tag Art Status
   const tickColumn = interactive && !shipToBlock;
   const areaCol = showArea || shipToBlock;
+  // ── 2026-10-06 — SO (owner) ──────────────────────────────────────────────
+  // Whose bill it is, RIGHT AFTER Ship to, in EVERY arm (no new condition).
+  // Donor = Ship to (owner). On the ship-to block arm there is no Ship to, so
+  // SO sits where it would (after INV) and takes from Area 12→8 and Article
+  // tag 11→8. BEFORE → AFTER, each = 100:
+  //   ship-to block          [18,14,12,13,10,11,6,16]      → [18,14,7,8,13,10,8,6,16]
+  //   interactive + extra    [3,13,9,13,9,11,7,11,6,18]    → [3,13,9,7,6,9,11,7,11,6,18]
+  //   interactive, no extra  [3,14,17,9,12,7,12,6,20]      → [3,14,10,7,9,12,7,12,6,20]
+  //   read-only + extra      [14,10,15,9,11,7,11,6,17]     → [14,10,8,7,9,11,7,11,6,17]
+  //   read-only, no extra    [15,19,10,13,8,12,6,17]       → [15,11,8,10,13,8,12,6,17]
+  // ⚠ interactive + extra (the Floor tab's own arm) had the least Ship to to
+  // give: 13 → 7 + 6. Eyeball it at depot width before trusting it.
   const widths = shipToBlock
-    ? [18, 14, 12, 13, 10, 11, 6, 16] //   OBD INV Area Due V/KG Tag Art Status = 100
+    ? [18, 14, 7, 8, 13, 10, 8, 6, 16] //   OBD INV SO Area Due V/KG Tag Art Status = 100
     : interactive
     ? hasExtra
-      ? [3, 13, 9, 13, 9, 11, 7, 11, 6, 18] // ☐ OBD INV Ship Rt Due V/KG Tag Art Status = 100
-      : [3, 14, 17, 9, 12, 7, 12, 6, 20] //   ☐ OBD Ship Rt Due V/KG Tag Art Status = 100
+      ? [3, 13, 9, 7, 6, 9, 11, 7, 11, 6, 18] // ☐ OBD INV Ship SO Rt Due V/KG Tag Art Status = 100
+      : [3, 14, 10, 7, 9, 12, 7, 12, 6, 20] //   ☐ OBD Ship SO Rt Due V/KG Tag Art Status = 100
     : hasExtra
-      ? [14, 10, 15, 9, 11, 7, 11, 6, 17] //  OBD INV Ship Rt Due V/KG Tag Art Status = 100
-      : [15, 19, 10, 13, 8, 12, 6, 17]; //    OBD Ship Rt Due V/KG Tag Art Status   = 100
+      ? [14, 10, 8, 7, 9, 11, 7, 11, 6, 17] //  OBD INV Ship SO Rt Due V/KG Tag Art Status = 100
+      : [15, 11, 8, 10, 13, 8, 12, 6, 17]; //    OBD Ship SO Rt Due V/KG Tag Art Status   = 100
   // ⚠ THE HEADER CHECKBOX COVERS BOTH HALVES OF THIS TABLE. Select-all is
   // per-TABLE (lib/floor/selection.ts documents it as per band), and the
   // upcoming rows are in this table — so a select-all that skipped them would
@@ -765,6 +778,9 @@ export function FloorTable({
               `widths` tests above and the <td>s test below. The Route/Area
               slot stays and reads Area there (`areaCol`). */}
           {!shipToBlock && <th className={HEAD_TH}>Ship to</th>}
+          {/* SO (2026-10-06) — every arm, unconditional; on the block arm it
+              lands right after INV, where Ship to would sit. */}
+          <th className={HEAD_TH}>SO</th>
           <th className={HEAD_TH}>{areaCol ? "Area" : "Route"}</th>
           <th className={HEAD_TH}>Due</th>
           <th className={`${HEAD_TH} text-right`}>Vol / KG</th>
@@ -1312,8 +1328,8 @@ export function FloorTable({
             "Invoice date" reads — never a second local one. */}
         {/* ⚠ `shipToBlock` drops the SHIP TO cell below (and the ☐ cell above,
             via `tickColumn`), and the Route cell reads Area — the same flags
-            the colgroup and the <th> row test (count: OBD INV Area Due V/KG
-            Art Status = 7 on that arm). */}
+            the colgroup and the <th> row test (count: OBD INV SO Area Due V/KG
+            Tag Art Status = 9 on that arm). */}
         {/* THE SHARED THIRD SLOT — Invoice, or Operator on the Tinting tab. One
             condition, `hasExtra`, matching the colgroup and the <th> above; see
             `operatorByOrderId` for why they share rather than sit side by side. */}
@@ -1430,6 +1446,25 @@ export function FloorTable({
           {chipFor?.(row)}
         </td>
         )}
+        {/* SO — whose bill it is (2026-10-06). Every arm, unconditional, the
+            same as its <th>. Ellipsis from TD; the full name on hover. A depot
+            mailbox reads "Telecaller" in grey; not found is a grey dash. */}
+        <td
+          className={TD}
+          title={
+            row.salesOfficerSource === "telecaller"
+              ? "Telecaller — the mail order came from a depot mailbox"
+              : row.salesOfficerName ?? undefined
+          }
+        >
+          {row.salesOfficerName === null ? (
+            <span className="text-[11.5px] text-[#d1d5db]">—</span>
+          ) : row.salesOfficerSource === "telecaller" ? (
+            <span className="text-[11.5px] text-[#9ca3af]">{row.salesOfficerName}</span>
+          ) : (
+            <span className="text-[11.5px] text-[#4b5563]">{row.salesOfficerName}</span>
+          )}
+        </td>
         {/* 🔴 ROUTE. THIS CELL WENT MISSING IN e656ad80 AND CAME BACK HERE.
             The Due column was introduced by replacing a two-part anchor —
             the Route cell plus the old guarded Slot cell — with the Due

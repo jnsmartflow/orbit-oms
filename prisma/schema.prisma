@@ -2223,9 +2223,10 @@ model mo_orders {
   //   mo_orders_billOnly_soNumber_idx ON mo_orders ("soNumber")
   //     WHERE "billOnlyAt" IS NOT NULL
   //   Answers "is any mail order on this SO marked CI?" (enrichment skip,
-  //   un-press, re-punch). Do NOT model it as @@index([soNumber]) — that would
-  //   describe a full index that does not exist. Same class as
-  //   so_tags_soNumber_live_key.
+  //   un-press, re-punch). It is NOT the @@index([soNumber]) at the foot of
+  //   this model — that one is the FULL index mo_orders_soNumber_idx
+  //   (2026-10-06, Schema v27.59); the partial one stays unmodelled. Same
+  //   class as so_tags_soNumber_live_key.
   billOnlyAt               DateTime?              @db.Timestamptz(6)
   billOnlyById             Int?
   billOnlyBy               users?                 @relation("MoOrderBillOnlyBy", fields: [billOnlyById], references: [id], onDelete: SetNull)
@@ -2263,6 +2264,13 @@ model mo_orders {
   updatedAt                DateTime               @default(now())
   lines                    mo_order_lines[]
   remarks_list             mo_order_remarks[]
+
+  // Full btree on "soNumber" (2026-10-06, Schema v27.59) — run by hand in the
+  // Supabase SQL Editor: CREATE INDEX "mo_orders_soNumber_idx" ON
+  // public.mo_orders USING btree ("soNumber"). Serves the Floor board's
+  // Sales Officer read (salesOfficerByOrder, lib/floor/queries.ts) and
+  // enrichment's findFirst by SO, which scanned all of mo_orders before it.
+  @@index([soNumber], map: "mo_orders_soNumber_idx")
 }
 
 model mo_order_lines {

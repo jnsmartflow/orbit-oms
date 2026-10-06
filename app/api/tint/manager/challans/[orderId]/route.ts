@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { logAdminAction } from "@/lib/audit/log";
 import { resolveFiniMap } from "@/lib/fini-resolver";
 import { buildSkuDisplay } from "@/types/sku-display";
+import { SO_CASCADE_SELECT, resolveSalesOfficer } from "@/lib/customers/sales-officer";
 
 export const dynamic = "force-dynamic";
 
@@ -194,29 +195,9 @@ export async function GET(
                   primaryRoute: { select: { name: true } },
                 },
               },
-              salesOfficerGroup: {
-                select: {
-                  salesOfficer: { select: { name: true, phone: true } },
-                },
-              },
-              // Phase 5 — Primary SO link, top cascade source for S5 SO column.
-              salesOfficerLinks: {
-                where:  { role: "PRIMARY", contactDismissed: false },
-                take:   1,
-                select: {
-                  salesOfficer: { select: { name: true, phone: true } },
-                },
-              },
-              // Oldest first (2026-10-02) — the first receiver entered prints.
-              contacts: {
-                orderBy: { id: "asc" },
-                select: {
-                  name:        true,
-                  phone:       true,
-                  isPrimary:   true,
-                  contactRole: { select: { name: true } },
-                },
-              },
+              // SO group + Primary SO link + contacts (oldest first) — the S5
+              // SO cascade's sources, shared with Floor (lib/customers/sales-officer.ts).
+              ...SO_CASCADE_SELECT,
             },
           })
         : null,
@@ -239,29 +220,8 @@ export async function GET(
               primaryRoute: { select: { name: true } },
             },
           },
-          salesOfficerGroup: {
-            select: {
-              salesOfficer: { select: { name: true, phone: true } },
-            },
-          },
-          // Phase 5 — Primary SO link, top cascade source for S5 SO column.
-          salesOfficerLinks: {
-            where:  { role: "PRIMARY", contactDismissed: false },
-            take:   1,
-            select: {
-              salesOfficer: { select: { name: true, phone: true } },
-            },
-          },
-          // Oldest first (2026-10-02) — the first receiver entered prints.
-          contacts: {
-            orderBy: { id: "asc" },
-            select: {
-              name:        true,
-              phone:       true,
-              isPrimary:   true,
-              contactRole: { select: { name: true } },
-            },
-          },
+          // The S5 SO cascade's sources — see the ship-to read above.
+          ...SO_CASCADE_SELECT,
         },
       });
     }
@@ -322,39 +282,13 @@ export async function GET(
       return match ? { name: match.name, phone: match.phone ?? null } : null;
     })();
 
-    const resolvedSalesOfficer = (() => {
-      // Phase 5 cascade — locked order (CLAUDE_TINT.md §5.5 reflects the
-      // pre-Phase-5 order; context-file refresh tracked separately).
-      // Frozen-record rule: existing printed challans don't re-render, but
-      // re-opens DO re-resolve, so the displayed SO matches current
-      // customer-master state on every GET.
-      //
-      // 1. Primary SO from customer_sales_officers (Phase 1 table). NEW.
-      //    contactDismissed=true rows are filtered out by the include's
-      //    where clause — falls through to source #2 in that case.
-      const fromPrimary = resolvedShipTo?.salesOfficerLinks?.[0]?.salesOfficer;
-      if (fromPrimary) {
-        return { name: fromPrimary.name, phone: fromPrimary.phone ?? null };
-      }
-      // 2. salesOfficerGroup.salesOfficer (legacy fallback for historical
-      //    customers without a Primary SO link yet; Phase 7 backfill will
-      //    populate most of these).
-      const fromGroup = resolvedShipTo?.salesOfficerGroup?.salesOfficer;
-      if (fromGroup) {
-        return { name: fromGroup.name, phone: fromGroup.phone ?? null };
-      }
-      // 3. Ship-To contact with contactRole.name === "Sales Officer". Rare
-      //    manual override; usually redundant post-Phase 3b since the
-      //    auto-contact would have matched source #1.
-      const fromContact = resolvedShipTo?.contacts.find(
-        (c) => c.contactRole?.name === "Sales Officer",
-      );
-      if (fromContact) {
-        return { name: fromContact.name, phone: fromContact.phone ?? null };
-      }
-      // 4. null.
-      return null;
-    })();
+    // Phase 5 cascade — locked order: Primary SO link → SO group → ship-to
+    // "Sales Officer" contact → null. Moved VERBATIM to the shared helper
+    // (2026-10-06) so Floor's SO column names the same person this prints.
+    // Frozen-record rule: existing printed challans don't re-render, but
+    // re-opens DO re-resolve, so the displayed SO matches current
+    // customer-master state on every GET.
+    const resolvedSalesOfficer = resolveSalesOfficer(resolvedShipTo);
 
     // ── 7. Assemble and return ────────────────────────────────────────────────
     return NextResponse.json({
@@ -474,28 +408,8 @@ const SHIP_TO_POINT_SELECT = {
       primaryRoute: { select: { name: true } },
     },
   },
-  salesOfficerGroup: {
-    select: {
-      salesOfficer: { select: { name: true, phone: true } },
-    },
-  },
-  salesOfficerLinks: {
-    where:  { role: "PRIMARY", contactDismissed: false },
-    take:   1,
-    select: {
-      salesOfficer: { select: { name: true, phone: true } },
-    },
-  },
-  // Oldest first (2026-10-02) — the first receiver entered prints.
-  contacts: {
-    orderBy: { id: "asc" },
-    select: {
-      name:        true,
-      phone:       true,
-      isPrimary:   true,
-      contactRole: { select: { name: true } },
-    },
-  },
+  // SO group + Primary SO link + contacts (oldest first).
+  ...SO_CASCADE_SELECT,
 } satisfies Prisma.delivery_point_masterSelect;
 
 // PATCH — save transporter, vehicleNo, formulas, printedAt/printedBy

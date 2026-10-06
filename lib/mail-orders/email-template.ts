@@ -1,5 +1,5 @@
 import type { MoOrder } from "./types";
-import { cleanSubject, smartTitleCase, getBillLabel } from "./utils";
+import { cleanSubject, smartTitleCase, getBillLabel, displaySoName } from "./utils";
 
 /**
  * Build an HTML email summarising a slot's orders for a given SO.
@@ -73,7 +73,7 @@ export function buildSlotSummaryHTML(
   }
 
   function getFirstName(name: string): string {
-    const clean = smartTitleCase(name.replace(/^\([^)]*\)\s*/, "").trim());
+    const clean = displaySoName(name);
     return clean.split(/\s+/)[0] || clean;
   }
 

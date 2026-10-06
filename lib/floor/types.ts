@@ -26,6 +26,11 @@ export interface SlotSuggestion {
 
 // Tint state for a rail card's strip (design §6.3). null on non-tint bills.
 export type TintStage = "waiting" | "assigned" | "mixing" | "ready";
+
+/** Where a bill's Sales Officer came from (FloorBoardRow.salesOfficerSource):
+ *  `mail` = the mail order's soName · `telecaller` = a depot mailbox sent it ·
+ *  `master` = customer master (divisions 74 / 77, the challan's cascade). */
+export type FloorSalesOfficerSource = "mail" | "telecaller" | "master";
 export interface TintState {
   stage: TintStage;
   shadesDone: number;         // non-cancelled splits at tinting_done
@@ -275,6 +280,18 @@ export interface FloorBoardRow extends PickingQueueRow {
    * widens its own type (FLOOR §1).
    */
   soNumber: string | null;
+  /**
+   * WHOSE BILL IT IS — the Sales Officer (2026-10-06, owner rules). Chosen BY
+   * DIVISION (`divisionOf`): 74 / 77 → customer master, the cascade the
+   * delivery challan prints; every other bill → its mail order's `soName`
+   * ONLY (newest per SO), depot mailboxes shown as "Telecaller". Resolved by
+   * `salesOfficerByOrder` (lib/floor/queries.ts) through
+   * lib/customers/sales-officer.ts. Null = not found ("—").
+   */
+  salesOfficerName: string | null;
+  salesOfficerSource: FloorSalesOfficerSource | null;
+  /** Master source only (the challan's phone) — for the detail panel. */
+  salesOfficerPhone: string | null;
   // ── Show to floor, PER TRIP (slice 8, 2026-09-15) ─────────────────────────
   // `pickVisibleAt` (the per-bill handover stamp) was here until slice 8 and is
   // gone: the desk shows the supervisor one TRUCK at a time now.
@@ -737,6 +754,10 @@ export interface FloorDetail {
 
   // Details — Reference
   soNumber: string | null;
+  /** Whose bill it is — same resolver and meaning as FloorBoardRow's three. */
+  salesOfficerName: string | null;
+  salesOfficerSource: FloorSalesOfficerSource | null;
+  salesOfficerPhone: string | null;
   invoiceNo: string | null;
   invoiceDate: string | null;
 

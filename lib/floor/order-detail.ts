@@ -16,6 +16,8 @@ import { formatPack } from "@/lib/place-order/pack";
 // TINT vs BASE — the one owner, shared with the picking queue and Floor's three
 // feeds. Never re-derived from `tintAssignment` below (see the field's comment).
 import { getColourWorkByOrder } from "@/lib/picking/colour-work-query";
+// The Sales Officer — the board's own resolver, so the row and the panel agree.
+import { salesOfficerByOrder } from "@/lib/floor/queries";
 import type { FloorDetail, FloorActivityEntry, FloorDetailLine, FloorDetailTint } from "@/lib/floor/types";
 
 const PROJECT_SMUS = new Set(["Retail Offtake", "Decorative Projects"]);
@@ -171,6 +173,10 @@ export async function getOrderDetail(orderId: number): Promise<FloorDetail | nul
   const colourWorkByOrder = await getColourWorkByOrder([
     { orderId: order.id, smu: order.smu, orderType: order.orderType },
   ]);
+  // Whose bill it is — the SAME helper the board rows use (division rule,
+  // challan cascade, mail-order name), for one bill. At most one read.
+  const salesOfficer = (await salesOfficerByOrder([order])).get(order.id) ?? null;
+
   const tint: FloorDetailTint | null =
     order.orderType === "tint"
       ? {
@@ -234,6 +240,9 @@ export async function getOrderDetail(orderId: number): Promise<FloorDetail | nul
     customerCode: order.customer?.customerCode ?? order.shipToCustomerId ?? null,
 
     soNumber: order.soNumber,
+    salesOfficerName: salesOfficer?.name ?? null,
+    salesOfficerSource: salesOfficer?.source ?? null,
+    salesOfficerPhone: salesOfficer?.phone ?? null,
     invoiceNo: order.invoiceNo,
     invoiceDate: order.invoiceDate?.toISOString() ?? null,
 

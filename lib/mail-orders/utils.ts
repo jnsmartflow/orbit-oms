@@ -611,6 +611,14 @@ export function smartTitleCase(text: string | null | undefined): string {
     .join(" ");
 }
 
+/** A mail order's `soName` as a person reads it: the leading "(JSW) "-style
+ *  bracket stripped, then smartTitleCase — "(JSW) Jha Roopesh Ghanshyam" →
+ *  "Jha Roopesh Ghanshyam". ONE owner for the rule: the reply template, the
+ *  email builder's first name and the Floor SO column all call this. */
+export function displaySoName(soName: string): string {
+  return smartTitleCase(soName.replace(/^\([^)]*\)\s*/, "").trim());
+}
+
 const OD_CI_PATTERNS = [
   /\bOD\b/i,
   /\bCI\b/i,
@@ -922,7 +930,7 @@ export function buildReplyTemplate(
   companyLine: string = "JSW Dulux Ltd \u2014 Surat Depot",
 ): string {
   // Full SO name (strip JSW prefix)
-  const fullName = smartTitleCase(soName.replace(/^\([^)]*\)\s*/, "").trim());
+  const fullName = displaySoName(soName);
 
   const clean = orders.filter(o => o.flags.length === 0);
   const flagged = orders.filter(o => o.flags.length > 0);

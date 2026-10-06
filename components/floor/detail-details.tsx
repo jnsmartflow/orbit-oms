@@ -52,6 +52,21 @@ export function DetailDetails({ d }: { d: FloorDetail }) {
       <div className="grid grid-cols-2">
         <Cell k="Bill to" v={d.billToName} sub={d.billToCode} mono={false} />
         <Cell k="Ship to" v={d.shipToName} sub={d.shipToCode} mono={false} />
+        {/* Whose bill it is (2026-10-06) — the same resolver as the table's SO
+            column. Phone only from customer master (the challan's). */}
+        <Cell
+          k="Sales officer"
+          v={d.salesOfficerName}
+          sub={
+            d.salesOfficerSource === "master"
+              ? d.salesOfficerPhone
+              : d.salesOfficerSource === "telecaller"
+                ? "mail order from a depot mailbox"
+                : d.salesOfficerSource === "mail"
+                  ? "from the mail order"
+                  : null
+          }
+        />
       </div>
 
       <Section title="Reference" />

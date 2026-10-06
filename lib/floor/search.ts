@@ -3,7 +3,8 @@
 // rows, the same way Support searches.
 //
 // One box, two behaviours (fields widened 2026-09-29, owner):
-//   - TEXT    → matches OBD, invoice number, SO number, ship-to name or route
+//   - TEXT    → matches OBD, invoice number, SO number, ship-to name, route or
+//               the Sales Officer's name (board rows only, 2026-10-06)
 //               (substring, case-insensitive), plus the synthetic word
 //               "unmatched" for a bill whose dealer is not in master.
 //   - NUMBERS → a pasted list (comma / space / newline separated); each number
@@ -50,6 +51,9 @@ export interface Searchable {
   soNumber: string | null;
   /** False ⇒ the dealer is not in master; matched by the word "unmatched". */
   dealerInMaster: boolean;
+  /** The Sales Officer as the SO column shows it (2026-10-06) — text mode
+   *  only. Optional: board rows carry it, Hold / Cancelled rows do not. */
+  salesOfficerName?: string | null;
 }
 
 /** Invoice and SO need at least this many digits — a shorter tail is too
@@ -100,6 +104,7 @@ function matchesText(row: Searchable, text: string): boolean {
     (row.soNumber ?? "").toLowerCase().includes(text) ||
     row.dealerName.toLowerCase().includes(text) ||
     (row.route ?? "").toLowerCase().includes(text) ||
+    (row.salesOfficerName ?? "").toLowerCase().includes(text) ||
     // The synthetic term, as lib/picking/search.ts keeps it: "" for a bill in
     // master (matches nothing), "unmatched" for one that is not — so the word
     // still finds these bills whatever name the row happens to print.

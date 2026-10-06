@@ -85,7 +85,17 @@ import type {
   FloorPicker,
   FloorWaitingSkus,
   FloorOilSkus,
+  FloorSalesOfficerSource,
 } from "./types";
+// Whose bill it is — the challan's SO cascade and the mail-order name rule,
+// shared so Floor and the challan can never name two people for one bill.
+import {
+  SO_CASCADE_SELECT,
+  resolveSalesOfficer,
+  mailOrderSalesOfficer,
+} from "@/lib/customers/sales-officer";
+// Pure (no prisma, no clock) — the one owner of "which division is this bill".
+import { divisionOf } from "./division-blocks";
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
@@ -515,6 +525,101 @@ export async function billToByObd(obdNumbers: string[]): Promise<Map<string, str
   return map;
 }
 
+export interface FloorSalesOfficer {
+  name: string;
+  source: FloorSalesOfficerSource;
+  /** Master source only (the challan's phone); null for a mail order. */
+  phone: string | null;
+}
+
+/** Divisions whose SO comes from CUSTOMER MASTER — the person the delivery
+ *  challan prints. Every other bill takes its mail order's SO. */
+const MASTER_SO_DIVISIONS = new Set(["74", "77"]);
+
+/**
+ * WHOSE BILL IT IS — the Sales Officer per order (2026-10-06, owner rules),
+ * keyed by `orders.id`. Chosen BY DIVISION (`divisionOf`, off `orders.smu`):
+ *
+ *   74 Decorative Projects / 77 Retail Offtake → CUSTOMER MASTER: the
+ *     challan's cascade (resolveSalesOfficer) on the SHIP-TO point,
+ *     `shipToOverrideCustomerId ?? customerId` — the redirect wins, exactly as
+ *     the challan resolves it.
+ *   every other bill → the MAIL ORDER: `orders.soNumber = mo_orders.soNumber`,
+ *     newest `createdAt` wins (the rule applyMailOrderEnrichment uses), shown
+ *     through displaySoName; a depot mailbox reads "Telecaller".
+ *
+ * At most TWO reads, each keyed `IN (…)` and skipped when its list is empty —
+ * the same post-fetch shape as billToByObd above. SELECT-only, no predicate
+ * term, no `orders.update`, so the board and the live marker stay on the one
+ * shared `floorBoardWhere` (FLOOR §3/§5/§10). The mo_orders read is served by
+ * `mo_orders_soNumber_idx` (Schema v27.59); before that index it scanned the
+ * whole table on every board load.
+ *
+ * ⚠ An SO change (a re-punched mail order, a master edit) does not bump
+ * `orders.updatedAt`, so the 15s marker does not see it; the 30s whole-desk
+ * refetch picks it up. Do not add a write to make it faster (FLOOR §10).
+ */
+export async function salesOfficerByOrder(
+  orders: Array<{
+    id: number;
+    smu: string | null;
+    soNumber: string | null;
+    customerId: number | null;
+    shipToOverrideCustomerId: number | null;
+  }>,
+): Promise<Map<number, FloorSalesOfficer>> {
+  const result = new Map<number, FloorSalesOfficer>();
+  if (orders.length === 0) return result;
+
+  const isMasterDivision = (smu: string | null) =>
+    MASTER_SO_DIVISIONS.has(divisionOf({ smuCode: smu !== null ? (SMU_CODE_BY_NAME[smu] ?? null) : null }));
+
+  const masterOrders = orders.filter((o) => isMasterDivision(o.smu));
+  // 🔴 NO CUSTOMER-MASTER FALLBACK for these bills — owner decision 2026-10-06.
+  // A non-74/77 bill with no mail order shows "—"; do not "fix" it with master.
+  const mailOrders = orders.filter((o) => !isMasterDivision(o.smu));
+
+  // ── Mail order — newest per SO ───────────────────────────────────────────
+  const soNumbers = Array.from(
+    new Set(mailOrders.map((o) => o.soNumber).filter((s): s is string => s !== null && s !== "")),
+  );
+  const soNameBySo = new Map<string, string>();
+  if (soNumbers.length > 0) {
+    const mos = await prisma.mo_orders.findMany({
+      where: { soNumber: { in: soNumbers } },
+      select: { soNumber: true, soName: true },
+      orderBy: { createdAt: "desc" },
+    });
+    for (const m of mos) {
+      if (m.soNumber && !soNameBySo.has(m.soNumber)) soNameBySo.set(m.soNumber, m.soName);
+    }
+  }
+  for (const o of mailOrders) {
+    const so = o.soNumber ? mailOrderSalesOfficer(soNameBySo.get(o.soNumber)) : null;
+    if (so) result.set(o.id, { name: so.name, source: so.source, phone: null });
+  }
+
+  // ── Customer master — the challan's cascade on the ship-to ───────────────
+  const pointIdOf = (o: (typeof orders)[number]) => o.shipToOverrideCustomerId ?? o.customerId;
+  const pointIds = Array.from(
+    new Set(masterOrders.map(pointIdOf).filter((id): id is number => id !== null)),
+  );
+  if (pointIds.length > 0) {
+    const points = await prisma.delivery_point_master.findMany({
+      where: { id: { in: pointIds } },
+      select: { id: true, ...SO_CASCADE_SELECT },
+    });
+    const pointById = new Map(points.map((p) => [p.id, p]));
+    for (const o of masterOrders) {
+      const pid = pointIdOf(o);
+      const so = pid !== null ? resolveSalesOfficer(pointById.get(pid)) : null;
+      if (so) result.set(o.id, { name: so.name, source: "master", phone: so.phone });
+    }
+  }
+
+  return result;
+}
+
 /** Distinct ACTIVE `skuCodeRaw` per OBD — the By-group view's raw material.
  *  Same shape as billToByObd above (one `obdNumber: { in: [...] }` read, keyed
  *  back by OBD), for the same reason: there is no FK from `orders` to its line
@@ -863,6 +968,10 @@ export async function getFloorBoard(
 
   const billTo = await billToByObd(orders.map((o) => o.obdNumber));
 
+  // Whose bill it is (2026-10-06) — at most two batched reads, post-fetch, no
+  // predicate touched. See salesOfficerByOrder above for the division rule.
+  const salesOfficers = await salesOfficerByOrder(orders);
+
   // Same-SO detection — the rule is Picking's (lib/picking/duplicate-so.ts),
   // and since 2026-09-27 it honours Billing's decisions: an SO whose every live
   // twin is in an active All OK set is not flagged; a pick-deleted bill is
@@ -1099,6 +1208,10 @@ export async function getFloorBoard(
       invoiceNo: order.invoiceNo ?? null,
       // SEARCH ONLY — never displayed (owner decision 2026-09-29; FloorBoardRow).
       soNumber: order.soNumber ?? null,
+      // Whose bill it is — map lookup only; the reads ran once above.
+      salesOfficerName: salesOfficers.get(order.id)?.name ?? null,
+      salesOfficerSource: salesOfficers.get(order.id)?.source ?? null,
+      salesOfficerPhone: salesOfficers.get(order.id)?.phone ?? null,
       // ISO for the wire, like every other date on this payload. The column is
       // date-only in practice (all values 00:00:00 UTC, verified live
       // 2026-08-31) — formatting is the renderer's job, not this feed's.
