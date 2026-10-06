@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Challan paper — ORB-2026-00001 (mockup)</title>
+<!-- Mockup for slice 4 of docs/prompts/drafts/web-update-2026-10-06-challan-orders.md (D4, D7, F1c).
+     Document copied 1:1 from components/tint/challan-document.tsx (sections S1–S8, inline styles, the
+     live colgroup 5/13/30/22/8/10/12, 28px header row, 32px body rows, blank rows to 8, 2px totals rule).
+     The ONLY content changes: ORB-2026-00001 in the CHN slot; "OBD No." reads "To follow"; values below.
+     Placeholder text in [brackets] is system_config / customer-master data this mockup does not invent.
+     Print CSS: @page at top level (never inside @media print); visibility:hidden isolation, not display:none
+     (CLAUDE_UI §32, router §1). -->
+<style>
+  @page { size: A4 portrait; margin: 8mm; }
+
+  :root{
+    --g900:#111827; --g700:#374151; --g600:#4b5563; --g500:#6b7280; --g400:#9ca3af; --g300:#d1d5db; --g200:#e5e7eb; --g100:#f3f4f6; --g50:#f9fafb;
+    --brand700:#6D28D9;
+    --sans:'Plus Jakarta Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+    --mono:'SF Mono',ui-monospace,Menlo,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:#eceff4;font-family:var(--sans);color:var(--g900);padding:28px 16px 80px;-webkit-font-smoothing:antialiased}
+  button{font-family:inherit;cursor:pointer}
+  .wrap{max-width:900px;margin:0 auto}
+  .back{font-size:12px;color:var(--brand700);text-decoration:none}
+  h1{font-size:20px;font-weight:800;margin-top:8px;letter-spacing:-.01em}
+  .sub{font-size:12.5px;color:var(--g500);margin-top:6px;line-height:1.55}
+  .sub b{color:var(--g700)}
+
+  /* Floor's print preview frame — the Challan screen's right panel (CLAUDE_UI §31): action bar + document on #f9fafb */
+  .frame{margin-top:18px;background:#fff;border:1px solid var(--g200);border-radius:10px;overflow:hidden}
+  .bar{display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--g200);flex-wrap:wrap}
+  .bar .id{font-family:var(--mono);font-size:12.5px;font-weight:700;color:var(--g900)}
+  .bar .meta{font-size:12px;color:var(--g400)}
+  .bar .flex1{flex:1}
+  .seg{display:inline-flex;background:var(--g100);border-radius:7px;padding:3px;gap:2px}
+  .seg button{border:0;background:transparent;font-size:11px;color:var(--g500);padding:4px 10px;border-radius:5px}
+  .seg button.on{background:#fff;color:var(--g900);font-weight:600;box-shadow:0 1px 2px rgba(0,0,0,.06)}
+  .seg-lbl{font-size:10px;color:var(--g400);text-transform:uppercase;letter-spacing:.05em}
+  .print{height:32px;padding:0 14px;border-radius:7px;border:0;background:var(--g900);color:#fff;font-size:12px;font-weight:500;display:inline-flex;align-items:center;gap:7px}
+  .log{font-size:11px;color:var(--g400);padding:8px 16px;border-bottom:1px solid var(--g200);background:#fff}
+  .stage{background:#f9fafb;padding:20px;overflow-x:auto}
+  .sheet{width:794px;margin:0 auto}
+
+  /* ship-to variants (screen toggle) */
+  body[data-ship="same"] .ship-site{display:none}
+  body[data-ship="site"] .ship-same{display:none}
+
+  /* print-only formula span hidden on screen (challan-document.tsx) */
+  .cp-formula-print{display:none}
+
+  @media print {
+    body{background:#fff;padding:0}
+    body *{visibility:hidden}
+    #challan-print-area, #challan-print-area *{visibility:visible}
+    #challan-print-area{position:absolute;left:0;top:0;width:100%;min-height:277mm !important}
+    .challan-logo{filter:grayscale(100%) brightness(0) !important}
+  }
+</style>
+</head>
+<body data-ship="same">
+<div class="wrap">
+  <a class="back" href="index.html">← Challan orders mockups</a>
+  <h1>Challan paper — A4 print preview</h1>
+  <p class="sub">
+    The live Delivery Challan, unchanged in layout, rendered for an ORB order. <b>ORB-2026-00001</b> sits where
+    <b>CHN-2026-NNNNN</b> sits today; no CHN number is allocated (D4). Bill to and Ship to both print.
+    Printed from <b>Floor only</b>; every print is logged (D7). Press <b>Print</b> to test the real print CSS.
+  </p>
+
+  <div class="frame">
+    <div class="bar">
+      <span class="id">ORB-2026-00001</span>
+      <span class="meta">Mohan Colour CO · challan order · not billed</span>
+      <span class="flex1"></span>
+      <span class="seg-lbl">Ship to</span>
+      <span class="seg" role="tablist">
+        <button data-ship="same" class="on">Same as billing</button>
+        <button data-ship="site">Typed site</button>
+      </span>
+      <button class="print" onclick="window.print()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+        Print
+      </button>
+    </div>
+    <div class="log">Printed 2× · last by Ramesh, 06 Oct 14:10 · first by Ramesh, 06 Oct 13:52</div>
+
+    <div class="stage">
+      <div class="sheet">
+
+        <!-- ═══════════ challan-document.tsx, verbatim structure ═══════════ -->
+        <div id="challan-print-area" style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;font-size:11px;color:#111827;background:#fff;display:flex;flex-direction:column;min-height:1123px;border:1px solid #d1d5db;overflow:hidden;position:relative;-webkit-print-color-adjust:exact;print-color-adjust:exact">
+
+          <!-- S1 HEADER — Logo | Title | Challan No. -->
+          <div style="display:flex;align-items:center;padding:16px 24px;border-bottom:2px solid #111827;flex-shrink:0">
+            <div style="flex-shrink:0;padding-right:24px">
+              <img class="challan-logo" src="../../../public/jsw-dulux-logo.png" alt="JSW Dulux" style="height:34px;width:auto;display:block">
+            </div>
+            <div style="flex:1;text-align:center;padding:0 16px">
+              <div style="font-size:16px;font-weight:700;color:#111827;letter-spacing:3px;text-transform:uppercase">Delivery Challan</div>
+              <div style="font-size:9px;font-weight:500;color:#9ca3af;letter-spacing:1px;margin-top:2px;text-transform:uppercase">Original Copy</div>
+            </div>
+            <div style="flex-shrink:0;text-align:right;min-width:165px">
+              <div style="font-size:14px;font-weight:700;color:#111827;font-family:'SF Mono',ui-monospace,monospace;margin-top:1px">ORB-2026-00001</div>
+              <div style="font-size:10px;font-weight:500;color:#4b5563;margin-top:3px">06 Oct 2026</div>
+            </div>
+          </div>
+
+          <!-- S2 ADDRESS BAR -->
+          <div style="background:#374151;padding:5px 24px;font-size:10px;color:#d1d5db;text-align:center;letter-spacing:.2px;flex-shrink:0;-webkit-print-color-adjust:exact;print-color-adjust:exact">
+            [companySubtitle] · [depotAddress — from system_config]
+          </div>
+
+          <!-- S3 FIELDS ROW — OBD | SMU | Warehouse -->
+          <div style="display:flex;border-bottom:1px solid #d1d5db;flex-shrink:0">
+            <div style="flex:1;padding:8px 14px 8px 24px;border-right:1px solid #d1d5db">
+              <div style="font-size:8px;font-weight:600;color:#4b5563;text-transform:uppercase;letter-spacing:.3px">OBD No.</div>
+              <div style="font-size:11px;font-weight:600;color:#4b5563;margin-top:1px">To follow (SAP)</div>
+            </div>
+            <div style="flex:1;padding:8px 14px;border-right:1px solid #d1d5db">
+              <div style="font-size:8px;font-weight:600;color:#4b5563;text-transform:uppercase;letter-spacing:.3px">SMU</div>
+              <div style="font-size:11px;font-weight:600;color:#111827;margin-top:1px">—</div>
+            </div>
+            <div style="flex:1;padding:8px 14px 8px 14px">
+              <div style="font-size:8px;font-weight:600;color:#4b5563;text-transform:uppercase;letter-spacing:.3px">Warehouse</div>
+              <div style="font-size:11px;font-weight:600;color:#111827;margin-top:1px">Surat Depot</div>
+            </div>
+          </div>
+
+          <!-- S4 BILL TO / SHIP TO -->
+          <div style="display:flex;border-bottom:1px solid #d1d5db;flex-shrink:0">
+            <div style="flex:1;border-right:1px solid #d1d5db">
+              <div style="padding:5px 14px 5px 24px;background:#f9fafb;border-bottom:1px solid #d1d5db;font-size:9px;font-weight:700;color:#111827;letter-spacing:.5px;text-transform:uppercase">Bill To</div>
+              <div style="padding:10px 14px 10px 24px">
+                <div style="font-size:8px;color:#4b5563;font-weight:600;text-transform:uppercase">Customer Code</div>
+                <div style="font-size:11px;color:#374151;font-weight:600;font-family:'SF Mono',ui-monospace,monospace;margin-top:1px">102425</div>
+                <div style="font-size:13px;font-weight:700;color:#111827;margin-top:4px">MOHAN COLOUR CO</div>
+                <div style="font-size:10px;color:#374151;margin-top:2px;line-height:1.35">[address from customer master], Udhna, Surat</div>
+              </div>
+            </div>
+            <div style="flex:1">
+              <div style="padding:5px 24px 5px 14px;background:#f9fafb;border-bottom:1px solid #d1d5db;display:flex;justify-content:space-between;align-items:center">
+                <span style="font-size:9px;font-weight:700;color:#111827;letter-spacing:.5px;text-transform:uppercase">Ship To</span>
+                <span class="ship-same" style="font-size:9px;color:#4b5563;font-weight:500">Udhna · Udhna Route</span>
+                <span class="ship-site" style="font-size:9px;color:#4b5563;font-weight:500">Site address</span>
+              </div>
+              <div style="padding:10px 24px 10px 14px">
+                <div style="font-size:8px;color:#4b5563;font-weight:600;text-transform:uppercase">Ship-to Code</div>
+                <div class="ship-same" style="font-size:11px;color:#374151;font-weight:600;font-family:'SF Mono',ui-monospace,monospace;margin-top:1px">102425</div>
+                <div class="ship-site" style="font-size:11px;color:#374151;font-weight:600;font-family:'SF Mono',ui-monospace,monospace;margin-top:1px">&nbsp;</div>
+                <div class="ship-same" style="font-size:13px;font-weight:700;color:#111827;margin-top:4px">MOHAN COLOUR CO</div>
+                <div class="ship-site" style="font-size:13px;font-weight:700;color:#111827;margin-top:4px">RAJHANS PLATINUM — SITE</div>
+                <div class="ship-same" style="font-size:10px;color:#374151;margin-top:2px;line-height:1.35">[address from customer master], Udhna, Surat</div>
+                <div class="ship-site" style="font-size:10px;color:#374151;margin-top:2px;line-height:1.35">Plot 14, Rajhans Platinum (site office), Vesu, Surat 395007</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- S5 CUSTOMER / SALES OFFICER / SITE RECEIVER -->
+          <div style="display:flex;border-bottom:1px solid #d1d5db;flex-shrink:0">
+            <div style="flex:1;padding:8px 14px 8px 24px;border-right:1px solid #d1d5db">
+              <div style="font-size:9px;font-weight:700;color:#111827;text-transform:uppercase;letter-spacing:.3px">Customer</div>
+              <div style="font-size:11px;color:#374151;margin-top:3px">[owner contact]</div>
+              <div style="font-size:10px;color:#374151;margin-top:1px;font-family:'SF Mono',ui-monospace,monospace">[phone]</div>
+            </div>
+            <div style="flex:1;padding:8px 14px;border-right:1px solid #d1d5db">
+              <div style="font-size:9px;font-weight:700;color:#111827;text-transform:uppercase;letter-spacing:.3px">Sales Officer</div>
+              <div style="font-size:11px;color:#374151;margin-top:3px">[primary SO]</div>
+              <div style="font-size:10px;color:#374151;margin-top:1px;font-family:'SF Mono',ui-monospace,monospace">[phone]</div>
+            </div>
+            <div style="flex:1;padding:8px 14px 8px 14px">
+              <div style="font-size:9px;font-weight:700;color:#111827;text-transform:uppercase;letter-spacing:.3px">Site / Receiver</div>
+              <div class="ship-same" style="height:20px"></div>
+              <div class="ship-site" style="font-size:11px;color:#374151;margin-top:3px">Rakesh Patel</div>
+              <div class="ship-site" style="font-size:10px;color:#374151;margin-top:1px;font-family:'SF Mono',ui-monospace,monospace">98250 11223</div>
+            </div>
+          </div>
+
+          <!-- S6 LINE ITEMS -->
+          <div style="flex:1">
+            <div style="padding:10px 24px 4px;font-size:9px;font-weight:600;color:#4b5563;letter-spacing:.5px;text-transform:uppercase">Line Items</div>
+            <table style="width:100%;border-collapse:collapse;table-layout:fixed">
+              <colgroup>
+                <col style="width:5%"><col style="width:13%"><col style="width:30%"><col style="width:22%"><col style="width:8%"><col style="width:10%"><col style="width:12%">
+              </colgroup>
+              <thead>
+                <tr>
+                  <th style="height:28px;padding:0 10px 0 12px;font-size:9px;font-weight:600;color:#111827;text-transform:uppercase;letter-spacing:.4px;text-align:center;border-top:2px solid #111827;border-bottom:1px solid #374151;background:#f9fafb;white-space:nowrap;overflow:hidden">#</th>
+                  <th style="height:28px;padding:0 10px;font-size:9px;font-weight:600;color:#111827;text-transform:uppercase;letter-spacing:.4px;text-align:left;border-top:2px solid #111827;border-bottom:1px solid #374151;background:#f9fafb;white-space:nowrap;overflow:hidden">SKU Code</th>
+                  <th style="height:28px;padding:0 10px;font-size:9px;font-weight:600;color:#111827;text-transform:uppercase;letter-spacing:.4px;text-align:left;border-top:2px solid #111827;border-bottom:1px solid #374151;background:#f9fafb;white-space:nowrap;overflow:hidden">Material Description</th>
+                  <th style="height:28px;padding:0 10px;font-size:9px;font-weight:600;color:#111827;text-transform:uppercase;letter-spacing:.4px;text-align:left;border-top:2px solid #111827;border-bottom:1px solid #374151;background:#f9fafb;white-space:nowrap;overflow:hidden">Shade</th>
+                  <th style="height:28px;padding:0 10px;font-size:9px;font-weight:600;color:#111827;text-transform:uppercase;letter-spacing:.4px;text-align:right;border-top:2px solid #111827;border-bottom:1px solid #374151;background:#f9fafb;white-space:nowrap;overflow:hidden">Qty</th>
+                  <th style="height:28px;padding:0 10px;font-size:9px;font-weight:600;color:#111827;text-transform:uppercase;letter-spacing:.4px;text-align:right;border-top:2px solid #111827;border-bottom:1px solid #374151;background:#f9fafb;white-space:nowrap;overflow:hidden">Volume</th>
+                  <th style="height:28px;padding:0 10px;font-size:9px;font-weight:600;color:#111827;text-transform:uppercase;letter-spacing:.4px;text-align:center;border-top:2px solid #111827;border-bottom:1px solid #374151;background:#f9fafb;white-space:nowrap;overflow:hidden">Tinting</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td style="height:32px;padding:0 10px 0 12px;border-bottom:1px solid #e5e7eb;text-align:center;color:#4b5563;font-size:10px">1</td>
+                  <td style="height:32px;padding:0 10px;border-bottom:1px solid #e5e7eb;font-size:10px;color:#374151;font-family:'SF Mono',ui-monospace,monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">5281746</td>
+                  <td style="height:32px;padding:0 10px;border-bottom:1px solid #e5e7eb;color:#374151;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">GLOSS BLACK 500ML</td>
+                  <td style="height:32px;padding:0 10px;border-bottom:1px solid #e5e7eb;white-space:nowrap;overflow:hidden"><span style="color:#d1d5db">—</span></td>
+                  <td style="height:32px;padding:0 10px;border-bottom:1px solid #e5e7eb;text-align:right;font-weight:600;color:#111827">36</td>
+                  <td style="height:32px;padding:0 10px;border-bottom:1px solid #e5e7eb;text-align:right;color:#374151">18.00</td>
+                  <td style="height:32px;padding:0 10px;border-bottom:1px solid #e5e7eb;text-align:center;font-weight:500;color:#d1d5db">—</td>
+                </tr>
+                <tr><td style="height:32px;padding:0 10px 0 12px;border-bottom:1px solid #f0f0f0;text-align:center;color:#e5e7eb;font-size:10px">2</td><td style="border-bottom:1px solid #f0f0f0"></td><td style="border-bottom:1px solid #f0f0f0"></td><td style="border-bottom:1px solid #f0f0f0"></td><td style="border-bottom:1px solid #f0f0f0"></td><td style="border-bottom:1px solid #f0f0f0"></td><td style="border-bottom:1px solid #f0f0f0"></td></tr>
+                <tr><td style="height:32px;padding:0 10px 0 12px;border-bottom:1px solid #f0f0f0;text-align:center;color:#e5e7eb;font-size:10px">3</td><td style="border-bottom:1px solid #f0f0f0"></td><td style="border-bottom:1px solid #f0f0f0"></td><td style="border-bottom:1px solid #f0f0f0"></td><td style="border-bottom:1px solid #f0f0f0"></td><td style="border-bottom:1px solid #f0f0f0"></td><td style="border-bottom:1px solid #f0f0f0"></td></tr>
+                <tr><td style="height:32px;padding:0 10px 0 12px;border-bottom:1px solid #f0f0f0;text-align:center;color:#e5e7eb;font-size:10px">4</td><td style="border-bottom:1px solid #f0f0f0"></td><td style="border-bottom:1px solid #f0f0f0"></td><td style="border-bottom:1px solid #f0f0f0"></td><td style="border-bottom:1px solid #f0f0f0"></td><td style="border-bottom:1px solid #f0f0f0"></td><td style="border-bottom:1px solid #f0f0f0"></td></tr>
+                <tr><td style="height:32px;padding:0 10px 0 12px;border-bottom:1px solid #f0f0f0;text-align:center;color:#e5e7eb;font-size:10px">5</td><td style="border-bottom:1px solid #f0f0f0"></td><td style="border-bottom:1px solid #f0f0f0"></td><td style="border-bottom:1px solid #f0f0f0"></td><td style="border-bottom:1px solid #f0f0f0"></td><td style="border-bottom:1px solid #f0f0f0"></td><td style="border-bottom:1px solid #f0f0f0"></td></tr>
+                <tr><td style="height:32px;padding:0 10px 0 12px;border-bottom:1px solid #f0f0f0;text-align:center;color:#e5e7eb;font-size:10px">6</td><td style="border-bottom:1px solid #f0f0f0"></td><td style="border-bottom:1px solid #f0f0f0"></td><td style="border-bottom:1px solid #f0f0f0"></td><td style="border-bottom:1px solid #f0f0f0"></td><td style="border-bottom:1px solid #f0f0f0"></td><td style="border-bottom:1px solid #f0f0f0"></td></tr>
+                <tr><td style="height:32px;padding:0 10px 0 12px;border-bottom:1px solid #f0f0f0;text-align:center;color:#e5e7eb;font-size:10px">7</td><td style="border-bottom:1px solid #f0f0f0"></td><td style="border-bottom:1px solid #f0f0f0"></td><td style="border-bottom:1px solid #f0f0f0"></td><td style="border-bottom:1px solid #f0f0f0"></td><td style="border-bottom:1px solid #f0f0f0"></td><td style="border-bottom:1px solid #f0f0f0"></td></tr>
+                <tr><td style="height:32px;padding:0 10px 0 12px;border-bottom:1px solid #f0f0f0;text-align:center;color:#e5e7eb;font-size:10px">8</td><td style="border-bottom:1px solid #f0f0f0"></td><td style="border-bottom:1px solid #f0f0f0"></td><td style="border-bottom:1px solid #f0f0f0"></td><td style="border-bottom:1px solid #f0f0f0"></td><td style="border-bottom:1px solid #f0f0f0"></td><td style="border-bottom:1px solid #f0f0f0"></td></tr>
+              </tbody>
+              <tfoot>
+                <tr>
+                  <td style="height:32px;padding:0 10px 0 12px;border-top:2px solid #111827"></td>
+                  <td style="height:32px;padding:0 10px;border-top:2px solid #111827"></td>
+                  <td style="height:32px;padding:0 10px;border-top:2px solid #111827"></td>
+                  <td style="height:32px;padding:0 10px;border-top:2px solid #111827;font-size:9px;font-weight:700;color:#111827;text-transform:uppercase;text-align:right">Totals</td>
+                  <td style="height:32px;padding:0 10px;border-top:2px solid #111827;text-align:right;font-weight:700;color:#111827">36</td>
+                  <td style="height:32px;padding:0 10px;border-top:2px solid #111827;text-align:right;font-weight:700;color:#111827">18.00 L</td>
+                  <td style="height:32px;padding:0 10px;border-top:2px solid #111827"></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+
+          <!-- S7 FOOTER — Terms | Dispatched By | Receiver -->
+          <div style="display:flex;border-top:1px solid #d1d5db;margin-top:auto;flex-shrink:0">
+            <div style="flex:1;padding:10px 14px 10px 24px;border-right:1px solid #d1d5db">
+              <div style="font-size:8px;font-weight:700;color:#111827;text-transform:uppercase;margin-bottom:5px">Terms &amp; Conditions</div>
+              <div style="font-size:9px;color:#374151;line-height:1.45">Goods once dispatched cannot be returned without prior written approval from the depot manager. Rejection or shortage must be reported within 3 days of delivery date.</div>
+              <div style="margin-top:10px;padding-top:8px;border-top:1px dotted #9ca3af;display:flex;gap:20px">
+                <div>
+                  <div style="font-size:8px;font-weight:700;color:#111827;text-transform:uppercase;letter-spacing:.1em">Transporter</div>
+                  <span style="font-size:11px;color:#374151;border-bottom:1px dotted #9ca3af;padding-bottom:2px;min-width:90px;display:block">&nbsp;</span>
+                </div>
+                <div>
+                  <div style="font-size:8px;font-weight:700;color:#111827;text-transform:uppercase;letter-spacing:.1em">Vehicle No.</div>
+                  <span style="font-size:11px;color:#374151;border-bottom:1px dotted #9ca3af;padding-bottom:2px;min-width:90px;display:block">&nbsp;</span>
+                </div>
+              </div>
+            </div>
+            <div style="flex:1;padding:10px 14px;border-right:1px solid #d1d5db;display:flex;flex-direction:column;align-items:center">
+              <div style="font-size:8px;font-weight:700;color:#111827;text-transform:uppercase;margin-bottom:5px">Dispatched By</div>
+              <div style="flex:1;min-height:40px"></div>
+              <div style="width:130px;border-bottom:1px dotted #9ca3af"></div>
+              <div style="font-size:8px;color:#9ca3af;margin-top:3px">Name, Designation &amp; Signature</div>
+            </div>
+            <div style="flex:1;padding:10px 24px 10px 14px;display:flex;flex-direction:column;align-items:flex-end">
+              <div style="font-size:8px;font-weight:700;color:#111827;text-transform:uppercase;margin-bottom:5px">Receiver's Acknowledgement</div>
+              <div style="flex:1;min-height:40px"></div>
+              <div style="width:150px;border-bottom:1px dotted #9ca3af"></div>
+              <div style="font-size:8px;color:#9ca3af;margin-top:3px">Sign, Stamp &amp; Date of Receipt</div>
+            </div>
+          </div>
+
+          <!-- S8 BOTTOM BAR -->
+          <div style="padding:6px 24px;font-size:8.5px;color:#4b5563;display:flex;justify-content:space-between;align-items:center;border-top:1px solid #d1d5db;flex-shrink:0">
+            <span>Regd. Office: [registeredOffice] · [website] · JSW Dulux Limited (formerly Akzo Nobel India Limited)</span>
+            <span style="font-weight:700;color:#374151">GSTIN: [gstin]</span>
+          </div>
+
+        </div>
+        <!-- /challan-print-area -->
+
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  // Mockup-only: switch the Ship to example.
+  document.querySelectorAll('.seg button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      document.body.setAttribute('data-ship', b.getAttribute('data-ship'));
+      document.querySelectorAll('.seg button').forEach(function (x) { x.classList.toggle('on', x === b); });
+    });
+  });
+</script>
+</body>
+</html>

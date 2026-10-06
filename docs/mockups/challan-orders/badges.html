@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Challan badge — Picking + Floor (mockup)</title>
+<!-- Mockup for slices 2 + 4 of docs/prompts/drafts/web-update-2026-10-06-challan-orders.md (D3 badge, D6, D7, D8).
+     Picking card copied from components/picking/picking-board-mobile.tsx PickingCard (variant "assign")
+     + card-atoms.tsx (CardShelf, CARD_SHADOW_V2, RouteDot); type scale CLAUDE_UI §60.
+     Floor row copied from components/floor/floor-table.tsx (HEAD_TH, TD, the interactive+Invoice width arm
+     [3,13,9,13,9,11,7,11,6,18], trip tag, StatusPill "Done").
+     NEW: the CHALLAN badge, the read-only "Billed:" line, the "Print challan" button. -->
+<style>
+  :root{
+    --brand50:#F5F3FF; --brand600:#7C3AED; --brand700:#6D28D9; --brand800:#5B21B6;
+    --ink50:#F4F3F8; --ink200:#D6D3E0; --ink400:#9C99AC; --ink700:#3F3B4F; --ink900:#1B1826;
+    --ok:#059669; --okbg:#ECFDF5; --oktext:#047857;
+    --warn:#D97706; --warnbg:#FFFBEB; --warntext:#B45309;
+    --brown:#8B5A2B;
+    --g900:#111827; --g800:#1f2937; --g700:#374151; --g600:#4b5563; --g500:#6b7280; --g400:#9ca3af; --g300:#d1d5db; --g200:#e5e7eb; --g100:#f3f4f6; --g50:#f9fafb;
+    /* the CHALLAN badge — CLAUDE_UI §3 Semantic "Split" row (purple-50 / purple-200 / purple-700) */
+    --chbg:#faf5ff; --chbd:#e9d5ff; --chtx:#7e22ce;
+    --sans:'Plus Jakarta Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+    --mono:'JetBrains Mono','SF Mono',ui-monospace,Menlo,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:#eceff4;font-family:var(--sans);color:var(--g900);padding:28px 16px 80px;-webkit-font-smoothing:antialiased}
+  button{font-family:inherit;cursor:pointer}
+  .wrap{max-width:1240px;margin:0 auto}
+  .back{font-size:12px;color:var(--brand700);text-decoration:none}
+  h1{font-size:20px;font-weight:800;margin-top:8px;letter-spacing:-.01em}
+  .sub{font-size:12.5px;color:var(--g500);margin-top:6px;line-height:1.55;max-width:900px}
+  .sub b{color:var(--g700)}
+  h2{font-size:12px;font-weight:700;color:var(--g500);text-transform:uppercase;letter-spacing:.08em;margin:30px 0 10px}
+
+  /* ── the badge itself (pill shape = GiftBadge / HandBadge / ColourWorkBadge) ── */
+  .b{display:inline-block;white-space:nowrap;flex:0 0 auto;border-radius:999px;padding:3px 8px;font-size:11px;font-weight:700;letter-spacing:.04em;line-height:1.2}
+  .b.challan{background:var(--chbg);border:1px solid var(--chbd);color:var(--chtx)}
+  .b.tint{background:#db2777;color:#fff}
+  .b.base{background:#fce7f3;color:#be185d}
+  .b.gift{background:var(--ink50);border:1px solid var(--ink200);color:var(--ink700)}
+  .b.hand{background:rgba(139,90,43,.10);border:1px solid rgba(139,90,43,.30);color:var(--brown)}
+  .b.sm{font-size:10px;padding:1px 6px}
+
+  /* comparison strip */
+  .cmp{background:#fff;border:1px solid var(--g200);border-radius:10px;padding:14px 16px;display:flex;flex-wrap:wrap;gap:18px;align-items:center}
+  .cmp .it{display:flex;flex-direction:column;gap:6px;align-items:flex-start}
+  .cmp .it small{font-size:10.5px;color:var(--g400)}
+  .holdpill{display:inline-block;border-radius:5px;padding:2px 8px;font-size:11px;font-weight:600;background:#fef2f2;color:#b91c1c}
+  .redel{border-radius:3px;border:1px solid rgba(217,119,6,.4);background:var(--warnbg);color:var(--warntext);font-family:var(--mono);font-size:9.5px;font-weight:600;padding:1px 5px}
+  .tripchip{border-radius:3px;background:var(--g900);color:#fff;font-family:var(--mono);font-size:9.5px;font-weight:600;padding:1px 5px}
+
+  /* ── Picking: phone frame + card ── */
+  .row2{display:flex;gap:28px;flex-wrap:wrap;align-items:flex-start}
+  .phone{width:390px;max-width:100%;background:#fff;border:1px solid var(--g200);border-radius:28px;overflow:hidden;box-shadow:0 10px 30px rgba(17,24,39,.08)}
+  .mast{background:#F5F3FF;border-bottom:1px solid #E9E7F0;height:56px;display:flex;align-items:center;justify-content:space-between;padding:0 14px}
+  .mast .av{width:34px;height:34px;border-radius:50%;background:#fff;border:1px solid #E9E7F0;color:#5A5670;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center}
+  .mast .tt{font-size:19px;font-weight:800;color:var(--brand600)}
+  .mast .gr{width:34px;height:34px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:#5A5670}
+  .list{background:#fbfbfc;padding:14px 16px 6px}
+  .zone{font-size:11px;font-weight:700;color:#98a2b3;text-transform:uppercase;letter-spacing:.06em;margin:2px 0 10px}
+  .card{position:relative;border-radius:20px;overflow:hidden;border:1.5px solid #eceef2;background:#fff;box-shadow:0 1px 2px rgba(16,24,40,.03),0 14px 26px -20px rgba(16,24,40,.2);margin-bottom:11px}
+  .card .in{padding:14px 16px 12px}
+  .cap{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:6px}
+  .cap .l{display:flex;align-items:center;gap:6px;min-width:0;font-size:11.5px;color:#98a2b3;white-space:nowrap;overflow:hidden}
+  .cap .obd{font-family:var(--mono);color:#98a0aa;flex:0 0 auto}
+  .cap .dot{color:#d8dce1}
+  .cap .tr{min-width:0;overflow:hidden;text-overflow:ellipsis}
+  .cap .age{flex:0 0 auto}
+  .ttl{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
+  .ttl .n{font-size:16px;font-weight:600;line-height:1.25;color:#1d2939;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+  .ttl .s{font-size:15px;font-weight:600;color:#475467;font-variant-numeric:tabular-nums;flex:0 0 auto}
+  .where{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:6px}
+  .where .l{display:flex;align-items:center;gap:8px;min-width:0}
+  .rd{width:8px;height:8px;border-radius:50%;background:#2563eb;flex:0 0 auto}
+  .where .rt{font-size:12px;font-weight:500;color:#667085}
+  .where .v{font-size:12px;font-weight:600;color:#667085;font-variant-numeric:tabular-nums}
+  .where .v i{font-style:normal;font-size:10.5px;font-weight:500;color:#98a2b3;margin-left:1px}
+  .shelf{border-top:1px solid #eef1f4;background:#f6f8fa;padding:0 14px;display:flex;align-items:stretch;gap:4px}
+  .shelf .chips{flex:1;display:flex;gap:6px;padding:10px 0;align-items:center}
+  .chip{font-size:10.5px;font-weight:600;border-radius:7px;padding:3px 8px;color:#667085;background:#eef1f5;white-space:nowrap}
+  .arrow{min-width:44px;display:flex;align-items:center;justify-content:center;padding-left:6px}
+  .arrow span{width:30px;height:30px;border-radius:50%;background:#eceff3;display:flex;align-items:center;justify-content:center;color:#8b93a0}
+  .billedline{border-top:1px solid #eef1f4;padding:8px 16px;font-size:11.5px;color:#667085;display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+  .billedline b{font-weight:600;color:#475467}
+  .billedline .m{font-family:var(--mono);font-size:11px;color:#475467}
+  .tabbar{display:flex;border-top:1px solid #eceef2;background:#fff}
+  .tabbar span{flex:1;text-align:center;padding:9px 0 11px;font-size:11px;font-weight:600;color:var(--g400);position:relative}
+  .tabbar span.on{color:var(--ink900)}
+  .tabbar span.on::after{content:"";position:absolute;left:50%;transform:translateX(-50%);bottom:4px;width:32px;height:3px;border-radius:2px;background:var(--brand600)}
+  .side-notes{flex:1;min-width:280px;font-size:12px;color:var(--g600);line-height:1.6}
+  .side-notes li{margin-left:18px;margin-bottom:4px}
+  .side-notes b{color:var(--g900)}
+  .side-notes code{font-family:var(--mono);font-size:11px;background:var(--g100);padding:1px 5px;border-radius:4px}
+
+  /* ── Floor: desk table ── */
+  .desk{background:#fff;border:1px solid var(--g200);border-radius:10px;overflow:hidden}
+  .deskhdr{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--g200)}
+  .deskhdr .t{font-size:13px;font-weight:700}
+  .deskhdr .s{font-size:11px;color:var(--g400)}
+  .scrollx{overflow-x:auto}
+  table.ft{width:100%;min-width:1080px;border-collapse:collapse;table-layout:fixed}
+  table.ft th{height:31px;border-bottom:1px solid #ebebeb;padding:0 14px;text-align:left;font-size:10px;font-weight:500;text-transform:uppercase;letter-spacing:.05em;color:#9ca3af;white-space:nowrap;overflow:hidden}
+  table.ft th.n{padding:0 4px;text-align:center}
+  table.ft th.r{text-align:right}
+  table.ft td{padding:8px 14px;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;border-bottom:1px solid #f0f0f0;color:#4b5563;vertical-align:middle}
+  table.ft td.n{padding:8px 4px;text-align:center}
+  table.ft td.r{text-align:right;font-variant-numeric:tabular-nums}
+  table.ft tr.row:hover td{background:#fafafa}
+  .cb{width:13px;height:13px;accent-color:#7C3AED;vertical-align:middle}
+  .obdn{font-family:var(--mono);font-size:11.5px;font-weight:500;color:#111827}
+  .ml{margin-left:6px}
+  .dl{font-size:10px;color:#9ca3af;margin-top:1px}
+  .dn{font-size:11.5px;font-weight:500;color:#111827}
+  .kg{font-size:10px;color:#9ca3af}
+  .stpill{display:inline-block;border-radius:5px;padding:2px 8px;font-size:11px;font-weight:600;background:#dcfce7;color:#15803d}
+  .prt{margin-left:8px;height:23px;padding:0 8px;border-radius:5px;border:1px solid var(--g200);background:#fff;color:var(--g600);font-size:11px;font-weight:500;display:inline-flex;align-items:center;gap:5px;vertical-align:middle}
+  .prt:hover{border-color:var(--g300);color:var(--g900)}
+  .art{color:var(--oktext);font-weight:600}
+  tr.billed td{padding:0 14px 9px 14px;border-bottom:1px solid #f0f0f0;background:#fff;white-space:normal}
+  tr.challanrow td{border-bottom:0}
+  .bline{display:flex;flex-wrap:wrap;align-items:center;gap:6px;font-size:10.5px;color:#6b7280;padding-left:calc(3% + 0px)}
+  .bline .lab{font-weight:600;color:#374151}
+  .bline .m{font-family:var(--mono);font-size:10.5px;color:#374151}
+  .bline .sep{color:#d1d5db}
+  .bline .ok{color:var(--oktext);font-weight:600}
+  .bline .ro{margin-left:auto;font-size:10px;color:#9ca3af}
+  .pl{font-size:10px;color:#9ca3af;margin-top:5px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <a class="back" href="index.html">← Challan orders mockups</a>
+  <h1>Challan badge — Picking card + Floor row</h1>
+  <p class="sub">
+    An ORB order carries a small <b>CHALLAN</b> badge wherever a bill shows, beside the badges the row already draws.
+    The badge needs no tick. Billing’s link shows to everyone else <b>read-only</b> (“Billed: SO · OBD · Inv”).
+    Only Floor prints the paper (D7), behind its own tick (“Floor · Print challan”).
+  </p>
+
+  <h2>The badge beside its neighbours</h2>
+  <div class="cmp">
+    <div class="it"><span class="b challan">CHALLAN</span><small>new — goods sent without a bill</small></div>
+    <div class="it"><span class="b tint">TINT</span><small>tint (pink)</small></div>
+    <div class="it"><span class="b base">BASE</span><small>base, no tint</small></div>
+    <div class="it"><span class="holdpill">On hold</span><small>hold (red)</small></div>
+    <div class="it"><span style="color:#ef4444;font-size:13px">⚡</span><small>urgent (red glyph, ships today)</small></div>
+    <div class="it"><span class="b hand">HAND</span><small>data.brown</small></div>
+    <div class="it"><span class="b gift">GIFT</span><small>ink</small></div>
+    <div class="it"><span class="redel">RE-DEL</span><small>warn</small></div>
+    <div class="it"><span class="tripchip">L-02</span><small>trip tag</small></div>
+  </div>
+
+  <h2>1 · Picking — supervisor’s Assign card (phone, 390px)</h2>
+  <div class="row2">
+    <div class="phone">
+      <div class="mast"><span class="av">TS</span><span class="tt">Picking</span><span class="gr"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></span></div>
+      <div class="list">
+        <div class="zone">Due · 4</div>
+
+        <div class="card">
+          <div class="in">
+            <div class="cap">
+              <span class="l">
+                <span class="obd">ORB-2026-00001</span><span class="dot">·</span><span class="tr">Mon 06 Oct · 10:42</span>
+                <span class="b challan">CHALLAN</span>
+              </span>
+            </div>
+            <div class="ttl"><span class="n">Mohan Colour CO</span><span class="s">12:00</span></div>
+            <div class="where">
+              <span class="l"><span class="rd"></span><span class="rt">Udhna</span><span style="color:#d3d8de">·</span><span class="v">18<i>L</i></span></span>
+            </div>
+          </div>
+          <div class="shelf">
+            <div class="chips"><span class="chip">Gloss</span><span class="chip">500ML ×36</span></div>
+            <div class="arrow"><span><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="9 18 15 12 9 6"/></svg></span></div>
+          </div>
+        </div>
+
+        <div class="card" style="opacity:.75">
+          <div class="in">
+            <div class="cap">
+              <span class="l">
+                <span class="obd">ORB-2026-00002</span><span class="dot">·</span><span class="tr">Checked 14:05</span>
+                <span class="b challan">CHALLAN</span>
+              </span>
+            </div>
+            <div class="ttl"><span class="n">Ganesh Paint House</span><span class="s" style="font-size:12px;font-weight:600;color:#667085">36<i style="font-style:normal;font-size:10.5px;color:#98a2b3;font-weight:500">L</i></span></div>
+            <div class="where"><span class="l"><span class="rd"></span><span class="rt">Udhna</span></span></div>
+          </div>
+          <div class="billedline"><b>Billed:</b><span>SO</span><span class="m">4409811, 4409840</span><span style="color:#d8dce1">·</span><span>Inv</span><span class="m">I26004512…</span></div>
+        </div>
+      </div>
+      <div class="tabbar"><span class="on">Assign</span><span>Picking</span><span>Done</span></div>
+    </div>
+
+    <ul class="side-notes">
+      <li><b>Where it sits:</b> in the caption, after the number, the same slot TINT / BASE / GIFT / HAND use — <code>shrink-0</code>, so the time truncates before the word does.</li>
+      <li><b>The number:</b> an ORB order has no OBD — the ORB number sits in the OBD slot (D1), so the caption already reads differently; the badge is what says <i>why</i>.</li>
+      <li><b>Behaviour is unchanged:</b> tap selects, the arrow opens the bill, Assign is the commit. No new violet on the card (CLAUDE_UI §59.9).</li>
+      <li><b>Second card (checked, Done tab):</b> once Billing has linked the SO, the read-only “Billed:” line takes the footer slot. On phone width the OBD drops off the line — the detail screen shows all three numbers.</li>
+      <li>The linked SAP OBD itself never appears on Picking (D9).</li>
+    </ul>
+  </div>
+
+  <h2>2 · Floor — one row on the trip desk (Floor tab, a trip’s stop)</h2>
+  <div class="desk">
+    <div class="deskhdr"><span class="t">L-261006-02</span><span class="s">Stop 3 · Udhna · 2 bills</span></div>
+    <div class="scrollx">
+    <table class="ft">
+      <colgroup><col style="width:3%"><col style="width:13%"><col style="width:9%"><col style="width:13%"><col style="width:9%"><col style="width:11%"><col style="width:7%"><col style="width:11%"><col style="width:6%"><col style="width:18%"></colgroup>
+      <thead><tr>
+        <th class="n"><input type="checkbox" class="cb" aria-label="Select all"></th>
+        <th>OBD</th><th>Invoice</th><th>Ship to</th><th>Route</th><th>Due</th><th class="r">Vol / KG</th><th>Article tag</th><th class="r">Article</th><th>Status</th>
+      </tr></thead>
+      <tbody>
+        <!-- an ordinary SAP bill on the same stop, for comparison -->
+        <tr class="row">
+          <td class="n"></td>
+          <td><span class="obdn">9109336120</span><span class="tripchip ml">L-02</span><div class="dl">06 Oct · 09:58</div></td>
+          <td><span class="obdn" style="font-size:11px">I26004588</span><div class="dl">06 Oct</div></td>
+          <td><span class="dn">Shree Ganesh Traders</span></td>
+          <td>Udhna</td>
+          <td>Today · 12:00</td>
+          <td class="r"><div>24 L</div><div class="kg">31 kg</div></td>
+          <td><span style="color:#6b7280;font-size:10.5px">2 C · 4 T</span></td>
+          <td class="r art">6</td>
+          <td><span class="stpill">Done</span></td>
+        </tr>
+        <!-- THE CHALLAN ORDER -->
+        <tr class="row challanrow">
+          <td class="n"></td>
+          <td><span class="obdn">ORB-2026-00001</span><div class="dl"><span class="tripchip" style="margin-right:5px">L-02</span>06 Oct · 10:42</div></td>
+          <td></td>
+          <td><span class="b challan sm" style="margin-right:5px;vertical-align:1px">CHALLAN</span><span class="dn">Mohan Colour CO</span></td>
+          <td>Udhna</td>
+          <td>Today · 12:00</td>
+          <td class="r"><div>18 L</div><div class="kg">&mdash;</div></td>
+          <td><span style="color:#6b7280;font-size:10.5px">3 C</span></td>
+          <td class="r art">3</td>
+          <td><span class="stpill">Done</span><button class="prt" title="Printed 2× — last by Ramesh, 06 Oct 14:10"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>Print challan</button></td>
+        </tr>
+        <tr class="billed">
+          <td colspan="10">
+            <div class="bline">
+              <span class="lab">Billed:</span>
+              <span>SO</span><span class="m">1234567</span><span class="sep">·</span>
+              <span>OBD</span><span class="m">9109331207</span><span class="sep">·</span>
+              <span>Inv</span><span class="m">I26004512</span><span class="sep">·</span>
+              <span class="ok">✅ lines match</span>
+              <span class="ro">read-only — linked by Billing · printed 2×, last Ramesh 06 Oct 14:10</span>
+            </div>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+    </div>
+  </div>
+  <ul class="side-notes" style="margin-top:14px">
+    <li><b>Badge:</b> rides the <b>Ship to</b> cell — where TINT / BASE / GIFT / HAND already sit on this table — so no new column and the four width arrays in <code>floor-table.tsx</code> stay as they are. It goes <b>before</b> the dealer name, not after like its siblings: the cell ellipsises, and at 13% a badge placed after a long name is clipped away (it was, in the first draw of this mockup). In front, the name truncates instead.</li>
+    <li><b>⚠ Found while drawing:</b> <code>ORB-2026-00001</code> is 14 characters against an OBD’s 10, so in the 13% OBD track the trip tag no longer fits beside it. This mockup drops the tag to the date line on ORB rows only; slice 4 has to choose that or a width change.</li>
+    <li><b>Invoice cell:</b> empty, as for any bill SAP has not stamped — the ORB row has no invoice of its own. The SAP numbers live on the “Billed:” line.</li>
+    <li><b>“Billed:” line:</b> a full-width line under the row, only once Billing has linked at least one SO. Before that the row is just the row. With two SOs it lists both: “SO 4409811, 4409840 · OBD 2 · Inv 2”.</li>
+    <li><b>Print challan:</b> a white secondary button in the Status cell — always shown on an ORB row for a holder of the tick, never brand (the Floor panel’s brand button stays on its real job). Every print is logged; the count and last printer are on the button’s tooltip and the Billed line. A reprint does not ask.</li>
+    <li>The linked SAP OBD never appears on Floor — no row, no Hold tab, no Cancelled tab (D9).</li>
+  </ul>
+</div>
+</body>
+</html>

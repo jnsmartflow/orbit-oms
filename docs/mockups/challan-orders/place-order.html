@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Place Order — Create challan order (mockup)</title>
+<!-- Mockup for slice 3 of docs/prompts/drafts/web-update-2026-10-06-challan-orders.md (D2, D3, F1a, F1c).
+     Cart panel copied from app/(place-order)/place-order/components/cart-panel.tsx (live, 340px),
+     confirm dialog from send-confirm-overlay.tsx, toast from place-order-page.tsx:920.
+     NEW on this page: the "Create challan order" button, the three-way Ship to, the confirm copy, the toast copy. -->
+<style>
+  :root{
+    --brand50:#F5F3FF; --brand200:#DDD6FE; --brand400:#A78BFA; --brand500:#8B5CF6; --brand600:#7C3AED; --brand700:#6D28D9; --brand800:#5B21B6;
+    --ink25:#FAFAFC; --ink50:#F4F3F8; --ink100:#E9E7F0; --ink400:#9C99AC; --ink900:#1B1826;
+    --ok:#059669; --okbg:#ECFDF5; --oktext:#047857;
+    --warnbg:#FFFBEB; --warn:#D97706; --warntext:#B45309;
+    --g900:#111827; --g800:#1f2937; --g700:#374151; --g600:#4b5563; --g500:#6b7280; --g400:#9ca3af; --g300:#d1d5db; --g200:#e5e7eb; --g100:#f3f4f6; --g50:#f9fafb;
+    --red50:#fef2f2; --red600:#dc2626;
+    --sans:'Plus Jakarta Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+    --mono:'JetBrains Mono','SF Mono',ui-monospace,Menlo,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:#eceff4;font-family:var(--sans);color:var(--g900);padding:28px 16px 80px;-webkit-font-smoothing:antialiased}
+  button{font-family:inherit;cursor:pointer}
+  .wrap{max-width:1240px;margin:0 auto}
+  .back{font-size:12px;color:var(--brand700);text-decoration:none}
+  h1{font-size:20px;font-weight:800;margin-top:8px;letter-spacing:-.01em}
+  .sub{font-size:12.5px;color:var(--g500);margin-top:6px;line-height:1.55;max-width:900px}
+  .sub b{color:var(--g700)}
+
+  /* Demo-only state switcher — NOT part of the screen */
+  .demo{margin:18px 0 14px;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+  .demo .lbl{font-size:11px;font-weight:700;color:var(--g500);text-transform:uppercase;letter-spacing:.06em;margin-right:6px}
+  .demo button{font-size:12px;border:1px dashed var(--g300);background:#fff;color:var(--g600);border-radius:999px;padding:5px 12px}
+  .demo button.on{border-style:solid;border-color:var(--g900);color:var(--g900);font-weight:600}
+
+  /* ───── the app frame ───── */
+  .app{position:relative;background:#fff;border:1px solid var(--g200);border-radius:10px;overflow:hidden;box-shadow:0 1px 3px rgba(17,24,39,.05),0 10px 30px rgba(17,24,39,.06)}
+  .top{height:52px;display:flex;align-items:center;gap:12px;padding:0 16px;border-bottom:1px solid var(--g200);background:#fff}
+  .wm{font-size:17px;font-weight:800;color:var(--brand800);letter-spacing:-.02em}
+  .ptitle{font-size:14px;font-weight:600;color:var(--g900)}
+  .cpill{margin-left:16px;display:inline-flex;align-items:center;gap:8px;padding:4px 10px;border-radius:6px;background:var(--brand50);border:1px solid var(--brand200);min-width:0}
+  .cpill .d{width:6px;height:6px;border-radius:50%;background:var(--brand600)}
+  .cpill .n{font-size:12px;font-weight:500;color:var(--brand800)}
+  .cpill .c{font-family:var(--mono);font-size:10px;color:var(--brand600)}
+  .cpill .x{color:var(--brand400);font-size:14px;line-height:1;margin-left:4px}
+  .flex1{flex:1}
+  .help{font-size:11px;color:var(--g400);display:inline-flex;align-items:center;gap:6px}
+  .kbd{font-family:var(--mono);font-size:10px;background:var(--g100);border:1px solid var(--g200);border-radius:4px;padding:1px 6px;color:var(--g600)}
+
+  .main{display:flex;min-height:760px}
+  .work{flex:1;background:var(--g50);padding:12px;min-width:0}
+  .strip{display:flex;gap:6px;overflow:hidden;background:#fff;border:1px solid var(--g200);border-radius:10px;padding:6px}
+  .strip span{white-space:nowrap;font-size:12px;color:var(--g600);padding:6px 11px;border:1px solid var(--g200);border-radius:8px;background:#fff}
+  .strip span.on{background:var(--brand50);border-color:var(--brand600);color:var(--brand700);font-weight:600}
+  .grid{margin-top:10px;background:#fff;border:1px solid var(--g200);border-radius:10px;padding:12px}
+  .grid h3{font-size:13px;font-weight:700}
+  .grid h3 small{font-size:12px;color:var(--g400);font-weight:400;margin-left:6px}
+  table.vg{margin-top:10px;border-collapse:collapse;table-layout:fixed}
+  table.vg th{font-size:10.5px;font-weight:500;color:var(--g400);text-align:center;padding:4px 0;width:80px}
+  table.vg th.b{width:150px;text-align:left}
+  table.vg td{padding:3px 12px 3px 0}
+  table.vg td.b{font-size:12.5px;color:var(--g800);white-space:nowrap}
+  .cell{width:56px;height:32px;border:1px solid var(--g200);border-radius:6px;font-size:13px;display:flex;align-items:center;justify-content:center;color:var(--g300);font-family:var(--mono);margin:0 auto}
+  .cell.has{border-color:var(--brand500);color:var(--g900);font-weight:600;background:#fff}
+  .ghost{margin-top:10px;height:120px;border:1px dashed var(--g200);border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:11.5px;color:var(--g400)}
+
+  /* ───── cart panel — cart-panel.tsx ───── */
+  .cart{width:340px;flex:0 0 340px;border-left:1px solid var(--g200);background:#fff;display:flex;flex-direction:column}
+  .cust{padding:12px 16px;border-bottom:1px solid var(--g200)}
+  .cust .n{font-size:13px;font-weight:600;color:var(--g900)}
+  .cust .c{font-size:10.5px;color:var(--g400);font-family:var(--mono)}
+  .billbar{padding:9px 12px;border-bottom:1px solid var(--g100);display:flex;align-items:center;gap:8px}
+  .seg{display:flex;align-items:center;gap:2px;background:var(--g100);border-radius:8px;padding:3px}
+  .seg span{font-size:12px;padding:4px 11px;border-radius:6px;color:var(--g500);white-space:nowrap}
+  .seg span.on{background:#fff;color:var(--g900);font-weight:500;box-shadow:0 1px 2px rgba(0,0,0,.06)}
+  .iconbtn{width:26px;height:26px;border-radius:7px;display:flex;align-items:center;justify-content:center;color:var(--g400);flex:0 0 auto}
+  .addb{border:1px dashed var(--g300)}
+  .lines{padding:12px 16px}
+  .gh{font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--g400);margin-bottom:6px;display:flex;justify-content:space-between}
+  .gh b{font-weight:600}
+  .gh span{font-family:var(--mono)}
+  .ln{display:flex;justify-content:space-between;align-items:center;font-size:12.5px;padding:6px 4px;margin:0 -4px;border-radius:4px}
+  .ln .nm{color:var(--g800)}
+  .ln .q{font-family:var(--mono);font-weight:600;color:var(--g700)}
+  .ln .q i{font-style:normal;font-weight:400;color:var(--g400);margin-left:4px}
+  .more{font-size:10.5px;color:var(--g300);font-style:italic;margin-top:8px}
+  .empty{font-size:11.5px;color:var(--g400);font-style:italic}
+  .sec{padding:13px 16px;border-top:1px solid var(--g100)}
+  .cap{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--g400);margin-bottom:8px}
+  .cap .opt{color:var(--g300);font-weight:500;text-transform:none;letter-spacing:0}
+  .inp{width:100%;height:38px;padding:0 12px 0 34px;font-size:13px;color:var(--g900);border:1px solid var(--g200);border-radius:9px;background:#fff;display:flex;align-items:center;position:relative;font-family:inherit}
+  .inp.noicon{padding-left:11px}
+  .inp .ph{color:var(--g400)}
+  .inp svg{position:absolute;left:11px;top:50%;transform:translateY(-50%);color:var(--g400)}
+  .inp.focus{border-color:var(--brand500);box-shadow:0 0 0 2px rgba(139,92,246,.10)}
+  textarea.ta{width:100%;min-height:58px;padding:9px 11px;font-size:13px;color:var(--g900);border:1px solid var(--g200);border-radius:9px;resize:none;font-family:inherit;line-height:1.4}
+  textarea.ta.focus{border-color:var(--brand500);box-shadow:0 0 0 2px rgba(139,92,246,.10);outline:none}
+  .opts{display:flex;gap:7px}
+  .opt3{flex:1;height:40px;border-radius:9px;border:1px solid var(--g200);background:#fff;font-size:12.5px;color:var(--g700);display:flex;align-items:center;justify-content:center;gap:6px}
+  .opt3.on{border-color:var(--brand500);background:var(--brand50);color:var(--brand700);font-weight:500}
+  .opt3 .dt{width:7px;height:7px;border-radius:50%}
+  .rem{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+  .rem .opt3{height:42px}
+  .shipseg{display:flex;gap:2px;background:var(--g100);border-radius:8px;padding:3px;margin-bottom:9px}
+  .shipseg span{flex:1;text-align:center;font-size:11.5px;padding:5px 4px;border-radius:6px;color:var(--g500);white-space:nowrap}
+  .shipseg span.on{background:#fff;color:var(--g900);font-weight:500;box-shadow:0 1px 2px rgba(0,0,0,.06)}
+  .same{font-size:12px;color:var(--g600);line-height:1.45;padding:2px 1px}
+  .same b{color:var(--g900);font-weight:600}
+  .same .m{font-family:var(--mono);font-size:10.5px;color:var(--g400)}
+  .hint{font-size:10.5px;color:var(--g400);margin-top:7px;line-height:1.45}
+  .dd{position:absolute;left:0;right:0;top:42px;z-index:5;background:#fff;border:1px solid var(--g200);border-radius:8px;box-shadow:0 10px 24px rgba(17,24,39,.12);overflow:hidden}
+  .dd div{padding:8px 12px;border-bottom:1px solid var(--g50)}
+  .dd div:last-child{border-bottom:0}
+  .dd div.hl{background:var(--g50)}
+  .dd .n{display:block;font-size:13px;color:var(--g900)}
+  .dd .c{display:block;font-size:11px;color:var(--g400);font-family:var(--mono)}
+  .dd .c em{font-family:var(--sans);font-style:normal}
+  .notes{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+  .qa{font-size:11.5px;font-weight:500;color:var(--brand600)}
+  .foot{border-top:1px solid var(--g200);background:var(--g50);padding:12px 16px;margin-top:auto}
+  .tot{display:flex;justify-content:space-between;align-items:center;padding-top:8px;border-top:1px solid var(--g200);font-size:12px}
+  .tot .l{color:var(--g500)}
+  .tot .r{font-family:var(--mono);color:var(--g900);font-weight:600}
+  .btn-challan{margin-top:10px;width:100%;height:34px;border:1px solid var(--g200);background:#fff;color:var(--g600);border-radius:8px;font-size:12.5px;font-weight:500;display:flex;align-items:center;justify-content:center;gap:7px}
+  .btn-challan:hover{background:var(--g50)}
+  /* empty cart → disabled is grey, never faded (CLAUDE_UI §10) */
+  body[data-state="done"] .btn-challan{background:var(--g100);color:var(--g400);cursor:not-allowed}
+  .btn-send{margin-top:8px;width:100%;height:40px;border:0;background:var(--brand600);color:#fff;border-radius:8px;font-size:14px;font-weight:500;display:flex;align-items:center;justify-content:center;gap:8px}
+  .btn-send:hover{background:var(--brand700)}
+  .btn-send.off{background:var(--g100);color:var(--g400);cursor:not-allowed}
+  .tick-note{font-size:10px;color:var(--g400);text-align:center;margin-top:6px}
+
+  /* confirm dialog — send-confirm-overlay.tsx shell */
+  .scrim{position:absolute;inset:0;background:rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;padding:24px;z-index:20}
+  .dlg{width:470px;max-width:100%;background:#fff;border-radius:12px;box-shadow:0 20px 50px rgba(0,0,0,.25);overflow:hidden}
+  .dlg .h{padding:16px 20px;border-bottom:1px solid var(--g100)}
+  .dlg .h .t{font-size:14px;font-weight:600;color:var(--g900)}
+  .dlg .h .s{font-size:11px;color:var(--g400);margin-top:2px}
+  .warnband{margin:14px 20px 0;padding:9px 12px;background:var(--warnbg);border:1px solid #fde68a;border-radius:8px;font-size:12px;color:var(--warntext);line-height:1.45}
+  .warnband b{font-weight:700}
+  .dlg .b{padding:14px 20px 16px}
+  .kv{display:flex;gap:8px;font-size:12px;padding:5px 0}
+  .kv .k{width:70px;flex:0 0 70px;color:var(--g400);text-transform:uppercase;letter-spacing:.04em;font-size:10.5px;padding-top:2px}
+  .kv .v{color:var(--g900);min-width:0}
+  .kv .v .m{font-family:var(--mono);font-size:11px;color:var(--g400);margin-left:4px}
+  .kv .v small{display:block;font-size:11px;color:var(--g500);margin-top:1px}
+  .dlg .f{padding:12px 20px;background:var(--g50);border-top:1px solid var(--g100);display:flex;justify-content:space-between;align-items:center;gap:12px}
+  .dlg .f .k{font-size:10px;color:var(--g400)}
+  .dlg .f .k .kbd{background:#fff}
+  .b-cancel{height:36px;padding:0 16px;border-radius:8px;font-size:13px;color:var(--g600);border:1px solid var(--g200);background:transparent}
+  .b-go{height:36px;padding:0 16px;border-radius:8px;font-size:13px;font-weight:500;background:var(--g900);color:#fff;border:0}
+
+  /* success toast — place-order-page.tsx:920 shell */
+  .toast{position:absolute;right:24px;bottom:24px;z-index:25;background:var(--g900);color:#fff;font-size:12px;padding:10px 16px;border-radius:8px;box-shadow:0 10px 24px rgba(0,0,0,.2);display:flex;align-items:center;gap:8px}
+  .toast .ck{width:16px;height:16px;border-radius:50%;background:var(--ok);display:flex;align-items:center;justify-content:center}
+  .toast b{font-family:var(--mono);font-weight:600}
+
+  /* state visibility */
+  [data-show]{display:none}
+  body[data-state="cart"] [data-show~="cart"],
+  body[data-state="dealer"] [data-show~="dealer"],
+  body[data-state="site"] [data-show~="site"],
+  body[data-state="confirm"] [data-show~="confirm"],
+  body[data-state="done"] [data-show~="done"]{display:revert}
+  body[data-state="cart"] .flexshow[data-show~="cart"],
+  body[data-state="dealer"] .flexshow[data-show~="dealer"],
+  body[data-state="site"] .flexshow[data-show~="site"],
+  body[data-state="confirm"] .flexshow[data-show~="confirm"],
+  body[data-state="done"] .flexshow[data-show~="done"]{display:flex}
+
+  .notes-box{margin-top:22px;background:#fff;border:1px solid var(--g200);border-radius:10px;padding:16px 18px;font-size:12px;color:var(--g600);line-height:1.6}
+  .notes-box h4{font-size:12px;font-weight:700;color:var(--g900);margin-bottom:6px}
+  .notes-box li{margin-left:18px}
+  .notes-box code{font-family:var(--mono);font-size:11px;background:var(--g100);padding:1px 5px;border-radius:4px}
+  @media (max-width:900px){ .work{display:none} .cart{width:100%;flex:1 1 auto} .main{min-height:0} }
+</style>
+</head>
+<body data-state="cart">
+<div class="wrap">
+  <a class="back" href="index.html">← Challan orders mockups</a>
+  <h1>Place Order — Create challan order</h1>
+  <p class="sub">
+    The desktop cart panel exactly as it ships (<b>cart-panel.tsx</b>), plus one secondary button directly above
+    <b>Send Email</b>. Send Email stays the one brand button on the screen. The button is tick-gated
+    (“Place Order · Create challan order”); without the tick it is not drawn at all.
+  </p>
+
+  <div class="demo" role="tablist" aria-label="Mockup state">
+    <span class="lbl">State</span>
+    <button data-go="cart" class="on">1 · Cart (Ship to: same as billing)</button>
+    <button data-go="dealer">2 · Ship to: another dealer</button>
+    <button data-go="site">3 · Ship to: typed site address</button>
+    <button data-go="confirm">4 · Confirm</button>
+    <button data-go="done">5 · Created</button>
+  </div>
+
+  <div class="app">
+    <header class="top">
+      <span class="wm">Orbit</span>
+      <span class="ptitle">Purchase Order (PO)</span>
+      <span class="cpill">
+        <span class="d"></span><span class="n">Mohan Colour CO</span><span class="c">102425</span><span class="x">×</span>
+      </span>
+      <span class="flex1"></span>
+      <span class="help"><span class="kbd">?</span> shortcuts</span>
+    </header>
+
+    <div class="main">
+      <!-- left: the working area, abbreviated (unchanged by this feature) -->
+      <section class="work">
+        <div class="strip">
+          <span class="on">1 GLOSS</span><span>2 Satin &amp; PU</span><span>3 PROMISE</span><span>4 WS</span><span>5 VELVET TOUCH</span><span>6 SADOLIN</span><span>7 STAINER</span><span>8 Putty &amp; Primer</span><span>9 AQUATECH</span>
+        </div>
+        <div class="grid">
+          <h3>Gloss <small>Unchanged by this feature — abbreviated</small></h3>
+          <table class="vg">
+            <thead><tr><th class="b"></th><th>1L · box 6</th><th>500ML · box 12</th><th>200ML · box 24</th><th>100ML · box 48</th></tr></thead>
+            <tbody>
+              <tr><td class="b">Black</td><td><div class="cell">0</div></td><td><div class="cell has flexshow" data-show="cart dealer site confirm">36</div><div class="cell flexshow" data-show="done">0</div></td><td><div class="cell">0</div></td><td><div class="cell">0</div></td></tr>
+              <tr><td class="b">Brilliant White</td><td><div class="cell">0</div></td><td><div class="cell">0</div></td><td><div class="cell">0</div></td><td><div class="cell">0</div></td></tr>
+              <tr><td class="b">Golden Brown</td><td><div class="cell">0</div></td><td><div class="cell">0</div></td><td><div class="cell">0</div></td><td><div class="cell">0</div></td></tr>
+              <tr><td class="b">Signal Red</td><td><div class="cell">0</div></td><td><div class="cell">0</div></td><td><div class="cell">0</div></td><td><div class="cell">0</div></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="ghost">Recently used · Last order recall · Browse all families (unchanged)</div>
+      </section>
+
+      <!-- right: the cart panel -->
+      <aside class="cart">
+        <div class="cust"><div class="n">MOHAN COLOUR CO</div><div class="c">102425</div></div>
+
+        <div class="billbar">
+          <div class="seg"><span class="on">Bill 1</span></div>
+          <span class="iconbtn addb"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
+          <span class="flex1"></span>
+          <span class="iconbtn"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></span>
+          <span class="iconbtn" style="color:#e5e7eb"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg></span>
+        </div>
+
+        <div style="flex:1;overflow:auto">
+          <div class="lines">
+            <div data-show="cart dealer site confirm">
+              <div class="gh"><b>GLOSS</b><span>1 line</span></div>
+              <div class="ln"><span class="nm">Black · 500ML</span><span class="q">×36<i>· 3 box</i></span></div>
+              <div class="more">+ search or tap a tile to add more</div>
+            </div>
+            <div data-show="done"><div class="empty">No items yet — search or tap a tile to add.</div></div>
+          </div>
+
+          <!-- SHIP TO — NEW: three choices. The live block is one autocomplete box whose placeholder reads "Same as billing". -->
+          <div class="sec">
+            <p class="cap">Ship to</p>
+            <div class="shipseg flexshow" data-show="cart confirm done">
+              <span class="on">Same as billing</span><span>Another dealer</span><span>Site address</span>
+            </div>
+            <div class="shipseg flexshow" data-show="dealer">
+              <span>Same as billing</span><span class="on">Another dealer</span><span>Site address</span>
+            </div>
+            <div class="shipseg flexshow" data-show="site">
+              <span>Same as billing</span><span>Another dealer</span><span class="on">Site address</span>
+            </div>
+
+            <div class="same" data-show="cart confirm done">
+              <b>Mohan Colour CO</b> <span class="m">102425</span> · Udhna<br>
+              <span style="color:#9ca3af;font-size:11px">The truck goes to the billing dealer.</span>
+            </div>
+
+            <div data-show="dealer">
+              <div class="inp focus">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                shree s<span style="border-left:1px solid #111827;height:15px;margin-left:1px"></span>
+                <div class="dd">
+                  <div class="hl"><span class="n">SHREE SAI PAINTS</span><span class="c">104118 <em>· Pandesara</em></span></div>
+                  <div><span class="n">SHREE SHYAM HARDWARE</span><span class="c">102977 <em>· Sachin</em></span></div>
+                  <div><span class="n">SHREE SIDDHI COLOURS</span><span class="c">105230 <em>· Adajan</em></span></div>
+                </div>
+              </div>
+              <div class="hint" style="margin-top:118px">Dealers from the customer master only — the same list the live box searches. Picking one fills “Name (Code)”.</div>
+            </div>
+
+            <div data-show="site">
+              <textarea class="ta focus" rows="3">Plot 14, Rajhans Platinum (site office), Vesu, Surat 395007</textarea>
+              <div class="inp noicon" style="margin-top:7px"><span>Rakesh Patel · 98250 11223</span></div>
+              <div class="hint">Site contact is optional — it prints in the challan’s Site / Receiver box.<br>A typed site never shares a trip stop: Floor groups it under the bill-to dealer.</div>
+            </div>
+          </div>
+
+          <!-- DISPATCH — unchanged -->
+          <div class="sec">
+            <p class="cap">Dispatch</p>
+            <div class="opts">
+              <span class="opt3 on"><span class="dt" style="background:#9C99AC"></span>Normal</span>
+              <span class="opt3"><span class="dt" style="background:#f59e0b"></span>Urgent</span>
+              <span class="opt3"><span class="dt" style="background:#ef4444"></span>Call</span>
+            </div>
+          </div>
+
+          <!-- ORDER REMARKS — unchanged -->
+          <div class="sec">
+            <p class="cap">Order remarks <span class="opt">· optional</span></p>
+            <div class="rem">
+              <span class="opt3"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#475569" stroke-width="1.8"><path d="M3 7h11v9H3z"/><path d="M14 10h4l3 3v3h-7z"/><circle cx="7" cy="18" r="1.6"/><circle cx="17.5" cy="18" r="1.6"/></svg>Truck</span>
+              <span class="opt3"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="1.8"><path d="M4 8h11M4 8l3-3M4 8l3 3"/><path d="M20 16H9M20 16l-3-3M20 16l-3 3"/></svg>Cross</span>
+              <span class="opt3"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="1.8"><polyline points="9 15 4 10 9 5"/><path d="M4 10h11a5 5 0 0 1 5 5v2"/></svg>Bounce</span>
+              <span class="opt3"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#b45309" stroke-width="1.8"><path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/></svg>DTS</span>
+            </div>
+          </div>
+
+          <!-- NOTES — unchanged -->
+          <div class="sec">
+            <div class="notes"><p class="cap" style="margin:0">Notes <span class="opt">· optional</span></p><span class="qa">Quick add ▾</span></div>
+            <textarea class="ta" rows="2" placeholder="Add a note…"></textarea>
+          </div>
+        </div>
+
+        <div class="foot">
+          <div class="tot">
+            <span class="l">Total · Bill 1</span>
+            <span class="r" data-show="cart dealer site confirm">1 line · 18 L</span>
+            <span class="r" data-show="done">0 lines · 0 L</span>
+          </div>
+          <!-- NEW: secondary, ABOVE the primary. White + gray border (CLAUDE_UI §10 Secondary), never brand. -->
+          <button class="btn-challan" data-go="confirm" title="Send the goods now on an Orbit challan; billing links the SAP SO later">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="13" y2="17"/></svg>
+            Create challan order
+          </button>
+          <button class="btn-send flexshow" data-show="cart dealer site confirm">
+            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
+            Send Email
+          </button>
+          <button class="btn-send off flexshow" data-show="done">
+            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
+            Send Email
+          </button>
+        </div>
+      </aside>
+    </div>
+
+    <!-- 4 · CONFIRM -->
+    <div class="scrim flexshow" data-show="confirm">
+      <div class="dlg" role="dialog" aria-label="Create challan order">
+        <div class="h">
+          <div class="t">Send goods WITHOUT a bill?</div>
+          <div class="s">Creates an Orbit challan order and sends it straight to picking. No email is sent.</div>
+        </div>
+        <div class="warnband"><b>No SAP bill yet.</b> Billing must paste the SAP SO against the ORB number in <b>Billing › Challan orders</b> before the OBD file is imported.</div>
+        <div class="b">
+          <div class="kv"><span class="k">Bill to</span><span class="v">MOHAN COLOUR CO<span class="m">102425</span><small>The dealer SAP will bill</small></span></div>
+          <div class="kv"><span class="k">Ship to</span><span class="v">Same as billing · Udhna</span></div>
+          <div class="kv"><span class="k">Goods</span><span class="v"><b style="font-weight:600">1 line · 36 tins</b> · 18 L<small>Gloss · Black · 500ML ×36</small></span></div>
+        </div>
+        <div class="f">
+          <span class="k"><span class="kbd">Enter</span> create · <span class="kbd">Esc</span> cancel</span>
+          <span style="display:flex;gap:8px">
+            <button class="b-cancel" data-go="cart">Cancel</button>
+            <button class="b-go" data-go="done">Create challan order</button>
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 5 · CREATED -->
+    <div class="toast flexshow" data-show="done" role="status">
+      <span class="ck"><svg width="9" height="9" viewBox="0 0 12 12" fill="none"><path d="M2 6l3 3 5-5" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+      <span><b>ORB-2026-00001</b> created — sent to picking</span>
+    </div>
+  </div>
+
+  <div class="notes-box">
+    <h4>What changes, what does not</h4>
+    <ul>
+      <li><b>New:</b> “Create challan order” (secondary, 34px, above Send Email) · the three-way Ship to · the confirm dialog · the toast.</li>
+      <li><b>Unchanged:</b> top bar, customer pill, bill bar, line list, Dispatch, Order remarks, Notes, Total line, Send Email (still the only <code>brand-600</code> button).</li>
+      <li><b>Confirm button is gray-900</b>, not brand — the modal rule (CLAUDE_UI §13) and what <code>send-confirm-overlay.tsx</code> ships.</li>
+      <li><b>Bill to</b> is the customer chosen at the top (master only, never typed — F1a). Material codes are resolved silently from the existing SKU mapping (F2) — no popup, nothing to show here.</li>
+      <li>After create, the active bill clears (shown as state 5). Whether ALL bills clear or only the one sent is open — see the reply notes.</li>
+    </ul>
+  </div>
+</div>
+
+<script>
+  // Mockup-only state switcher. A #state in the URL (e.g. #confirm) opens that state.
+  function go(s) {
+    document.body.setAttribute('data-state', s);
+    document.querySelectorAll('.demo button').forEach(function (b) {
+      b.classList.toggle('on', b.getAttribute('data-go') === s);
+    });
+  }
+  document.addEventListener('click', function (e) {
+    var t = e.target.closest('[data-go]');
+    if (t) go(t.getAttribute('data-go'));
+  });
+  var h = location.hash.slice(1);
+  if (['cart', 'dealer', 'site', 'confirm', 'done'].indexOf(h) >= 0) go(h);
+</script>
+</body>
+</html>

@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Billing — Challan orders tab (mockup)</title>
+<!-- Mockup for slices 5 + 6 + 7 of docs/prompts/drafts/web-update-2026-10-06-challan-orders.md (D8, D10, D11, D12, F1b, F3, F5).
+     Tab bar copied from components/billing/billing-tab-bar.tsx (pill classes, live dot, count chip).
+     Band headers + table cells copied from components/billing/billing-telephonic-tab.tsx (HEAD_TH, band strip),
+     which follows the CLAUDE_UI §27 fixed-table standard (32px header, 36px rows, 10px/11px type).
+     NEW: the "Challan orders" pill and everything below it. -->
+<style>
+  :root{
+    --brand50:#F5F3FF; --brand600:#7C3AED; --brand700:#6D28D9; --brand800:#5B21B6;
+    --ink25:#FAFAFC; --ink50:#F4F3F8; --ink100:#E9E7F0; --ink400:#9C99AC; --ink700:#3F3B4F; --ink900:#1B1826;
+    --ok:#059669; --okbg:#ECFDF5; --oktext:#047857;
+    --warn:#D97706; --warnbg:#FFFBEB; --warntext:#B45309;
+    --danger:#E11D48; --dangerbg:#FFF1F2; --dangertext:#BE123C; --dangerbd:#FECDD3;
+    --g900:#111827; --g800:#1f2937; --g700:#374151; --g600:#4b5563; --g500:#6b7280; --g400:#9ca3af; --g300:#d1d5db; --g200:#e5e7eb; --g100:#f3f4f6; --g50:#f9fafb;
+    --amber50:#fffbeb; --amber200:#fde68a; --amber700:#b45309;
+    --red50:#fef2f2; --red200:#fecaca; --red700:#b91c1c;
+    --sans:'Plus Jakarta Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+    --mono:'JetBrains Mono','SF Mono',ui-monospace,Menlo,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:#eceff4;font-family:var(--sans);color:var(--g900);padding:28px 16px 80px;-webkit-font-smoothing:antialiased}
+  button{font-family:inherit;cursor:pointer}
+  .wrap{max-width:1380px;margin:0 auto}
+  .back{font-size:12px;color:var(--brand700);text-decoration:none}
+  h1{font-size:20px;font-weight:800;margin-top:8px;letter-spacing:-.01em}
+  .sub{font-size:12.5px;color:var(--g500);margin-top:6px;line-height:1.55;max-width:960px}
+  .sub b{color:var(--g700)}
+
+  .app{position:relative;margin-top:18px;background:#fff;border:1px solid var(--g200);border-radius:10px;overflow:hidden;display:flex;box-shadow:0 1px 3px rgba(17,24,39,.05),0 10px 30px rgba(17,24,39,.06)}
+  /* role sidebar, collapsed (CLAUDE_UI §7) */
+  .side{width:72px;flex:0 0 72px;background:#fff;border-left:3px solid var(--brand600);border-right:1px solid var(--g200);display:flex;flex-direction:column;align-items:center;padding-top:16px;gap:10px}
+  .side .wm{font-size:12px;font-weight:800;color:var(--brand800);margin-bottom:10px}
+  .side i{width:36px;height:36px;border-radius:8px;background:transparent;display:block;position:relative}
+  .side i::after{content:"";position:absolute;inset:11px;border:1.6px solid var(--g300);border-radius:4px}
+  .side i.on{background:var(--brand50)}
+  .side i.on::after{border-color:var(--brand600)}
+  .body{flex:1;min-width:0;display:flex;flex-direction:column}
+
+  /* UniversalHeader, billing face: no title/stats/clock, wide-right search, ink-900 Import (CLAUDE_UI §6) */
+  .hdr{height:52px;display:flex;align-items:center;gap:10px;padding:0 16px;border-bottom:1px solid var(--g200)}
+  .flex1{flex:1}
+  .imp{height:36px;padding:0 14px;border-radius:8px;background:var(--ink900);color:#fff;font-size:12.5px;font-weight:500;display:flex;align-items:center;gap:7px}
+  .search{width:400px;max-width:40vw;height:36px;border:1px solid var(--g200);border-radius:8px;display:flex;align-items:center;gap:8px;padding:0 10px;color:var(--g400);font-size:12.5px}
+  .search .k{margin-left:auto;font-family:var(--mono);font-size:10px;border:1px solid var(--g200);border-radius:4px;padding:0 5px;color:var(--g400)}
+
+  /* billing-tab-bar.tsx */
+  .tabs{display:flex;align-items:center;gap:18px;border-bottom:1px solid var(--g200);background:#fff;padding:0 14px;overflow-x:auto}
+  .pill{display:flex;align-items:center;gap:6px;border-bottom:2px solid transparent;padding:12px 0;font-size:12px;color:var(--g400);white-space:nowrap}
+  .pill.on{border-bottom-color:var(--g900);font-weight:700;color:var(--g900)}
+  .pill .live{width:6px;height:6px;border-radius:50%;background:var(--ok);box-shadow:0 0 0 2px rgba(5,150,105,.15)}
+  .pill .ct{border-radius:4px;padding:1px 6px;font-size:10px;font-weight:700;background:var(--g100);color:var(--g500)}
+  .pill.on .ct{background:var(--g900);color:#fff}
+  .pill .new{font-size:9px;font-weight:700;color:var(--brand700);background:var(--brand50);border-radius:3px;padding:1px 4px;letter-spacing:.04em}
+  .right{margin-left:auto;display:flex;align-items:center;gap:8px;padding:6px 0}
+  .stepper{display:flex;align-items:center;border:1px solid var(--g200);border-radius:6px;font-size:11px;color:var(--g700);overflow:hidden}
+  .stepper span{padding:5px 8px}
+  .stepper span.m{border-left:1px solid var(--g200);border-right:1px solid var(--g200);font-weight:500;padding:5px 12px}
+
+  /* the tab body */
+  .pane{position:relative;min-height:600px;background:#fff}
+  .summary{border-bottom:1px solid var(--g200);padding:8px 18px;font-size:11px;color:var(--g500)}
+  .summary b{color:var(--g900);font-weight:600}
+  .band{border-bottom:1px solid #ebebeb;border-top:1px solid #ebebeb;background:var(--g50);padding:6px 18px;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--g500);display:flex;gap:10px;align-items:center}
+  .band:first-of-type{border-top:0}
+  .band .n{background:var(--g200);color:var(--g700);border-radius:4px;padding:0 6px;font-size:10px}
+  .band .why{margin-left:auto;text-transform:none;letter-spacing:0;font-weight:400;color:var(--g400)}
+
+  table.t{width:100%;border-collapse:collapse;table-layout:fixed}
+  table.t th{height:32px;border-bottom:1px solid #ebebeb;padding:0 14px;text-align:left;font-size:10px;font-weight:500;text-transform:uppercase;letter-spacing:.05em;color:var(--g400);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  table.t td{height:36px;padding:7px 14px;border-bottom:1px solid #f0f0f0;font-size:11px;color:var(--g600);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;vertical-align:middle}
+  table.t th.r, table.t td.r{text-align:right}
+  table.t tr:hover td{background:#fafafa}
+  .orb{font-family:var(--mono);font-size:11.5px;font-weight:500;color:var(--g900)}
+  .nm{font-weight:500;color:var(--g900)}
+  .code{font-family:var(--mono);font-size:10px;color:var(--g400)}
+  .sub2{font-size:10px;color:var(--g400);margin-top:1px;overflow:hidden;text-overflow:ellipsis}
+  .mono{font-family:var(--mono)}
+  .num{font-variant-numeric:tabular-nums;font-weight:600;color:var(--g900)}
+  .trip{border-radius:3px;background:var(--g900);color:#fff;font-family:var(--mono);font-size:9.5px;font-weight:600;padding:1px 5px;margin-right:6px}
+  .muted{color:var(--g400)}
+  .site{display:inline-block;font-size:9px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--g500);border:1px solid var(--g200);border-radius:3px;padding:0 4px;margin-right:5px}
+
+  .age{display:inline-block;font-size:10.5px;font-weight:600;border-radius:999px;padding:1px 8px;border:1px solid}
+  .age.n{background:var(--g100);border-color:var(--g200);color:var(--g500)}
+  .age.a{background:var(--amber50);border-color:var(--amber200);color:var(--amber700)}
+  .age.r{background:var(--red50);border-color:var(--red200);color:var(--red700)}
+
+  .paste{display:flex;gap:6px;align-items:center}
+  .soin{width:112px;height:28px;border:1px solid var(--g200);border-radius:6px;padding:0 9px;font-family:var(--mono);font-size:12px;color:var(--g900);display:flex;align-items:center}
+  .soin.ph{color:var(--g300);font-family:var(--sans);font-size:11.5px}
+  .soin.err{border-color:#fca5a5;box-shadow:0 0 0 2px rgba(239,68,68,.06)}
+  .soin.focus{border-color:#8B5CF6;box-shadow:0 0 0 2px rgba(139,92,246,.10)}
+  .link{height:28px;padding:0 12px;border-radius:6px;border:0;background:var(--g900);color:#fff;font-size:11px;font-weight:500}
+  .link.off{background:var(--g100);color:var(--g400);border:1px solid var(--g200);cursor:not-allowed}
+  .x{width:22px;height:22px;border-radius:5px;display:inline-flex;align-items:center;justify-content:center;color:var(--g400)}
+  .x:hover{background:var(--g100);color:var(--g700)}
+
+  .match{display:inline-flex;align-items:center;gap:4px;font-size:10.5px;font-weight:600;border-radius:999px;padding:1px 8px;border:1px solid}
+  .match.ok{background:var(--okbg);border-color:#a7f3d0;color:var(--oktext)}
+  .match.bad{background:var(--warnbg);border-color:var(--amber200);color:var(--warntext)}
+  .chev{color:var(--g400);font-size:11px}
+  tr.open td{background:var(--ink25)}
+  tr.detail td{padding:0;background:var(--ink25);border-bottom:1px solid #ebebeb;height:auto}
+  .dwrap{padding:4px 18px 12px 46px}
+  .dcap{font-size:10.5px;color:var(--g500);padding:6px 0 6px}
+  .dcap b{color:var(--g900);font-weight:600}
+  table.d{width:100%;max-width:820px;border-collapse:collapse;table-layout:fixed;background:#fff;border:1px solid var(--g200);border-radius:8px;overflow:hidden}
+  table.d th{height:28px;padding:0 12px;text-align:left;font-size:10px;font-weight:500;text-transform:uppercase;letter-spacing:.05em;color:var(--g400);border-bottom:1px solid #ebebeb;background:var(--g50)}
+  table.d td{height:32px;padding:0 12px;font-size:11px;color:var(--g600);border-bottom:1px solid #f0f0f0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  table.d tr:last-child td{border-bottom:0}
+  table.d .r{text-align:right}
+  table.d tr.diff td{background:#fffdf5}
+  .dneg{color:var(--warntext);font-weight:700}
+  .dzero{color:var(--g300)}
+  table.d tfoot td{border-top:1px solid var(--g200);font-weight:700;color:var(--g900);background:var(--g50)}
+
+  /* error toasts — danger tokens (error = the one legitimate red, CLAUDE_UI §1) */
+  .toasts{position:absolute;bottom:16px;right:16px;z-index:10;display:flex;flex-direction:column;gap:8px;width:400px;max-width:calc(100% - 32px)}
+  .toast{display:flex;gap:10px;align-items:flex-start;background:var(--dangerbg);border:1px solid var(--dangerbd);color:var(--dangertext);border-radius:8px;padding:10px 12px;font-size:12px;line-height:1.45;box-shadow:0 8px 22px rgba(17,24,39,.10)}
+  .toast svg{flex:0 0 auto;margin-top:2px}
+  .toast b{font-weight:700}
+  .toast .mono{font-size:11.5px}
+  .toast .close{margin-left:auto;color:var(--dangertext);opacity:.6;font-size:14px;line-height:1}
+
+  /* safety-net banner (D11) */
+  .risk{margin:12px 18px 0;border:1px solid var(--red200);background:var(--red50);border-radius:8px;padding:11px 14px;display:flex;gap:12px;align-items:flex-start}
+  .risk .ic{width:26px;height:26px;border-radius:50%;background:#dc2626;color:#fff;font-weight:800;display:flex;align-items:center;justify-content:center;flex:0 0 auto;font-size:14px}
+  .risk .t1{font-size:13px;color:var(--red700);font-weight:500}
+  .risk .t1 b{font-weight:800;letter-spacing:.02em}
+  .risk .t2{font-size:11.5px;color:#7f1d1d;margin-top:3px;line-height:1.5}
+  .risk .t2 .mono{font-size:11px}
+  .risk .ack{margin-left:auto;height:28px;padding:0 12px;border-radius:6px;border:1px solid var(--red200);background:#fff;color:var(--red700);font-size:11px;font-weight:600;white-space:nowrap}
+
+  .notes-box{margin-top:22px;background:#fff;border:1px solid var(--g200);border-radius:10px;padding:16px 18px;font-size:12px;color:var(--g600);line-height:1.6}
+  .notes-box h4{font-size:12px;font-weight:700;color:var(--g900);margin-bottom:6px}
+  .notes-box li{margin-left:18px}
+  .notes-box code{font-family:var(--mono);font-size:11px;background:var(--g100);padding:1px 5px;border-radius:4px}
+  .scrollx{overflow-x:auto}
+  .scrollx table.t{min-width:980px}
+  @media (max-width:760px){ .side{display:none} .search{display:none} .toasts{position:static;width:auto;margin:10px 16px} }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <a class="back" href="index.html">← Challan orders mockups</a>
+  <h1>Billing — Challan orders tab</h1>
+  <p class="sub">
+    A new pill at the end of the existing Billing tab bar, tick-gated like its neighbours (“Billing · Challan Orders — view”;
+    the paste box and Link need “— edit”, and are hidden, never disabled, without it). Three bands, oldest first.
+    This one frame shows every requested state at once — the two error toasts and the red banner would never all appear together.
+  </p>
+
+  <div class="app">
+    <nav class="side" aria-hidden="true"><span class="wm">Orbit</span><i></i><i></i><i class="on"></i><i></i><i></i><i></i></nav>
+    <div class="body">
+      <header class="hdr">
+        <span class="flex1"></span>
+        <span class="imp"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Import</span>
+        <span class="search"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>Search ORB, SO, dealer…<span class="k">/</span></span>
+      </header>
+
+      <div class="tabs" role="tablist">
+        <span class="pill">Orders <span class="ct">14</span></span>
+        <span class="pill"><span class="live"></span>Picking <span class="ct">6</span></span>
+        <span class="pill"><span class="live"></span>Print <span class="ct">2</span></span>
+        <span class="pill">Telephonic</span>
+        <span class="pill">Pick delete</span>
+        <span class="pill on">Challan orders <span class="ct">4</span></span>
+        <span class="right">
+          <span class="stepper"><span>‹</span><span class="m">Today · 06 Oct</span><span style="color:#d1d5db">›</span></span>
+        </span>
+      </div>
+
+      <div class="pane">
+        <!-- the two error toasts (F1b dealer guard, F5 one-SO-one-challan) -->
+        <div class="toasts" role="status">
+          <div class="toast">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            <span>SO <b class="mono">1234567</b> is for <b>XYZ PAINTS</b> — challan <b class="mono">ORB-2026-00001</b> is for <b>MOHAN COLOUR CO</b>.</span>
+            <span class="close">×</span>
+          </div>
+          <div class="toast">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            <span>SO <b class="mono">4410298</b> already linked to <b class="mono">ORB-2026-00007</b>.</span>
+            <span class="close">×</span>
+          </div>
+        </div>
+
+        <div class="summary"><b>4</b> not billed · <b>2</b> waiting for OBD · <b>2</b> billed today · oldest unbilled <b>8 days</b></div>
+
+        <!-- D11 safety net — late paste, OBD already with a picker: REFUSE + warn -->
+        <div class="risk" role="alert">
+          <span class="ic">!</span>
+          <div>
+            <div class="t1">OBD <span class="mono">9109340012</span> is already being picked — <b>DOUBLE DISPATCH RISK</b>. Tell the floor supervisor.</div>
+            <div class="t2">SO <span class="mono">4410301</span> was pasted against <span class="mono">ORB-2026-00008</span> (SHIV SHAKTI PAINTS) after its OBD was imported. The OBD is with a picker since 11:20, so Orbit did <b>not</b> pull it back. The same warning is on the Floor board and the supervisor’s phone.</div>
+          </div>
+          <button class="ack">Got it</button>
+        </div>
+
+        <!-- ───────────── a) NOT BILLED ───────────── -->
+        <div class="band" style="margin-top:12px;border-top:1px solid #ebebeb">Not billed <span class="n">4</span><span class="why">Goods sent on an Orbit challan, no SAP bill yet · amber at 3 days, red at 7</span></div>
+        <div class="scrollx">
+        <table class="t">
+          <colgroup><col style="width:13%"><col style="width:19%"><col style="width:19%"><col style="width:6%"><col style="width:14%"><col style="width:7%"><col style="width:22%"></colgroup>
+          <thead><tr><th>ORB no.</th><th>Dealer</th><th>Ship to</th><th class="r">Tins</th><th>Sent on</th><th>Age</th><th>Paste SO</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><span class="orb">ORB-2026-00001</span></td>
+              <td><span class="nm">MOHAN COLOUR CO</span> <span class="code">102425</span><div class="sub2">Udhna</div></td>
+              <td><span class="muted">Same as billing</span></td>
+              <td class="r"><span class="num">36</span></td>
+              <td><span class="trip">L-02</span>28 Sep<div class="sub2">L-260928-02</div></td>
+              <td><span class="age r">8d</span></td>
+              <td><div class="paste"><span class="soin err">1234567</span><button class="link">Link</button></div></td>
+            </tr>
+            <tr>
+              <td><span class="orb">ORB-2026-00004</span></td>
+              <td><span class="nm">PATEL HARDWARE &amp; PAINTS</span> <span class="code">103561</span><div class="sub2">Pandesara</div></td>
+              <td><span class="site">Site</span>Rajhans Platinum, Vesu<div class="sub2">typed address · Rakesh 98250 11223</div></td>
+              <td class="r"><span class="num">60</span></td>
+              <td><span class="trip">L-01</span>01 Oct<div class="sub2">L-261001-01</div></td>
+              <td><span class="age a">5d</span></td>
+              <td><div class="paste"><span class="soin err">4410298</span><button class="link">Link</button></div></td>
+            </tr>
+            <tr>
+              <td><span class="orb">ORB-2026-00006</span></td>
+              <td><span class="nm">KRISHNA COLOUR HOUSE</span> <span class="code">101877</span><div class="sub2">Katargam</div></td>
+              <td>Shree Siddhi Colours <span class="code">105230</span><div class="sub2">another dealer · Adajan</div></td>
+              <td class="r"><span class="num">24</span></td>
+              <td><span class="trip">U-01</span>03 Oct<div class="sub2">U-261003-01</div></td>
+              <td><span class="age a">3d</span></td>
+              <td><div class="paste"><span class="soin focus">44103<span style="border-left:1px solid #111827;height:14px;margin-left:1px"></span></span><button class="link off">Link</button></div></td>
+            </tr>
+            <tr>
+              <td><span class="orb">ORB-2026-00010</span></td>
+              <td><span class="nm">NEW ARIHANT TRADERS</span> <span class="code">106114</span><div class="sub2">Varachha</div></td>
+              <td><span class="muted">Same as billing</span></td>
+              <td class="r"><span class="num">12</span></td>
+              <td><span class="muted">In picking</span><div class="sub2">created 06 Oct 10:42</div></td>
+              <td><span class="age n">0d</span></td>
+              <td><div class="paste"><span class="soin ph">SO number</span><button class="link off">Link</button></div></td>
+            </tr>
+          </tbody>
+        </table>
+        </div>
+
+        <!-- ───────────── b) WAITING FOR OBD ───────────── -->
+        <div class="band">Waiting for OBD <span class="n">2</span><span class="why">SO pasted — the OBD file has not been imported yet</span></div>
+        <div class="scrollx">
+        <table class="t">
+          <colgroup><col style="width:13%"><col style="width:22%"><col style="width:26%"><col style="width:6%"><col style="width:14%"><col style="width:13%"><col style="width:6%"></colgroup>
+          <thead><tr><th>ORB no.</th><th>Dealer</th><th>SO no(s).</th><th class="r">Tins</th><th>Linked by</th><th>Linked at</th><th></th></tr></thead>
+          <tbody>
+            <tr>
+              <td><span class="orb">ORB-2026-00007</span></td>
+              <td><span class="nm">DEEP PAINTS</span> <span class="code">104002</span></td>
+              <td><span class="mono" style="color:#111827">4410298</span> <span class="muted">· waiting</span></td>
+              <td class="r"><span class="num">36</span></td>
+              <td>Deepanshu Thakur</td>
+              <td class="mono" style="font-size:10.5px">06 Oct 11:42</td>
+              <td class="r"><span class="x" title="Unlink this SO">×</span></td>
+            </tr>
+            <tr style="height:48px">
+              <td><span class="orb">ORB-2026-00005</span></td>
+              <td><span class="nm">SHREE SAI PAINTS</span> <span class="code">104118</span><div class="sub2">part-billed — 1 of 2 OBDs in</div></td>
+              <td>
+                <div><span class="mono" style="color:#111827">4410150</span> <span style="color:#047857">· OBD 9109338810 ✓</span></div>
+                <div style="margin-top:2px"><span class="mono" style="color:#111827">4410177</span> <span class="muted">· waiting</span></div>
+              </td>
+              <td class="r"><span class="num">40</span></td>
+              <td>Bankim<div class="sub2">both SOs</div></td>
+              <td class="mono" style="font-size:10.5px">05 Oct 17:05<div class="sub2" style="font-family:var(--mono)">06 Oct 09:30</div></td>
+              <td class="r"><span class="x" title="Unlink">×</span></td>
+            </tr>
+          </tbody>
+        </table>
+        </div>
+
+        <!-- ───────────── c) BILLED ───────────── -->
+        <div class="band">Billed <span class="n">2</span><span class="why">Every SO has its OBD · challan vs SAP by material code + tins, worked out live · shown for the selected day</span></div>
+        <div class="scrollx">
+        <table class="t">
+          <colgroup><col style="width:13%"><col style="width:18%"><col style="width:12%"><col style="width:14%"><col style="width:13%"><col style="width:10%"><col style="width:14%"><col style="width:6%"></colgroup>
+          <thead><tr><th>ORB no.</th><th>Dealer</th><th>SO(s)</th><th>OBD(s)</th><th>Invoice no.</th><th class="r">Tins</th><th>Match</th><th></th></tr></thead>
+          <tbody>
+            <tr style="height:48px">
+              <td><span class="orb">ORB-2026-00002</span></td>
+              <td><span class="nm">GANESH PAINT HOUSE</span> <span class="code">102760</span><div class="sub2">2 SOs · part-billed</div></td>
+              <td class="mono"><div>4409811</div><div style="margin-top:2px">4409840</div></td>
+              <td class="mono"><div>9109331207</div><div style="margin-top:2px">9109331288</div></td>
+              <td class="mono"><div>I26004512</div><div style="margin-top:2px">I26004519</div></td>
+              <td class="r"><span class="num">36</span><div class="sub2">20 + 16 = 36</div></td>
+              <td><span class="match ok">✅ Match</span></td>
+              <td class="r"><span class="chev">▸</span></td>
+            </tr>
+            <tr class="open">
+              <td><span class="orb">ORB-2026-00003</span></td>
+              <td><span class="nm">RAJ PAINT CENTRE</span> <span class="code">103209</span></td>
+              <td class="mono">4409902</td>
+              <td class="mono">9109334410</td>
+              <td class="mono">I26004601</td>
+              <td class="r"><span class="num">36</span> <span class="muted">/ 34</span></td>
+              <td><span class="match bad">⚠ 1 line differs</span></td>
+              <td class="r"><span class="chev">▾</span></td>
+            </tr>
+            <tr class="detail">
+              <td colspan="8">
+                <div class="dwrap">
+                  <div class="dcap">Challan <b>ORB-2026-00003</b> vs SAP <b class="mono">9109334410</b> — matched by material code, tins summed over every linked OBD</div>
+                  <table class="d">
+                    <colgroup><col style="width:16%"><col style="width:42%"><col style="width:14%"><col style="width:14%"><col style="width:14%"></colgroup>
+                    <thead><tr><th>Material code</th><th>Product</th><th class="r">Challan tins</th><th class="r">SAP tins</th><th class="r">Diff</th></tr></thead>
+                    <tbody>
+                      <tr><td class="mono">5281746</td><td>Gloss · Black · 500ML</td><td class="r">24</td><td class="r">24</td><td class="r dzero">0</td></tr>
+                      <tr class="diff"><td class="mono">5281751</td><td>Gloss · Brilliant White · 500ML</td><td class="r">12</td><td class="r">10</td><td class="r dneg">−2</td></tr>
+                    </tbody>
+                    <tfoot><tr><td></td><td>Total</td><td class="r">36</td><td class="r">34</td><td class="r dneg">−2</td></tr></tfoot>
+                  </table>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        </div>
+        <div style="height:132px"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="notes-box">
+    <h4>Reading this frame</h4>
+    <ul>
+      <li><b>Tab pill</b> copies <code>billing-tab-bar.tsx</code> exactly: gray-900 underline + gray-900 count chip when active. No live dot (like Telephonic — nothing here moves by itself often enough). The count is <b>Not billed</b> only — work outstanding, the way the other pills count.</li>
+      <li><b>Not billed</b> is all dates, oldest first. Age chip: neutral &lt; 3 days, amber 3–6, red ≥ 7 (F3). The paste box takes one SO; <b>Link</b> runs the dealer guard (F1b) and the one-SO-one-challan guard (F5) — the two toasts (bottom-right) are their refusals; the box keeps the typed number with a red border so it can be corrected.</li>
+      <li><b>Waiting for OBD</b>: a challan with several SOs can be half in — <code>ORB-2026-00005</code> shows one SO whose OBD has landed and one still waiting. It stays in this band until every SO has its OBD.</li>
+      <li><b>Billed</b>: ✅ uses the <code>ok</code> tokens, ⚠ the <code>warn</code> tokens — a mismatch is a thing to check, not an error. Click a row to open the side-by-side lines (the ⚠ row is shown open).</li>
+      <li><b>The red banner</b> is the D11 refusal (OBD already with a picker). The other D11 branch — not yet picked, auto pull-back — would be a plain gray-900 toast: “OBD 9109… pulled back from Floor and linked to ORB-…”.</li>
+    </ul>
+  </div>
+</div>
+</body>
+</html>

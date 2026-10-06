@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Challan Orders — mockups</title>
+<!-- Challan Orders, Phase 1 (non-tint) — slice 0 of docs/prompts/drafts/web-update-2026-10-06-challan-orders.md.
+     Static mockups only. No app code, schema or data touched. Self-contained: no external calls. -->
+<style>
+  :root{
+    --brand50:#F5F3FF; --brand600:#7C3AED; --brand700:#6D28D9; --brand800:#5B21B6;
+    --ink25:#FAFAFC; --ink50:#F4F3F8; --ink100:#E9E7F0; --ink400:#9C99AC; --ink500:#6E6A80; --ink900:#1B1826;
+    --g900:#111827; --g700:#374151; --g600:#4b5563; --g500:#6b7280; --g400:#9ca3af; --g200:#e5e7eb; --g100:#f3f4f6; --g50:#f9fafb;
+    --sans:'Plus Jakarta Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+    --mono:'JetBrains Mono','SF Mono',ui-monospace,Menlo,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:#f9fafb;font-family:var(--sans);color:var(--g900);padding:40px 16px 80px;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:860px;margin:0 auto}
+  .mark{font-size:15px;font-weight:800;color:var(--brand800);letter-spacing:-.01em}
+  h1{font-size:22px;font-weight:800;margin-top:6px;letter-spacing:-.01em}
+  .sub{font-size:13px;color:var(--g500);margin-top:8px;line-height:1.6;max-width:720px}
+  .sub b{color:var(--g700)}
+  .cards{margin-top:28px;display:grid;grid-template-columns:1fr;gap:12px}
+  a.card{display:flex;gap:16px;align-items:flex-start;background:#fff;border:1px solid var(--g200);border-radius:10px;padding:16px 18px;text-decoration:none;color:inherit}
+  a.card:hover{border-color:#d1d5db}
+  .num{width:28px;height:28px;border-radius:8px;background:var(--ink50);border:1px solid var(--ink100);color:var(--ink900);font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex:0 0 auto}
+  .t{font-size:14px;font-weight:700}
+  .t code{font-family:var(--mono);font-size:11.5px;font-weight:500;color:var(--g500);margin-left:6px}
+  .d{font-size:12.5px;color:var(--g500);margin-top:4px;line-height:1.5}
+  .facts{margin-top:30px;border-top:1px solid var(--g200);padding-top:18px;font-size:12px;color:var(--g500);line-height:1.7}
+  .facts b{color:var(--g700)}
+  .facts code{font-family:var(--mono);font-size:11px;background:var(--g100);padding:1px 5px;border-radius:4px;color:var(--g700)}
+  @media (max-width:520px){ a.card{padding:14px} }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="mark">Orbit</div>
+  <h1>Challan orders — mockups</h1>
+  <p class="sub">
+    Phase 1, non-tint. The depot sends goods on a challan before SAP can bill; the Orbit number
+    <b>ORB-2026-00001</b> is the challan. Billing later pastes the SAP SO against it, and the
+    SAP OBD that follows is linked, hidden from dispatch and matched line by line.
+    Sample data throughout: <b>MOHAN COLOUR CO (102425)</b>, <b>GLOSS · BLACK 500ML × 36</b>.
+  </p>
+
+  <div class="cards">
+    <a class="card" href="place-order.html">
+      <span class="num">1</span>
+      <span>
+        <div class="t">Place Order — create a challan order <code>place-order.html</code></div>
+        <div class="d">The desktop cart panel as it ships today, plus a secondary “Create challan order” above Send Email, the three-way Ship to, the confirm step and the “created” toast.</div>
+      </span>
+    </a>
+    <a class="card" href="billing-challan-orders.html">
+      <span class="num">2</span>
+      <span>
+        <div class="t">Billing — Challan orders tab <code>billing-challan-orders.html</code></div>
+        <div class="d">A new pill in the existing Billing tab bar. Three bands — Not billed (ageing, paste SO), Waiting for OBD, Billed (✅ / ⚠ line match) — plus the error toasts and the double-dispatch banner.</div>
+      </span>
+    </a>
+    <a class="card" href="badges.html">
+      <span class="num">3</span>
+      <span>
+        <div class="t">Picking card + Floor row — the Challan badge <code>badges.html</code></div>
+        <div class="d">One Picking card and one Floor row carrying a “Challan” badge, the read-only “Billed: SO · OBD · Inv” line, and Floor’s “Print challan” button.</div>
+      </span>
+    </a>
+    <a class="card" href="challan-paper.html">
+      <span class="num">4</span>
+      <span>
+        <div class="t">Challan paper — A4 print preview <code>challan-paper.html</code></div>
+        <div class="d">The live Delivery Challan layout, unchanged, with ORB-2026-00001 in the CHN slot and both Bill to and Ship to printed. Real print CSS — press Print to check it.</div>
+      </span>
+    </a>
+  </div>
+
+  <div class="facts">
+    <b>Source:</b> <code>docs/prompts/drafts/web-update-2026-10-06-challan-orders.md</code> (decisions D1–D13, F1–F6).
+    <b>Matched against:</b> <code>cart-panel.tsx</code>, <code>send-confirm-overlay.tsx</code>, <code>billing-tab-bar.tsx</code>,
+    <code>billing-telephonic-tab.tsx</code>, <code>floor-table.tsx</code>, <code>picking-board-mobile.tsx</code>,
+    <code>card-atoms.tsx</code>, <code>challan-document.tsx</code>.
+    Fonts fall back to system sans when Plus Jakarta Sans is not installed — the mockups make no network calls.
+  </div>
+</div>
+</body>
+</html>
