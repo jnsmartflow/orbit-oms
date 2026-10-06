@@ -533,6 +533,13 @@ export function FloorPage({ canEdit = false }: { canEdit?: boolean } = {}) {
   /** The search jump in flight, or null (2026-10-06 — see SearchFocus). */
   const [searchFocus, setSearchFocus] = useState<SearchFocus | null>(null);
   /**
+   * EVERY bill the last search named (a shared invoice names two) — each of
+   * their rows wears the amber search mark wherever it is on screen. Kept until
+   * Clear search, a new search, or the detail panel opening on a bill NOT in
+   * this list (openDetail / navigateDetail). Ticking a row leaves it alone.
+   */
+  const [litIds, setLitIds] = useState<number[]>([]);
+  /**
    * A Cancel & CI bill the search found OUTSIDE today's list (2026-10-06): the
    * tab shows these rows, read-only, under a "Search result · {date}" banner
    * instead of today's — the way History shows an old trip. Null = today's list.
@@ -1768,6 +1775,7 @@ export function FloorPage({ canEdit = false }: { canEdit?: boolean } = {}) {
         const body = (await res.json()) as { hits?: FloorSearchHit[] };
         if (seq !== lookupSeq.current) return;
         const hits = body.hits ?? [];
+        setLitIds(hits.map((h) => h.orderId));
         if (hits.length === 0) setLookup({ term, status: "none" });
         else if (hits.length === 1 && navigate) goToHit(hits[0]);
         else setLookup({ term, status: "many", hits });
@@ -1823,6 +1831,7 @@ export function FloorPage({ canEdit = false }: { canEdit?: boolean } = {}) {
       setLookup(null);
       setSearchFocus(null);
       setCancelSearch(null);
+      setLitIds([]);
       earlyLookupRawRef.current = null;
       pendingOpenRef.current = null;
       if (p.mode === "none") return;
@@ -1870,6 +1879,7 @@ export function FloorPage({ canEdit = false }: { canEdit?: boolean } = {}) {
     setLookup(null);
     setSearchFocus(null);
     setCancelSearch(null);
+    setLitIds([]);
     earlyLookupRawRef.current = null;
     pendingOpenRef.current = null;
   }, []);
@@ -1970,49 +1980,78 @@ export function FloorPage({ canEdit = false }: { canEdit?: boolean } = {}) {
     light();
   }, [searchFocus, cancelledRows, holdRows, data, loading, viewMode, trips, scope, filters, railSelection, addingToTripId, selectRail]);
 
-  // ── A search jump, step 2: scroll to the row and light it ─────────────────
+  // ── A search jump, step 2: scroll to the row ──────────────────────────────
   // The row is found in the DOM by `data-order-id` (floor-table / hold-table /
   // cancelled-tab rows carry it), retried while the tab, the trip's stops or a
-  // History day finish loading. It wears `data-search-hit="on"`, which those
-  // rows style as the board's own SELECTED look (brand-50 + the 3px brand bar,
-  // CLAUDE_UI §63 / floor-table's block row) — no new colour. It fades after a
-  // few seconds; Clear search or the next search drops it at once (cleanup).
+  // History day finish loading, then scrolled to the middle once. The MARK is
+  // the effect below, not this one.
   useEffect(() => {
     const f = searchFocus;
     if (f === null || f.phase !== "highlight") return;
     const sel = `[data-order-id="${f.hit.orderId}"]`;
-    let lit: HTMLElement[] = [];
     let tries = 0;
-    let fade: ReturnType<typeof setTimeout> | null = null;
     const poll = setInterval(() => {
       tries++;
-      const els = Array.from(document.querySelectorAll<HTMLElement>(sel)).filter((el) => el.offsetParent !== null);
-      if (els.length > 0) {
+      const el = Array.from(document.querySelectorAll<HTMLElement>(sel)).find((x) => x.offsetParent !== null);
+      if (el) {
         clearInterval(poll);
-        lit = els;
-        els[0].scrollIntoView({ block: "center", behavior: "smooth" });
-        for (const el of els) el.setAttribute("data-search-hit", "on");
-        fade = setTimeout(() => {
-          for (const el of lit) el.removeAttribute("data-search-hit");
-        }, 4000);
+        el.scrollIntoView({ block: "center", behavior: "smooth" });
       } else if (tries >= 60) {
         clearInterval(poll); // ~30 s — a History day on a slow link; then give up quietly
       }
     }, 500);
-    return () => {
-      clearInterval(poll);
-      if (fade) clearTimeout(fade);
-      for (const el of lit) el.removeAttribute("data-search-hit");
-    };
+    return () => clearInterval(poll);
   }, [searchFocus]);
+
+  // ── The amber search mark — every row of every bill the search named ──────
+  // `data-search-hit="on"` on each row carrying one of `litIds` (styled by
+  // SEARCH_HIT_ROW_CLS, floor-table.tsx — amber `warn` tokens). PERSISTENT: no
+  // fade. Re-applied every 700 ms because a row React unmounts and remounts (a
+  // tab switch, a trip opened, a live refresh, a History day loading) comes back
+  // without it; the attribute is not React's, so a plain re-render never strips
+  // it. Removed from every row the moment `litIds` changes or empties (Clear
+  // search, a new search, another bill's panel — see `litIds`).
+  useEffect(() => {
+    if (litIds.length === 0) return;
+    const sel = litIds.map((id) => `[data-order-id="${id}"]`).join(",");
+    const apply = () => {
+      document.querySelectorAll<HTMLElement>(sel).forEach((el) => {
+        if (el.getAttribute("data-search-hit") !== "on") el.setAttribute("data-search-hit", "on");
+      });
+    };
+    apply();
+    const keep = setInterval(apply, 700);
+    return () => {
+      clearInterval(keep);
+      document.querySelectorAll<HTMLElement>(sel).forEach((el) => el.removeAttribute("data-search-hit"));
+    };
+  }, [litIds]);
 
   // ── Detail panel (design §10) — open state + single-bill action handlers ──
   // Additive wiring only: the panel is mounted at the end; every write REUSES an
   // existing route through reportWrite (no swallowed response, no new route).
   const [detail, setDetail] = useState<{ orderId: number; source: FloorDetailSource } | null>(null);
-  const openDetail = useCallback((orderId: number, src: FloorDetailSource) => setDetail({ orderId, source: src }), []);
+  // Opening (or paging to) a bill the last search did NOT name ends the amber
+  // search mark (2026-10-06) — the planner has moved on to another bill.
+  const dropLitUnless = useCallback(
+    (orderId: number) => setLitIds((cur) => (cur.length > 0 && !cur.includes(orderId) ? [] : cur)),
+    [],
+  );
+  const openDetail = useCallback(
+    (orderId: number, src: FloorDetailSource) => {
+      setDetail({ orderId, source: src });
+      dropLitUnless(orderId);
+    },
+    [dropLitUnless],
+  );
   const closeDetail = useCallback(() => setDetail(null), []);
-  const navigateDetail = useCallback((orderId: number) => setDetail((d) => (d ? { ...d, orderId } : d)), []);
+  const navigateDetail = useCallback(
+    (orderId: number) => {
+      setDetail((d) => (d ? { ...d, orderId } : d));
+      dropLitUnless(orderId);
+    },
+    [dropLitUnless],
+  );
 
   // The list Prev/Next walks — whichever source the panel was opened from
   // (design §10.5). Rebuilt on every board reload so it tracks the live order.

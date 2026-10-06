@@ -79,15 +79,24 @@ export type FloorTableVariant = "live" | "history" | "upcoming";
 // data issue — deliberately NOT handled here.
 const PROJECT_SMUS = new Set(["Retail Offtake", "Decorative Projects"]);
 
-// THE SEARCH HIT (2026-10-06). Floor search lights the row it jumped to by
-// setting `data-search-hit="on"` on it (floor-page.tsx, found by the row's
-// `data-order-id`). This is that light: the board's own SELECTED look —
-// brand-50 ground + the 3px brand bar on the first cell, as the block row and
-// Tint Manager's selected row wear it — no new colour. The colour transition
-// is the fade when the attribute is removed. Exported so the Hold and Cancel &
-// CI tables wear the identical class.
+// THE SEARCH HIT (2026-10-06). Floor search marks every bill the number named
+// with `data-search-hit="on"` (floor-page.tsx, found by the row's
+// `data-order-id`), and it STAYS until Clear search, a new search, or another
+// row's detail panel. This is that mark: AMBER from the Orbit `warn` tokens —
+// `warn.bg` ground + a 3px solid `warn` bar on the first cell. Not the violet
+// selected look (a found row is not a ticked row), not ok-green Done, not the
+// tint pill, not re-delivery orange.
+//
+// 🔴 `!` ON BOTH, ON PURPOSE. A row that is selected AND found shows amber
+// (the selected look is `bg-brand-50` + a brand bar), and a duplicate-SO row
+// paints its bar as an INLINE boxShadow on the first cell — only !important
+// beats an inline style. Exported so the Hold and Cancel & CI tables wear the
+// identical class; inert anywhere nothing sets the attribute (Freight Trips).
+// ⚠ The bar is ONE arbitrary variant, not `data-[…]:[&>td:first-child]:` — that
+// stacking compiles to `tr>td:first-child[data-search-hit=on]` (the attribute
+// on the CELL), which never matches. Checked in the built CSS.
 export const SEARCH_HIT_ROW_CLS =
-  "transition-colors duration-700 data-[search-hit=on]:bg-brand-50 data-[search-hit=on]:[&>td:first-child]:shadow-[inset_3px_0_0_theme(colors.brand.600)]";
+  "data-[search-hit=on]:!bg-warn-bg [&[data-search-hit=on]>td:first-child]:!shadow-[inset_3px_0_0_theme(colors.warn.DEFAULT)]";
 
 // Exported so the Hold and Cancelled tabs mark a site bill / a redirect by the
 // SAME rule the floor table uses (design §7.5). Shared predicate, not shared
