@@ -24,7 +24,7 @@ import { loadPrintTrips } from "@/lib/billing/print";
 
 export type SendToBillingOutcome =
   | { ok: true; changed: boolean; tripNumber: string; sentToBillingAt: string | null; eligible: number; invoiced: number }
-  | { ok: false; status: number; error: string };
+  | { ok: false; status: number; error: string; code?: "CHALLAN_ONLY" };
 
 /**
  * Send one trip to billing, or take it back.
@@ -72,6 +72,20 @@ export async function setTripSentToBilling(opts: {
       sentToBillingAt: trip.sentToBillingAt?.toISOString() ?? null,
       eligible,
       invoiced,
+    };
+  }
+
+  // 🔴 ONLY CHALLAN ORDERS (owner, 2026-10-06; Challan orders slice 2b). Every
+  // live bill is an ORB order — nothing to invoice, and the Print tab never
+  // shows ORB rows (lib/billing/print.ts rule 6). A MIXED trip sends as before:
+  // its ORB rows simply do not count in `view`. Checked before the empty-trip
+  // refusal so the planner is told the real reason. No write.
+  if (opts.sent && view?.challanOnly) {
+    return {
+      ok: false,
+      status: 409,
+      error: "Only challan orders on this trip — nothing to bill.",
+      code: "CHALLAN_ONLY",
     };
   }
 

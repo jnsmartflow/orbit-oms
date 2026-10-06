@@ -1431,9 +1431,13 @@ export function FloorPage({ canEdit = false }: { canEdit?: boolean } = {}) {
           eligible?: number;
           invoiced?: number;
           error?: string;
+          code?: string;
         };
         const label = body?.tripNumber ?? "Trip";
-        if (!res.ok) {
+        if (!res.ok && body?.code === "CHALLAN_ONLY") {
+          // Challan orders slice 2b (2026-10-06): the server's own sentence, alone.
+          toast.error(body.error ?? "Only challan orders on this trip — nothing to bill.");
+        } else if (!res.ok) {
           toast.error(`Could not ${sent ? "send to billing" : "take back"} — ${body?.error ?? `HTTP ${res.status}`}`);
         } else if (!body.changed) {
           toast.info(`${label} was already ${sent ? "sent to billing" : "taken back from billing"}.`);

@@ -49,7 +49,10 @@ export async function GET(req: Request): Promise<NextResponse> {
 
   const workIds = await getPrintWorkTripIds();
   const doneIds = await getDoneTripIds(start, end);
-  const trips = await loadPrintTrips([...workIds, ...doneIds]);
+  // Rule 6 (challan orders, 2026-10-06): a trip carrying only ORB orders is
+  // never on the tab — nothing to invoice. getPrintWorkTripIds already drops it;
+  // this catches a done-today one (lib/billing/print.ts challanOnly).
+  const trips = (await loadPrintTrips([...workIds, ...doneIds])).filter((t) => !t.challanOnly);
 
   const pending = trips.filter((t) => t.state !== "done").sort(byOldestSent);
   // ⚠ The day test is repeated here, not trusted from `doneIds`: a done trip

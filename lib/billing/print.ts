@@ -30,6 +30,16 @@
 //      (a bill joins, a hold lifts) REOPENS until those are copied — except a
 //      DISPATCHED done trip, which never reopens. Trips with work outstanding
 //      are listed from every date; done trips on the IST day of billingDoneAt.
+//   6. CHALLAN ORDERS ARE NEVER ON PRINT (owner, 2026-10-06; Challan orders
+//      slice 2b). An ORB order (orders.isChallanOrder) is the challan itself —
+//      there is nothing to invoice, and its ORB-… number must never reach the
+//      SAP clipboard. It is not shown, not counted, never copyable, and never
+//      makes a trip ready or not ready: a mixed trip is exactly its SAP bills.
+//      A trip carrying ONLY ORB orders is not on the tab at all (`challanOnly`;
+//      getPrintWorkTripIds drops it too) and Send to billing refuses it
+//      (lib/trips/billing.ts). A SAP bill linked to a challan order
+//      ('challan_linked') never sits on a trip, but is filtered the same way so
+//      the rule holds if one ever slips on. One owner: BILLABLE_BILL_WHERE.
 //
 // Per-bill copied state is keyed on THIS trip. A bill copied on an earlier trip
 // reads uncopied here and carries a quiet `copiedOnOtherTrip` note.
@@ -45,7 +55,8 @@ import { prisma } from "@/lib/prisma";
 import { isGiftBill, loadLitres } from "@/lib/orders/gift";
 import { getColourWorkByOrder } from "@/lib/picking/colour-work-query";
 import { tintPhaseOf } from "@/lib/floor/tint-phase";
-import { DISPATCHED, PICK_ASSIGNED, PICK_CHECKED, PICK_DONE } from "@/lib/workflow-stages";
+import { CHALLAN_LINKED, DISPATCHED, PICK_ASSIGNED, PICK_CHECKED, PICK_DONE } from "@/lib/workflow-stages";
+import { BILLABLE_BILL_WHERE } from "@/lib/challan-orders/where";
 import { logTripBillingDone, logTripBillsCopied } from "@/lib/trips/activity";
 
 /** `orders.dispatchStatus` for a held bill — the same test lib/trips/queries.ts bucketFor makes. */
@@ -134,8 +145,11 @@ export interface PrintTrip {
   billingDoneAt: string | null;
   billingDoneByName: string | null;
   state: PrintTripState;
-  /** Non-removed bills on the trip, held included. */
+  /** Non-removed bills on the trip, held included — challan orders NOT (rule 6). */
   bills: number;
+  /** No billable bill, and at least one live ORB order: nothing to invoice, so
+   *  the trip is kept off the tab and Send to billing refuses it (rule 6). */
+  challanOnly: boolean;
   /** Stops holding at least one bill. */
   stops: number;
   litres: number;
@@ -196,7 +210,9 @@ export async function loadPrintTrips(tripIds: number[]): Promise<PrintTrip[]> {
 
   const orders = drops.length
     ? await prisma.orders.findMany({
-        where: { tripDropId: { in: drops.map((d) => d.id) }, isRemoved: false },
+        // Rule 6: challan orders and linked bills never enter the Print view —
+        // every count, state and copy set below is built from this list alone.
+        where: { tripDropId: { in: drops.map((d) => d.id) }, isRemoved: false, ...BILLABLE_BILL_WHERE },
         select: {
           id: true,
           tripDropId: true,
@@ -287,6 +303,22 @@ export async function loadPrintTrips(tripIds: number[]): Promise<PrintTrip[]> {
     ordersByTripId.set(drop.tripId, arr);
   }
 
+  // Rule 6: which of the trips with NO billable bill carry an ORB order. Asked
+  // only for those trips, so a normal load runs no extra query.
+  const emptyTripIds = trips.filter((t) => !ordersByTripId.has(t.id)).map((t) => t.id);
+  const emptyDropIds = drops.filter((d) => emptyTripIds.includes(d.tripId)).map((d) => d.id);
+  const challanDropRows = emptyDropIds.length
+    ? await prisma.orders.findMany({
+        where: { tripDropId: { in: emptyDropIds }, isRemoved: false, isChallanOrder: true },
+        select: { tripDropId: true },
+      })
+    : [];
+  const challanTripIds = new Set(
+    challanDropRows
+      .map((o) => (o.tripDropId !== null ? dropById.get(o.tripDropId)?.tripId : undefined))
+      .filter((id): id is number => id !== undefined),
+  );
+
   return trips.map((t) => {
     const own = (ordersByTripId.get(t.id) ?? []).slice().sort((a, b) => {
       const da = dropById.get(a.tripDropId!)!.dropSeq;
@@ -367,6 +399,7 @@ export async function loadPrintTrips(tripIds: number[]): Promise<PrintTrip[]> {
       billingDoneByName: nameOf(t.billingDoneById),
       state,
       bills: own.length,
+      challanOnly: own.length === 0 && challanTripIds.has(t.id),
       stops: new Set(own.map((o) => o.tripDropId)).size,
       // A GIFT bill adds no litres (lib/orders/gift.ts); `bills` and `stops` above count it.
       litres: own.reduce((sum, o) => sum + loadLitres(litresByOrderId.get(o.id), isGiftBill(o.materialType)), 0),
@@ -390,6 +423,12 @@ export async function loadPrintTrips(tripIds: number[]): Promise<PrintTrip[]> {
  * sent, not cancelled, and either Done not pressed, or (not dispatched and) a
  * non-held, non-removed bill on it has no copy row on THIS trip. The same set
  * the list's `pending` holds and the Print pill counts.
+ *
+ * Rule 6 (challan orders, 2026-10-06) in SQL — the twin of BILLABLE_BILL_WHERE:
+ * an ORB order or a linked bill never counts as outstanding work, and a trip
+ * whose live bills are ALL ORB orders is dropped (loadPrintTrips' challanOnly).
+ * Both columns are NOT NULL, so `= false` / `<>` need no null arm (CORE §13);
+ * the existing `IS DISTINCT FROM` hold arm is untouched.
  */
 export async function getPrintWorkTripIds(): Promise<number[]> {
   const rows = await prisma.$queryRaw<{ id: number }[]>`
@@ -408,11 +447,22 @@ export async function getPrintWorkTripIds(): Promise<number[]> {
               WHERE d."tripId" = t.id
                 AND o."isRemoved" = false
                 AND o."dispatchStatus" IS DISTINCT FROM ${HOLD}
+                AND o."isChallanOrder" = false
+                AND o."workflowStage" <> ${CHALLAN_LINKED}
                 AND NOT EXISTS (
                       SELECT 1 FROM trip_bill_copies c
                        WHERE c."tripId" = t.id AND c."orderId" = o.id)
            )
          )
+       )
+       AND NOT (
+         EXISTS (
+           SELECT 1 FROM trip_drops d JOIN orders o ON o."tripDropId" = d.id
+            WHERE d."tripId" = t.id AND o."isRemoved" = false AND o."isChallanOrder" = true)
+         AND NOT EXISTS (
+           SELECT 1 FROM trip_drops d JOIN orders o ON o."tripDropId" = d.id
+            WHERE d."tripId" = t.id AND o."isRemoved" = false
+              AND o."isChallanOrder" = false AND o."workflowStage" <> ${CHALLAN_LINKED})
        )`;
   return rows.map((r) => r.id);
 }

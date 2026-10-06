@@ -40,7 +40,7 @@ bills (`GONE_OUT_STAGES`), so a linked bill is refused there, and its search now
 
 ## 3. STOPPED — not built
 
-**Lock 2 — Billing Print tab (`lib/billing/print.ts` `loadPrintTrips`). The site does NOT match the plan.** The plan
+**Lock 2 — Billing Print tab — DONE in 2b (§6 below).** As first found: **the site does NOT match the plan.** The plan
 (discovery 2 Q4, written 2026-10-03) relied on slice 9's "never a partial set" rule: a challan bill with no invoice would
 make its trip uncopyable. **Print v2 (2026-10-05, v27.56) removed that rule** — copies are per bill, keyed on OBD number,
 and "ready" means `pick_checked` / `dispatched` with no confirmed finding. So today an ORB order at `pick_checked` on a
@@ -56,7 +56,7 @@ than the plan's failure, and still live once ORB orders exist. Excluding it now 
 Zero ORB orders exist and nothing creates one until slice 3, so nothing is exposed today — but **lock 2 must land
 before slice 3 ships**.
 
-**Lock 6, first writer — mail-order enrichment.** It exists only as `applyMailOrderEnrichment` in
+**Lock 6, first writer — mail-order enrichment — MOVED TO SLICE 6.** It exists only as `applyMailOrderEnrichment` in
 `app/api/import/obd/route.ts` — release function R1 (discovery 2 Q2; grep: no second enrichment writer anywhere).
 The brief says both "each must skip challan_linked" and "do NOT touch the import release functions". Left for slice 6,
 where R1 gets the catch anyway. The edit it needs: exclude `CHALLAN_LINKED` from its by-SO `updateMany` / `findMany`
@@ -78,3 +78,33 @@ and `code-plan-2026-10-06-challan-slice1.md:7` (both say "drafted as v27.59 … 
 `CLAUDE_CORE.md:385, 981, 1925, 1927, 1930` and the footer's "Prior, v132" text — all the real v27.59
 (`mo_orders_soNumber_idx`); `prisma/schema.prisma:2268, 2308` — the same index. No canonical file or challan draft
 mis-labels challan work as v27.59.
+
+## 6. Lock 2 — Print tab (done in 2b)
+
+**Owner decision (locked 2026-10-06): ORB orders NEVER appear on the Print tab.**
+- Mixed trip (SAP bills + ORB orders): the Print tab lists and counts ONLY the SAP bills. ORB rows are not shown, not
+  counted, never copyable, and never make a trip look "not ready" or "ready".
+- Trip carrying ONLY ORB orders: not on the Print tab at all (nothing to invoice).
+- "Send to billing" on a trip whose live bills are ALL `isChallanOrder`: refused server-side with "Only challan orders
+  on this trip — nothing to bill." and shown in the UI. A mixed trip sends as today.
+- Linked SAP bills (`challan_linked`) never sit on Orbit trips (lock 5a) but are filtered too, via `NOT_CHALLAN_LINKED`.
+
+**Shared owner:** `lib/challan-orders/where.ts` (new) — `NOT_CHALLAN_ORDER = { isChallanOrder: false }` and
+`BILLABLE_BILL_WHERE = { ...NOT_CHALLAN_ORDER, ...NOT_CHALLAN_LINKED }`. The raw-SQL twin is written beside it in
+`getPrintWorkTripIds`. Both columns NOT NULL → no null arm; the existing `IS DISTINCT FROM 'hold'` arm is untouched.
+
+| File · function | Live caller | Before → after | Why a no-op today |
+|---|---|---|---|
+| `lib/billing/print.ts` · `loadPrintTrips` | `/api/billing/print/list` ← `billing-print-tab.tsx`; `/print/order/[orderId]` (detail); `copyTripBills` ← `/print/trip/[id]/copy`; `markTripBillingDone` ← `/print/trip/[id]/done`; `setTripSentToBilling` (below) | Bills read `{ tripDropId in drops, isRemoved:false }` → **+ `...BILLABLE_BILL_WHERE`**, so rows, `bills`, `eligible`, `invoiced`, every state count, `readyObds` (the clipboard), `canDone` and the trip state are built from SAP bills only. New field **`challanOnly`** = no billable bill AND ≥ 1 live ORB order (one extra query, run only for trips with zero billable bills). | 0 ORB / linked rows: checked live — the 55 sent trips carry 350 live bills raw and 350 in the views; `challanOnly` 0. |
+| `lib/billing/print.ts` · `getPrintWorkTripIds` (raw SQL) | list route; `getPrintCount` (`lib/billing/marker-counts.ts`) ← `/print/marker`, `/api/billing/sync` | Outstanding-bill EXISTS gains `AND o."isChallanOrder" = false AND o."workflowStage" <> 'challan_linked'`; new top-level `AND NOT (EXISTS live ORB bill AND NOT EXISTS live billable bill)` drops an ORB-only trip from both arms. | Checked live: old SQL and new return the identical 6 trip ids. |
+| `app/api/billing/print/list/route.ts` · `GET` | `billing-print-tab.tsx` | `loadPrintTrips(...)` → `.filter((t) => !t.challanOnly)` — catches a challan-only trip in the done-today set, which `getDoneTripIds` does not filter. | No trip is `challanOnly`. |
+| `lib/trips/billing.ts` · `setTripSentToBilling` | `POST /api/floor/trips/[id]/billing` ← `floor-page.tsx` `setTripSentToBilling` (trip header) | New refusal before the empty-trip one: `view.challanOnly` → 409, code `CHALLAN_ONLY`, "Only challan orders on this trip — nothing to bill." No write. A mixed trip sends; its toast counts (`eligible` / `invoiced`) are SAP bills only. | No trip is `challanOnly`; every other trip takes the old path. |
+| `app/api/floor/trips/[id]/billing/route.ts` · `POST` | same | Error body carries `code` beside `error`. | Additive field. |
+| `components/floor/floor-page.tsx` · `setTripSentToBilling` | the trip header's Send to billing | On `code === "CHALLAN_ONLY"` the toast is the server's sentence alone (otherwise the old "Could not send to billing — …"). | Display only. |
+
+**Print callers that do NOT go through the two functions** (none bypasses a count or a copy):
+- `isBillOnSentTrip` (`/print/order/[orderId]`) admits any bill on a sent trip, ORB included — but the route then looks
+  the bill up in `loadPrintTrips(...).rows`, which has no ORB row, and answers 404. No edit.
+- `getPrintMarkerLatest` (`/print/marker`) and `lib/billing/sync.ts` steps 4–5 are change keys, not counts: an ORB
+  bill moving on a sent trip makes the tab refetch once and show the same list. Left as is (filtering them would only
+  save a refetch, and the marker's MAX is keyed for speed).

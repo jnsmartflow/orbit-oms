@@ -52,7 +52,10 @@ export async function POST(
   }
 
   const outcome = await setTripSentToBilling({ tripId, sent: body.sent, actorId });
-  if (!outcome.ok) return NextResponse.json({ error: outcome.error }, { status: outcome.status });
+  // `code` rides only the challan-only refusal (CHALLAN_ONLY, 2026-10-06).
+  if (!outcome.ok) {
+    return NextResponse.json({ error: outcome.error, code: outcome.code }, { status: outcome.status });
+  }
 
   return NextResponse.json({
     changed: outcome.changed,
