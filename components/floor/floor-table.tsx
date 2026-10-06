@@ -259,6 +259,88 @@ function shipInfo(row: FloorBoardRow) {
   return shipMarkers(row);
 }
 
+// ── THE SQUARE TAGS OF THE SHIP-TO BLOCK TABLE (2026-10-06, owner; mockup
+// floor-division-blocks-final.html .cw.t / .cw.b) ─────────────────────────────
+// `shipToBlock` rows ONLY. Floor-local on purpose: ColourWorkBadge, GiftBadge,
+// HandBadge and DuplicateSoTag are shared pills (Picking cards, Hold, the rail…)
+// and keep their rounded look everywhere else. The WORDS and RULES are theirs —
+// only the shape and the TINT / BASE / GIFT colours here are the block view's.
+const BLOCK_TAG_COLOUR_WORK = {
+  tint: "bg-[#fdf2f8] text-[#be185d]",
+  // Brown, so BASE never reads as a paler TINT.
+  base: "bg-[#f6f1ea] text-[#8a5a2b]",
+} as const;
+const BLOCK_TAG_GIFT = "bg-[#f4f4f6] text-[#55556a]";
+// The danger soft pair Floor already uses (cancelled-tab.tsx, floor-action-bar.tsx).
+const BLOCK_TAG_URGENT = "bg-danger-bg text-danger-text";
+// HandBadge's own colours (components/shared/hand-badge.tsx) WITHOUT its 1px
+// border, so every block tag is one height (owner, 2026-10-06).
+const BLOCK_TAG_HAND = "bg-data-brown/10 text-data-brown";
+// DUP_SO_SOFT_BADGE_CLASS's colours (components/shared/duplicate-so-tag.tsx)
+// without its border — same reason.
+const BLOCK_TAG_SAME = "bg-[#fef2f2] text-[#b91c1c]";
+
+/**
+ * The block row's per-bill tags, in the owner's order: URGENT · TINT/BASE ·
+ * GIFT · HAND · SAME. Each keeps its surface's own test — URGENT is
+ * `priorityLevel === 1`, the ⚡ rule; TINT/BASE is `colourWork`, the
+ * ColourWorkBadge rule. Only the first tag gets the ~8px gap after the number.
+ */
+function blockTags(row: FloorBoardRow, dup: boolean): ReactNode[] {
+  const tags: Array<{ key: string; cls: string; title: string; label: string }> = [];
+  if (row.priorityLevel === 1) tags.push({ key: "urgent", cls: BLOCK_TAG_URGENT, title: "Urgent", label: "Urgent" });
+  if (row.colourWork !== null)
+    tags.push({
+      key: "cw",
+      cls: BLOCK_TAG_COLOUR_WORK[row.colourWork],
+      title: row.colourWork === "tint" ? "Tinted — colour mixed by an operator" : "Base — no tinting",
+      label: row.colourWork === "tint" ? "Tint" : "Base",
+    });
+  if (row.isGift) tags.push({ key: "gift", cls: BLOCK_TAG_GIFT, title: "Gift — not counted in L / kg", label: "Gift" });
+  if (row.isHand)
+    tags.push({
+      key: "hand",
+      cls: BLOCK_TAG_HAND,
+      title: "Hand — the dealer collects from the depot. Plan it on a Hand trip.",
+      label: "✋ Hand",
+    });
+  if (dup)
+    tags.push({
+      key: "same",
+      cls: BLOCK_TAG_SAME,
+      title: "Another live order shares this SO number — open both and check",
+      label: "Same",
+    });
+  return tags.map((t, i) => (
+    <BlockTag key={t.key} cls={t.cls} first={i === 0} title={t.title}>
+      {t.label}
+    </BlockTag>
+  ));
+}
+
+function BlockTag({
+  cls,
+  first = false,
+  title,
+  children,
+}: {
+  cls: string;
+  /** The first tag after the OBD number gets the ~8px gap; the rest 6px. */
+  first?: boolean;
+  title: string;
+  children: ReactNode;
+}) {
+  return (
+    <span
+      title={title}
+      aria-label={title}
+      className={`${first ? "ml-2" : "ml-1.5"} inline-block whitespace-nowrap rounded-[4px] px-[5px] py-[1px] align-[1px] text-[10.5px] font-bold uppercase leading-[1.4] tracking-[0.06em] ${cls}`}
+    >
+      {children}
+    </span>
+  );
+}
+
 const HEAD_TH = "h-[31px] border-b border-[#ebebeb] px-3.5 text-left text-[10px] font-medium uppercase tracking-[0.05em] text-[#9ca3af]";
 const HEAD_TH_NARROW = "h-[31px] border-b border-[#ebebeb] px-1 text-center text-[10px] font-medium uppercase tracking-[0.05em] text-[#9ca3af]";
 // ⚠ THE BASE + SKIN SPLIT IS GONE, and its absence is the point. It existed
@@ -291,6 +373,9 @@ export function FloorTable({
   hideTripTag = false,
   showArea = false,
   selectionLocked = false,
+  shipToBlock = false,
+  part,
+  billedToFor,
 }: {
   rows: FloorBoardRow[];
   nowMs: number;
@@ -327,6 +412,37 @@ export function FloorTable({
    * "+ Add bills" is pressed, which is exactly the movement this avoids.
    */
   selectionLocked?: boolean;
+  /**
+   * THE SHIP-TO BLOCK TABLE (2026-10-06, owner — the open route card's
+   * division bands, components/floor/ship-to-blocks.tsx). Seven positions:
+   * OBD · Invoice · Area · Due · Vol/KG · Article · Status. NO tick column —
+   * the row itself is the tick (click / Space / Enter) and the OBD number opens
+   * the detail panel. Ship to is GONE — the block header above the table names
+   * the ship-to, and every bill under it goes there.
+   *
+   * 🔴 ONE FLAG, TESTED IN ALL THREE PLACES — the colgroup (`widths`), the <th>
+   * row and the <td>s. The marks the Ship-to cell carried per bill (TINT/BASE,
+   * ⚡ → an URGENT tag, GIFT, HAND) move into the OBD cell as square tags
+   * (`blockTags`), still behind this flag; ★ and the
+   * site icon belong to the block header. Invoice is always on (it implies
+   * `hasExtra`). Default false = every other caller is byte-identical.
+   */
+  shipToBlock?: boolean;
+  /**
+   * Draw only PART of the table (2026-10-06, the block layout only):
+   *   "head" — colgroup + header row, no body. The ONE header a route section
+   *            shows above all its blocks; its tick covers `rows`.
+   *   "body" — colgroup + body, no header. Each block's own table.
+   * Both halves use the same `widths`, so the columns line up down the section.
+   * Omitted = the whole table, as every other caller has it.
+   */
+  part?: "head" | "body";
+  /**
+   * Per-row "billed to X" under the OBD date line — ONLY with `shipToBlock`,
+   * and only passed when the bills in a block disagree about who they are
+   * billed to (otherwise the block header says it once). Null = no line.
+   */
+  billedToFor?: (row: FloorBoardRow) => string | null;
   // Wired only on the live variant; undefined on history/upcoming.
   // A plain Set<number> (Hold-style callers) or the desk's Set<number | rd:id>;
   // read-only here — the table only asks `has`.
@@ -534,8 +650,19 @@ export function FloorTable({
   // ⚠ ONE CONDITION, NOT TWO. Invoice and Operator share the third slot and are
   // mutually exclusive (see `operatorByOrderId`), so the matrix stays at four
   // arms and the colgroup, the <th> row and the <td>s all test THIS.
-  const hasExtra = showInvoice || operatorByOrderId !== undefined;
-  const widths = interactive
+  // `shipToBlock` always shows Invoice (its own arms below assume it).
+  const hasExtra = showInvoice || operatorByOrderId !== undefined || shipToBlock;
+  // ── THE SHIP-TO BLOCK ARM (2026-10-06, recut the same day, owner) ─────────
+  // NO tick column: a block row is ticked by CLICKING it, and the route's and
+  // the block's ticks sit at the OBD column's left edge instead. Ship to is
+  // gone (the block header names it); Area is back, in the Route/Area slot.
+  // ONE arm, live and History alike — `tickColumn` is false on both.
+  //                    OBD INV Area Due V/KG Art Status
+  const tickColumn = interactive && !shipToBlock;
+  const areaCol = showArea || shipToBlock;
+  const widths = shipToBlock
+    ? [20, 14, 13, 14, 10, 13, 16] //                                  = 100
+    : interactive
     ? hasExtra
       ? [3, 13, 9, 17, 9, 12, 7, 12, 18] //                                = 100
       : [3, 14, 21, 9, 12, 7, 14, 20] //   ☐ OBD Ship Rt Due V/KG Art Status = 100
@@ -563,9 +690,10 @@ export function FloorTable({
           <col key={i} style={{ width: `${w}%` }} />
         ))}
       </colgroup>
+      {part !== "body" && (
       <thead>
         <tr>
-          {interactive && (
+          {tickColumn && (
             <th className={HEAD_TH_NARROW}>
               {!selectionLocked && (
               <input
@@ -578,16 +706,38 @@ export function FloorTable({
               )}
             </th>
           )}
-          <th className={HEAD_TH}>OBD</th>
+          {shipToBlock ? (
+            // The ROUTE tick, at the OBD column's left edge — the same 14px
+            // the block headers' ticks sit at (ship-to-blocks.tsx).
+            <th className={HEAD_TH}>
+              {interactive && !selectionLocked && (
+                <input
+                  type="checkbox"
+                  aria-label="Select every due bill on this route"
+                  className="mr-2 h-[13px] w-[13px] cursor-pointer align-middle accent-brand-600"
+                  checked={allOn}
+                  onChange={() => onToggleAll?.(tableRows)}
+                />
+              )}
+              OBD
+            </th>
+          ) : (
+            <th className={HEAD_TH}>OBD</th>
+          )}
           {hasExtra && <th className={HEAD_TH}>{operatorByOrderId ? "Operator" : "Invoice"}</th>}
-          <th className={HEAD_TH}>Ship to</th>
-          <th className={HEAD_TH}>{showArea ? "Area" : "Route"}</th>
+          {/* Ship to: gone on the block table (`shipToBlock`) — the SAME flag
+              `widths` tests above and the <td>s test below. The Route/Area
+              slot stays and reads Area there (`areaCol`). */}
+          {!shipToBlock && <th className={HEAD_TH}>Ship to</th>}
+          <th className={HEAD_TH}>{areaCol ? "Area" : "Route"}</th>
           <th className={HEAD_TH}>Due</th>
           <th className={`${HEAD_TH} text-right`}>Vol / KG</th>
           <th className={HEAD_TH}>Article</th>
           <th className={HEAD_TH}>Status</th>
         </tr>
       </thead>
+      )}
+      {part !== "head" && (
       <tbody>
         {rows.map(renderRow)}
         {upcoming.length > 0 && (
@@ -630,6 +780,7 @@ export function FloorTable({
           </>
         )}
       </tbody>
+      )}
     </table>
   );
 
@@ -667,6 +818,7 @@ export function FloorTable({
     const rd = row.redelivery ?? null;
     const selKey = deskKeyOf(row);
     const { isSite, isRedirect } = shipInfo(row);
+    const billedTo = shipToBlock && billedToFor ? billedToFor(row) : null;
     const obd = asStr(row.obdDateTime);
     const target = row.dispatchTargetDate;
     // ── Duplicate-SO, SOFT variant (2026-08-25) ─────────────────────────
@@ -859,7 +1011,7 @@ export function FloorTable({
       statusCell = (
         <span className="inline-flex items-center gap-2">
           {histBody}
-          <span className="hidden items-center gap-1 group-hover:inline-flex">
+          <span className="hidden items-center gap-1 group-hover:inline-flex" onClick={shipToBlock ? (e) => e.stopPropagation() : undefined}>
             <button
               type="button"
               title={rd ? "Re-delivery details" : "Open details"}
@@ -893,7 +1045,7 @@ export function FloorTable({
             // A RE-DELIVERY row: no ⚡ (it would write the real bill) and no
             // detail panel (its actions write the real bill too). ⋯ opens the
             // read-only re-delivery info instead.
-            <span className="hidden items-center gap-1 group-hover:inline-flex">
+            <span className="hidden items-center gap-1 group-hover:inline-flex" onClick={shipToBlock ? (e) => e.stopPropagation() : undefined}>
               <button
                 type="button"
                 title="Re-delivery details"
@@ -904,7 +1056,7 @@ export function FloorTable({
               </button>
             </span>
           ) : (
-          <span className="hidden items-center gap-1 group-hover:inline-flex">
+          <span className="hidden items-center gap-1 group-hover:inline-flex" onClick={shipToBlock ? (e) => e.stopPropagation() : undefined}>
             <button
               type="button"
               title={urgent ? "Clear urgent" : "Mark urgent"}
@@ -940,9 +1092,43 @@ export function FloorTable({
     // free colour left. Full reasoning on DUP_SO_SOFT_ROW_CLASS
     // (components/shared/duplicate-so-tag.tsx), which this file no longer
     // imports. The bar went 3px → 4px in the same change to carry the load.
+    // ── THE BLOCK ROW IS ITS OWN TICK (2026-10-06, owner) ────────────────────
+    // No checkbox column on `shipToBlock`: a click anywhere on the row (or
+    // Space / Enter while it has focus) toggles the SAME key the checkbox did
+    // (deskKeyOf → onToggleRow / onToggleRedelivery). The OBD number, the tags
+    // and the Status hover buttons stop the click, so they never toggle. A
+    // selected row wears Tint Manager's selected look (board-base-tab.tsx):
+    // brand-50 ground + a 3px brand bar on the first cell — which replaces the
+    // duplicate-SO bar while selected (the SAME tag still says it). History and
+    // a locked selection: no toggle at all.
+    const toggleThis = () => (rd ? onToggleRedelivery?.(rd.id) : onToggleRow?.(row.orderId));
+    const blockClickable = shipToBlock && interactive && selectable;
+    const blockSelected = blockClickable && (selection?.has(selKey) ?? false);
+    const blockRowProps = blockClickable
+      ? {
+          tabIndex: 0,
+          "aria-selected": blockSelected,
+          onClick: toggleThis,
+          onKeyDown: (e: React.KeyboardEvent<HTMLTableRowElement>) => {
+            if (e.target !== e.currentTarget) return;
+            if (e.key === " " || e.key === "Enter") {
+              e.preventDefault();
+              toggleThis();
+            }
+          },
+        }
+      : {};
+    const rowCls = !shipToBlock
+      ? "group hover:bg-[#fafafa]"
+      : blockSelected
+        ? "group cursor-pointer bg-brand-50 outline-none focus-visible:bg-brand-100 [&>td:first-child]:shadow-[inset_3px_0_0_theme(colors.brand.600)]"
+        : blockClickable
+          ? "group cursor-pointer outline-none hover:bg-[#fafafa] focus-visible:bg-brand-50"
+          : "group hover:bg-[#fafafa]";
+    const stop = (e: React.MouseEvent) => e.stopPropagation();
     return (
-      <tr key={String(selKey)} className="group hover:bg-[#fafafa]">
-        {interactive && (
+      <tr key={String(selKey)} className={rowCls} {...blockRowProps}>
+        {tickColumn && (
           /* FIRST CELL when the table is selectable — it carries the bar. */
           <td className={TD_NARROW} style={barStyle}>
             {/* Checkbox on Waiting / With-picker rows only (design §7.8).
@@ -965,13 +1151,39 @@ export function FloorTable({
             rendered, so THIS is the first cell and the bar lands here
             instead. `interactive` is the same flag that drives `widths`
             above, so the two can never disagree about which cell is first. */}
-        <td className={TD} style={interactive ? undefined : barStyle}>
+        <td className={TD} style={tickColumn || blockSelected ? undefined : barStyle}>
+          {shipToBlock ? (
+            // The DETAIL PANEL opens from the number on the block table (the
+            // row click selects). Same handlers as the ⋯ button; never toggles.
+            <button
+              type="button"
+              title={rd ? "Re-delivery details" : "Open details"}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (rd) onOpenRedelivery?.(rd.id);
+                else onOpenDetail?.(row.orderId);
+              }}
+              className="cursor-pointer font-mono text-[11.5px] font-medium text-[#111827] hover:underline"
+            >
+              {row.obdNumber}
+            </button>
+          ) : (
           <span className="font-mono text-[11.5px] font-medium text-[#111827]">
             {row.obdNumber}
           </span>
+          )}
+          {/* SHIP-TO BLOCK (2026-10-06): the TINT / BASE word moves here from the
+              Ship-to cell, right after the number (the mockup's place), as a
+              SQUARE tag (BlockTag below). Same `colourWork` rule as
+              ColourWorkBadge, which stays Picking's pill. Never on any other table. */}
+          {/* All the block row's per-bill tags, in ONE fixed order (owner,
+              2026-10-06): URGENT · TINT/BASE · GIFT · HAND · SAME. URGENT
+              replaces the ⚡ glyph on this table only. */}
+          {shipToBlock && <span onClick={stop}>{blockTags(row, dup)}</span>}
           {/* The tag rides the OBD cell — first column a reader lands on,
-              and it never displaces the Status column's own meaning. */}
-          {dup && <DuplicateSoTag variant="soft" className="ml-1.5 align-[1px]" />}
+              and it never displaces the Status column's own meaning.
+              (The block table draws its own square SAME tag above.) */}
+          {dup && !shipToBlock && <DuplicateSoTag variant="soft" className="ml-1.5 align-[1px]" />}
           {/* RE-DEL (2026-10-03) — a bill that came back on an earlier truck,
               planned again on this trip. The trip-number chip's shape, in the
               `warn` token (CLAUDE_UI §2.1 — never red, never a data.* colour).
@@ -1021,6 +1233,13 @@ export function FloorTable({
               What stays: the OBD number, the duplicate-SO tag and the trip
               tag. Those are identifiers, which is what this cell is for. */}
           <ObdDateLine iso={obd} isEmailTime={row.isEmailTime} />
+          {/* Per-row "billed to" — only when the block's bills disagree (the
+              header says it once otherwise). See `billedToFor`. */}
+          {shipToBlock && billedTo !== null && (
+            <div className="overflow-hidden text-ellipsis whitespace-nowrap text-[10.5px] text-[#9ca3af]" title={`Billed to ${billedTo}`}>
+              billed to {billedTo}
+            </div>
+          )}
         </td>
         {/* INVOICE — SAP's own invoiceNo + invoiceDate, shaped like the
             OBD cell it now sits beside: mono number on line 1, muted 10px
@@ -1051,6 +1270,10 @@ export function FloorTable({
 
             formatDateIST is the SHARED formatter the detail panel's
             "Invoice date" reads — never a second local one. */}
+        {/* ⚠ `shipToBlock` drops the SHIP TO cell below (and the ☐ cell above,
+            via `tickColumn`), and the Route cell reads Area — the same flags
+            the colgroup and the <th> row test (count: OBD INV Area Due V/KG
+            Art Status = 7 on that arm). */}
         {/* THE SHARED THIRD SLOT — Invoice, or Operator on the Tinting tab. One
             condition, `hasExtra`, matching the colgroup and the <th> above; see
             `operatorByOrderId` for why they share rather than sit side by side. */}
@@ -1073,6 +1296,7 @@ export function FloorTable({
               <InvoiceLines invoiceNo={row.invoiceNo} invoiceDate={row.invoiceDate} />
             </td>
           ))}
+        {!shipToBlock && (
         <td className={TD}>
           <span className="text-[11.5px] font-medium text-[#111827]">
             {row.dealerName}
@@ -1165,6 +1389,7 @@ export function FloorTable({
           )}
           {chipFor?.(row)}
         </td>
+        )}
         {/* 🔴 ROUTE. THIS CELL WENT MISSING IN e656ad80 AND CAME BACK HERE.
             The Due column was introduced by replacing a two-part anchor —
             the Route cell plus the old guarded Slot cell — with the Due
@@ -1180,7 +1405,9 @@ export function FloorTable({
             real cells plus one commented one read as nine. Count the cells
             against the list in the widths block above, by eye, and never
             trust a regex that has not been made comment-blind. */}
-        <td className={TD}>{(showArea ? row.area : row.route) ?? "—"}</td>
+        <td className={TD} title={shipToBlock ? row.area ?? undefined : undefined}>
+          {(areaCol ? row.area : row.route) ?? "—"}
+        </td>
         <td className={`${TD} whitespace-nowrap tabular-nums`}>{dueCell}</td>
         {/* ── VOL / KG, ONE STACKED CELL (2026-09-10 c) ──────────────────
             Litres on line one, kilos underneath, both right-aligned and

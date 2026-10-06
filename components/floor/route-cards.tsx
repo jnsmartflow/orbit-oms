@@ -51,7 +51,9 @@ import {
   sumLitres,
   sumWeightKg,
 } from "./status-pill";
-import { FloorTable, type FloorTableVariant } from "./floor-table";
+import { FloorTable, shipMarkers, type FloorTableVariant } from "./floor-table";
+import { DivisionBand, ShipToBlockHeader } from "./ship-to-blocks";
+import { billedToOf, buildDivisionBands } from "@/lib/floor/division-blocks";
 import { DIRECT_SEGMENT, NEEDS_CHECK_SEGMENT } from "./progress-bar";
 import { Truck } from "lucide-react";
 import { sortPickingQueue } from "@/lib/picking/sort";
@@ -737,7 +739,10 @@ function RouteLineBody({ line: l }: { line: RouteLine }) {
 // ── The open panel ──────────────────────────────────────────────────────────
 //
 // One section per route with bills, main first: a small heading (name, the
-// grey reach label, stops, kilos), then that route's own FloorTable.
+// grey reach label, stops, kilos), then that route's bills — since 2026-10-06
+// the due ones in DIVISION BANDS of SHIP-TO BLOCKS (RouteSectionBody below);
+// the notes on one-table-per-route and Area that follow now describe the
+// Hand + upcoming list only.
 //
 // ⚠ ONE FloorTable PER ROUTE, never one merged table: it keeps `toggleAll` per
 // group — the contract lib/floor/selection.ts documents — and it is the
@@ -772,13 +777,15 @@ function OpenPanel({
 }) {
   const sections = card.lines.filter((l) => l.rows.length > 0 || l.upcoming.length > 0 || l.hand.length > 0);
   return (
-    <div className="mt-3 overflow-hidden rounded-[11px] border border-[#e7e7ee] bg-white">
-      {sections.map((l, i) => (
-        <div key={l.key} className={i === 0 ? "" : "border-t border-[#e7e7ee]"}>
-          <div className="flex flex-wrap items-baseline gap-[9px] border-b border-[#e7e7ee] bg-[#fafafc] px-3.5 py-[9px]">
-            <span className="text-[13.5px] font-bold text-[#1a1a22]">{l.name}</span>
-            {l.reachLabel && <span className="text-[11px] text-[#96969f]">{l.reachLabel}</span>}
-            <span className="text-[12px] tabular-nums text-[#96969f]">
+    // ROUTE > BAND > BLOCK > ROW (owner, 2026-10-06): each route is its own
+    // card, 24px apart, with the loudest heading on the panel.
+    <div className="mt-3 flex flex-col gap-6">
+      {sections.map((l) => (
+        <div key={l.key} className="overflow-hidden rounded-[11px] border border-[#e7e7ee] bg-white">
+          <div className="flex flex-wrap items-baseline gap-2.5 border-b border-[#e7e7ee] bg-[#fafafc] px-5 py-4">
+            <span className="text-[20px] font-semibold text-[#1a1a22]">{l.name}</span>
+            {l.reachLabel && <span className="text-[13px] text-[#96969f]">{l.reachLabel}</span>}
+            <span className="text-[15px] tabular-nums text-[#96969f]">
               {l.rows.length > 0 ? (
                 <>
                   {plural(stopCount(l.rows), "stop", "stops")} &middot; {kgText(l.rows)} kg
@@ -795,19 +802,92 @@ function OpenPanel({
               )}
             </span>
           </div>
-          {/* Hand bills still LIST here, after the due ones, each with its
-              ✋ HAND chip — the planner needs to find them for a Hand trip. */}
-          <FloorTable
-            rows={[...sort(l.rows), ...sort(l.hand), ...sortUpcoming(l.upcoming)]}
-            nowMs={nowMs}
-            anchorIso={anchorIso}
-            variant={variant}
-            showArea
-            {...leaf}
-          />
+          <RouteSectionBody line={l} nowMs={nowMs} anchorIso={anchorIso} variant={variant} leaf={leaf} />
         </div>
       ))}
     </div>
+  );
+}
+
+/** The site rule's one owner, asked — never re-derived (floor-table.tsx). */
+const isSiteRow = (r: FloorBoardRow) => shipMarkers(r).isSite;
+
+/**
+ * One route section's bills (2026-10-06, owner; design:
+ * docs/mockups/floor-trips/floor-division-blocks-final.html).
+ *
+ *   the DUE bills  → ONE column header, then DIVISION BANDS (70 → 77 → 74 →
+ *                    Other), each holding one SHIP-TO BLOCK per stop, A–Z — a
+ *                    block is a trip-style stop header over its own 7-column
+ *                    table (`shipToBlock`, no header of its own: `part="body"`).
+ *                    The single header is `part="head"` on the SAME arm, so the
+ *                    columns line up down the section; its tick covers every due
+ *                    bill in the section, as the route's table tick did.
+ *   Hand + upcoming → TODAY'S LIST, unchanged: one FloorTable with Area, Hand
+ *                    first, then upcoming by date (D8 — they never enter a band).
+ *
+ * The route heading above (OpenPanel) and its stop count are untouched.
+ */
+function RouteSectionBody({
+  line: l,
+  nowMs,
+  anchorIso,
+  variant,
+  leaf,
+}: {
+  line: RouteLine;
+  nowMs: number;
+  anchorIso: string;
+  variant: FloorTableVariant;
+  leaf: LeafWiring;
+}) {
+  const bands = buildDivisionBands(l.rows, isSiteRow);
+  const rest = [...sort(l.hand), ...sortUpcoming(l.upcoming)];
+  const billedToFor = (r: FloorBoardRow) => billedToOf(r, isSiteRow(r));
+  return (
+    <>
+      {bands.length > 0 && (
+        <>
+          <FloorTable
+            rows={bands.flatMap((b) => b.rows)}
+            nowMs={nowMs}
+            anchorIso={anchorIso}
+            variant={variant}
+            shipToBlock
+            part="head"
+            {...leaf}
+          />
+          {bands.map((band, i) => (
+            <div key={band.key}>
+              <DivisionBand band={band} first={i === 0} />
+              {band.blocks.map((block) => (
+                <div key={block.key}>
+                  <ShipToBlockHeader block={block} selection={leaf.selection} onToggleAll={leaf.onToggleAll} />
+                  <FloorTable
+                    rows={block.rows}
+                    nowMs={nowMs}
+                    anchorIso={anchorIso}
+                    variant={variant}
+                    shipToBlock
+                    part="body"
+                    billedToFor={block.billedToPerRow ? billedToFor : undefined}
+                    {...leaf}
+                  />
+                </div>
+              ))}
+            </div>
+          ))}
+        </>
+      )}
+      {/* Hand bills still LIST here, each with its ✋ HAND chip — the planner
+          needs to find them for a Hand trip — then the upcoming ones by date.
+          The table they have always been in, minus the due bills above. */}
+      {rest.length > 0 && (
+        <div className={bands.length > 0 ? "mt-4 border-t border-[#e7e7ee]" : ""}>
+          <FloorTable rows={rest} nowMs={nowMs} anchorIso={anchorIso} variant={variant} showArea {...leaf} />
+        </div>
+      )}
+    </>
   );
 }
 
