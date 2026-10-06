@@ -677,6 +677,8 @@ const FLOOR_BOARD_INCLUDE = {
       assignedAt: true,
       pickedAt: true,
       checkedAt: true,
+      // Article no. (2026-10-06) — data only; Floor UI comes later.
+      articleCount: true,
       checkedBy: { select: { name: true } },
       picker: { select: { name: true } },
       assignedBy: { select: { name: true } },
@@ -1046,6 +1048,8 @@ export async function getFloorBoard(
       pickedAt: order.pickAssignment?.pickedAt?.toISOString() ?? null,
       checkedAt: order.pickAssignment?.checkedAt?.toISOString() ?? null,
       checkedByName: order.pickAssignment?.checkedBy?.name ?? null,
+      // NULL stays null, never 0.
+      articleCount: order.pickAssignment?.articleCount ?? null,
       pickerId: order.pickAssignment?.pickerId ?? null,
       assignedToName: order.pickAssignment?.picker?.name ?? null,
       assignedByName: order.pickAssignment?.assignedBy?.name ?? null,

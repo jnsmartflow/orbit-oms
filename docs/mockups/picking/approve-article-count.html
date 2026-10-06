@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Article Count Mockup</title>
+<!-- docs/mockups/picking/approve-article-count.html — 2026-10-06 -->
+<style>
+  :root{
+    --brand:#7c3aed; --brand-50:#f5f3ff; --ink:#111827; --ink-2:#4b5563; --ink-3:#9ca3af;
+    --line:#e5e7eb; --bg:#f3f4f6; --ok:#16a34a; --ok-50:#f0fdf4; --warn:#d97706; --warn-50:#fffbeb;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:var(--ink)}
+  h1{font-size:18px;margin:24px 16px 4px} .sub{color:var(--ink-2);font-size:13px;margin:0 16px 20px}
+  .row{display:flex;flex-wrap:wrap;gap:24px;padding:0 16px 32px;align-items:flex-start}
+  .cap{font-size:12px;font-weight:600;color:var(--ink-2);margin:0 0 8px;text-transform:uppercase;letter-spacing:.04em}
+  .phone{width:360px;height:700px;background:#fff;border-radius:28px;border:8px solid #1f2937;position:relative;overflow:hidden;display:flex;flex-direction:column}
+  .hdr{background:var(--brand-50);padding:14px 16px 10px;border-bottom:1px solid var(--line)}
+  .hdr .obd{font:600 12px ui-monospace,monospace;color:var(--ink-2)}
+  .hdr .name{font-size:17px;font-weight:700;margin-top:2px}
+  .band{display:flex;gap:10px;align-items:center;padding:8px 16px;border-bottom:1px solid var(--line);font-size:13px}
+  .bay{color:#d97706;font-weight:800;font-size:18px}
+  .sum{padding:8px 16px;font-size:12px;color:var(--ink-2);border-bottom:1px solid var(--line)}
+  .lines{flex:1;overflow:hidden}
+  .ln{display:flex;align-items:center;gap:10px;padding:11px 16px;border-bottom:1px solid var(--line)}
+  .tick{width:22px;height:22px;border-radius:50%;background:var(--ok);color:#fff;display:grid;place-items:center;font-size:13px;flex:none}
+  .pk{width:52px;text-align:center;font:600 12px ui-monospace,monospace;border:1px solid var(--line);border-radius:6px;padding:3px 0;flex:none}
+  .sku{font:600 12px ui-monospace,monospace;color:var(--ink-2)} .nm{font-size:13px}
+  .qty{margin-left:auto;font-weight:700}
+  .cta{padding:12px 16px 18px;border-top:1px solid var(--line)}
+  .btn{width:100%;border:0;border-radius:12px;padding:14px;font-size:15px;font-weight:700;background:var(--brand);color:#fff}
+  .btn.off{background:#e5e7eb;color:var(--ink-3)}
+  .scrim{position:absolute;inset:0;background:rgba(17,24,39,.45);display:flex;align-items:center;justify-content:center;padding:20px}
+  .pop{background:#fff;border-radius:18px;width:100%;padding:20px}
+  .pop h3{margin:0;font-size:17px}
+  .pop p{margin:6px 0 16px;font-size:13px;color:var(--ink-2)}
+  .plan{background:var(--bg);border-radius:10px;padding:10px 12px;font-size:13px;margin-bottom:14px;display:flex;justify-content:space-between}
+  .inp{width:100%;font-size:34px;font-weight:700;text-align:center;border:2px solid var(--brand);border-radius:12px;padding:12px;letter-spacing:.04em}
+  .hint{font-size:12px;color:var(--ink-3);text-align:center;margin:8px 0 16px}
+  .acts{display:flex;gap:10px} .acts .btn{flex:1} .ghost{background:#fff;color:var(--ink);border:1px solid var(--line)}
+  .kb{position:absolute;left:0;right:0;bottom:0;background:#d1d5db;padding:8px;display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+  .kb div{background:#fff;border-radius:6px;text-align:center;padding:10px 0;font-size:18px}
+  /* Floor */
+  .desk{width:880px;background:#fff;border-radius:12px;border:1px solid var(--line);overflow:hidden}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-2);background:#f9fafb;padding:9px 10px;border-bottom:1px solid var(--line)}
+  td{padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+  .mono{font-family:ui-monospace,monospace}
+  .l2{display:block;font-size:11.5px;margin-top:3px}
+  .cnt{color:var(--ok);font-weight:700}
+  .cnt.diff{color:var(--warn)}
+  .muted{color:var(--ink-3)}
+  .pill{display:inline-block;border-radius:999px;padding:2px 9px;font-size:11.5px;font-weight:600}
+  .p-ok{background:var(--ok-50);color:var(--ok)} .p-pick{background:#eff6ff;color:#2563eb} .p-done{background:var(--warn-50);color:var(--warn)}
+  .note{max-width:880px;font-size:12.5px;color:var(--ink-2);margin:10px 0 0;line-height:1.5}
+</style>
+</head>
+<body>
+<h1>Article no. on Approve — mockup</h1>
+<p class="sub">Picking supervisor (Done → Needs check) and Floor bill table. Mockup only, not React.</p>
+
+<div class="row">
+  <!-- 1. Detail, all ticked -->
+  <div>
+    <p class="cap">1 · All lines ticked</p>
+    <div class="phone">
+      <div class="hdr"><div class="obd">OBD 8091234567 · 12:30</div><div class="name">Shree Rang Paints</div></div>
+      <div class="band"><span class="bay">7</span><span>│</span><span>ADAJAN</span></div>
+      <div class="sum">5 lines · 86 L · picked by Mahesh</div>
+      <div class="lines">
+        <div class="ln"><div class="tick">✓</div><div class="pk">20L</div><div><div class="sku">IN5961032</div><div class="nm">Weathershield Max Base 1</div></div><div class="qty">2</div></div>
+        <div class="ln"><div class="tick">✓</div><div class="pk">4L</div><div><div class="sku">IN5911947</div><div class="nm">Velvet Touch Pearl Glo</div></div><div class="qty">6</div></div>
+        <div class="ln"><div class="tick">✓</div><div class="pk">1L</div><div><div class="sku">5961032</div><div class="nm">Gloss Enamel White</div></div><div class="qty">12</div></div>
+        <div class="ln"><div class="tick">✓</div><div class="pk">500ML</div><div><div class="sku">5903311</div><div class="nm">Wood Primer</div></div><div class="qty">8</div></div>
+        <div class="ln"><div class="tick">✓</div><div class="pk">200ML</div><div><div class="sku">5911002</div><div class="nm">Universal Stainer Red</div></div><div class="qty">4</div></div>
+      </div>
+      <div class="cta"><button class="btn">Approve</button></div>
+    </div>
+  </div>
+
+  <!-- 2. Popup -->
+  <div>
+    <p class="cap">2 · Tap Approve → popup, number pad opens by itself</p>
+    <div class="phone">
+      <div class="hdr"><div class="obd">OBD 8091234567 · 12:30</div><div class="name">Shree Rang Paints</div></div>
+      <div class="band"><span class="bay">7</span><span>│</span><span>ADAJAN</span></div>
+      <div class="lines"></div>
+      <div class="scrim" style="align-items:flex-start;padding-top:70px">
+        <div class="pop">
+          <h3>Article no.</h3>
+          <p>Enter the article number written on the drum.</p>
+          <input class="inp" value="5" inputmode="numeric" autofocus aria-label="Article no.">
+          <div class="hint">Whole number, 1–999</div>
+          <div class="acts"><button class="btn ghost">Cancel</button><button class="btn">Save</button></div>
+        </div>
+      </div>
+      <div class="kb"><div>1</div><div>2</div><div>3</div><div>4</div><div>5</div><div>6</div><div>7</div><div>8</div><div>9</div><div>⌫</div><div>0</div><div>✓</div></div>
+    </div>
+  </div>
+
+  <!-- 2b. Empty state -->
+  <div>
+    <p class="cap">2b · Empty → Save disabled</p>
+    <div class="phone">
+      <div class="hdr"><div class="obd">OBD 8091234567 · 12:30</div><div class="name">Shree Rang Paints</div></div>
+      <div class="lines"></div>
+      <div class="scrim" style="align-items:flex-start;padding-top:70px">
+        <div class="pop">
+          <h3>Article no.</h3>
+          <p>Enter the article number written on the drum.</p>
+          <input class="inp" value="" placeholder="—" aria-label="Article count">
+          <div class="hint">No number pre-filled — type what you counted</div>
+          <div class="acts"><button class="btn ghost">Cancel</button><button class="btn off">Save</button></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <!-- 4. Edit via the ⋯ menu -->
+  <div>
+    <p class="cap">4 · Wrong number? Checked bill → ⋯ → Edit article no.</p>
+    <div class="phone">
+      <div class="hdr" style="display:flex;justify-content:space-between;align-items:flex-start">
+        <div><div class="obd">OBD 8091234567 · 12:30</div><div class="name">Shree Rang Paints</div></div>
+        <div style="font-size:22px;line-height:1;padding:2px 6px;border-radius:8px;background:#fff;border:1px solid var(--line)">⋯</div>
+      </div>
+      <div class="band"><span class="bay">7</span><span>│</span><span>ADAJAN</span></div>
+      <div class="sum">5 lines · 86 L · Art. no. <b style="color:var(--ink)">5</b> · ✓ Checked by Rajesh 12:05</div>
+      <div class="lines">
+        <div class="ln"><div class="tick">✓</div><div class="pk">20L</div><div><div class="sku">IN5961032</div><div class="nm">Weathershield Max Base 1</div></div><div class="qty">2</div></div>
+        <div class="ln"><div class="tick">✓</div><div class="pk">4L</div><div><div class="sku">IN5911947</div><div class="nm">Velvet Touch Pearl Glo</div></div><div class="qty">6</div></div>
+        <div class="ln"><div class="tick">✓</div><div class="pk">1L</div><div><div class="sku">5961032</div><div class="nm">Gloss Enamel White</div></div><div class="qty">12</div></div>
+      </div>
+      <div style="position:absolute;top:58px;right:12px;width:210px;background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.14);overflow:hidden;font-size:14px">
+        <div style="padding:12px 14px;border-bottom:1px solid var(--line);font-weight:600">✎ Edit article no.</div>
+        <div style="padding:12px 14px;color:var(--ink-3)">Share findings</div>
+      </div>
+      <div style="padding:10px 16px 18px;font-size:12px;color:var(--ink-3);text-align:center">Tap → same popup, pre-filled with 5 → Save.</div>
+    </div>
+  </div>
+</div>
+
+<div class="row" style="flex-direction:column">
+  <div>
+    <p class="cap">3 · Floor bill table — two columns: Article tag + Article no.</p>
+    <div class="desk">
+      <table>
+        <thead><tr><th style="width:3%"></th><th>OBD</th><th>Invoice</th><th>Ship to</th><th>Route</th><th>Due</th><th>Vol</th><th>Article tag</th><th>Article no.</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr><td>☐</td><td class="mono">8091234567</td><td class="mono">9200118</td><td>Shree Rang Paints</td><td>Adajan</td><td>Today</td><td>86 L</td>
+            <td class="mono">2 D · 3 C</td><td class="cnt" style="font-size:15px">5</td><td><span class="pill p-ok">Checked</span></td></tr>
+          <tr><td>☐</td><td class="mono">8091234588</td><td class="muted">—</td><td>Om Hardware</td><td>Adajan</td><td>Today</td><td>140 L</td>
+            <td class="mono">6 D · 2 C</td><td class="cnt" style="font-size:15px">8</td><td><span class="pill p-ok">Checked</span></td></tr>
+          <tr><td>☐</td><td class="mono">8091234602</td><td class="muted">—</td><td>Jay Ambe Traders</td><td>Varachha</td><td>Today</td><td>32 L</td>
+            <td class="mono">4 C</td><td></td><td><span class="pill p-done">Picked</span></td></tr>
+          <tr><td>☐</td><td class="mono">8091234611</td><td class="muted">—</td><td>Krishna Colours</td><td>Katargam</td><td>Today</td><td>210 L</td>
+            <td class="mono">9 D · 1 C</td><td></td><td><span class="pill p-pick">Picking</span></td></tr>
+          <tr><td>☐</td><td class="mono">8091230015</td><td class="mono">9200097</td><td>Old approved bill</td><td>Adajan</td><td>Yesterday</td><td>40 L</td>
+            <td class="mono">3 C</td><td class="muted">—</td><td><span class="pill p-ok">Checked</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note">Article tag = from import (unchanged, e.g. "2 D · 3 C"). Article no. = typed by the supervisor at Approve. Shows only on Checked / Dispatched rows; blank while picking. Bills approved before this feature (and Direct-Loaded bills) show "—", never 0. Adds one column, so the table widths recut on 2026-09-10 must be re-balanced.</p>
+  </div>
+</div>
+</body>
+</html>

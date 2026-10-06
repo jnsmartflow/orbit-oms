@@ -179,6 +179,13 @@ export interface PickingQueueRow {
   // PICK_CHECKED is written.
   checkedAt: Date | string | null;
   checkedByName: string | null;
+  // pick_assignments.articleCount (2026-10-06, Schema v27.58) — the article no.
+  // the supervisor wrote on the drum, entered on Approve, editable from the
+  // checked bill's ⋯. NULL stays null, never 0: a bill approved before the
+  // feature, a Direct Loaded bill (no assignment row), or not yet approved.
+  // NOT the import's articleTag — a separate fact. Set by BOTH builders
+  // (lib/picking/queue.ts and Floor's lib/floor/queries.ts).
+  articleCount: number | null;
   // orders.directLoadedAt / directLoadedBy.name (v27.52) — set by POST
   // /api/picking/direct-load, cleared by its undo. A direct-loaded bill sits at
   // PICK_CHECKED (isChecked true) with NO pick_assignments row, so checkedAt,

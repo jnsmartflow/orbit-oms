@@ -1769,6 +1769,14 @@ model pick_assignments {
   checkedBy    users?    @relation("PickAssignmentCheckedBy", fields: [checkedById], references: [id])
   notes        String?
   clearedAt    DateTime? @db.Timestamptz
+  // Article no. (2026-10-06, Schema v27.58) — the number the supervisor wrote on
+  // the drum, entered on Approve (POST /api/picking/approve) and edited from the
+  // checked bill's ⋯ (POST /api/picking/article-count). NOT the import's
+  // articleTag / totalArticle (what SAP says should go out) — a separate fact.
+  // camelCase, NO @map, like clearedAt. Live CHECK chk_pick_assignments_article_count:
+  // NULL or 1–999 — invisible here, same as chk_pick_assignments_status.
+  // NULL = approved before 2026-10-06, or never approved. Never 0.
+  articleCount Int?
 }
 
 /// Picking findings — what the floor ACTUALLY found on a checked line (short

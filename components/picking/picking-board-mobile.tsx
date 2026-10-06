@@ -26,6 +26,8 @@ import {
   // Direct Loading (2026-10-03) — the truck on the sheet card, the detail
   // button and the Done footer. Always on the `direct` ink token, never brand.
   Truck,
+  // "Edit article no." in a checked bill's ⋯ menu (2026-10-06).
+  Pencil,
 } from "lucide-react";
 import { doneSortAt } from "@/lib/picking/direct-load";
 import { toast } from "sonner";
@@ -55,6 +57,7 @@ import { PickDeletedBand } from "@/components/picking/pick-deleted-band";
 import { usePickingBoard } from "./picking-mobile-shell";
 import { useBillPager } from "./use-bill-pager";
 import { CancelSheet } from "./cancel-sheet";
+import { ArticleCountPopup, type ArticleCountMode } from "./article-count-popup";
 // Stage vocabulary — imported, never hard-coded. pickingRowStage() is the ONE
 // owner of the booleans→stage mapping; PICKING_CANCELLABLE_STAGES is exported
 // by the route that enforces it, so the ⋯ can never offer what the API refuses.
@@ -344,6 +347,14 @@ function formatCheckedTime(checkedAt: Date | string | null): string | null {
   const d = new Date(checkedAt);
   if (Number.isNaN(d.getTime())) return null;
   return d.toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "numeric", minute: "2-digit", hour12: true });
+}
+
+// "Edit article no." (2026-10-06) — a checked bill that went through Approve,
+// i.e. HAS a pick_assignments row. pickerId is that row's NOT NULL FK, so it
+// is null exactly when there is no row; a Direct Loaded bill has none and
+// never gets an article no. Mirrors the 409 in /api/picking/article-count.
+function canEditArticleCount(row: PickingQueueRow): boolean {
+  return row.isChecked && row.directLoadedAt == null && row.pickerId != null;
 }
 
 // Order date-time for the caption line (Assign / Picking) — "19 Jul, 4:05 PM"
@@ -1671,6 +1682,15 @@ export function PickingBoardMobile(): React.JSX.Element {
   const [hardenerCheckedIds, setHardenerCheckedIds] = useState<Set<number>>(new Set());
   const [approving, setApproving] = useState(false);
 
+  // ── Article no. (2026-10-06, Schema v27.58) ──────────────────────────────
+  // The popup Approve now opens ("approve", empty) and the checked bill's ⋯ →
+  // "Edit article no." opens ("edit", prefilled). A row, not a boolean, so the
+  // popup always posts for the bill it was opened on. Another nested overlay
+  // over the detail screen → it joins navStateRef as `countOpen` below.
+  const [countTarget, setCountTarget] = useState<{ row: PickingQueueRow; mode: ArticleCountMode } | null>(null);
+  const [countError, setCountError] = useState<string | null>(null);
+  const [editingCount, setEditingCount] = useState(false);
+
   // ── Shortfall recording (2026-08-08) ─────────────────────────────────────
   // The SAME triangle / banner / popup the picker uses — the mockup is explicit
   // that both roles get one screen (docs/mockups/picking/picking-shortfall-
@@ -1806,6 +1826,7 @@ export function PickingBoardMobile(): React.JSX.Element {
     pickerSheetOpen: false,
     findingOpen: false,
     cancelOpen: false,
+    countOpen: false,
   });
   // The popstate listener registers ONCE, so it must not close over a
   // `recorder` object rebuilt on every render.
@@ -2415,6 +2436,8 @@ export function PickingBoardMobile(): React.JSX.Element {
   // through this exact same logic, never a direct setDetailOpen(false).
   function closeDetail(): void {
     setDetailOpen(false);
+    // Belt and braces — the popup only floats over the detail screen.
+    setCountTarget(null);
   }
 
   // Live-resolved list for the open detail's prev/next paging — re-picked
@@ -2477,8 +2500,9 @@ export function PickingBoardMobile(): React.JSX.Element {
       pickerSheetOpen,
       findingOpen: recorder.target !== null,
       cancelOpen: cancelTarget !== null,
+      countOpen: countTarget !== null,
     };
-  }, [detailOpen, pickerSheetOpen, recorder.target, cancelTarget]);
+  }, [detailOpen, pickerSheetOpen, recorder.target, cancelTarget, countTarget]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -2494,6 +2518,18 @@ export function PickingBoardMobile(): React.JSX.Element {
       // The record popup is the topmost layer when it is up — same
       // close-just-this-and-re-push treatment as the picker sheet below it, so
       // the single "detail" entry survives for the NEXT back-press.
+      // Article no. popup (2026-10-06) — same close-just-this-and-re-push shape
+      // as the record popup below, so Android back closes the POPUP and the
+      // single "detail" entry survives for the next back to close the bill.
+      // ⚠ Approve's success path clears countOpen SYNCHRONOUSLY before its own
+      // history.back() (closeCountPopupNow), or this branch would eat that back
+      // and leave the approved bill open.
+      if (navStateRef.current.countOpen && navStateRef.current.detailOpen) {
+        setCountTarget(null);
+        setCountError(null);
+        pushScreen();
+        return;
+      }
       if (navStateRef.current.findingOpen && navStateRef.current.detailOpen) {
         recorderRef.current.close();
         pushScreen();
@@ -3037,38 +3073,90 @@ export function PickingBoardMobile(): React.JSX.Element {
 
   // Approve — step 6. Single-order payload, refetch-after-action (never
   // patch rows locally), same 409 handling as handleUndo/handleAssign above.
+  //
+  // Article no. (2026-10-06): the CTA opens ArticleCountPopup; its Save calls
+  // this with the number. Any failure KEEPS THE POPUP OPEN with the message and
+  // never touches history — the popup pushed no entry, so there is none to pop.
   const handleApprove = useCallback(
-    async (row: PickingQueueRow) => {
+    async (row: PickingQueueRow, articleCount: number) => {
       if (approving) return;
       setApproving(true);
+      setCountError(null);
       try {
         const res = await fetch("/api/picking/approve", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ orderId: row.orderId }),
+          body: JSON.stringify({ orderId: row.orderId, articleCount }),
         });
         const json = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
         if (!res.ok) {
           if (res.status === 409) {
-            toast("Already changed — refreshed.");
+            setCountError("Already changed — refreshed.");
             await refetchQueue({ ids: [row.orderId] });
           } else {
-            toast.error(json.error ?? `Request failed (${res.status})`);
+            setCountError(json.error ?? `Request failed (${res.status})`);
           }
           return;
         }
         toast.success(`${row.dealerName} approved`);
+        // 🔴 ORDER MATTERS. Close the popup in navStateRef NOW, before the
+        // back — the ref is otherwise only synced in an effect, and the
+        // countOpen popstate branch would close the popup, re-push, and leave
+        // the approved bill open on screen.
+        closeCountPopupNow();
         // Approve only ever renders inside the detail screen (no bulk
         // equivalent) — unconditional history.back(), unlike handleAssign.
         window.history.back();
         await refetchQueue({ ids: [row.orderId] });
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : "Approve failed");
+        setCountError(err instanceof Error ? err.message : "Approve failed");
       } finally {
         setApproving(false);
       }
     },
     [approving, refetchQueue],
+  );
+
+  // Close the article no. popup AND mark it closed in navStateRef in the same
+  // tick. Used on every success path; Cancel and Android back use the plain
+  // setter / the popstate branch.
+  function closeCountPopupNow(): void {
+    navStateRef.current = { ...navStateRef.current, countOpen: false };
+    setCountTarget(null);
+    setCountError(null);
+  }
+
+  // Edit article no. — a checked bill's ⋯. POST /api/picking/article-count;
+  // the bill stays open (no history call at all: the popup pushed nothing).
+  // refetchQueue({ ids }) re-reads the row and resyncs the marker, the same
+  // own-write path every other action here uses.
+  const handleEditArticleCount = useCallback(
+    async (row: PickingQueueRow, articleCount: number) => {
+      if (editingCount) return;
+      setEditingCount(true);
+      setCountError(null);
+      try {
+        const res = await fetch("/api/picking/article-count", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ orderId: row.orderId, articleCount }),
+        });
+        const json = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+        if (!res.ok) {
+          setCountError(json.error ?? `Request failed (${res.status})`);
+          if (res.status === 409) await refetchQueue({ ids: [row.orderId] });
+          return;
+        }
+        closeCountPopupNow();
+        toast.success(`Article no. ${articleCount} saved`);
+        await refetchQueue({ ids: [row.orderId] });
+      } catch (err) {
+        setCountError(err instanceof Error ? err.message : "Save failed");
+      } finally {
+        setEditingCount(false);
+      }
+    },
+    [editingCount, refetchQueue],
   );
 
   // The Assign sheet's Direct Loading card — one definition, rendered as the
@@ -4435,9 +4523,18 @@ export function PickingBoardMobile(): React.JSX.Element {
                 The stage comes from pickingRowStage() — the ONE owner of the
                 booleans→stage mapping — tested against
                 PICKING_CANCELLABLE_STAGES, the SAME list the route enforces. No
-                stage name is written here. */}
+                stage name is written here.
+
+                ⚠ 2026-10-06 — A CHECKED BILL NOW GETS A ⋯ TOO, with ONE item:
+                "Edit article no." It still gets no Cancel bill (cancel stays
+                Floor's for pick_checked). Shown only when the bill has an
+                assignment row (pickerId set) and was not Direct Loaded — the
+                same test POST /api/picking/article-count enforces; a Direct
+                Loaded bill has no article no. and still gets no ⋯ at all. The
+                two items never appear together: their stages are disjoint. */}
             {detailRow !== null &&
-              PICKING_CANCELLABLE_STAGES.includes(pickingRowStage(detailRow)) && (
+              (PICKING_CANCELLABLE_STAGES.includes(pickingRowStage(detailRow)) ||
+                canEditArticleCount(detailRow)) && (
                 <div className="relative shrink-0">
                   <button
                     type="button"
@@ -4460,19 +4557,35 @@ export function PickingBoardMobile(): React.JSX.Element {
                         aria-hidden="true"
                       />
                       <div className="absolute right-0 top-[46px] z-[61] w-[176px] overflow-hidden rounded-[12px] border border-gray-200 bg-white shadow-[0_10px_30px_rgba(16,24,40,0.18)]">
-                        {/* ONE item. Undo / Assign / Approve stay on the bottom
-                            CTA row where they already live. */}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setCancelMenuOpen(false);
-                            setCancelTarget(detailRow);
-                          }}
-                          className="flex w-full items-center gap-2.5 px-3.5 py-3 text-left text-[14px] font-semibold text-red-600 active:bg-red-50"
-                        >
-                          <XCircle size={16} className="shrink-0" />
-                          Cancel bill
-                        </button>
+                        {/* ONE item per stage. Undo / Assign / Approve stay on
+                            the bottom CTA row where they already live. */}
+                        {canEditArticleCount(detailRow) && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setCancelMenuOpen(false);
+                              setCountError(null);
+                              setCountTarget({ row: detailRow, mode: "edit" });
+                            }}
+                            className="flex w-full items-center gap-2.5 px-3.5 py-3 text-left text-[14px] font-semibold text-gray-800 active:bg-gray-50"
+                          >
+                            <Pencil size={16} className="shrink-0" />
+                            Edit article no.
+                          </button>
+                        )}
+                        {PICKING_CANCELLABLE_STAGES.includes(pickingRowStage(detailRow)) && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setCancelMenuOpen(false);
+                              setCancelTarget(detailRow);
+                            }}
+                            className="flex w-full items-center gap-2.5 px-3.5 py-3 text-left text-[14px] font-semibold text-red-600 active:bg-red-50"
+                          >
+                            <XCircle size={16} className="shrink-0" />
+                            Cancel bill
+                          </button>
+                        )}
                       </div>
                     </>
                   )}
@@ -4598,6 +4711,16 @@ export function PickingBoardMobile(): React.JSX.Element {
                           {" L"}
                         </span>
                       </span>
+                    </>
+                  )}
+                  {/* Article no. (2026-10-06) — what the supervisor wrote on
+                      the drum, read-only here; edit is the ⋯ menu. Checked
+                      bills only, and nothing at all when NULL (approved before
+                      the feature) — never "0", never a dash. */}
+                  {detailRow?.isChecked && detailRow.articleCount != null && (
+                    <>
+                      <span style={{ color: "#c3c9d0" }}>{" · "}</span>
+                      <span className="tabular-nums">Art. no. {detailRow.articleCount}</span>
                     </>
                   )}
                 </div>
@@ -5103,7 +5226,11 @@ export function PickingBoardMobile(): React.JSX.Element {
           >
             <button
               type="button"
-              onClick={() => void handleApprove(detailRow)}
+              onClick={() => {
+                // Opens the article no. popup — Save there does the approve.
+                setCountError(null);
+                setCountTarget({ row: detailRow, mode: "approve" });
+              }}
               disabled={!allLinesResolved || approving}
               className={
                 "w-full h-12 rounded-full text-[14.5px] font-bold " +
@@ -5124,6 +5251,27 @@ export function PickingBoardMobile(): React.JSX.Element {
         {/* Record popup — the SHARED component, the same one the picker board
             renders. It carries its own NO_BILL_SWIPE opt-out. */}
         <FindingPopup {...recorder.popupProps} />
+
+        {/* Article no. popup (2026-10-06). ALWAYS MOUNTED — the §11.4 pattern;
+            open/closed is `countTarget`. Inside the detail screen, outside the
+            pager's content wrapper, like the record popup and cancel sheet. */}
+        <ArticleCountPopup
+          open={countTarget !== null}
+          mode={countTarget?.mode ?? "approve"}
+          current={countTarget?.row.articleCount ?? null}
+          saving={approving || editingCount}
+          error={countError}
+          onCancel={() => {
+            if (approving || editingCount) return;
+            setCountTarget(null);
+            setCountError(null);
+          }}
+          onSave={(n) => {
+            if (countTarget === null) return;
+            if (countTarget.mode === "approve") void handleApprove(countTarget.row, n);
+            else void handleEditArticleCount(countTarget.row, n);
+          }}
+        />
 
         {/* Cancel sheet (3b). Mounted INSIDE the detail screen but OUTSIDE
             pager.contentRef — same placement rule as the recording banner:

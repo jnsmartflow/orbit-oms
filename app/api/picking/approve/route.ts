@@ -3,12 +3,15 @@ import { auth } from "@/lib/auth";
 import { checkAnyPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { PICK_DONE, PICK_CHECKED } from "@/lib/workflow-stages";
+import { ARTICLE_COUNT_ERROR, parseArticleCount } from "@/lib/picking/article-count";
 
 export const dynamic = "force-dynamic";
 
 /**
  * POST /api/picking/approve — supervisor approves a checked bill. Single-order,
- * same shape as app/api/picking/done/route.ts. Body: { orderId } only — unlike
+ * same shape as app/api/picking/done/route.ts. Body: { orderId, articleCount } —
+ * articleCount (2026-10-06) is the article no. the supervisor wrote on the
+ * drum, REQUIRED, whole number 1–999 (lib/picking/article-count.ts). Unlike
  * done/route.ts there is no pickerId to verify ownership against; checkedById
  * is always the real logged-in supervisor (session.user.id), never trusted
  * from the request body. See docs/prompts/drafts/code-discovery-2026-07-17-picking-stage2.md.
@@ -34,11 +37,18 @@ export async function POST(req: Request): Promise<NextResponse> {
     return NextResponse.json({ error: "Invalid session user id" }, { status: 500 });
   }
 
-  const body = (await req.json().catch(() => ({}))) as { orderId?: number };
+  const body = (await req.json().catch(() => ({}))) as { orderId?: number; articleCount?: unknown };
 
   const orderId = body.orderId;
   if (typeof orderId !== "number" || !Number.isInteger(orderId)) {
     return NextResponse.json({ error: "orderId is required" }, { status: 400 });
+  }
+  // Validated BEFORE any write. The route is the authority — a phone on an old
+  // bundle posts { orderId } only and gets this 400 until it reloads. The DB
+  // CHECK chk_pick_assignments_article_count backs the same 1–999 range.
+  const articleCount = parseArticleCount(body.articleCount);
+  if (articleCount === null) {
+    return NextResponse.json({ error: ARTICLE_COUNT_ERROR }, { status: 400 });
   }
 
   const order = await prisma.orders.findFirst({
@@ -65,7 +75,9 @@ export async function POST(req: Request): Promise<NextResponse> {
   // record of who/when checked it — worse, and harder to notice.
   await prisma.pick_assignments.update({
     where: { orderId },
-    data: { checkedAt: new Date(), checkedById },
+    // articleCount rides THIS write — no new write, and still exactly one
+    // orders.update below (PICKING §10: a second one fires a false change).
+    data: { checkedAt: new Date(), checkedById, articleCount },
   });
 
   // SECOND write — advance the stage.
@@ -77,7 +89,7 @@ export async function POST(req: Request): Promise<NextResponse> {
   } catch (err) {
     // Best-effort rollback of the first write — never prisma.$transaction (CORE §3).
     await prisma.pick_assignments
-      .update({ where: { orderId }, data: { checkedAt: null, checkedById: null } })
+      .update({ where: { orderId }, data: { checkedAt: null, checkedById: null, articleCount: null } })
       .catch(() => {});
     return NextResponse.json(
       { error: "Failed to update order stage. The check was rolled back." },

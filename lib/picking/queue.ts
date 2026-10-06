@@ -627,6 +627,8 @@ export async function getPickingQueue(
           assignedAt: true,
           pickedAt: true,
           checkedAt: true,
+          // Article no. (2026-10-06) — the supervisor's drum number.
+          articleCount: true,
         },
       },
     },
@@ -959,6 +961,8 @@ export async function getPickingQueue(
       assignedAt: order.pickAssignment?.assignedAt ?? null,
       pickedAt: order.pickAssignment?.pickedAt ?? null,
       checkedAt: order.pickAssignment?.checkedAt ?? null,
+      // NULL stays null, never 0 (no row, or approved before 2026-10-06).
+      articleCount: order.pickAssignment?.articleCount ?? null,
       // The three actor names, resolved off the batched user Map. Each guards
       // its own FK exactly as the old optional-chained relation did: no
       // pick_assignments row → null; a null checkedById → null.
