@@ -18,6 +18,7 @@
 import { Building2 } from "lucide-react";
 import { ColourWorkBadge } from "@/components/picking/card-atoms";
 import { HandBadge } from "@/components/shared/hand-badge";
+import { ChallanBadge } from "@/components/shared/challan-badge";
 import { shipMarkers, SEARCH_HIT_ROW_CLS } from "./floor-table";
 import { InvoiceLines, ObdDateLine } from "./bill-ref-cells";
 import { formatLitres, formatWeightKg } from "./status-pill";
@@ -111,6 +112,12 @@ function Cell({ col, row, now }: { col: HoldColumn; row: FloorHoldRow; now: Date
       const { isSite, isRedirect } = shipMarkers(row);
       return (
         <td className={TD}>
+          {/* CHALLAN (2026-10-07) — before the dealer name, as on the board (M2). */}
+          {row.isChallanOrder && (
+            <span className="mr-1.5 inline-block align-[-1px]">
+              <ChallanBadge />
+            </span>
+          )}
           <span className="text-[11.5px] font-medium text-[#111827]">{row.dealerName}</span>
           {row.isKeyCustomer && <span className="ml-1.5 text-[#f59e0b]">★</span>}
           {row.priorityLevel === 1 && <span className="ml-1 text-[#ef4444]">⚡</span>}

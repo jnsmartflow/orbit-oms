@@ -903,6 +903,8 @@ export async function getPickingQueue(
       dealerInMaster: effectiveDealer != null,
       isShipToOverride: order.shipToOverrideCustomerId !== null,
       isHand: order.handAt !== null,
+      // CHALLAN pill (2026-10-07) — a scalar the `include` already brings.
+      isChallanOrder: order.isChallanOrder,
       windowId: order.dispatchWindow?.id ?? null,
       windowTime: order.dispatchWindow?.windowTime ?? null,
       windowSortOrder: order.dispatchWindow?.sortOrder ?? null,

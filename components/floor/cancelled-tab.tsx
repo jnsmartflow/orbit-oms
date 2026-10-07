@@ -29,6 +29,7 @@ import { FloorSkeleton } from "./floor-skeleton";
 // TINT / BASE — one owner for the word (components/picking/card-atoms.tsx).
 import { ColourWorkBadge } from "@/components/picking/card-atoms";
 import { HandBadge } from "@/components/shared/hand-badge";
+import { ChallanBadge } from "@/components/shared/challan-badge";
 import { shipMarkers, SEARCH_HIT_ROW_CLS } from "./floor-table";
 import { formatLitres, formatWeightKg } from "./status-pill";
 import { FloorActionBar, BAR_PRIMARY, type BarFigure } from "./floor-action-bar";
@@ -274,6 +275,12 @@ export function CancelledTab({
                       )}
                     </td>
                     <td className={TD}>
+                      {/* CHALLAN (2026-10-07) — before the dealer name, as on the board (M2). */}
+                      {row.isChallanOrder && (
+                        <span className="mr-1.5 inline-block align-[-1px]">
+                          <ChallanBadge />
+                        </span>
+                      )}
                       <span className="text-[11.5px] font-medium text-[#111827]">{row.dealerName}</span>
                       {row.isKeyCustomer && <span className="ml-1.5 text-[#f59e0b]">★</span>}
                       {isSite && <Building2 size={12} className="ml-1 inline-block align-[-1px] text-[#475569]" />}

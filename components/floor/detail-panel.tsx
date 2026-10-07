@@ -24,6 +24,7 @@ import { Building2, Truck, X } from "lucide-react";
 // TINT / BASE -- one owner for the word (components/picking/card-atoms.tsx).
 import { ColourWorkBadge } from "@/components/picking/card-atoms";
 import { HandBadge } from "@/components/shared/hand-badge";
+import { ChallanBadge } from "@/components/shared/challan-badge";
 import type { DispatchWindow } from "@/components/floor/dispatch-slot-picker";
 import { SlotPickerButton } from "@/components/floor/slot-picker-button";
 import { ShipToEditor } from "@/components/floor/ship-to-editor";
@@ -611,6 +612,9 @@ function PanelBody({
             added, leading the row. */}
         <div className="my-3 flex flex-wrap items-center gap-1.5">
           {hasDuplicateSo && <DuplicateSoTag variant="soft" />}
+          {/* CHALLAN (2026-10-07) — off the detail payload (lib/floor/order-detail.ts),
+              so it shows whichever tab or history row the panel was opened from. */}
+          {d.isChallanOrder && <ChallanBadge />}
           <span className={`inline-flex items-center rounded-[4px] px-2.5 py-1 text-[10.5px] font-semibold ${status.cls}`}>
             {status.truck && <Truck size={11} strokeWidth={2.4} className="mr-1 shrink-0" />}
             {status.label}

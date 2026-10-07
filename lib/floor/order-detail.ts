@@ -207,6 +207,8 @@ export async function getOrderDetail(orderId: number): Promise<FloorDetail | nul
     isKeyCustomer: dealer?.isKeyCustomer ?? false,
     priorityLevel: order.priorityLevel,
     isTint: order.orderType === "tint",
+    // CHALLAN pill (2026-10-07) — a scalar the `include` already brings.
+    isChallanOrder: order.isChallanOrder,
     // TINT / BASE / nothing — through the SHARED loader (lib/picking/
     // colour-work-query.ts), not from `tintAssignment` above. That read is
     // `findFirst` on createdAt desc, so a bill whose LATEST row is a skip or a

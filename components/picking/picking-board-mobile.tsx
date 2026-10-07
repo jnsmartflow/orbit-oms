@@ -97,6 +97,7 @@ import { BillBand } from "./bill-band";
 // The detail header's symbol run — the five flags that used to be a chip row.
 import { BillSymbols, hasBillSymbols } from "./bill-symbols";
 import { GiftBadge } from "@/components/floor/gift-badge";
+import { ChallanBadge } from "@/components/shared/challan-badge";
 import { HandBadge } from "@/components/shared/hand-badge";
 import { loadLitres } from "@/lib/orders/gift";
 import type { PickingDetailLine, PickingLineFinding, PickingQueueRow } from "@/lib/picking/types";
@@ -808,6 +809,10 @@ function PickingCard({
                   the same ordering `captionSmu` below relies on. Renders null
                   when the bill says nothing, so no wrapper and no gap is spent
                   on the ~93% of cards outside the two project divisions. */}
+              {/* CHALLAN — an ORB order (2026-10-07, M1): first in the run, straight
+                  after the number it explains. All five variants. No "Billed:" line
+                  on Picking (M8). */}
+              {row.isChallanOrder && <ChallanBadge />}
               <ColourWorkBadge work={row.colourWork} onRed={dup} />
               {/* GIFT — SAP material type GIFTS, beside TINT/BASE, all five
                   variants for the same reason. Floor's own pill, imported. */}

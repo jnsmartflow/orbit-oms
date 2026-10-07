@@ -51,6 +51,7 @@ import { InvoiceLines, ObdDateLine, fmtDateTime } from "./bill-ref-cells";
 import { ColourWorkBadge } from "@/components/picking/card-atoms";
 import { GiftBadge } from "./gift-badge";
 import { HandBadge } from "@/components/shared/hand-badge";
+import { ChallanBadge } from "@/components/shared/challan-badge";
 import {
   StatusPill,
   rowStatus,
@@ -298,6 +299,9 @@ const BLOCK_TAG_HAND = "bg-data-brown/10 text-data-brown";
 // DUP_SO_SOFT_BADGE_CLASS's colours (components/shared/duplicate-so-tag.tsx)
 // without its border — same reason.
 const BLOCK_TAG_SAME = "bg-[#fef2f2] text-[#b91c1c]";
+// ChallanBadge's own colours (components/shared/challan-badge.tsx — CLAUDE_UI §3
+// "Split" purple) without its border, the same treatment HAND gets above.
+const BLOCK_TAG_CHALLAN = "bg-purple-50 text-purple-700";
 
 /**
  * The block row's per-bill tags, in the owner's order: URGENT · TINT/BASE ·
@@ -307,6 +311,11 @@ const BLOCK_TAG_SAME = "bg-[#fef2f2] text-[#b91c1c]";
  */
 function blockTags(row: FloorBoardRow, dup: boolean): ReactNode[] {
   const tags: Array<{ key: string; cls: string; title: string; label: string }> = [];
+  // CHALLAN (2026-10-07, Challan orders M1) — FIRST: it says why the number in
+  // front of it is an ORB number. This table's square shape; the shared
+  // ChallanBadge pill everywhere else.
+  if (row.isChallanOrder)
+    tags.push({ key: "challan", cls: BLOCK_TAG_CHALLAN, title: "Challan order — goods sent without a SAP bill yet", label: "Challan" });
   if (row.priorityLevel === 1) tags.push({ key: "urgent", cls: BLOCK_TAG_URGENT, title: "Urgent", label: "Urgent" });
   if (row.colourWork !== null)
     tags.push({
@@ -875,6 +884,19 @@ export function FloorTable({
     const selKey = deskKeyOf(row);
     const { isSite, isRedirect } = shipInfo(row);
     const billedTo = shipToBlock && billedToFor ? billedToFor(row) : null;
+    // THE TRIP TAG (2026-09-09), built once: beside the number on every row,
+    // or on the date line of an ORB row (2026-10-07, M2) — see the OBD cell.
+    const tripTag = row.tripNumber ? (
+      <span
+        // Just the number (slice 6). This appended the RAW stored status —
+        // "· draft", "· released" — the one place the column's own word
+        // reached the floor. Those words are off the screen now.
+        title={`On trip ${row.tripNumber}`}
+        className={`${row.isChallanOrder ? "" : "ml-1.5 "}rounded-[3px] bg-gray-900 px-[5px] py-px align-[1px] font-mono text-[9.5px] font-semibold text-white`}
+      >
+        {shortTripNumber(row.tripNumber)}
+      </span>
+    ) : null;
     const obd = asStr(row.obdDateTime);
     const target = row.dispatchTargetDate;
     // ── Duplicate-SO, SOFT variant (2026-08-25) ─────────────────────────
@@ -1268,18 +1290,12 @@ export function FloorTable({
 
               Renders NOTHING when the bill is on no trip, which is most of
               the board: no empty space, no dash, no placeholder. */}
-          {/* Never on a RE-DEL row: its tripNumber is the bill's FIRST trip. */}
-          {row.tripNumber && !hideTripTag && !rd && (
-            <span
-              // Just the number (slice 6). This appended the RAW stored status —
-              // "· draft", "· released" — the one place the column's own word
-              // reached the floor. Those words are off the screen now.
-              title={`On trip ${row.tripNumber}`}
-              className="ml-1.5 rounded-[3px] bg-gray-900 px-[5px] py-px align-[1px] font-mono text-[9.5px] font-semibold text-white"
-            >
-              {shortTripNumber(row.tripNumber)}
-            </span>
-          )}
+          {/* Never on a RE-DEL row: its tripNumber is the bill's FIRST trip.
+              ⚠ NOR BESIDE AN ORB NUMBER (2026-10-07, Challan orders M2): the
+              14-character ORB-2026-NNNNN fills the OBD track, so on an ORB row
+              the tag rides the date line below instead (ObdDateLine `trailing`).
+              The width arrays are untouched. */}
+          {row.tripNumber && !hideTripTag && !rd && !row.isChallanOrder && tripTag}
           {/* ⚠ THE `no slot` CHIP AND THE AGE CHIP LEFT THIS CELL on
               2026-09-10 (b). Both are statements about WHEN the bill is
               due, and there is a Due column now — so they moved into it,
@@ -1288,7 +1304,11 @@ export function FloorTable({
 
               What stays: the OBD number, the duplicate-SO tag and the trip
               tag. Those are identifiers, which is what this cell is for. */}
-          <ObdDateLine iso={obd} isEmailTime={row.isEmailTime} />
+          <ObdDateLine
+            iso={obd}
+            isEmailTime={row.isEmailTime}
+            trailing={row.tripNumber && !hideTripTag && !rd && row.isChallanOrder ? tripTag : undefined}
+          />
           {/* Per-row "billed to" — only when the block's bills disagree (the
               header says it once otherwise). See `billedToFor`. */}
           {shipToBlock && billedTo !== null && (
@@ -1354,6 +1374,13 @@ export function FloorTable({
           ))}
         {!shipToBlock && (
         <td className={TD}>
+          {/* CHALLAN (2026-10-07, Challan orders M2) — BEFORE the dealer name, in
+              the cell where TINT / BASE / GIFT / HAND already sit; no new column. */}
+          {row.isChallanOrder && (
+            <span className="mr-1.5 inline-block align-[-1px]">
+              <ChallanBadge />
+            </span>
+          )}
           <span className="text-[11.5px] font-medium text-[#111827]">
             {row.dealerName}
           </span>

@@ -49,6 +49,13 @@ export interface PickingQueueRow {
    * counter". A scalar the queue's `include` already brings.
    */
   isHand: boolean;
+  /**
+   * CHALLAN — an ORB order (orders.isChallanOrder, Challan orders slice 4,
+   * 2026-10-07): goods sent on an Orbit challan with no SAP bill yet. Drives the
+   * CHALLAN pill (components/shared/challan-badge.tsx). A scalar the queue's
+   * `include` already brings — no select change.
+   */
+  isChallanOrder: boolean;
   windowId: number | null;
   windowTime: string | null;
   windowSortOrder: number | null;

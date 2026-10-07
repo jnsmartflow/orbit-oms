@@ -27,7 +27,19 @@ export function fmtDateTime(iso: string | null): string {
  */
 // `iso` takes a Date too: PickingQueueRow types obdDateTime as string | Date | null
 // (a server-built row holds a Date; the JSON a client receives holds a string).
-export function ObdDateLine({ iso, isEmailTime }: { iso: string | Date | null; isEmailTime: boolean }) {
+//
+// `trailing` (2026-10-07, Challan orders M2): something to sit AFTER the date on
+// this line — Floor puts an ORB row's trip tag here, because the 14-character ORB
+// number leaves no room for it beside the number. Absent = the line is unchanged.
+export function ObdDateLine({
+  iso,
+  isEmailTime,
+  trailing,
+}: {
+  iso: string | Date | null;
+  isEmailTime: boolean;
+  trailing?: React.ReactNode;
+}) {
   return (
     <div className="flex items-center gap-1 text-[10px] text-[#9ca3af]">
       {fmtDateTime(iso instanceof Date ? iso.toISOString() : iso)}
@@ -36,6 +48,7 @@ export function ObdDateLine({ iso, isEmailTime }: { iso: string | Date | null; i
           <Mail size={9.5} />
         </span>
       )}
+      {trailing}
     </div>
   );
 }

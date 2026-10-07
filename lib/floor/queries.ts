@@ -1235,6 +1235,8 @@ export async function getFloorBoard(
       routeId: dealer?.area?.primaryRoute?.id ?? null,
       // Hand — the dealer collects (2026-09-24). A scalar the include already brings.
       isHand: order.handAt !== null,
+      // CHALLAN pill (2026-10-07) — a scalar the `include` already brings.
+      isChallanOrder: order.isChallanOrder,
       stopKey: computeDropKey(order),
       shipToCode: order.shipToCustomerId,
       tripDropId: order.tripDropId,
@@ -1496,6 +1498,8 @@ export async function getFloorHold(
       orderId: order.id,
       obdNumber: order.obdNumber,
       isHand: order.handAt !== null,
+      // CHALLAN pill (2026-10-07) — a scalar the `include` already brings.
+      isChallanOrder: order.isChallanOrder,
       dealerName: dealerDisplayName(dealer?.customerName, order.shipToCustomerName),
       billToName: billTo.get(order.obdNumber) ?? null,
       isShipToOverride: order.shipToOverrideCustomerId !== null,
@@ -1709,6 +1713,8 @@ export async function getFloorCancelled(
       orderId: order.id,
       obdNumber: order.obdNumber,
       isHand: order.handAt !== null,
+      // CHALLAN pill (2026-10-07) — a scalar the `include` already brings.
+      isChallanOrder: order.isChallanOrder,
       dealerName: dealerDisplayName(dealer?.customerName, order.shipToCustomerName),
       billToName: billTo.get(order.obdNumber) ?? null,
       isShipToOverride: order.shipToOverrideCustomerId !== null,

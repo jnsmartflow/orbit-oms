@@ -60,6 +60,8 @@ export interface FloorPartyFields {
   /** Hand — the dealer collects (orders.handAt set, 2026-09-24). Never a
    *  dispatchStatus value; drives the ✋ HAND chip (UI in build step 6b). */
   isHand: boolean;
+  /** An ORB order (orders.isChallanOrder, 2026-10-07) — drives the CHALLAN pill. */
+  isChallanOrder: boolean;
   dealerName: string;         // effective ship-to (shipToOverrideCustomer ?? customer)
   billToName: string | null;  // bill-to dealer (import_raw_summary.billToCustomerName)
   isShipToOverride: boolean;
@@ -698,6 +700,8 @@ export interface FloorDetail {
   isKeyCustomer: boolean;
   priorityLevel: number;
   isTint: boolean;
+  /** An ORB order (orders.isChallanOrder, 2026-10-07) — the CHALLAN pill in the header. */
+  isChallanOrder: boolean;
   /** TINT / BASE / nothing — the same field, and the same warning, as
    *  FloorPartyFields above. The panel's Details tab reads THIS, not `isTint`. */
   colourWork: ColourWork | null;

@@ -259,6 +259,8 @@ async function plainRows(orderIds: number[]): Promise<Map<number, FloorHoldRow>>
       orderId: o.id,
       obdNumber: o.obdNumber,
       isHand: o.handAt !== null,
+      // FloorHoldRow shape (2026-10-07) — an `include`, so the scalar is loaded.
+      isChallanOrder: o.isChallanOrder,
       dealerName: dealerDisplayName(dealer?.customerName, o.shipToCustomerName),
       billToName: null,
       isShipToOverride: o.shipToOverrideCustomerId !== null,
