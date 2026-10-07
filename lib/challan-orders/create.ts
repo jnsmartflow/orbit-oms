@@ -29,6 +29,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { SUPPORT_DONE_OUTPUT } from "@/lib/workflow-stages";
 import { resolveArrivalSlotId } from "@/lib/slots/slot-ruler";
+import { resolveLegacySlot } from "@/lib/dispatch/legacy-slot";
 import { evaluateDispatchSlot } from "@/lib/dispatch/dispatch-engine";
 import { resolveArrivalClocks } from "@/lib/dispatch/punch-clock";
 import { computeArticleInfo, loadPackCatalog, rollupArticleTagsBySku, type ArticleInfo } from "@/lib/article-tag";
@@ -57,17 +58,6 @@ function istHhMm(at: Date): string {
   return `${String(ist.getUTCHours()).padStart(2, "0")}:${String(ist.getUTCMinutes()).padStart(2, "0")}`;
 }
 
-/**
- * The import's legacy time-of-day slot — a COPY of resolveSlot() in
- * app/api/import/obd/route.ts:153 (a route file cannot export it, and slice 3 does
- * not edit the import route). Keep the two in step.
- */
-function legacySlot(istTime: string): { dispatchSlot: string; slotId: number } {
-  if (istTime < "10:30") return { dispatchSlot: "Morning", slotId: 1 };
-  if (istTime < "12:30") return { dispatchSlot: "Afternoon", slotId: 2 };
-  if (istTime < "15:30") return { dispatchSlot: "Evening", slotId: 3 };
-  return { dispatchSlot: "Night", slotId: 4 };
-}
 
 /** Is this the obdNumber unique — i.e. another press took the same number? */
 function isObdNumberClash(err: unknown): boolean {
@@ -288,7 +278,8 @@ export async function createChallanOrder(
       };
     }
   }
-  const { dispatchSlot, slotId } = legacySlot(istTime);
+  // The import's own legacy slot rule — one owner since slice 6 (lib/dispatch/legacy-slot.ts).
+  const { dispatchSlot, slotId } = resolveLegacySlot(istTime);
 
   // Article tags — the import's own helpers, one catalog read.
   const packCatalog = await loadPackCatalog(lines.map((l) => l.material));

@@ -19,6 +19,7 @@ import type {
 } from "@/lib/import-types";
 import { upsertObd, resolveSmuFromDivision } from "@/lib/import-upsert";
 import { resolveArrivalSlotId } from "@/lib/slots/slot-ruler";
+import { resolveLegacySlot } from "@/lib/dispatch/legacy-slot";
 import { evaluateDispatchSlot } from "@/lib/dispatch/dispatch-engine";
 import { resolveArrivalClocks } from "@/lib/dispatch/punch-clock";
 import type {
@@ -43,6 +44,8 @@ import type { ImportAnomaly, QtyMismatch } from "@/lib/import-qty-guard";
 import { computeArticleInfo, loadPackCatalog, rollupArticleTagsBySku } from "@/lib/article-tag";
 import type { ArticleRollup, PackCatalog } from "@/lib/article-tag";
 import { applySoTagHolds } from "@/lib/billing/telephonic-apply";
+import { catchChallanObds } from "@/lib/challan-orders/reconcile";
+import { CHALLAN_LINKED, NOT_CHALLAN_LINKED } from "@/lib/workflow-stages";
 import { BILLING_CI_HOLD_NOTE, MAIL_ORDER_AUTO_HOLD_NOTE, MAIL_ORDER_BILLING_HOLD_NOTE } from "@/lib/floor/hold-log";
 
 export const dynamic = "force-dynamic";
@@ -150,16 +153,13 @@ function parseBooleanCell(value: unknown): boolean {
 
 // ── Slot resolution ───────────────────────────────────────────────────────────
 
+// The rule lives in lib/dispatch/legacy-slot.ts since 2026-10-07 (one owner,
+// shared with the challan-order create). This name stays so the call sites here
+// are unchanged.
 function resolveSlot(
   emailTime: string | null,
 ): { dispatchSlot: string; slotId: number } {
-  // Simple time-based slot assignment — mirrors Mail Orders' receivedAt logic.
-  // Fallback to Night (id=4) if emailTime is missing.
-  if (!emailTime)                 return { dispatchSlot: "Night",     slotId: 4 };
-  if (emailTime < "10:30")        return { dispatchSlot: "Morning",   slotId: 1 };
-  if (emailTime < "12:30")        return { dispatchSlot: "Afternoon", slotId: 2 };
-  if (emailTime < "15:30")        return { dispatchSlot: "Evening",   slotId: 3 };
-  return { dispatchSlot: "Night", slotId: 4 };
+  return resolveLegacySlot(emailTime);
 }
 
 // ── Merge IST email time into date ───────────────────────────────────────────
@@ -370,7 +370,9 @@ async function applyMailOrderEnrichment(soNumbers: (string | null)[]): Promise<v
         ? new Map(
             (
               await prisma.orders.findMany({
-                where: { soNumber: soNum, isRemoved: false, workflowStage: { not: "cancelled" } },
+                // challan_linked joins the notIn (2026-10-07, Challan orders slice 6 §B):
+                // a bill linked to a challan is never written by this SO-keyed path.
+                where: { soNumber: soNum, isRemoved: false, workflowStage: { notIn: ["cancelled", CHALLAN_LINKED] } },
                 select: { id: true, dispatchStatus: true, workflowStage: true },
               })
             ).map((o) => [o.id, o]),
@@ -382,8 +384,12 @@ async function applyMailOrderEnrichment(soNumbers: (string | null)[]): Promise<v
     // already cancelled (Floor cancel, Raise CI, Billing Pick delete) — and a
     // Hold mail order put it back on Floor's Hold tab, whose feed checks the
     // hold alone (lib/floor/queries.ts getFloorHold).
+    // 🔴 challan_linked joins the notIn (2026-10-07, Challan orders slice 6 §B): a bill
+    // linked to a challan order is never released, held or re-stamped by its mail order.
+    // ONE workflowStage key — a spread NOT_CHALLAN_LINKED would OVERWRITE the cancelled
+    // term. NOT NULL column — no null arm (CORE §13).
     await prisma.orders.updateMany({
-      where: { soNumber: soNum, isRemoved: false, workflowStage: { not: "cancelled" } },
+      where: { soNumber: soNum, isRemoved: false, workflowStage: { notIn: ["cancelled", CHALLAN_LINKED] } },
       data: updateData,
     });
 
@@ -396,7 +402,7 @@ async function applyMailOrderEnrichment(soNumbers: (string | null)[]): Promise<v
         where: {
           soNumber: soNum,
           isRemoved: false,
-          workflowStage: { not: "cancelled" },
+          workflowStage: { notIn: ["cancelled", CHALLAN_LINKED] }, // slice 6 §B
           shipToOverrideCustomerId: null,
         },
         data:
@@ -419,7 +425,8 @@ async function applyMailOrderEnrichment(soNumbers: (string | null)[]): Promise<v
           soNumber: soNum,
           isRemoved: false,
           dispatchStatus: null,
-          workflowStage: { notIn: ["cancelled", "dispatched"] },
+          // + challan_linked (slice 6 §B): a linked bill is never held here.
+          workflowStage: { notIn: ["cancelled", "dispatched", CHALLAN_LINKED] },
         },
         select: { id: true, obdEmailDate: true, workflowStage: true },
       });
@@ -450,7 +457,7 @@ async function applyMailOrderEnrichment(soNumbers: (string | null)[]): Promise<v
     // this run only (soNumber-scoped, never a full-table scan). A human's
     // manual pick (dispatchSlotSource === "manual") is never overridden.
     const ordersForEngine = await prisma.orders.findMany({
-      where: { soNumber: soNum, isRemoved: false },
+      where: { soNumber: soNum, isRemoved: false, ...NOT_CHALLAN_LINKED }, // slice 6 §B
       select: {
         id: true,
         obdNumber: true,
@@ -526,7 +533,7 @@ async function applyMailOrderEnrichment(soNumbers: (string | null)[]): Promise<v
     if (updateData.dispatchStatus === "hold") {
       // Same filter as the updateMany above — only the bills it wrote.
       const ordersToHold = await prisma.orders.findMany({
-        where: { soNumber: soNum, isRemoved: false, workflowStage: { not: "cancelled" } },
+        where: { soNumber: soNum, isRemoved: false, workflowStage: { notIn: ["cancelled", CHALLAN_LINKED] } }, // slice 6 §B
         select: { id: true, obdEmailDate: true },
       });
       for (const ord of ordersToHold) {
@@ -805,6 +812,10 @@ async function createChallanForOrder(
     select: { id: true },
   });
   if (existing) return;
+  // D4 (Challan orders slice 6): a SAP bill linked to a challan order gets NO CHN — the
+  // ORB number is its challan. Belt and braces: the callers already skip caught OBDs.
+  const stage = await prisma.orders.findUnique({ where: { id: orderId }, select: { workflowStage: true } });
+  if (stage?.workflowStage === CHALLAN_LINKED) return;
 
   const seq = nextSeq();
   const challanNumber = `CHN-${year}-${String(seq).padStart(5, "0")}`;
@@ -1524,8 +1535,22 @@ async function handleConfirm(req: Request, session: Session): Promise<NextRespon
     );
   }
 
+  // ── STEP D1a — THE CHALLAN CATCH (2026-10-07, Challan orders slice 6) ─────
+  // BEFORE every release below. A bill whose SO has a live challan link is caught
+  // (challan_linked), held (dealer mismatch) or left alone (touched) — and kept out of
+  // the mail-order release, the Telephonic holds, the fallback and CHN. A bill whose SO
+  // has NO link is in none of the sets: everything below runs for it exactly as before.
+  const templateCatch = await catchChallanObds(confirmedObdNumbers, userId);
+  const templateReleasable = (obd: string) => !templateCatch.excludeAll && !templateCatch.excludeObds.has(obd);
+
   // ── STEP D1b — Mail-order enrichment hook ─────────────────────────────────
-  await applyMailOrderEnrichment(orderInterims.map((o) => o.orderData.soNumber ?? null));
+  await applyMailOrderEnrichment(
+    templateCatch.excludeAll
+      ? []
+      : orderInterims
+          .map((o) => o.orderData.soNumber ?? null)
+          .filter((so) => so === null || !templateCatch.excludeSos.has(so)),
+  );
 
   // ── STEP D1c — the no-mail-order fallback (2026-09-11) ────────────────────
   // ⚠ KEYED ON obdNumber, NOT soNumber, and that is the point. The enrichment
@@ -1537,7 +1562,7 @@ async function handleConfirm(req: Request, session: Session): Promise<NextRespon
   // 🔴 Telephonic tags FIRST (lib/billing/telephonic-apply.ts): a bill held
   // here has a non-null dispatchStatus and is invisible to the fallback. Same
   // OBD list, never throws.
-  const templateFallbackObds = orderInterims.map((o) => o.obdNumber);
+  const templateFallbackObds = orderInterims.map((o) => o.obdNumber).filter(templateReleasable);
   await applySoTagHolds(templateFallbackObds, new Date());
   await applyNoMailOrderFallback(templateFallbackObds);
 
@@ -1554,6 +1579,8 @@ async function handleConfirm(req: Request, session: Session): Promise<NextRespon
 
     // Find which orders need challans (by SMU from raw summary)
     const challanOrders = orderInterims
+      // D4 — no CHN for a caught OBD (slice 6).
+      .filter((o) => templateReleasable(o.obdNumber))
       .filter((o) => {
         const summary = rawSummaries.find((s) => s.obdNumber === o.obdNumber);
         const smu = summary?.smu ?? "";
@@ -2069,6 +2096,18 @@ async function handleManualSapConfirm(_req: Request, session: Session): Promise<
       results.push({ obdNumber: r.obdNumber, outcome: r.outcome, orderId: r.orderId, effects: r.effects });
     }
 
+    // ── THE CHALLAN CATCH (2026-10-07, Challan orders slice 6) — BEFORE the effect
+    // loop, whose `mail-order-enrichment` and `challan-create` effects are releases. It
+    // covers created AND patched OBDs: a patch can fill a null soNumber
+    // (lib/import-upsert/header.ts fillNull), so an OBD already on the floor can meet its
+    // challan here — reconcileSo then applies the touched / not-touched rule. A bill whose
+    // SO has NO link is in none of the sets below and runs exactly as before.
+    const sapCatch = await catchChallanObds(
+      results.filter((r) => r.outcome !== "errored").map((r) => r.obdNumber),
+      userId,
+    );
+    const sapReleasable = (obd: string) => !sapCatch.excludeAll && !sapCatch.excludeObds.has(obd);
+
     // Reserve a challan-number range from the current DB max, once.
     const challanEffectCount = results.reduce(
       (acc, r) => acc + r.effects.filter((e) => e.type === "challan-create").length,
@@ -2096,9 +2135,13 @@ async function handleManualSapConfirm(_req: Request, session: Session): Promise<
         try {
           switch (eff.type) {
             case "mail-order-enrichment":
+              // Not for an SO with a live challan link (slice 6).
+              if (sapCatch.excludeAll || sapCatch.excludeSos.has(eff.payload.soNumber as string)) break;
               await applyMailOrderEnrichment([eff.payload.soNumber as string]);
               break;
             case "challan-create":
+              // D4 — no CHN for a caught OBD (slice 6).
+              if (!sapReleasable(r.obdNumber)) break;
               await createChallanForOrder(eff.orderId, nextSeqClosure, challanYear);
               break;
             case "query-summary-rebuild":
@@ -2137,7 +2180,10 @@ async function handleManualSapConfirm(_req: Request, session: Session): Promise<
     // 🔴 Telephonic tags FIRST (lib/billing/telephonic-apply.ts): a bill held
     // here has a non-null dispatchStatus and is invisible to the fallback. Same
     // OBD list, never throws.
-    const manualSapFallbackObds = results.filter((r) => r.outcome !== "errored").map((r) => r.obdNumber);
+    const manualSapFallbackObds = results
+      .filter((r) => r.outcome !== "errored")
+      .map((r) => r.obdNumber)
+      .filter(sapReleasable); // slice 6 — never a caught / held / failed OBD
     await applySoTagHolds(manualSapFallbackObds, new Date());
     await applyNoMailOrderFallback(manualSapFallbackObds);
 
@@ -2626,6 +2672,18 @@ async function handleSapPasteConfirm(req: Request, session: Session): Promise<Ne
       results.push({ obdNumber: r.obdNumber, outcome: r.outcome, orderId: r.orderId, effects: r.effects });
     }
 
+    // ── THE CHALLAN CATCH (2026-10-07, Challan orders slice 6) — BEFORE the effect
+    // loop, whose `mail-order-enrichment` and `challan-create` effects are releases. It
+    // covers created AND patched OBDs: a patch can fill a null soNumber
+    // (lib/import-upsert/header.ts fillNull), so an OBD already on the floor can meet its
+    // challan here — reconcileSo then applies the touched / not-touched rule. A bill whose
+    // SO has NO link is in none of the sets below and runs exactly as before.
+    const sapCatch = await catchChallanObds(
+      results.filter((r) => r.outcome !== "errored").map((r) => r.obdNumber),
+      userId,
+    );
+    const sapReleasable = (obd: string) => !sapCatch.excludeAll && !sapCatch.excludeObds.has(obd);
+
     // Reserve a challan-number range from the current DB max, once.
     const challanEffectCount = results.reduce(
       (acc, r) => acc + r.effects.filter((e) => e.type === "challan-create").length,
@@ -2653,9 +2711,13 @@ async function handleSapPasteConfirm(req: Request, session: Session): Promise<Ne
         try {
           switch (eff.type) {
             case "mail-order-enrichment":
+              // Not for an SO with a live challan link (slice 6).
+              if (sapCatch.excludeAll || sapCatch.excludeSos.has(eff.payload.soNumber as string)) break;
               await applyMailOrderEnrichment([eff.payload.soNumber as string]);
               break;
             case "challan-create":
+              // D4 — no CHN for a caught OBD (slice 6).
+              if (!sapReleasable(r.obdNumber)) break;
               await createChallanForOrder(eff.orderId, nextSeqClosure, challanYear);
               break;
             case "query-summary-rebuild":
@@ -2683,7 +2745,10 @@ async function handleSapPasteConfirm(req: Request, session: Session): Promise<Ne
 
     // The no-mail-order fallback — identical to the .xlsx confirm (see there),
     // Telephonic tags first.
-    const pasteFallbackObds = results.filter((r) => r.outcome !== "errored").map((r) => r.obdNumber);
+    const pasteFallbackObds = results
+      .filter((r) => r.outcome !== "errored")
+      .map((r) => r.obdNumber)
+      .filter(sapReleasable); // slice 6 — never a caught / held / failed OBD
     await applySoTagHolds(pasteFallbackObds, new Date());
     await applyNoMailOrderFallback(pasteFallbackObds);
 
@@ -3983,8 +4048,19 @@ async function processAutoImportRows(
     );
   }
 
+  // ── CONFIRM D1a — THE CHALLAN CATCH (2026-10-07, Challan orders slice 6) ──
+  // See the manual-template site. Actor 1 = system (the depot PC has no session).
+  const autoCatch = await catchChallanObds(confirmedObdNumbers, 1);
+  const autoReleasable = (obd: string) => !autoCatch.excludeAll && !autoCatch.excludeObds.has(obd);
+
   // ── CONFIRM D1b — Mail-order enrichment hook ──────────────────────────────
-  await applyMailOrderEnrichment(autoOrderInterims.map((o) => o.orderData.soNumber ?? null));
+  await applyMailOrderEnrichment(
+    autoCatch.excludeAll
+      ? []
+      : autoOrderInterims
+          .map((o) => o.orderData.soNumber ?? null)
+          .filter((so) => so === null || !autoCatch.excludeSos.has(so)),
+  );
 
   // ── CONFIRM D1c — the no-mail-order fallback (2026-09-11) ─────────────────
   // Keyed on obdNumber, not soNumber — see the note at the manual-template call
@@ -3992,7 +4068,7 @@ async function processAutoImportRows(
   // 2026-09-11 came through THIS path, not manual SAP.
   //
   // 🔴 Telephonic tags FIRST — see the manual-template call site.
-  const autoFallbackObds = autoOrderInterims.map((o) => o.obdNumber);
+  const autoFallbackObds = autoOrderInterims.map((o) => o.obdNumber).filter(autoReleasable);
   await applySoTagHolds(autoFallbackObds, new Date());
   await applyNoMailOrderFallback(autoFallbackObds);
 
@@ -4008,6 +4084,8 @@ async function processAutoImportRows(
     const CHALLAN_SMU_VALUES_AUTO = ["Retail Offtake", "Decorative Projects"];
 
     const challanOrders = autoOrderInterims
+      // D4 — no CHN for a caught OBD (slice 6).
+      .filter((o) => autoReleasable(o.obdNumber))
       .filter((o) => {
         const summary = autoRawSummaries.find((s) => s.obdNumber === o.obdNumber);
         const smu = summary?.smu ?? "";

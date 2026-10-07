@@ -21,22 +21,26 @@ export interface ChallanOrdersAccess {
   canView: boolean;
   /** May paste and unlink SOs. Meaningless without canView. */
   canEdit: boolean;
+  /** lib/rbac.ts isSuperuser — "Cancel OBD" on a linked SAP bill (S6-7, slice 6). */
+  isAdmin: boolean;
 }
 
-const NONE: ChallanOrdersAccess = { canView: false, canEdit: false };
+const NONE: ChallanOrdersAccess = { canView: false, canEdit: false, isAdmin: false };
 
 const ChallanOrdersAccessContext = createContext<ChallanOrdersAccess>(NONE);
 
 export function ChallanOrdersAccessProvider({
   canView,
   canEdit,
+  isAdmin = false,
   children,
 }: {
   canView: boolean;
   canEdit: boolean;
+  isAdmin?: boolean;
   children: React.ReactNode;
 }) {
-  const value = useMemo<ChallanOrdersAccess>(() => ({ canView, canEdit }), [canView, canEdit]);
+  const value = useMemo<ChallanOrdersAccess>(() => ({ canView, canEdit, isAdmin }), [canView, canEdit, isAdmin]);
   return <ChallanOrdersAccessContext.Provider value={value}>{children}</ChallanOrdersAccessContext.Provider>;
 }
 

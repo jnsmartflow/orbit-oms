@@ -22,6 +22,9 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { usePickingMarker } from "@/lib/hooks/use-picking-marker";
+import { ChallanAlertStrip } from "@/components/challan-orders/challan-alert-strip";
+import { useChallanOrdersAccess } from "@/components/challan-orders/challan-orders-access-provider";
+import { DESK_CANCEL_REASON_OPTIONS, deskCancelRequiresNote, type DeskCancelReason } from "@/lib/floor/desk-cancel-reasons";
 import {
   ageTone,
   type ChallanBoard,
@@ -123,25 +126,45 @@ function SentOn({ r }: { r: ChallanRow }) {
   );
 }
 
-/** Per-row result of a paste: an error, or S5-2's "Link anyway?" warning. */
-type RowNotice = { kind: "error" | "warning"; text: string; so: string };
+/** Per-row result of a paste: an error, a warning that can be overridden ("Link anyway" —
+ *  S5-2 mail-order dealer, S6-5 Telephonic tag), or what the late-paste safety net did. */
+type RowNotice = {
+  kind: "error" | "warning" | "info";
+  text: string;
+  so: string;
+  code?: "DEALER_MISMATCH" | "TELEPHONIC_TAG";
+};
 
 export function ChallanOrdersScreen({
   canEdit,
+  isAdmin: isAdminProp,
   mount,
   onBack,
 }: {
   canEdit: boolean;
+  /** lib/rbac.ts isSuperuser — draws "Cancel OBD" on a linked SAP bill (S6-7). The
+   *  route re-checks; without it the action is not rendered. */
+  isAdmin?: boolean;
   mount: ChallanMount;
   /** Place Order only — "← Back to order" (the cart stays mounted behind). */
   onBack?: () => void;
 }) {
+  // Floor passes isAdmin as a prop; Billing and Place Order carry it on the access provider.
+  const ctxAccess = useChallanOrdersAccess();
+  const isAdmin = isAdminProp ?? ctxAccess.isAdmin;
   const [tab, setTab] = useState<InnerTab>("not_billed");
   const [board, setBoard] = useState<ChallanBoard | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<number | null>(null);
   const [soDraft, setSoDraft] = useState<Record<number, string>>({});
   const [notice, setNotice] = useState<Record<number, RowNotice>>({});
+  // Overrides already given for a row's pending paste — both can be needed in turn.
+  const [confirms, setConfirms] = useState<Record<number, { dealer?: boolean; tele?: boolean }>>({});
+  // Admin "Cancel OBD" on a linked SAP bill (S6-7): the open form, by bill id.
+  const [cancelFor, setCancelFor] = useState<number | null>(null);
+  const [cancelReason, setCancelReason] = useState<DeskCancelReason>("other");
+  const [cancelRemark, setCancelRemark] = useState<string>("");
+  const [cancelError, setCancelError] = useState<string | null>(null);
 
   // History filters.
   const [from, setFrom] = useState<string>(istDaysAgo(29));
@@ -188,27 +211,51 @@ export function ChallanOrdersScreen({
   // The shared marker poll (plan §6) — 30 s, tab-hidden pause, silent failure.
   usePickingMarker({ scope: "openPending", url: MARKER_URL, pollMs: 30_000, onChange: reloadAll });
 
-  async function paste(r: ChallanRow, confirmDealerMismatch = false) {
-    const so = (confirmDealerMismatch ? notice[r.orderId]?.so : soDraft[r.orderId]) ?? "";
+  async function paste(r: ChallanRow, override?: "DEALER_MISMATCH" | "TELEPHONIC_TAG") {
+    const so = (override ? notice[r.orderId]?.so : soDraft[r.orderId]) ?? "";
     if (!so.trim() || busyId !== null) return;
+    const given = { ...(override ? confirms[r.orderId] : {}) };
+    if (override === "DEALER_MISMATCH") given.dealer = true;
+    if (override === "TELEPHONIC_TAG") given.tele = true;
+    setConfirms((c) => ({ ...c, [r.orderId]: given }));
     setBusyId(r.orderId);
     try {
       const res = await fetch("/api/challan-orders/links", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ orbOrderId: r.orderId, soNumber: so, confirmDealerMismatch }),
+        body: JSON.stringify({
+          orbOrderId: r.orderId,
+          soNumber: so,
+          confirmDealerMismatch: given.dealer === true,
+          confirmTelephonic: given.tele === true,
+        }),
       });
       const json = (await res.json().catch(() => null)) as PasteSoResponse | null;
       if (json && json.ok) {
         setSoDraft((d) => ({ ...d, [r.orderId]: "" }));
+        setConfirms((c) => ({ ...c, [r.orderId]: {} }));
+        // The late-paste safety net (slice 6): say what it did. A touched OBD also
+        // stays on the red alert strip above until a person acts.
+        const rec = json.reconcile;
+        const parts: string[] = [];
+        if (rec?.caught.length) parts.push(`Pulled back OBD ${rec.caught.join(", ")} into this challan.`);
+        if (rec?.held.length) parts.push(`OBD ${rec.held.join(", ")} is billed to a different dealer — held, not linked.`);
+        for (const t of rec?.touched ?? []) parts.push(`DOUBLE DISPATCH RISK — OBD ${t.obdNumber}: ${t.reason}.`);
+        if (rec?.failed.length) parts.push(`OBD ${rec.failed.map((f) => f.obdNumber).join(", ")} could not be linked — Retry from the red alert.`);
         setNotice((n) => {
           const next = { ...n };
-          delete next[r.orderId];
+          if (parts.length === 0) delete next[r.orderId];
+          else
+            next[r.orderId] = {
+              kind: rec && (rec.touched.length || rec.failed.length || rec.held.length) ? "error" : "info",
+              text: `Linked SO ${so}. ${parts.join(" ")}`,
+              so,
+            };
           return next;
         });
         reloadAll();
       } else if (json && json.warning) {
-        setNotice((n) => ({ ...n, [r.orderId]: { kind: "warning", text: json.error, so } }));
+        setNotice((n) => ({ ...n, [r.orderId]: { kind: "warning", text: json.error, so, code: json.code } }));
       } else {
         setNotice((n) => ({
           ...n,
@@ -287,14 +334,18 @@ export function ChallanOrdersScreen({
           <div
             role="alert"
             className={`flex items-center gap-2 rounded-md border px-3 py-1.5 text-[11.5px] ${
-              n.kind === "warning" ? "border-amber-200 bg-amber-50 text-amber-800" : "border-red-200 bg-red-50 text-red-700"
+              n.kind === "warning"
+                ? "border-amber-200 bg-amber-50 text-amber-800"
+                : n.kind === "info"
+                  ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                  : "border-red-200 bg-red-50 text-red-700"
             }`}
           >
             <span className="flex-1">{n.text}</span>
             {n.kind === "warning" && canEdit && (
               <button
                 type="button"
-                onClick={() => void paste(r, true)}
+                onClick={() => void paste(r, n.code)}
                 disabled={busyId !== null}
                 className="h-6 rounded-md border border-amber-300 bg-white px-2 text-[11px] font-medium text-amber-800 hover:bg-amber-100"
               >
@@ -308,6 +359,86 @@ export function ChallanOrdersScreen({
         </td>
       </tr>
     );
+  }
+
+  async function cancelObd(orderId: number) {
+    if (busyId !== null) return;
+    setBusyId(orderId);
+    setCancelError(null);
+    try {
+      const res = await fetch(`/api/challan-orders/linked-obds/${orderId}/cancel`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reasonKey: cancelReason, remark: cancelRemark }),
+      });
+      if (!res.ok) {
+        const json = (await res.json().catch(() => null)) as { error?: string } | null;
+        setCancelError(json?.error ?? `Could not cancel (HTTP ${res.status}).`);
+        return;
+      }
+      setCancelFor(null);
+      setCancelRemark("");
+      reloadAll();
+    } catch {
+      setCancelError("Could not reach the server — nothing changed.");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  /** The SAP bills billed against a challan (slice 6) — with admin "Cancel OBD" (S6-7). */
+  function linkedObdsCell(r: ChallanRow) {
+    if (r.linkedObds.length === 0) return <span className="text-[#9ca3af]">—</span>;
+    return r.linkedObds.map((b) => {
+      const live = b.workflowStage === "challan_linked";
+      return (
+        <div key={b.orderId} className="py-px">
+          <div className="flex items-center gap-1.5">
+            <span className={`font-mono ${live ? "text-[#111827]" : "text-[#9ca3af] line-through"}`}>{b.obdNumber}</span>
+            {!live && <span className="text-[10.5px] text-[#9ca3af]">cancelled</span>}
+            {live && isAdmin && cancelFor !== b.orderId && (
+              <button
+                type="button"
+                onClick={() => { setCancelFor(b.orderId); setCancelError(null); }}
+                className="text-[10.5px] font-medium text-red-600 hover:underline"
+              >
+                Cancel OBD
+              </button>
+            )}
+          </div>
+          {live && isAdmin && cancelFor === b.orderId && (
+            <div className="mt-1 flex flex-wrap items-center gap-1.5">
+              <select
+                value={cancelReason}
+                onChange={(e) => setCancelReason(e.target.value as DeskCancelReason)}
+                className="h-6 rounded border border-gray-200 px-1 text-[11px]"
+              >
+                {DESK_CANCEL_REASON_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+              <input
+                type="text"
+                value={cancelRemark}
+                onChange={(e) => setCancelRemark(e.target.value)}
+                placeholder={deskCancelRequiresNote(cancelReason) ? "remark (required)" : "remark"}
+                className="h-6 w-[120px] rounded border border-gray-200 px-1.5 text-[11px]"
+              />
+              <button
+                type="button"
+                onClick={() => void cancelObd(b.orderId)}
+                disabled={busyId !== null || (deskCancelRequiresNote(cancelReason) && !cancelRemark.trim())}
+                className="h-6 rounded bg-red-600 px-2 text-[11px] font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400"
+              >
+                Cancel OBD
+              </button>
+              <button type="button" onClick={() => setCancelFor(null)} className="text-[11px] text-gray-500 hover:underline">
+                Keep
+              </button>
+              {cancelError && <span className="w-full text-[11px] text-red-700">{cancelError}</span>}
+            </div>
+          )}
+        </div>
+      );
+    });
   }
 
   const counts = board?.counts ?? { notBilled: 0, waiting: 0, billed: 0 };
@@ -397,6 +528,7 @@ export function ChallanOrdersScreen({
                       {linked > 0 && (
                         <div className="text-[10.5px] text-amber-700">part-billed — {linked} of {r.links.length} OBDs in</div>
                       )}
+                      {r.linkedObds.length > 0 && <div className="mt-1 text-[11px]">{linkedObdsCell(r)}</div>}
                     </td>
                     <td className={TD}>
                       {r.links.map((l) => (
@@ -473,8 +605,12 @@ export function ChallanOrdersScreen({
                 <td className={TD}><span className="font-mono font-medium text-[#111827]">{r.orbNumber}</span></td>
                 <td className={TD}><Dealer r={r} /></td>
                 <td className={`${TD} font-mono`}>{r.links.map((l) => <div key={l.id}>{l.soNumber}</div>)}</td>
-                <td className={`${TD} font-mono`}>{r.links.map((l) => <div key={l.id}>{l.obdNumber ?? "—"}</div>)}</td>
-                <td className={`${TD} font-mono`}>{r.links.map((l) => <div key={l.id}>{l.invoiceNo ?? "—"}</div>)}</td>
+                {/* Every SAP bill billed against this challan (slice 6) — part-billing lists
+                    them all; admin can cancel one (S6-7). */}
+                <td className={TD}>{linkedObdsCell(r)}</td>
+                <td className={`${TD} font-mono`}>
+                  {r.linkedObds.filter((b) => b.workflowStage === "challan_linked").map((b) => <div key={b.orderId}>{b.invoiceNo ?? "—"}</div>)}
+                </td>
                 <td className={`${TD} text-right tabular-nums`}>{r.tins ?? "—"}</td>
                 {/* Line match (✅ / ⚠) is slice 7. */}
                 <td className={`${TD} text-[#9ca3af]`}>—</td>
@@ -625,6 +761,8 @@ export function ChallanOrdersScreen({
           )}
         </div>
       </div>
+      {/* The red challan alerts (slice 6: S6-1, S6-2, S6-6) — same strip as Floor's. */}
+      <ChallanAlertStrip canEdit={canEdit} onChanged={reloadAll} />
       <div className="px-3.5 pt-2 text-[11px] text-gray-400">{caption[tab]}</div>
       {loadError && (
         <div role="alert" className="mx-3.5 mt-2 rounded-md border border-red-200 bg-red-50 px-3 py-1.5 text-[11.5px] text-red-700">

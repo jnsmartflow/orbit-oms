@@ -17,6 +17,7 @@ import { getISTDayRange } from "@/lib/dates";
 import type { ChallanBoard, ChallanHistory, ChallanLinkRow, ChallanRow, ChallanStatus } from "./board-types";
 
 const CANCELLED = "cancelled";
+const CHALLAN_LINKED_STAGE = "challan_linked";
 const DISPATCHED = "dispatched";
 const TRIP_CANCELLED = "cancelled";
 /** Billed tab: OBD linked within the last 7 IST days (today + 6). */
@@ -43,6 +44,12 @@ function includeFor(linkWhere: Prisma.challan_order_so_linksWhereInput | undefin
     querySnapshot: { select: { totalUnitQty: true, totalVolume: true } },
     tripDrop: { select: { trip: { select: { tripNumber: true, tripDate: true, status: true } } } },
     challanSoLinks: { where: linkWhere, orderBy: { linkedAt: "asc" as const }, select: LINK_SELECT },
+    // Every SAP bill billed against this challan (slice 6) — part-billing lists them all.
+    challanLinkedOrders: {
+      where: { isRemoved: false, workflowStage: { in: [CHALLAN_LINKED_STAGE, CANCELLED] } },
+      orderBy: { id: "asc" as const },
+      select: { id: true, obdNumber: true, soNumber: true, invoiceNo: true, workflowStage: true, totalUnitQty: true },
+    },
   } satisfies Prisma.ordersInclude;
 }
 type BoardOrder = Prisma.ordersGetPayload<{ include: ReturnType<typeof includeFor> }>;
@@ -105,6 +112,14 @@ function toRow(o: BoardOrder, today: string): ChallanRow {
     ageAnchor: tripDate ? "trip" : "created",
     status,
     links,
+    linkedObds: o.challanLinkedOrders.map((b) => ({
+      orderId: b.id,
+      obdNumber: b.obdNumber,
+      soNumber: b.soNumber,
+      invoiceNo: b.invoiceNo,
+      workflowStage: b.workflowStage,
+      tins: b.totalUnitQty,
+    })),
   };
 }
 

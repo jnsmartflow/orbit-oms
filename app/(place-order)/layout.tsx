@@ -1,4 +1,5 @@
 import { auth } from "@/lib/auth";
+import { isSuperuser } from "@/lib/rbac";
 import { redirect } from "next/navigation";
 import { checkAnyPermission, getAllPermissionsForRoles, buildNavItems } from "@/lib/permissions";
 import { RoleSidebarProvider } from "@/components/shared/role-sidebar-provider";
@@ -74,7 +75,7 @@ export default async function PlaceOrderLayout({
         navItems={dedupedNavItems}
       >
         <PlaceOrderAccessProvider canShipTo={canShipTo} canCreateChallan={canCreateChallan}>
-          <ChallanOrdersAccessProvider canView={canViewChallanOrders} canEdit={canEditChallanOrders}>
+          <ChallanOrdersAccessProvider canView={canViewChallanOrders} canEdit={canEditChallanOrders} isAdmin={isSuperuser(session)}>
             {children}
           </ChallanOrdersAccessProvider>
         </PlaceOrderAccessProvider>

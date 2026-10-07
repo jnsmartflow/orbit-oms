@@ -22,7 +22,7 @@
 // Server-only (Prisma).
 
 import { Prisma } from "@prisma/client";
-import { challanCancelRefusal, unlinkWaitingOnCancel } from "@/lib/challan-orders/cancel-guard";
+import { challanCancelRefusal, releaseChallanOnCancel } from "@/lib/challan-orders/cancel-guard";
 import { prisma } from "@/lib/prisma";
 import {
   FLOOR_HOLD_NOTE,
@@ -380,10 +380,11 @@ export async function applyBillAction(
   if (clearAssignment) {
     await prisma.pick_assignments.deleteMany({ where: { orderId } });
   }
-  // S5-3 — a cancelled ORB order frees its waiting SOs. Link table only; the
-  // one-update / one-log contract on `orders` is unchanged.
+  // S5-3 + S6-4 — a cancelled ORB order frees its SOs and returns its linked SAP
+  // bills to the floor (lib/challan-orders/cancel-guard.ts). ORB orders only; THIS
+  // bill keeps its one update + one log.
   if (action === "cancel" && order.isChallanOrder) {
-    await unlinkWaitingOnCancel(orderId, changedById);
+    await releaseChallanOnCancel(orderId, changedById);
   }
   // ONE log per bill per action.
   await prisma.order_status_logs.create({

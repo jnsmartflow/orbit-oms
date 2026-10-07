@@ -98,6 +98,18 @@ These OVERRIDE anything above that disagrees.
 | S5-3 | Cancelling an ORB order that has 'waiting' SO links **auto-unlinks them** (status 'unlinked', unlinkedById = canceller, unlinkedAt = now). A later SAP bill for that SO then flows as a normal order — correct, the challan goods never left. |
 | S5-4 | **Only ADMIN can cancel or remove a challan (ORB) order once created.** Every cancel / remove path (Floor cancel, picking cancel / pick delete, Tint, admin removed-orders, any other) must refuse a non-admin on an isChallanOrder row, server-side. Admin still obeys the existing stage rules. **Replaces F4** ("creator or Billing until pick done"). |
 
+## 4e. Slice 6 owner decisions (7 Oct 2026, on code-plan-2026-10-07-challan-slice6.md, f96f0ba0)
+
+| # | Locked as |
+|---|---|
+| S6-1 | Dealer mismatch at import (SAP bill-to ≠ ORB bill-to): **HOLD the OBD + red alert**; billing decides. Never auto-link, never release. |
+| S6-2 | Late paste on an OBD that is already being worked ("touched" per plan table): **store the link as 'waiting' and show a persistent red "DOUBLE DISPATCH RISK" warning** on the Challan screen AND Floor until someone acts. (Replaces slice 5's plain refusal for the touched branch.) Untouched → auto pull-back (D11). |
+| S6-3 | Admin cancels a linked OBD (e.g. SAP cancelled/re-issued): its link returns to **'waiting'**, so a re-issued OBD on that SO is caught again. |
+| S6-4 | Admin cancels an ORB order AFTER an OBD is linked: the linked OBD returns to **Floor's undecided list** (unlinked) for a person to release or hold. |
+| S6-5 | Paste on an SO that also has a live Telephonic tag: **warn**, billing decides. |
+| S6-6 | If the catch's first write fails, the OBD sits in Floor's undecided list: show a **red "challan catch failed — Retry" alert on Floor as well as the Challan screen**, so nobody releases it by hand unaware. |
+| S6-7 | Linked-OBD cancel = **admin only, from the Challan orders screen** (reuses the slice-5 admin guard). |
+
 ROADMAP item to add: "Challan orders — typed site ship-to (address + contact columns, own trip stop question, challan paper Site/Receiver box)".
 
 ## 5. Data model (proposed — names settled in the DDL slice, with a CORE schema-version entry)

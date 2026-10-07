@@ -1,4 +1,5 @@
 import { auth } from "@/lib/auth";
+import { isSuperuser } from "@/lib/rbac";
 import { redirect } from "next/navigation";
 import { checkAnyPermission, getAllPermissionsForRoles, buildNavItems } from "@/lib/permissions";
 import { RoleSidebarProvider } from "@/components/shared/role-sidebar-provider";
@@ -190,7 +191,7 @@ export default async function MailOrdersLayout({
                     canEdit={canEditBillingPickDelete}
                   >
                     {/* The shared Challan orders screen's grant (2026-10-07). */}
-                    <ChallanOrdersAccessProvider canView={canViewChallanOrders} canEdit={canEditChallanOrders}>
+                    <ChallanOrdersAccessProvider canView={canViewChallanOrders} canEdit={canEditChallanOrders} isAdmin={isSuperuser(session)}>
                       <NotesFontSizeProvider size={notesFontSize}>{children}</NotesFontSizeProvider>
                     </ChallanOrdersAccessProvider>
                   </BillingPickDeleteAccessProvider>

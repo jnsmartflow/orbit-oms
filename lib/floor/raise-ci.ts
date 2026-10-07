@@ -58,7 +58,7 @@
 // line reconcile. Those are the findings path's, not this one's.
 
 import { Prisma } from "@prisma/client";
-import { challanCancelRefusal, unlinkWaitingOnCancel } from "@/lib/challan-orders/cancel-guard";
+import { challanCancelRefusal, releaseChallanOnCancel } from "@/lib/challan-orders/cancel-guard";
 import { prisma } from "@/lib/prisma";
 import { allocateCiNumber } from "@/lib/ci/number";
 import { resolveCiDealer } from "@/lib/ci/derive";
@@ -283,8 +283,9 @@ export async function raiseFullBillCi(args: {
     // AFTER the stage write, never before — the ordering and the reason are
     // the floor cancel's (lib/floor/bill-actions.ts, the orphan fix).
     await prisma.pick_assignments.deleteMany({ where: { orderId } });
-    // S5-3 — a cancelled ORB order frees its waiting SOs (link table only).
-    if (order.isChallanOrder) await unlinkWaitingOnCancel(orderId, userId);
+    // S5-3 + S6-4 — a cancelled ORB order frees its SOs and returns its linked bills to the floor —
+  // ORB orders only; the bill being cancelled here keeps its one update + one log.
+    if (order.isChallanOrder) await releaseChallanOnCancel(orderId, userId);
     // ONE log per bill. The note is what the Cancel & CI tab reads.
     await prisma.order_status_logs.create({
       data: {

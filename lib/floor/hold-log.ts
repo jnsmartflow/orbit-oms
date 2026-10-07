@@ -102,6 +102,11 @@ export const MAIL_ORDER_AUTO_HOLD_NOTE = "Held on import (mail order)";
  *  ⚑ Hold before its OBD existed; changedById = that user (`mo_orders.heldById`). */
 export const MAIL_ORDER_BILLING_HOLD_NOTE = "Held on import (billing hold on mail order)";
 
+/** Challan orders slice 6 (2026-10-07, owner S6-1): an OBD whose SO is pasted against a
+ *  challan order but whose SAP bill-to is a DIFFERENT dealer — held, never linked, never
+ *  released, until billing decides (lib/challan-orders/reconcile.ts). */
+export const CHALLAN_DEALER_HOLD_NOTE = "Held on import (challan dealer mismatch)";
+
 /** Every note that identifies a hold event, for the `note: { in: … }` filter. */
 export const HOLD_LOG_NOTES: string[] = [
   FLOOR_HOLD_NOTE,
@@ -112,6 +117,7 @@ export const HOLD_LOG_NOTES: string[] = [
   TINT_HOLD_NOTE,
   MAIL_ORDER_AUTO_HOLD_NOTE,
   MAIL_ORDER_BILLING_HOLD_NOTE,
+  CHALLAN_DEALER_HOLD_NOTE,
 ];
 
 // ── Held from / held by (2026-10-02) — the Hold table's two source columns ──
@@ -128,6 +134,7 @@ export type HoldSourceLabel =
   | "Billing · telephonic"
   | "Billing · CI"
   | "Billing · mail order"
+  | "Billing · challan"
   | "Auto (mail order)"
   | "Support"
   | "Unknown";
@@ -143,6 +150,7 @@ export const HOLD_SOURCE_BY_NOTE: Readonly<Record<string, HoldSourceLabel>> = {
   [TELEPHONIC_HOLD_NOTE]: "Billing · telephonic",
   [MAIL_ORDER_BILLING_HOLD_NOTE]: "Billing · mail order",
   [MAIL_ORDER_AUTO_HOLD_NOTE]: "Auto (mail order)",
+  [CHALLAN_DEALER_HOLD_NOTE]: "Billing · challan",
   [SUPPORT_HOLD_NOTES[0]]: "Support",
   [SUPPORT_HOLD_NOTES[1]]: "Support",
 };

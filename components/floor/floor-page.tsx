@@ -33,6 +33,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { ChallanOrdersScreen } from "@/components/challan-orders/challan-orders-screen";
 import { ChallanCountProbe } from "@/components/challan-orders/use-challan-count";
+import { ChallanAlertStrip } from "@/components/challan-orders/challan-alert-strip";
 import { toast } from "sonner";
 import { TripDesk, isPoolRow } from "./trip-desk";
 import { TripRedeliveryDialog } from "./trip-redelivery-dialog";
@@ -373,11 +374,14 @@ export function FloorPage({
   canEdit = false,
   canViewChallan = false,
   canEditChallan = false,
+  isAdminChallan = false,
 }: {
   canEdit?: boolean;
   /** `challan_orders` canView / canEdit (2026-10-07) — the Challan orders tab. */
   canViewChallan?: boolean;
   canEditChallan?: boolean;
+  /** isSuperuser (slice 6, S6-7) — "Cancel OBD" on a linked bill in that tab. */
+  isAdminChallan?: boolean;
 } = {}) {
   // 🔴 THE TEMPORARY ADMIN-ONLY GATE IS GONE (2026-09-10). It existed for one
   // day, to keep the By trip pivot option off everyone else's screen while it
@@ -3480,6 +3484,12 @@ export function FloorPage({
             different filtered lists this component already owns; TripDesk
             renders it, so the rail and the tabs cannot get out of line. */}
         <div className="relative flex min-h-0 flex-col overflow-hidden">
+          {/* The red challan alerts (2026-10-07, Challan orders slice 6 — S6-2 DOUBLE
+              DISPATCH RISK, S6-6 catch failed, S6-1 dealer mismatch). Every Floor
+              viewer sees them (GET /api/challan-orders/alerts admits floor canView);
+              Retry / Link anyway only with challan_orders canEdit. Renders nothing
+              while there is nothing to say. */}
+          <ChallanAlertStrip canEdit={canEditChallan} />
           {loading && !data ? (
             <div className="min-h-0 flex-1 overflow-y-auto">
               <FloorSkeleton variant="floor" />
@@ -3567,7 +3577,7 @@ export function FloorPage({
                   />
                 ) : topTab === "challan" && canViewChallan ? (
                   // The SAME component Billing and Place Order mount (D8).
-                  <ChallanOrdersScreen canEdit={canEditChallan} mount="floor" />
+                  <ChallanOrdersScreen canEdit={canEditChallan} isAdmin={isAdminChallan} mount="floor" />
                 ) : topTab === "cancelled" ? (
                   cancelSearch !== null ? (
                     // A search result from another day (2026-10-06): the found

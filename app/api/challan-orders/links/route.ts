@@ -13,13 +13,15 @@ export const dynamic = "force-dynamic";
  *
  * 200 { ok: true, linkId } · 409 { ok: false, warning: true, code: "DEALER_MISMATCH" }
  * (S5-2: the client asks "Link anyway?" and resends with confirmDealerMismatch) ·
+ * 409 { ok: false, warning: true, code: "TELEPHONIC_TAG" } (S6-5, confirmTelephonic) ·
+ * 200 carries `reconcile` — the late-paste safety net's result (slice 6) ·
  * 4xx { ok: false, code, error }.
  */
 export async function POST(req: Request): Promise<NextResponse> {
   const gate = await challanOrdersGate("canEdit");
   if (!gate.ok) return gate.res;
   const body = (await req.json().catch(() => null)) as
-    | { orbOrderId?: unknown; soNumber?: unknown; confirmDealerMismatch?: unknown }
+    | { orbOrderId?: unknown; soNumber?: unknown; confirmDealerMismatch?: unknown; confirmTelephonic?: unknown }
     | null;
   if (!body || typeof body.orbOrderId !== "number" || !Number.isInteger(body.orbOrderId) || typeof body.soNumber !== "string") {
     return NextResponse.json({ ok: false, code: "BAD_REQUEST", error: "orbOrderId and soNumber are required" }, { status: 400 });
@@ -29,6 +31,7 @@ export async function POST(req: Request): Promise<NextResponse> {
     soNumber: body.soNumber,
     userId: gate.userId,
     confirmDealerMismatch: body.confirmDealerMismatch === true,
+    confirmTelephonic: body.confirmTelephonic === true,
   });
   if (r.ok) return NextResponse.json(r);
   const { status, ...payload } = r;

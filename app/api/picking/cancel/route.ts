@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { challanCancelRefusal, unlinkWaitingOnCancel } from "@/lib/challan-orders/cancel-guard";
+import { challanCancelRefusal, releaseChallanOnCancel } from "@/lib/challan-orders/cancel-guard";
 import { isSuperuser } from "@/lib/rbac";
 import { checkAnyPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
@@ -239,8 +239,9 @@ export async function POST(req: Request): Promise<NextResponse> {
   // exactly why this clears the row instead of restatusing it.
   const cleared = await prisma.pick_assignments.deleteMany({ where: { orderId } });
 
-  // d2. S5-3 — a cancelled ORB order frees its waiting SOs (link table only).
-  if (order.isChallanOrder) await unlinkWaitingOnCancel(orderId, changedById);
+  // d2. S5-3 + S6-4 — a cancelled ORB order frees its SOs and returns its linked bills to the floor —
+  // ORB orders only; the bill being cancelled here keeps its one update + one log.
+  if (order.isChallanOrder) await releaseChallanOnCancel(orderId, changedById);
 
   // e. Audit. ONE log row. The reason lives HERE and nowhere else — there is no
   // cancel-reason column on `orders` (removalReason/removalRemark belong to

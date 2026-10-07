@@ -17,8 +17,9 @@ import {
   heldByLabel,
 } from "./hold-log";
 
-test("HOLD_LOG_NOTES has nine notes and every one has a label", () => {
-  assert.equal(HOLD_LOG_NOTES.length, 9);
+// Ten since 2026-10-07: + CHALLAN_DEALER_HOLD_NOTE (Challan orders slice 6, S6-1).
+test("HOLD_LOG_NOTES has ten notes and every one has a label", () => {
+  assert.equal(HOLD_LOG_NOTES.length, 10);
   for (const note of HOLD_LOG_NOTES) {
     assert.ok(HOLD_SOURCE_BY_NOTE[note] !== undefined, `no label for "${note}"`);
   }

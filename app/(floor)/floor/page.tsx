@@ -1,6 +1,7 @@
 import { FloorPage } from "@/components/floor/floor-page";
 import { auth } from "@/lib/auth";
 import { checkAnyPermission } from "@/lib/permissions";
+import { isSuperuser } from "@/lib/rbac";
 
 export const dynamic = "force-dynamic";
 
@@ -15,5 +16,13 @@ export default async function Page() {
   // rule: decides what is DRAWN (the tab; paste / unlink), the routes re-check.
   const canViewChallan = session?.user ? await checkAnyPermission(roles, "challan_orders", "canView") : false;
   const canEditChallan = canViewChallan ? await checkAnyPermission(roles, "challan_orders", "canEdit") : false;
-  return <FloorPage canEdit={canEdit} canViewChallan={canViewChallan} canEditChallan={canEditChallan} />;
+  return (
+    <FloorPage
+      canEdit={canEdit}
+      canViewChallan={canViewChallan}
+      canEditChallan={canEditChallan}
+      // S6-7: "Cancel OBD" on a linked bill in the Challan orders tab — admin only.
+      isAdminChallan={isSuperuser(session)}
+    />
+  );
 }

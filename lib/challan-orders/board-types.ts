@@ -26,6 +26,18 @@ export interface ChallanLinkRow {
 /** History's status chip — first match wins (plan §1.2). */
 export type ChallanStatus = "cancelled" | "billed" | "waiting" | "sent" | "in_picking";
 
+/** A SAP bill billed against this challan (orders.challanOrderId — slice 6). Every OBD of
+ *  every SO, so part-billing (M6) lists them all; a cancelled one stays as history. */
+export interface ChallanLinkedObd {
+  orderId: number;
+  obdNumber: string;
+  soNumber: string | null;
+  invoiceNo: string | null;
+  /** 'challan_linked' (live) or 'cancelled'. */
+  workflowStage: string;
+  tins: number | null;
+}
+
 export interface ChallanRow {
   orderId: number;
   orbNumber: string;
@@ -49,6 +61,8 @@ export interface ChallanRow {
   status: ChallanStatus;
   /** Working tabs: waiting + linked only. History: every row, unlinked included. */
   links: ChallanLinkRow[];
+  /** The SAP bills linked to this challan (slice 6). */
+  linkedObds: ChallanLinkedObd[];
 }
 
 export interface ChallanBoard {
@@ -80,9 +94,21 @@ export interface PasteSoRequest {
   soNumber: string;
   /** S5-2: true on the second request, after the user pressed "Link anyway". */
   confirmDealerMismatch?: boolean;
+  /** S6-5: true after "Link anyway" on the Telephonic-tag warning. */
+  confirmTelephonic?: boolean;
 }
 
 export type PasteSoResponse =
-  | { ok: true; linkId: number }
-  | { ok: false; warning: true; code: "DEALER_MISMATCH"; error: string }
+  | {
+      ok: true;
+      linkId: number;
+      /** The late-paste safety net's result (slice 6). */
+      reconcile: {
+        caught: string[];
+        held: string[];
+        touched: { obdNumber: string; reason: string }[];
+        failed: { obdNumber: string; error: string }[];
+      } | null;
+    }
+  | { ok: false; warning: true; code: "DEALER_MISMATCH" | "TELEPHONIC_TAG"; error: string }
   | { ok: false; warning?: false; code: string; error: string };

@@ -13,12 +13,14 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { normaliseSoNumber } from "@/lib/billing/telephonic-so";
+import { reconcileSo, type ReconcileResult } from "./reconcile";
 
 const CANCELLED = "cancelled";
 
 export type PasteSoResult =
-  | { ok: true; linkId: number }
-  | { ok: false; warning: true; code: "DEALER_MISMATCH"; error: string; status: 409 }
+  /** `reconcile`: what the late-paste safety net did with OBDs already in Orbit (slice 6). */
+  | { ok: true; linkId: number; reconcile: ReconcileResult | null }
+  | { ok: false; warning: true; code: "DEALER_MISMATCH" | "TELEPHONIC_TAG"; error: string; status: 409 }
   | { ok: false; warning?: false; code: string; error: string; status: number };
 
 function refuse(code: string, error: string, status: number): PasteSoResult {
@@ -42,6 +44,8 @@ export async function pasteSo(args: {
   soNumber: string;
   userId: number;
   confirmDealerMismatch: boolean;
+  /** S6-5: true on the request after "Link anyway" on the Telephonic-tag warning. */
+  confirmTelephonic: boolean;
 }): Promise<PasteSoResult> {
   // 2. The SO — exactly 10 digits, the rule chk_challan_order_so_links_so_shape enforces.
   const soNumber = normaliseSoNumber(typeof args.soNumber === "string" ? args.soNumber : "");
@@ -77,23 +81,10 @@ export async function pasteSo(args: {
     );
   }
 
-  // 5. LATE PASTE — the SO's OBD is already in Orbit (plan §3: REFUSE). The import
-  // catch (slice 6) only sees NEW OBDs, so a 'waiting' row here would never be
-  // acted on while that OBD is picked and loaded — a double dispatch. A cancelled
-  // OBD ships nothing, so it does not block the paste.
-  const obd = await prisma.orders.findFirst({
-    where: { soNumber, isRemoved: false, isChallanOrder: false, workflowStage: { not: CANCELLED } },
-    orderBy: { id: "asc" },
-    select: { obdNumber: true, workflowStage: true },
-  });
-  if (obd !== null) {
-    return refuse(
-      "LATE_PASTE",
-      `SO ${soNumber} already has OBD ${obd.obdNumber} in Orbit (${obd.workflowStage}). Linking it now could ship ` +
-        `the goods twice — tell the floor supervisor; this is handled once the import safety net is live.`,
-      409,
-    );
-  }
+  // 5. LATE PASTE — slice 5 REFUSED it here. Since slice 6 (owner D11 / S6-2) the paste
+  // goes ahead and the safety net runs AFTER the insert (step 8): an untouched OBD is
+  // pulled back into the challan, a touched one is left where it is and the screens
+  // show "DOUBLE DISPATCH RISK" until a person acts.
 
   // 6. Dealer guard (F1b) — what CAN be checked at paste: a mail order carrying
   // this SO. S5-2: a mismatch WARNS; a second request with confirmDealerMismatch
@@ -119,13 +110,33 @@ export async function pasteSo(args: {
     }
   }
 
+  // 6b. S6-5 — a live Telephonic tag on this SO: WARN, billing decides. (At import the
+  // challan wins anyway — the planner skips a challan_linked bill.)
+  if (!args.confirmTelephonic) {
+    const tag = await prisma.so_tags.findFirst({
+      where: { soNumber, isRemoved: false, status: "waiting", expiresAt: { gt: new Date() } },
+      select: { tag: true },
+    });
+    if (tag !== null) {
+      return {
+        ok: false,
+        warning: true,
+        code: "TELEPHONIC_TAG",
+        status: 409,
+        error: `SO ${soNumber} also has a live Telephonic ${tag.tag.toUpperCase()} tag. If you link it, the challan wins — ` +
+          `its OBD will be linked, not held or CI'd.`,
+      };
+    }
+  }
+
   // 7. The write — one 'waiting' row. A P2002 is a race on the partial unique.
+  let linkId: number;
   try {
     const row = await prisma.challan_order_so_links.create({
       data: { orbOrderId: orb.id, soNumber, status: "waiting", linkedById: args.userId },
       select: { id: true },
     });
-    return { ok: true, linkId: row.id };
+    linkId = row.id;
   } catch (err) {
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
       const raced = await liveLinkOf(soNumber);
@@ -137,6 +148,16 @@ export async function pasteSo(args: {
     }
     throw err;
   }
+
+  // 8. The late-paste safety net (slice 6) — OBDs on this SO already in Orbit. Never
+  // fails the paste: the link is stored either way, and alerts.ts shows anything left over.
+  let reconcile: ReconcileResult | null = null;
+  try {
+    reconcile = await reconcileSo(soNumber, args.userId, { source: "paste" });
+  } catch (err) {
+    console.error(`[challan-paste] SO ${soNumber} linked, safety net failed`, err);
+  }
+  return { ok: true, linkId, reconcile };
 }
 
 export type UnlinkSoResult =

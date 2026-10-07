@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { challanCancelRefusal, unlinkWaitingOnCancel } from "@/lib/challan-orders/cancel-guard";
+import { challanCancelRefusal, releaseChallanOnCancel } from "@/lib/challan-orders/cancel-guard";
 import { isSuperuser } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
@@ -126,8 +126,9 @@ export async function POST(
   });
 
   // ── 3. Conditionally void the linked challan ────────────────────────────────
-  // S5-3 — a removed ORB order frees its waiting SOs (link table only).
-  if (order.isChallanOrder) await unlinkWaitingOnCancel(orderId, userId);
+  // S5-3 + S6-4 — a removed ORB order frees its SOs and returns its linked bills to the floor —
+  // ORB orders only; the bill being cancelled here keeps its one update + one log.
+  if (order.isChallanOrder) await releaseChallanOnCancel(orderId, userId);
 
   if (order.challan && !order.challan.isVoided) {
     await prisma.delivery_challans.update({
