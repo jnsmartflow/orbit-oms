@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
+import { isSuperuser } from "@/lib/rbac";
 import { checkAnyPermission } from "@/lib/permissions";
 import { pickDelete } from "@/lib/billing/pick-delete";
 
@@ -32,7 +33,7 @@ export async function POST(req: Request): Promise<NextResponse> {
     return NextResponse.json({ error: "orderId must be a positive integer" }, { status: 400 });
   }
 
-  const r = await pickDelete({ orderId, userId, owner: "billing" });
+  const r = await pickDelete({ orderId, userId, owner: "billing", actorIsAdmin: isSuperuser(session) });
   if (!r.ok) return NextResponse.json({ error: r.error }, { status: r.status });
   return NextResponse.json({ ok: true, ...r.data });
 }

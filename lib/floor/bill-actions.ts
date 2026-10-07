@@ -22,6 +22,7 @@
 // Server-only (Prisma).
 
 import { Prisma } from "@prisma/client";
+import { challanCancelRefusal, unlinkWaitingOnCancel } from "@/lib/challan-orders/cancel-guard";
 import { prisma } from "@/lib/prisma";
 import {
   FLOOR_HOLD_NOTE,
@@ -64,6 +65,9 @@ export const BILL_ACTION_ORDER_SELECT = {
   // cancel's refusals (offFloorRefusal) — the trip number is for the message.
   tripDropId: true,
   tripDrop: { select: { trip: { select: { tripNumber: true } } } },
+  // cancel: an ORB order is admin-only and frees its waiting SOs (2026-10-07,
+  // Challan orders S5-3 / S5-4 — lib/challan-orders/cancel-guard.ts).
+  isChallanOrder: true,
 } satisfies Prisma.ordersSelect;
 
 export type BillActionOrder = Prisma.ordersGetPayload<{ select: typeof BILL_ACTION_ORDER_SELECT }>;
@@ -84,6 +88,9 @@ export interface BillActionOpts {
    *  Stop & cancel passes it, after lib/tint/stop-work.ts has ended the live
    *  jobs (2026-10-01). Floor never does. */
   allowTintRoom?: boolean;
+  /** cancel: is the presser admin (lib/rbac.ts isSuperuser)? Only admin cancels a
+   *  challan (ORB) order (S5-4). Omitted = false — fail closed for ORB rows only. */
+  actorIsAdmin?: boolean;
 }
 
 /** done = wrote one update + one log · failed = refused, nothing written ·
@@ -208,6 +215,12 @@ export async function applyBillAction(
     updateData = setting ? { handAt: new Date(), handById: changedById } : { handAt: null, handById: null };
     note = setting ? HAND_SET_NOTE : HAND_CLEAR_NOTE;
   } else if (action === "cancel") {
+    // 🔴 A CHALLAN (ORB) ORDER: ADMIN ONLY (S5-4), before any other rule — and
+    // admin still meets every refusal below.
+    const challanRefusal = challanCancelRefusal(order.isChallanOrder, opts.actorIsAdmin === true);
+    if (challanRefusal !== null) {
+      return { kind: "failed", error: challanRefusal };
+    }
     // 🔴 THE SAME REFUSALS AS RAISE CI (lib/floor/off-floor.ts, owner
     // 2026-09-22): already cancelled, dispatched, on a trip, or in the tint
     // room. Per bill, into `failed`, never the whole batch.
@@ -366,6 +379,11 @@ export async function applyBillAction(
   // marker sees exactly one change.
   if (clearAssignment) {
     await prisma.pick_assignments.deleteMany({ where: { orderId } });
+  }
+  // S5-3 — a cancelled ORB order frees its waiting SOs. Link table only; the
+  // one-update / one-log contract on `orders` is unchanged.
+  if (action === "cancel" && order.isChallanOrder) {
+    await unlinkWaitingOnCancel(orderId, changedById);
   }
   // ONE log per bill per action.
   await prisma.order_status_logs.create({

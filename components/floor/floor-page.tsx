@@ -31,6 +31,8 @@
 // still go through /api/floor/actions, and the row ⚡ is still wired here.
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { ChallanOrdersScreen } from "@/components/challan-orders/challan-orders-screen";
+import { ChallanCountProbe } from "@/components/challan-orders/use-challan-count";
 import { toast } from "sonner";
 import { TripDesk, isPoolRow } from "./trip-desk";
 import { TripRedeliveryDialog } from "./trip-redelivery-dialog";
@@ -129,7 +131,8 @@ const UNSCOPED_QS = "scope=All";
 // its own — it is a client-side filter of board rows the payload already holds
 // (see TripDesk). The other three each have a feed behind them; this one does
 // not, and giving it one would be the mistake.
-type TopTab = "floor" | "tinting" | "hold" | "cancelled";
+// "challan" (2026-10-07, slice 5): the shared Challan orders screen, after Cancel & CI.
+type TopTab = "floor" | "tinting" | "hold" | "cancelled" | "challan";
 
 interface BoardData {
   // ⚠ NO `rail` SINCE 2026-09-13 — see app/api/floor/board/route.ts. The feed is
@@ -366,7 +369,16 @@ function holdRowToOffFloorBill(r: FloorHoldRow): OffFloorFormBill {
   };
 }
 
-export function FloorPage({ canEdit = false }: { canEdit?: boolean } = {}) {
+export function FloorPage({
+  canEdit = false,
+  canViewChallan = false,
+  canEditChallan = false,
+}: {
+  canEdit?: boolean;
+  /** `challan_orders` canView / canEdit (2026-10-07) — the Challan orders tab. */
+  canViewChallan?: boolean;
+  canEditChallan?: boolean;
+} = {}) {
   // 🔴 THE TEMPORARY ADMIN-ONLY GATE IS GONE (2026-09-10). It existed for one
   // day, to keep the By trip pivot option off everyone else's screen while it
   // was tested on live data, and it read the session purely to decide whether to
@@ -417,6 +429,8 @@ export function FloorPage({ canEdit = false }: { canEdit?: boolean } = {}) {
   const [filters, setFilters] = useState<FloorFilters>(EMPTY_FILTERS);
 
   const [topTab, setTopTab] = useState<TopTab>("floor");
+  // The Challan orders pill's number — Not billed (2026-10-07, ChallanCountProbe).
+  const [challanCount, setChallanCount] = useState<number | null>(null);
   const [viewMode, setViewMode] = useState<"live" | "history">("live");
   const [histDate, setHistDate] = useState<string | null>(null);
 
@@ -3333,6 +3347,11 @@ export function FloorPage({ canEdit = false }: { canEdit?: boolean } = {}) {
       {/* "Cancel & CI" since 2026-09-22 — today's cancels AND the CIs the floor
           raised. The TopTab key stays "cancelled"; only the label moved. */}
       {tabPill("cancelled", "Cancel & CI", cancelledCount)}
+      {/* Challan orders (2026-10-07, slice 5) — the shared screen, after Cancel & CI.
+          Hidden without `challan_orders` canView; its count (Not billed) comes off
+          the screen's own marker, probed only for a holder. */}
+      {canViewChallan && tabPill("challan", "Challan orders", challanCount ?? 0)}
+      {canViewChallan && <ChallanCountProbe onCount={setChallanCount} />}
 
       {/* 🔴 NO "+ New trip" ON THIS ROW ANY MORE (2026-09-22). A trip is made
           from ticked bills, by the bottom bar's "+ New trip" — the only way in
@@ -3546,6 +3565,9 @@ export function FloorPage({ canEdit = false }: { canEdit?: boolean } = {}) {
                       openOffFloor(rows.map(holdRowToOffFloorBill), (_done, notDone) => keepTicked(notDone))
                     }
                   />
+                ) : topTab === "challan" && canViewChallan ? (
+                  // The SAME component Billing and Place Order mount (D8).
+                  <ChallanOrdersScreen canEdit={canEditChallan} mount="floor" />
                 ) : topTab === "cancelled" ? (
                   cancelSearch !== null ? (
                     // A search result from another day (2026-10-06): the found

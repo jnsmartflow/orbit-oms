@@ -37,6 +37,7 @@
 // unique index pick_delete_decisions_all_ok_live_key depends on it.
 
 import { Prisma } from "@prisma/client";
+import { challanCancelRefusal } from "@/lib/challan-orders/cancel-guard";
 import { prisma } from "@/lib/prisma";
 import { getTwinIdsBySo } from "@/lib/picking/duplicate-so";
 import {
@@ -649,6 +650,10 @@ export async function pickDelete(args: {
   orderId: number;
   userId: number;
   owner: PickDeleteOwner;
+  /** Is the presser admin (lib/rbac.ts isSuperuser)? A challan (ORB) order is
+   *  admin-only (S5-4, 2026-10-07). Omitted = false — fail closed for ORB rows only.
+   *  (An ORB order carries no SO, so it never forms a group today — belt and braces.) */
+  actorIsAdmin?: boolean;
 }): Promise<WriteResult<{ decisionId: number; obdNumber: string; keptObdNumbers: string[]; warning?: string }>> {
   // ── Read (picker FIRST — the assignment row is deleted in step 3) ──
   const order = await prisma.orders.findUnique({
@@ -659,12 +664,15 @@ export async function pickDelete(args: {
       soNumber: true,
       workflowStage: true,
       isRemoved: true,
+      isChallanOrder: true,
       tripDropId: true,
       tripDrop: { select: { trip: { select: { tripNumber: true } } } },
       pickAssignment: { select: { pickerId: true } },
     },
   });
   if (!order || order.isRemoved) return { ok: false, status: 404, error: "Bill not found" };
+  const challanRefusal = challanCancelRefusal(order.isChallanOrder, args.actorIsAdmin === true);
+  if (challanRefusal !== null) return { ok: false, status: 403, error: challanRefusal };
   const soNumber = order.soNumber;
   if (soNumber === null || soNumber.trim() === "") {
     return { ok: false, status: 409, error: "This bill has no SO number" };

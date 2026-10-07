@@ -29,6 +29,7 @@ import {
 import { MO_TAG } from "@/lib/hide/tag-catalog";
 import { searchCustomers, saveLineStatus, searchSkus, resolveLine, saveNotes } from "@/lib/mail-orders/api";
 import { BillingTabBar, type BillingTab } from "@/components/billing/billing-tab-bar";
+import { ChallanOrdersScreen } from "@/components/challan-orders/challan-orders-screen";
 import { BillingPickingTab } from "@/components/billing/billing-picking-tab";
 import { BillingPrintTab } from "@/components/billing/billing-print-tab";
 import { BillingTelephonicTab } from "@/components/billing/billing-telephonic-tab";
@@ -146,6 +147,12 @@ interface ReviewViewProps {
    */
   billingPickDeleteCanView?: boolean;
   billingPickDeleteCanEdit?: boolean;
+  /**
+   * The shared Challan orders screen (2026-10-07, slice 5) — `challan_orders`.
+   * Same two gates, same fail-closed FALSE default. `CanEdit` = paste / unlink SO.
+   */
+  billingChallanCanView?: boolean;
+  billingChallanCanEdit?: boolean;
   /** Phase 2 — reload the order list after a billing action writes mo_orders. */
   onBillingActionSaved?: () => void;
   /**
@@ -601,6 +608,8 @@ export function ReviewView({
   telephonicMonth,
   billingPickDeleteCanView = false,
   billingPickDeleteCanEdit = false,
+  billingChallanCanView = false,
+  billingChallanCanEdit = false,
   onBillingActionSaved,
   billingHeaderSlot,
   hasHeaderFilter = false,
@@ -2862,7 +2871,7 @@ export function ReviewView({
       <div
         data-tutorial="order-list"
         className={`w-[320px] flex-shrink-0 border-r border-gray-200 flex flex-col${
-          billingV2 && (billingTab === "print" || billingTab === "telephonic" || billingTab === "pick_delete")
+          billingV2 && (billingTab === "print" || billingTab === "telephonic" || billingTab === "pick_delete" || billingTab === "challan_orders")
             ? " hidden"
             : ""
         }`}
@@ -3014,6 +3023,8 @@ export function ReviewView({
               showTelephonic={billingTelephonicCanView}
               // The Pick delete pill and its count fetch — `billing_pick_delete`.
               showPickDelete={billingPickDeleteCanView}
+              // The Challan orders pill and its count probe — `challan_orders`.
+              showChallanOrders={billingChallanCanView}
             />
           </div>
         )}
@@ -3042,6 +3053,11 @@ export function ReviewView({
              WIDTH exactly like Telephonic (the inbox is CSS-hidden above). It owns
              its History month. */
           <BillingPickDeleteTab canEdit={billingPickDeleteCanEdit} />
+        ) : billingV2 && billingChallanCanView && billingTab === "challan_orders" ? (
+          /* The shared Challan orders screen (2026-10-07, slice 5) — the SAME
+             component Floor and Place Order mount. Its own permission term, FULL
+             WIDTH like Telephonic (the inbox is CSS-hidden above). */
+          <ChallanOrdersScreen canEdit={billingChallanCanEdit} mount="billing" />
         ) :billingV2 && pendingOrders.length === 0 && reopenedPunchedId === null ? (
           /* Billing v2 — nothing left to work on. Deliberately placed BEFORE
              the `selectedOrder` arm: a punched order stays selected (nothing

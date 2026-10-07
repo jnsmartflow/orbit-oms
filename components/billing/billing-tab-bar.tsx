@@ -18,8 +18,9 @@ import {
   useBillingTelephonicMarkerSubscription,
 } from "@/components/billing/billing-marker-provider";
 import { useBillingLiveCounts } from "@/components/billing/billing-live";
+import { ChallanCountProbe } from "@/components/challan-orders/use-challan-count";
 
-export type BillingTab = "orders" | "picking" | "print" | "telephonic" | "pick_delete";
+export type BillingTab = "orders" | "picking" | "print" | "telephonic" | "pick_delete" | "challan_orders";
 
 /** The Pick delete pill's count (2026-09-27) — same-SO groups waiting for a decision. */
 
@@ -38,6 +39,7 @@ export function BillingTabBar({
   showPrint = false,
   showTelephonic = false,
   showPickDelete = false,
+  showChallanOrders = false,
 }: {
   active: BillingTab;
   onChange: (tab: BillingTab) => void;
@@ -96,6 +98,13 @@ export function BillingTabBar({
    * and the same FALSE default.
    */
   showPickDelete?: boolean;
+  /**
+   * Does this viewer hold `challan_orders`/canView? (Challan orders slice 5,
+   * 2026-10-07.) The shared Challan orders screen. Same two meanings as
+   * `showTelephonic` — no pill, and NO request to its marker (the count probe is
+   * only mounted when true) — and the same FALSE default. Count = Not billed.
+   */
+  showChallanOrders?: boolean;
 }) {
   // LIVE FEED (2b-ii): while the Billing desk is on the change feed the pills read the
   // root's counts (sync answers + one marker read at start) and NOTHING below fetches a
@@ -106,6 +115,8 @@ export function BillingTabBar({
   const [pendingCount, setPendingCount] = useState<number | null>(null);
   const [printCount, setPrintCount] = useState<number | null>(null);
   const [telephonicCount, setTelephonicCount] = useState<number | null>(null);
+  // Challan orders — Not billed, off the screen's own marker (ChallanCountProbe).
+  const [challanCount, setChallanCount] = useState<number | null>(null);
   const printReqRef = useRef(0);
   const telephonicReqRef = useRef(0);
 
@@ -268,6 +279,11 @@ export function BillingTabBar({
           groups themselves are decided in the blocking popup
           (components/billing/billing-pick-delete-popup.tsx), on every tab. */}
       {showPickDelete && pill("pick_delete", "Pick delete", null, false, true)}
+      {/* Challan orders (2026-10-07, slice 5) — gated on `challan_orders`/canView, a
+          sibling after Pick delete. Count = challans not billed yet, hidden at 0.
+          The probe that feeds it is mounted ONLY for a holder (no 403 polling). */}
+      {showChallanOrders && pill("challan_orders", "Challan orders", challanCount, false, true)}
+      {showChallanOrders && <ChallanCountProbe onCount={setChallanCount} />}
       {/* ⚠ `ml-auto` lives HERE now. It used to sit on a caption span that ran
           between the pills and this slot; removing that span without moving the
           class would have left the controls butted against the Picking pill

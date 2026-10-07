@@ -317,9 +317,11 @@ export type PageKey =
   // POST /api/place-order/challan-orders. In ALL_PAGE_KEYS / ACTION_PAGES.canEdit
   // / ACCESS_SECTIONS beside place_order_ship_to — the same precedent: registered
   // with its first reader, no grants (admin / superuser only until slice 9).
-  // challan_orders is still REGISTERED ONLY — nothing reads it until slice 5, so
-  // it stays out of those three lists. Neither is in PAGE_NAV_MAP or ICON_MAP (a
-  // control and a tab).
+  // challan_orders IS LIVE since slice 5 (2026-10-07): the ONE shared Challan
+  // orders screen (Billing tab, Floor tab, Place Order link) reads canView, and
+  // its paste / unlink routes (app/api/challan-orders/*) re-check canEdit. In the
+  // same three lists, beside place_order_challan. No grants until slice 9.
+  // Neither is in PAGE_NAV_MAP or ICON_MAP (a control and a tab).
   | "place_order_challan"
   | "challan_orders"
   | "trip_report"
@@ -481,7 +483,7 @@ const ALL_PAGE_KEYS: PageKey[] = [
   // ⚠ `billing_picking` (the Billing Picking TAB) sits beside `mail_orders`,
   // its host screen. It is NOT `picking` on the line above — that is the floor
   // board. Keep them visually apart in this list, never adjacent.
-  "place_order", "place_order_ship_to", "place_order_challan", "trip_report", "mail_orders", "billing_picking", "billing_print",
+  "place_order", "place_order_ship_to", "place_order_challan", "challan_orders", "trip_report", "mail_orders", "billing_picking", "billing_print",
   "billing_telephonic", "billing_pick_delete", "mrn", "ci", "freight_trips",
   // The six Billing action ticks, kept together and next to their host screen
   // for the same reason `billing_picking` is — they are controls INSIDE
@@ -563,6 +565,9 @@ const ACTION_PAGES: Record<Exclude<ActionKey, "canView">, readonly PageKey[]> = 
     // POST /api/place-order/challan-orders re-checks it. Same reason as above:
     // without this entry the Edit cell on /admin/access is a dash.
     "place_order_challan",
+    // challan_orders (2026-10-07, Challan orders slice 5) — paste SO / Unlink on
+    // the shared screen (POST /api/challan-orders/links, …/unlink) gate on canEdit.
+    "challan_orders",
     // The seven Tint Manager action ticks (2026-10-01, tabs build step 2).
     // canEdit is checked per action by lib/tint/manager-bill.ts checkTintAction,
     // on top of tint_manager canEdit — the billing_* pattern. Listed with their
@@ -677,8 +682,8 @@ const PAGE_LABEL_OVERRIDES: Record<string, string> = {
   // "Purchase Order ·" prefix keeps it apart from "Billing · Ship-to" above —
   // a different screen and a different key.
   place_order_ship_to: "Purchase Order · Ship-to",
-  // Challan orders (2026-10-06). Not in PAGE_NAV_MAP. place_order_challan is in
-  // ALL_PAGE_KEYS since slice 3 (2026-10-07); challan_orders joins in slice 5.
+  // Challan orders (2026-10-06). Not in PAGE_NAV_MAP. Both in ALL_PAGE_KEYS —
+  // place_order_challan since slice 3, challan_orders since slice 5 (2026-10-07).
   place_order_challan: "Purchase Order · Create challan order",
   challan_orders:      "Challan orders",
   // Not in PAGE_NAV_MAP. The "Tint Manager · Panel:" prefix keeps the three
@@ -735,7 +740,7 @@ export const ACCESS_SECTIONS: { label: string; keys: PageKey[] }[] = [
     "billing_print", "billing_telephonic", "billing_pick_delete",
     "billing_hold", "billing_slot", "billing_urgent", "billing_ship_to",
     "billing_hand", "billing_ci",
-    "place_order", "place_order_ship_to", "place_order_challan", "trip_report", "import_obd",
+    "place_order", "place_order_ship_to", "place_order_challan", "challan_orders", "trip_report", "import_obd",
   ] },
   { label: "Tinting", keys: [
     "tint_manager",

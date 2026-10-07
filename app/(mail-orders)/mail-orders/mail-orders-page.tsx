@@ -25,6 +25,7 @@ import {
 import { useBillingPrintAccess } from "@/components/billing/billing-print-access-provider";
 import { useBillingTelephonicAccess } from "@/components/billing/billing-telephonic-access-provider";
 import { useBillingPickDeleteAccess } from "@/components/billing/billing-pick-delete-access-provider";
+import { useChallanOrdersAccess } from "@/components/challan-orders/challan-orders-access-provider";
 import { BillingPickDeletePopup } from "@/components/billing/billing-pick-delete-popup";
 import { BillingLiveRoot, readBillingLiveHint } from "@/components/billing/billing-live";
 import { TelephonicMonthPicker } from "@/components/billing/billing-telephonic-tab";
@@ -286,6 +287,8 @@ export default function MailOrdersPage() {
   const [telephonicMonth, setTelephonicMonth] = useState<string>(() => currentIstMonth(new Date()));
   // ── Billing Pick delete tab access (2026-09-27) — `billing_pick_delete`. ────
   const { canView: canViewPickDelete, canEdit: canEditPickDelete } = useBillingPickDeleteAccess();
+  // ── Challan orders tab access (2026-10-07, slice 5) — `challan_orders`. ─────
+  const { canView: canViewChallan, canEdit: canEditChallan } = useChallanOrdersAccess();
   // The Pick delete tab's History month is owned by the TAB since 2026-09-27
   // (hand review): its picker sits in the History header, which the tab hides
   // while groups wait — so the tab row carries no picker on this tab.
@@ -299,7 +302,8 @@ export default function MailOrdersPage() {
     (billingTab === "picking" && !canViewPicking) ||
     (billingTab === "print" && !canViewPrint) ||
     (billingTab === "telephonic" && !canViewTelephonic) ||
-    (billingTab === "pick_delete" && !canViewPickDelete)
+    (billingTab === "pick_delete" && !canViewPickDelete) ||
+    (billingTab === "challan_orders" && !canViewChallan)
       ? "orders"
       : billingTab;
   // ── Notes-band text size (per user, px) ─────────────────────────────────────
@@ -1642,6 +1646,8 @@ export default function MailOrdersPage() {
           telephonicMonth={telephonicMonth}
           billingPickDeleteCanView={canViewPickDelete}
           billingPickDeleteCanEdit={canEditPickDelete}
+          billingChallanCanView={canViewChallan}
+          billingChallanCanEdit={canEditChallan}
           onBillingActionSaved={loadOrders}
           billingHeaderSlot={billingHeaderSlot}
           hasHeaderFilter={hasHeaderFilter}

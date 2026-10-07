@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
+import { isSuperuser } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
 import { deskCancelRequiresNote, type DeskCancelReason } from "@/lib/floor/desk-cancel-reasons";
 import { FLOOR_REMARK_MAX, isFloorCancelReason, offFloorRefusal } from "@/lib/floor/off-floor";
@@ -151,7 +152,7 @@ export async function POST(req: Request): Promise<NextResponse> {
       const r = await applyBillAction(
         order,
         "cancel",
-        { cancelReason, cancelRemark, allowTintRoom: true },
+        { cancelReason, cancelRemark, allowTintRoom: true, actorIsAdmin: isSuperuser(session) },
         changedById,
         "tint",
       );
@@ -195,7 +196,8 @@ export async function POST(req: Request): Promise<NextResponse> {
       }
       // No allowTintRoom: a bill an operator holds is refused here with
       // "use Stop & cancel on Tint Manager".
-      const r = await applyBillAction(order, "cancel", { cancelReason, cancelRemark }, changedById, "tint");
+      // actorIsAdmin: a challan (ORB) order is admin-only to cancel (S5-4).
+      const r = await applyBillAction(order, "cancel", { cancelReason, cancelRemark, actorIsAdmin: isSuperuser(session) }, changedById, "tint");
       if (r.kind === "failed") failed.push({ orderId, error: r.error });
       else if (r.kind === "done") done.push(orderId);
     } catch (err) {

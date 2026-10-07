@@ -58,6 +58,7 @@
 // line reconcile. Those are the findings path's, not this one's.
 
 import { Prisma } from "@prisma/client";
+import { challanCancelRefusal, unlinkWaitingOnCancel } from "@/lib/challan-orders/cancel-guard";
 import { prisma } from "@/lib/prisma";
 import { allocateCiNumber } from "@/lib/ci/number";
 import { resolveCiDealer } from "@/lib/ci/derive";
@@ -106,6 +107,9 @@ export async function raiseFullBillCi(args: {
   userId: number;
   allowTintRoom?: boolean;
   beforeWrite?: () => Promise<void>;
+  /** Is the presser admin (lib/rbac.ts isSuperuser)? A challan (ORB) order is
+   *  admin-only (S5-4, 2026-10-07). Omitted = false — fail closed for ORB rows only. */
+  actorIsAdmin?: boolean;
 }): Promise<RaiseCiResult> {
   const { orderId, reason, remark, userId } = args;
   let obdNumber: string | null = null;
@@ -131,6 +135,8 @@ export async function raiseFullBillCi(args: {
         customer: { select: { customerName: true } },
         soNumber: true,
         workflowStage: true,
+        // S5-3 / S5-4 (2026-10-07) — lib/challan-orders/cancel-guard.ts.
+        isChallanOrder: true,
         tripDropId: true,
         tripDrop: { select: { trip: { select: { tripNumber: true } } } },
       },
@@ -139,6 +145,12 @@ export async function raiseFullBillCi(args: {
       return { ok: false, orderId, obdNumber: null, reason: "Order not found" };
     }
     obdNumber = order.obdNumber;
+
+    // ── b0. A challan (ORB) order: admin only (S5-4) ─────────────────────
+    const challanRefusal = challanCancelRefusal(order.isChallanOrder, args.actorIsAdmin === true);
+    if (challanRefusal !== null) {
+      return { ok: false, orderId, obdNumber, reason: challanRefusal };
+    }
 
     // ── b. Refusals — the same ones the floor cancel applies ──────────────
     const refusal = offFloorRefusal(
@@ -271,6 +283,8 @@ export async function raiseFullBillCi(args: {
     // AFTER the stage write, never before — the ordering and the reason are
     // the floor cancel's (lib/floor/bill-actions.ts, the orphan fix).
     await prisma.pick_assignments.deleteMany({ where: { orderId } });
+    // S5-3 — a cancelled ORB order frees its waiting SOs (link table only).
+    if (order.isChallanOrder) await unlinkWaitingOnCancel(orderId, userId);
     // ONE log per bill. The note is what the Cancel & CI tab reads.
     await prisma.order_status_logs.create({
       data: {

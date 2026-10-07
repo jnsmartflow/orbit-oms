@@ -88,6 +88,10 @@ const PAGES_CONFIG = [
   // place_order_challan — the Challan order switch on desktop /place-order
   // (2026-10-07, Challan orders slice 3). canEdit only; same ROLLBACK caveat.
   { key: "place_order_challan", label: "Purchase Order · Create challan order", path: "/place-order", section: "Operations" },
+  // challan_orders — the shared Challan orders screen (2026-10-07, slice 5): canView
+  // = see it (Billing tab / Floor tab / Place Order link), canEdit = paste / unlink SO.
+  // Same ROLLBACK caveat.
+  { key: "challan_orders", label: "Challan orders", path: "/mail-orders", section: "Operations" },
   // One tick per report in the /reports hub (2026-09-17). canView = see that
   // report; reports_ti_report canExport = its Download Excel button. Same
   // ROLLBACK-editor caveat as the rows above.

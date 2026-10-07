@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
+import { isSuperuser } from "@/lib/rbac";
 import { checkAnyPermission } from "@/lib/permissions";
 import { FLOOR_REMARK_MAX } from "@/lib/floor/off-floor";
 import { findActiveCiReason, listActiveCiReasons, raiseFullBillCi } from "@/lib/floor/raise-ci";
@@ -162,7 +163,8 @@ export async function POST(req: Request): Promise<NextResponse> {
 
   for (const orderId of orderIds) {
     // Never throws — every failure, with Floor's wording, comes back as a skip.
-    const r = await raiseFullBillCi({ orderId, reason, remark, userId, allowTintRoom: false });
+    // actorIsAdmin: a challan (ORB) order is admin-only (S5-4).
+    const r = await raiseFullBillCi({ orderId, reason, remark, userId, allowTintRoom: false, actorIsAdmin: isSuperuser(session) });
     if (r.ok) raised.push({ orderId: r.orderId, obdNumber: r.obdNumber, ciNumber: r.ciNumber });
     else skipped.push({ orderId: r.orderId, obdNumber: r.obdNumber, reason: r.reason });
   }

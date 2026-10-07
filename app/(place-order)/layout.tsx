@@ -4,6 +4,7 @@ import { checkAnyPermission, getAllPermissionsForRoles, buildNavItems } from "@/
 import { RoleSidebarProvider } from "@/components/shared/role-sidebar-provider";
 import { RoleLayoutClient } from "@/components/shared/role-layout-client";
 import { PlaceOrderAccessProvider } from "@/components/place-order/place-order-access-provider";
+import { ChallanOrdersAccessProvider } from "@/components/challan-orders/challan-orders-access-provider";
 import type { RoleSidebarRole } from "@/components/shared/role-sidebar";
 
 // Place Order layout — role-based sidebar + auth gate.
@@ -49,6 +50,10 @@ export default async function PlaceOrderLayout({
   // canEdit-only meaning. Drawing only — POST /api/place-order/challan-orders
   // re-checks the tick on every create.
   const canCreateChallan = allPerms["place_order_challan"]?.canEdit ?? false;
+  // The shared Challan orders screen (2026-10-07, slice 5) — the top-bar link
+  // (canView) and paste / unlink (canEdit). Same map; the routes re-check.
+  const canViewChallanOrders = allPerms["challan_orders"]?.canView ?? false;
+  const canEditChallanOrders = allPerms["challan_orders"]?.canEdit ?? false;
 
   const seen = new Set<string>();
   const dedupedNavItems = navItems.filter(item => {
@@ -69,7 +74,9 @@ export default async function PlaceOrderLayout({
         navItems={dedupedNavItems}
       >
         <PlaceOrderAccessProvider canShipTo={canShipTo} canCreateChallan={canCreateChallan}>
-          {children}
+          <ChallanOrdersAccessProvider canView={canViewChallanOrders} canEdit={canEditChallanOrders}>
+            {children}
+          </ChallanOrdersAccessProvider>
         </PlaceOrderAccessProvider>
       </RoleLayoutClient>
     </RoleSidebarProvider>

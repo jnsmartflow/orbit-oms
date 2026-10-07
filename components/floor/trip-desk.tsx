@@ -246,7 +246,7 @@ export function TripDesk({
   onStartAddingTo: (tripId: number) => void;
   onDoneAdding: () => void;
   /** Which of the four tabs is open. The RAIL is identical on all of them. */
-  activeTab: "floor" | "tinting" | "hold" | "cancelled";
+  activeTab: "floor" | "tinting" | "hold" | "cancelled" | "challan";
   /** The tab pills + their counts + New trip, built by floor-page and rendered
    *  as the first child of the TABLE column. Passed as a node rather than
    *  rebuilt here: the counts come from four different filtered lists that
@@ -1229,7 +1229,7 @@ export function TripDesk({
         <div
           ref={scrollRef}
           className={
-            activeTab === "hold" || activeTab === "cancelled"
+            activeTab === "hold" || activeTab === "cancelled" || activeTab === "challan"
               ? "flex min-h-0 flex-1 flex-col overflow-hidden"
               : `min-h-0 flex-1 overflow-y-auto ${bottomBar ? "pb-[84px]" : ""}`
           }

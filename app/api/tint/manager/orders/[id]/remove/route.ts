@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
+import { challanCancelRefusal, unlinkWaitingOnCancel } from "@/lib/challan-orders/cancel-guard";
+import { isSuperuser } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 import { checkTintAction } from "@/lib/tint/manager-bill";
@@ -83,6 +85,7 @@ export async function POST(
       obdNumber:     true,
       workflowStage: true,
       isRemoved:     true,
+      isChallanOrder: true,
       challan:       { select: { id: true, isVoided: true } },
     },
   });
@@ -91,6 +94,13 @@ export async function POST(
   }
   if (order.isRemoved) {
     return NextResponse.json({ ok: false, error: "Already removed" }, { status: 409 });
+  }
+  // A challan (ORB) order: admin only (S5-4, 2026-10-07) — lib/challan-orders/cancel-guard.ts.
+  // (An ORB order is non-tint and never reaches pending_tint_assignment, so the
+  // stage rule below refuses it anyway; this states the S5-4 rule where it applies.)
+  const challanRefusal = challanCancelRefusal(order.isChallanOrder, isSuperuser(session));
+  if (challanRefusal !== null) {
+    return NextResponse.json({ ok: false, error: challanRefusal }, { status: 403 });
   }
   if (order.workflowStage !== "pending_tint_assignment") {
     return NextResponse.json(
@@ -116,6 +126,9 @@ export async function POST(
   });
 
   // ── 3. Conditionally void the linked challan ────────────────────────────────
+  // S5-3 — a removed ORB order frees its waiting SOs (link table only).
+  if (order.isChallanOrder) await unlinkWaitingOnCancel(orderId, userId);
+
   if (order.challan && !order.challan.isVoided) {
     await prisma.delivery_challans.update({
       where: { id: order.challan.id },

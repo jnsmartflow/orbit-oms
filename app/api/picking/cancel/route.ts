@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
+import { challanCancelRefusal, unlinkWaitingOnCancel } from "@/lib/challan-orders/cancel-guard";
+import { isSuperuser } from "@/lib/rbac";
 import { checkAnyPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { PICKING_CANCELLABLE_STAGES } from "@/lib/workflow-stages";
@@ -150,12 +152,21 @@ export async function POST(req: Request): Promise<NextResponse> {
       // under lib/picking/queue.ts's `include`.
       shipToCustomerName: true,
       pickAssignment: { select: { pickerId: true } },
+      // S5-3 / S5-4 (2026-10-07) — lib/challan-orders/cancel-guard.ts.
+      isChallanOrder: true,
     },
   });
   if (!order || order.isRemoved) {
     // A soft-removed OBD is not a live bill (CORE §3's soft-delete read rule)
     // and must not be cancellable back into a different shape.
     return NextResponse.json({ error: "Order not found" }, { status: 404 });
+  }
+
+  // a2. A challan (ORB) order: admin only (S5-4, 2026-10-07). 403, before the
+  // stage gate — admin still meets every rule below.
+  const challanRefusal = challanCancelRefusal(order.isChallanOrder, isSuperuser(session));
+  if (challanRefusal !== null) {
+    return NextResponse.json({ error: challanRefusal }, { status: 403 });
   }
 
   // b. Stage gate. 409 (not 400) so the board's EXISTING "Already changed —
@@ -227,6 +238,9 @@ export async function POST(req: Request): Promise<NextResponse> {
   // violates a value constraint; a 'cancelled' status would have, and that is
   // exactly why this clears the row instead of restatusing it.
   const cleared = await prisma.pick_assignments.deleteMany({ where: { orderId } });
+
+  // d2. S5-3 — a cancelled ORB order frees its waiting SOs (link table only).
+  if (order.isChallanOrder) await unlinkWaitingOnCancel(orderId, changedById);
 
   // e. Audit. ONE log row. The reason lives HERE and nowhere else — there is no
   // cancel-reason column on `orders` (removalReason/removalRemark belong to

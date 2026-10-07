@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
+import { isSuperuser } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
 import { FLOOR_REMARK_MAX } from "@/lib/floor/off-floor";
 import { findActiveCiReason, listActiveCiReasons, raiseFullBillCi } from "@/lib/floor/raise-ci";
@@ -141,12 +142,13 @@ export async function POST(req: Request): Promise<NextResponse> {
             remark,
             userId,
             allowTintRoom: true,
+            actorIsAdmin: isSuperuser(session),
             beforeWrite: async () => {
               await stopTintWork({ orderId, managerId: userId, note: "CI raised from Tint Manager" });
             },
           })
         // A Base bill — Floor's call, verbatim.
-        : await raiseFullBillCi({ orderId, reason, remark, userId });
+        : await raiseFullBillCi({ orderId, reason, remark, userId, actorIsAdmin: isSuperuser(session) });
       if (r.ok) raised.push({ orderId: r.orderId, obdNumber: r.obdNumber, ciNumber: r.ciNumber });
       else skipped.push({ orderId: r.orderId, obdNumber: r.obdNumber, reason: r.reason });
     } catch (err) {

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
+import { isSuperuser } from "@/lib/rbac";
 import { pickDelete } from "@/lib/billing/pick-delete";
 import { checkTintAction } from "@/lib/tint/manager-bill";
 
@@ -30,7 +31,7 @@ export async function POST(req: Request): Promise<NextResponse> {
     return NextResponse.json({ error: "orderId must be a positive integer" }, { status: 400 });
   }
 
-  const r = await pickDelete({ orderId, userId, owner: "tint" });
+  const r = await pickDelete({ orderId, userId, owner: "tint", actorIsAdmin: isSuperuser(session) });
   if (!r.ok) return NextResponse.json({ error: r.error }, { status: r.status });
   return NextResponse.json({ ok: true, ...r.data });
 }

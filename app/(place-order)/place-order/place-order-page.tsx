@@ -25,6 +25,8 @@ import type { SearchResult } from "@/lib/place-order/queries";
 import { useKeyboardRouting, routeDigit } from "@/lib/place-order/use-keyboard-routing";
 import { OrbitWordmark } from "@/components/shared/orbit-wordmark";
 import { usePlaceOrderAccess } from "@/components/place-order/place-order-access-provider";
+import { useChallanOrdersAccess } from "@/components/challan-orders/challan-orders-access-provider";
+import { ChallanOrdersScreen } from "@/components/challan-orders/challan-orders-screen";
 
 // /place-order — desktop phone-order entry surface for depot operators.
 //
@@ -83,6 +85,11 @@ export default function PlaceOrderPage(): React.JSX.Element {
   // below) — a draft restored from this browser can carry one the viewer
   // cannot see.
   const { canShipTo, canCreateChallan } = usePlaceOrderAccess();
+  // The shared Challan orders screen (2026-10-07, slice 5): a top-bar link that
+  // swaps the LEFT work area only — the cart panel and every bit of cart state
+  // stay mounted, so the cart is kept.
+  const { canView: canViewChallanOrders, canEdit: canEditChallanOrders } = useChallanOrdersAccess();
+  const [showChallanOrders, setShowChallanOrders] = useState<boolean>(false);
   const [customers,   setCustomers]   = useState<Customer[]>([]);
   const [products,    setProducts]    = useState<Product[]>([]);
   const [dataLoading, setDataLoading] = useState(true);
@@ -836,7 +843,8 @@ export default function PlaceOrderPage(): React.JSX.Element {
     onClosePanel:  handleClosePanel,
     onFocusSearch: () => searchInputRef.current?.focus(),
     onToggleHelp,
-    enabled:       !confirmOpen && !challanConfirmOpen && !helpOpen && !!selectedCustomer,
+    // Off while the Challan orders list is open — its SO box must not route digits.
+    enabled:       !confirmOpen && !challanConfirmOpen && !helpOpen && !showChallanOrders && !!selectedCustomer,
   });
 
   // ── Derived view state (no useMemo — bounded N, render-time fine) ──────
@@ -943,6 +951,18 @@ export default function PlaceOrderPage(): React.JSX.Element {
           />
         </div>
         <div className="flex-1" />
+        {/* Challan orders (2026-10-07, slice 5) — `challan_orders` canView only. */}
+        {canViewChallanOrders && (
+          <button
+            type="button"
+            onClick={() => setShowChallanOrders((v) => !v)}
+            className={`text-[12px] font-medium px-2.5 py-1 rounded-md ${
+              showChallanOrders ? "bg-brand-50 text-brand-700" : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
+            }`}
+          >
+            Challan orders
+          </button>
+        )}
         {selectedCustomer && (
           <button
             type="button"
@@ -962,6 +982,17 @@ export default function PlaceOrderPage(): React.JSX.Element {
         tabIndex={-1}
         className="flex min-h-[calc(100vh-52px)] focus:outline-none"
       >
+        {showChallanOrders && canViewChallanOrders ? (
+          // The SAME screen Billing and Floor mount (D8). The <aside> cart below
+          // stays mounted — nothing in it is reset by opening this.
+          <section className="flex flex-1 min-w-0 flex-col bg-white">
+            <ChallanOrdersScreen
+              canEdit={canEditChallanOrders}
+              mount="place_order"
+              onBack={() => setShowChallanOrders(false)}
+            />
+          </section>
+        ) : (
         <section className="flex-1 bg-gray-50">
           <div className="max-w-[920px] mx-auto p-3">
             {dataLoading ? (
@@ -1028,6 +1059,7 @@ export default function PlaceOrderPage(): React.JSX.Element {
             )}
           </div>
         </section>
+        )}
 
         <CartPanel
           customer={selectedCustomer}

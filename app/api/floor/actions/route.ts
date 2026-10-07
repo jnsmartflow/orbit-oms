@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
+import { isSuperuser } from "@/lib/rbac";
 import { checkAnyPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { deskCancelRequiresNote, type DeskCancelReason } from "@/lib/floor/desk-cancel-reasons";
@@ -129,7 +130,8 @@ export async function POST(req: Request): Promise<NextResponse> {
       const r = await applyBillAction(
         order,
         action,
-        { urgent: body.urgent, slot, cancelReason, cancelRemark, reason: body.reason },
+        // actorIsAdmin: a challan (ORB) order is admin-only to cancel (S5-4).
+        { urgent: body.urgent, slot, cancelReason, cancelRemark, reason: body.reason, actorIsAdmin: isSuperuser(session) },
         changedById,
         "floor",
       );

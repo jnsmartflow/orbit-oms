@@ -9,6 +9,7 @@ import { BillingPickingAccessProvider } from "@/components/billing/billing-picki
 import { BillingActionsAccessProvider } from "@/components/billing/billing-actions-access-provider";
 import { BillingPrintAccessProvider } from "@/components/billing/billing-print-access-provider";
 import { BillingTelephonicAccessProvider } from "@/components/billing/billing-telephonic-access-provider";
+import { ChallanOrdersAccessProvider } from "@/components/challan-orders/challan-orders-access-provider";
 import { BillingPickDeleteAccessProvider } from "@/components/billing/billing-pick-delete-access-provider";
 import { getNotesFontSize } from "@/lib/mail-orders/notes-font-size";
 import { NotesFontSizeProvider } from "@/components/mail-orders/notes-font-size-provider";
@@ -91,6 +92,12 @@ export default async function MailOrdersLayout({
   const pickDeletePerms = allPerms["billing_pick_delete"];
   const canViewBillingPickDelete = pickDeletePerms?.canView ?? false;
   const canEditBillingPickDelete = pickDeletePerms?.canEdit ?? false;
+
+  // ── Challan orders tab access (2026-10-07, slice 5) ─────────────────────────
+  // The shared screen's ONE key (D8) — same map, same absent-means-false rule.
+  const challanPerms = allPerms["challan_orders"];
+  const canViewChallanOrders = challanPerms?.canView ?? false;
+  const canEditChallanOrders = challanPerms?.canEdit ?? false;
 
   // ── Billing ACTION ticks (2026-09-11) ───────────────────────────────────────
   // The six dispatch decisions on the Orders tab — Hold, Slot, Urgent, the ✎
@@ -182,7 +189,10 @@ export default async function MailOrdersLayout({
                     canView={canViewBillingPickDelete}
                     canEdit={canEditBillingPickDelete}
                   >
-                    <NotesFontSizeProvider size={notesFontSize}>{children}</NotesFontSizeProvider>
+                    {/* The shared Challan orders screen's grant (2026-10-07). */}
+                    <ChallanOrdersAccessProvider canView={canViewChallanOrders} canEdit={canEditChallanOrders}>
+                      <NotesFontSizeProvider size={notesFontSize}>{children}</NotesFontSizeProvider>
+                    </ChallanOrdersAccessProvider>
                   </BillingPickDeleteAccessProvider>
                 </BillingTelephonicAccessProvider>
               </BillingPrintAccessProvider>
