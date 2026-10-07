@@ -29,10 +29,6 @@ const pauseSchema = z.object({
   progress:     z.array(progressItemSchema),
 });
 
-// Per-job + concurrent caps (locked by spec).
-const MAX_PAUSE_COUNT_PER_JOB = 3;
-const MAX_CONCURRENT_FOR_OPERATOR = 4; // in_progress + paused combined
-
 // ── Handler ──────────────────────────────────────────────────────────────────
 
 export async function POST(req: Request): Promise<NextResponse> {
@@ -128,30 +124,7 @@ export async function POST(req: Request): Promise<NextResponse> {
     );
   }
 
-  // ── 2. Per-job cap ─────────────────────────────────────────────────────────
-  if (asg.pauseCount >= MAX_PAUSE_COUNT_PER_JOB) {
-    return NextResponse.json(
-      { ok: false, error: `Pause limit reached (${MAX_PAUSE_COUNT_PER_JOB}× per job)` },
-      { status: 409 },
-    );
-  }
-
-  // ── 3. Concurrent-cap defensive check ──────────────────────────────────────
-  // Operator should never have more than 1 in-progress + 3 paused = 4 total.
-  // The current job already counts (it's in-progress); after this pause, the
-  // total stays the same. Reject if state appears corrupted.
-  const concurrentCount = await prisma.tint_assignments.count({
-    where: {
-      assignedToId: userId,
-      status:       { in: ["tinting_in_progress", "paused"] },
-    },
-  });
-  if (concurrentCount > MAX_CONCURRENT_FOR_OPERATOR) {
-    return NextResponse.json(
-      { ok: false, error: "Concurrent job cap exceeded — please refresh and retry" },
-      { status: 409 },
-    );
-  }
+  // Pause caps removed 2026-10-07 by owner decision (was: max 3 pauses/job, max 4 in-progress+paused/operator). Do not reinstate without owner sign-off.
 
   // ── 4. Validate progress against the tinting lines ─────────────────────────
   // Whole-OBD: lines come from import_raw_line_items by obdNumber + isTinting.

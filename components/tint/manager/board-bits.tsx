@@ -107,9 +107,9 @@ export function StatusPill({
   const m = STATUS_META[status];
   // Trailing detail rides inside the pill after a faded dot, exactly as Floor's
   // elapsed time does (§7.7): 9.5px, tabular-nums, 70% opacity. On a paused row
-  // the pause COUNT is more use than a clock — the 3-pause cap is the thing the
-  // manager is watching — so that is what takes the slot.
-  const detail = status === "paused" && pauseCount > 0 ? `${pauseCount}/3` : hhmm(at);
+  // the pause COUNT is more use than a clock, so that is what takes the slot.
+  // No "/3" since 2026-10-07 — pause caps removed by owner decision.
+  const detail = status === "paused" && pauseCount > 0 ? `${pauseCount}×` : hhmm(at);
   return (
     <span
       className={cn(
