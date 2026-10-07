@@ -596,9 +596,11 @@ export async function logTripSentToBilling(opts: {
 }
 
 /**
- * The planner took the trip back from billing (slice 9). Only possible before
- * billing has copied anything — the route refuses it after — so this row never
- * sits after an `invoices_copied` row on the same trip.
+ * The planner took the trip back from billing (slice 9). Since Print v2
+ * (2026-10-05) a take-back is ALWAYS allowed on a sent, live trip, whatever
+ * billing has copied or marked done (lib/trips/billing.ts) — so this row CAN
+ * sit after `bills_copied` / `billing_done` rows on the same trip. The copy rows
+ * and the Done stamp stay as the record of work that happened.
  */
 export async function logTripTakenBackFromBilling(opts: {
   tripId: number;
@@ -646,10 +648,16 @@ export async function logTripInvoicesCopied(opts: {
 }
 
 /**
- * Billing copied bills' OBD numbers on the Print tab (Print v2, 2026-10-05).
+ * Billing copied bills on the Print tab (Print v2, 2026-10-05).
  * The trip_bill_copies rows are the per-bill record; this is the trip's history
  * line. `orderIds` / `obdNumbers` are the bills that LANDED in this press — a
  * bill someone else had already copied is not in them.
+ *
+ * `kind: "invoice"` is "Copy inv" (v27.61, 2026-10-07): the clipboard carried
+ * INVOICE numbers, and `invoiceNos` (distinct) joins the detail. Same action on
+ * purpose — chk_trip_activity_action is unchanged, and the 2026-10-05 PART C
+ * backfill reads only `invoices_copied` rows (any `bills_copied` row just marks
+ * the trip as touched by the new code).
  */
 export async function logTripBillsCopied(opts: {
   tripId: number;
@@ -657,19 +665,27 @@ export async function logTripBillsCopied(opts: {
   tripNumber: string;
   orderIds: number[];
   obdNumbers: string[];
-  kind: "bulk" | "single" | "review";
+  kind: "bulk" | "single" | "review" | "invoice";
+  /** `invoice` only: the distinct invoice numbers that went on the clipboard. */
+  invoiceNos?: string[];
 }): Promise<void> {
   const n = opts.obdNumbers.length;
+  const inv = opts.invoiceNos?.length ?? 0;
   const what =
     opts.kind === "review"
       ? `marked ${opts.obdNumbers[0] ?? "a bill"} done (pick finding)`
-      : `copied ${n === 1 ? `OBD ${opts.obdNumbers[0]}` : `${n} OBDs`}`;
+      : opts.kind === "invoice"
+        ? `copied ${inv} invoice no${inv === 1 ? "" : "s"}${inv !== n ? ` (${bills(n)})` : ""}`
+        : `copied ${n === 1 ? `OBD ${opts.obdNumbers[0]}` : `${n} OBDs`}`;
   await writeActivity({
     tripId: opts.tripId,
     action: TRIP_BILLS_COPIED,
     actorId: opts.actorId,
     summary: `Billing ${what} for trip ${opts.tripNumber}`,
-    detail: { orderIds: opts.orderIds, obdNumbers: opts.obdNumbers, kind: opts.kind },
+    detail:
+      opts.kind === "invoice"
+        ? { orderIds: opts.orderIds, obdNumbers: opts.obdNumbers, kind: opts.kind, invoiceNos: opts.invoiceNos ?? [] }
+        : { orderIds: opts.orderIds, obdNumbers: opts.obdNumbers, kind: opts.kind },
   });
 }
 

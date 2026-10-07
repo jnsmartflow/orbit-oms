@@ -40,6 +40,17 @@
 //      (lib/trips/billing.ts). A SAP bill linked to a challan order
 //      ('challan_linked') never sits on a trip, but is filtered the same way so
 //      the rule holds if one ever slips on. One owner: BILLABLE_BILL_WHERE.
+//   7. COPY INV — AN INVOICED BILL NEEDS NO CHECKS (owner, 2026-10-07; Schema
+//      v27.61). OBD copy waits for picking Done because a pick finding can force
+//      a revision; once SAP has stamped an invoice number the bill is final. So
+//      "Copy inv" copies every bill that HAS an invoice number and has NO copy
+//      row on this trip yet — any picking state, HELD INCLUDED — as
+//      trip_bill_copies kind 'invoice'. It is an ordinary copy row: the bill
+//      counts as copied for Done / reopen / the pending list exactly like an OBD
+//      copy. A held bill's row is harmless while it is held (held bills are
+//      outside every count) and makes it copied once the hold lifts. The
+//      clipboard carries each distinct INVOICE number once; every bill carrying
+//      it is recorded.
 //
 // Per-bill copied state is keyed on THIS trip. A bill copied on an earlier trip
 // reads uncopied here and carries a quiet `copiedOnOtherTrip` note.
@@ -75,10 +86,19 @@ const TRIP_DISPATCHED = "dispatched";
  */
 export type PrintBillState = "copied" | "ready" | "review" | "waiting" | "held";
 
-/** What a copy press records — trip_bill_copies.kind minus the one-off 'backfill'. */
-export type PrintCopyKind = "bulk" | "single" | "review";
+/**
+ * What a copy press records — trip_bill_copies.kind minus the one-off 'backfill'
+ * (chk_trip_bill_copies_kind). 'invoice' = "Copy inv" (rule 7, v27.61).
+ */
+export type PrintCopyKind = "bulk" | "single" | "review" | "invoice";
 
-export const PRINT_COPY_KINDS: readonly PrintCopyKind[] = ["bulk", "single", "review"];
+export const PRINT_COPY_KINDS: readonly PrintCopyKind[] = ["bulk", "single", "review", "invoice"];
+
+/** An SAP invoice number worth copying: trimmed, non-empty. Null otherwise. */
+function invoiceOf(invoiceNo: string | null): string | null {
+  const t = invoiceNo?.trim() ?? "";
+  return t === "" ? null : t;
+}
 
 export interface PrintBillRow {
   orderId: number;
@@ -165,6 +185,11 @@ export interface PrintTrip {
   /** The bulk Copy's set, in table order. */
   readyOrderIds: number[];
   readyObds: string[];
+  /** Copy inv's set (rule 7): bills with an invoice number and NO copy row on
+   *  this trip, held included, any picking state — in table order. */
+  invoicePendingOrderIds: number[];
+  /** Their invoice numbers, trimmed, each DISTINCT number once, in table order. */
+  invoicePendingNos: string[];
   /** Done not pressed, ≥ 1 non-held bill, and every non-held bill copied. */
   canDone: boolean;
   rows: PrintBillRow[];
@@ -378,6 +403,9 @@ export async function loadPrintTrips(tripIds: number[]): Promise<PrintTrip[]> {
     const copiedCount = eligibleRows.filter((r) => r.state === "copied").length;
     const readyRows = eligibleRows.filter((r) => r.state === "ready");
     const outstanding = eligible - copiedCount;
+    // Rule 7: keyed on the copy row, NOT on `state` — a held bill reads "held"
+    // whatever its copy row says, and Copy inv includes held bills.
+    const invoiceRows = rows.filter((r) => r.copiedAt === null && invoiceOf(r.invoiceNo) !== null);
 
     const state: PrintTripState =
       t.billingDoneAt === null
@@ -412,6 +440,8 @@ export async function loadPrintTrips(tripIds: number[]): Promise<PrintTrip[]> {
       waitingCount: eligibleRows.filter((r) => r.state === "waiting").length,
       readyOrderIds: readyRows.map((r) => r.orderId),
       readyObds: readyRows.map((r) => r.obdNumber),
+      invoicePendingOrderIds: invoiceRows.map((r) => r.orderId),
+      invoicePendingNos: Array.from(new Set(invoiceRows.map((r) => invoiceOf(r.invoiceNo)!))),
       canDone: t.billingDoneAt === null && eligible > 0 && outstanding === 0,
       rows,
     };
@@ -542,12 +572,14 @@ export type CopyBillsOutcome =
       /** Bills someone else had already copied — sent but not recorded by this press. */
       alreadyCopied: number;
       obdNumbers: string[];
+      /** Distinct invoice numbers of the bills this press recorded (an `invoice` press; empty otherwise). */
+      invoiceNos: string[];
       billingCopiedAt: string | null;
     }
   | PrintRefusal;
 
-/** The state each kind requires, per bill. */
-function requiredState(kind: PrintCopyKind): PrintBillState {
+/** The state each OBD kind requires, per bill. `invoice` has no state rule (rule 7). */
+function requiredState(kind: Exclude<PrintCopyKind, "invoice">): PrintBillState {
   return kind === "review" ? "review" : "ready";
 }
 
@@ -565,18 +597,46 @@ function requiredState(kind: PrintCopyKind): PrintBillState {
  * rows landing than were sent means someone else copied them first; the answer
  * says how many. `single` and `review` take exactly one bill.
  *
- * Then: trips.billingCopiedAt / ById (the latest copy press) and one
- * `bills_copied` activity row — both only when something landed.
+ * `invoice` ("Copy inv", rule 7) puts INVOICE numbers on the clipboard and
+ * sends every bill carrying them, with `invoiceNos[i]` = the number the screen
+ * showed for `orderIds[i]`. Picking state and hold are ignored; each bill must
+ * still have NO copy row on this trip and its live invoice number (trimmed)
+ * must equal the one sent — else 409 and nothing is written, so a row never
+ * claims a number that was not on the clipboard.
+ *
+ * Then: trips.billingCopiedAt / ById (the latest copy press — an `invoice`
+ * press is one too) and one `bills_copied` activity row (`detail.kind` names
+ * the press) — both only when something landed.
  */
 export async function copyTripBills(opts: {
   tripId: number;
   orderIds: number[];
   kind: PrintCopyKind;
   actorId: number;
+  /** `invoice` only: parallel to `orderIds`. */
+  invoiceNos?: string[];
 }): Promise<CopyBillsOutcome> {
+  const isInvoice = opts.kind === "invoice";
+  // invoice: the number the screen showed per bill, keyed by order id.
+  const sentNoById = new Map<number, string>();
+  if (isInvoice) {
+    if (!opts.invoiceNos || opts.invoiceNos.length !== opts.orderIds.length) {
+      return { ok: false, status: 400, error: "An invoice copy needs one invoice number per bill." };
+    }
+    for (let i = 0; i < opts.orderIds.length; i++) {
+      const no = invoiceOf(opts.invoiceNos[i]);
+      if (no === null) return { ok: false, status: 400, error: "An invoice copy needs one invoice number per bill." };
+      const prev = sentNoById.get(opts.orderIds[i]);
+      if (prev !== undefined && prev !== no) {
+        return { ok: false, status: 400, error: "A bill was sent with two different invoice numbers." };
+      }
+      sentNoById.set(opts.orderIds[i], no);
+    }
+  }
+
   const wanted = Array.from(new Set(opts.orderIds));
   if (wanted.length === 0) return { ok: false, status: 400, error: "No bills to copy." };
-  if (opts.kind !== "bulk" && wanted.length !== 1) {
+  if ((opts.kind === "single" || opts.kind === "review") && wanted.length !== 1) {
     return { ok: false, status: 400, error: `A ${opts.kind} copy takes exactly one bill.` };
   }
 
@@ -589,7 +649,6 @@ export async function copyTripBills(opts: {
     return { ok: false, status: 409, error: `${trip.tripNumber} is cancelled.` };
   }
 
-  const need = requiredState(opts.kind);
   const rowById = new Map(trip.rows.map((r) => [r.orderId, r]));
   const bills: PrintBillRow[] = [];
   for (const id of wanted) {
@@ -597,7 +656,23 @@ export async function copyTripBills(opts: {
     if (!r) {
       return { ok: false, status: 409, error: `A bill is no longer on ${trip.tripNumber} — nothing was recorded. Refresh.` };
     }
-    if (r.state !== need) {
+    if (isInvoice) {
+      // Rule 7: no state rule — only "not copied yet" and "same number".
+      // `copiedAt`, not `state`: a held bill reads "held" whatever its copy row.
+      if (r.copiedAt !== null) {
+        return { ok: false, status: 409, error: `OBD ${r.obdNumber} was already copied — nothing was recorded. Refresh.` };
+      }
+      if (invoiceOf(r.invoiceNo) !== sentNoById.get(id)) {
+        return {
+          ok: false,
+          status: 409,
+          error: `OBD ${r.obdNumber}'s invoice number changed since your screen loaded — nothing was recorded. Refresh.`,
+        };
+      }
+      bills.push(r);
+      continue;
+    }
+    if (r.state !== requiredState(opts.kind as Exclude<PrintCopyKind, "invoice">)) {
       return {
         ok: false,
         status: 409,
@@ -631,6 +706,7 @@ export async function copyTripBills(opts: {
       recorded: 0,
       alreadyCopied: bills.length,
       obdNumbers: [],
+      invoiceNos: [],
       billingCopiedAt: trip.billingCopiedAt,
     };
   }
@@ -648,6 +724,9 @@ export async function copyTripBills(opts: {
   });
   const landedIds = new Set(landedRows.map((r) => r.orderId));
   const landed = bills.filter((b) => landedIds.has(b.orderId));
+  const landedInvoiceNos = isInvoice
+    ? Array.from(new Set(landed.map((b) => invoiceOf(b.invoiceNo)).filter((n): n is string => n !== null)))
+    : [];
 
   await prisma.trips.update({
     where: { id: trip.id },
@@ -661,6 +740,7 @@ export async function copyTripBills(opts: {
     orderIds: landed.map((b) => b.orderId),
     obdNumbers: landed.map((b) => b.obdNumber),
     kind: opts.kind,
+    invoiceNos: isInvoice ? landedInvoiceNos : undefined,
   });
 
   return {
@@ -669,6 +749,7 @@ export async function copyTripBills(opts: {
     recorded: created.count,
     alreadyCopied: bills.length - created.count,
     obdNumbers: landed.map((b) => b.obdNumber),
+    invoiceNos: landedInvoiceNos,
     billingCopiedAt: pressedAt.toISOString(),
   };
 }

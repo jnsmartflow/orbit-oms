@@ -3858,10 +3858,11 @@ model trips {
   sentToBillingAt   DateTime?             @db.Timestamptz(6)
   sentToBillingById Int?
   sentToBillingBy   users?                @relation("TripSentToBillingBy", fields: [sentToBillingById], references: [id], onDelete: SetNull)
-  // THE LATEST COPY on the Print tab (slice 9). Copy stamps it; a copy of the
-  // numbers that arrived since moves it again. The NUMBERS copied live in each
-  // `invoices_copied` activity row's detail, never here — a trip can be copied
-  // more than once (lib/billing/print.ts). The SEVENTH FK to `users`.
+  // THE LATEST COPY PRESS on the Print tab (slice 9; meaning narrowed by Print
+  // v2, 2026-10-05). Every recording press moves it — bulk, single, review and
+  // (v27.61) invoice. WHICH bills were copied lives in trip_bill_copies, one row
+  // per (trip, bill); slice 9's `invoices_copied` activity rows are history
+  // only (lib/billing/print.ts copyTripBills). The SEVENTH FK to `users`.
   billingCopiedAt   DateTime?             @db.Timestamptz(6)
   billingCopiedById Int?
   billingCopiedBy   users?                @relation("TripBillingCopiedBy", fields: [billingCopiedById], references: [id], onDelete: SetNull)
@@ -4024,14 +4025,18 @@ model trip_drops {
 //     'bills_removed','vehicle_changed','details_changed','cancelled',
 //     'released','dispatched','renamed','shown','taken_back',
 //     'sent_to_billing','taken_back_from_billing','invoices_copied',
-//     'redelivery_added','redelivery_removed'))   — 16 values, live 2026-10-03
+//     'redelivery_added','redelivery_removed','bills_copied','billing_done'))
+//     — 18 values, live 2026-10-05 (v27.56; unchanged by v27.61 — Copy inv logs
+//     'bills_copied' with detail.kind = 'invoice')
 //   'renamed' added 2026-09-15 (slice 5) for the one-off migration that renamed
 //   already-cancelled trips to <number>-C. 'shown' and 'taken_back' added
 //   2026-09-15 (slice 8) for Show to floor and its take-back. 'sent_to_billing',
 //   'taken_back_from_billing' and 'invoices_copied' added 2026-09-15 (slice 9,
 //   sql/2026-09-15-slice9-print-tab.sql). 'redelivery_added' and
 //   'redelivery_removed' added 2026-10-03 (Schema v27.53,
-//   sql/2026-10-03-trip-redelivery.sql).
+//   sql/2026-10-03-trip-redelivery.sql). 'bills_copied' and 'billing_done'
+//   added 2026-10-05 (Schema v27.56, sql/2026-10-05-billing-print-v2.sql);
+//   'invoices_copied' stays for its old rows and has no writer since.
 //
 // ⚠ BOTH 'dispatched' AND 'released' ARE STILL WRITTEN. Slice 4 was dropped and
 // Mark dispatched stays. Since slice 6 (2026-09-15) 'released' comes from
@@ -4142,17 +4147,21 @@ model trip_redeliveries {
 // sql/2026-10-05-billing-print-v2.sql — applied live by Smart Flow the same day)
 // ─────────────────────────────────────────────────────────────────────────────
 //
-// One row per (trip, bill) whose OBD number billing has copied on the Print
-// tab. Keyed per TRIP on purpose: a bill moved to another trip reads uncopied
+// One row per (trip, bill) billing has copied on the Print tab — by OBD
+// number, or (v27.61) by invoice number via "Copy inv". Keyed per TRIP on purpose: a bill moved to another trip reads uncopied
 // there (a new truck is a new print run). NEVER writes orders — a copy is not a
 // stage event, and an orders write would fire every orders-keyed marker.
 //
 // 🔴 TWO LIVE CHECK CONSTRAINTS — NOT EXPRESSIBLE IN PRISMA, live text:
-//   chk_trip_bill_copies_kind:  CHECK ((kind = ANY (ARRAY['bulk'::text, 'single'::text, 'review'::text, 'backfill'::text])))
+//   chk_trip_bill_copies_kind:  CHECK ((kind = ANY (ARRAY['bulk'::text, 'single'::text, 'review'::text, 'backfill'::text, 'invoice'::text])))
+//     (v27.61, live 2026-10-07 — 'invoice' added; read-back text)
 //   chk_trip_bill_copies_actor: CHECK (((kind = 'backfill'::text) OR ("copiedById" IS NOT NULL)))
 // bulk = "Copy N OBDs" · single = "Copy this one" on a ready bill · review =
 // "Mark done" on a bill with a confirmed pick finding · backfill = written once
-// from the old invoices_copied rows (copiedById nullable for that kind only).
+// from the old invoices_copied rows (copiedById nullable for that kind only) ·
+// invoice = "Copy inv": a bill with an SAP invoice number, any picking state,
+// HELD INCLUDED (owner, 2026-10-07 — an invoiced bill is final). Counts toward
+// Done like any copy; a held bill's row is outside every count while held.
 // A new kind = ALTER the CHECK first, then the vocabulary constant in code.
 //
 // 🔴 trip_bill_copies_trip_order_key UNIQUE ("tripId","orderId") IS THE RACE
@@ -4172,11 +4181,11 @@ model trip_bill_copies {
   trip       trips    @relation("TripBillCopyTrip", fields: [tripId], references: [id], onDelete: Restrict)
   orderId    Int
   order      orders   @relation("TripBillCopyOrder", fields: [orderId], references: [id], onDelete: Restrict)
-  /// Snapshot: the OBD number that went on the clipboard.
+  /// Snapshot: the OBD number that went on the clipboard (an 'invoice' row: the bill's OBD; the clipboard carried invoiceNo).
   obdNumber  String
-  /// Snapshot at copy time; screens read the live orders.invoiceNo.
+  /// Snapshot at copy time; screens read the live orders.invoiceNo. On an 'invoice' row, the number that was copied.
   invoiceNo  String?
-  /// bulk | single | review | backfill (chk_trip_bill_copies_kind).
+  /// bulk | single | review | backfill | invoice (chk_trip_bill_copies_kind).
   kind       String
   copiedAt   DateTime @default(now()) @db.Timestamptz(6)
   /// Null only on a 'backfill' row (chk_trip_bill_copies_actor).

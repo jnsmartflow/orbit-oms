@@ -15,7 +15,7 @@
 //           grouped the same way: trip number · ✓ time · who. (Polish v7,
 //           2026-10-05, docs/mockups/billing-print/billing-print-polish-mock.html.)
 //   RIGHT — the selected trip: number, a per-state summary, a progress bar,
-//           ONE button, a legend, and the bill table with Floor's own status
+//           ONE action button (+ the plain Copy inv), a legend, and the bill table with Floor's own status
 //           pill per bill. Nothing on this tab truncates — long text wraps.
 //
 // ── EACH BILL HAS A STATE (lib/billing/print.ts PrintBillState) ─────────────
@@ -38,6 +38,14 @@
 // allowed — slice 9's "never a partial set" was removed on purpose (owner,
 // 2026-10-05); do not restore it. The next press copies only bills that became
 // ready since.
+//
+// 🔴 COPY INV (owner, 2026-10-07; v27.61). A second, plain button copies the
+// INVOICE numbers of every bill that has one and is not copied yet — any
+// picking state, HELD INCLUDED (an invoiced bill is final). Each distinct
+// number goes on the clipboard once; every bill carrying it is recorded as a
+// trip_bill_copies 'invoice' row, which counts toward Done like an OBD copy.
+// Hidden when nothing is pending; shown on reopened and done trips too.
+// No keyboard shortcut — Ctrl+C stays the OBD Copy.
 //
 // 🔴 DONE IS A PRESS. When every non-held bill is copied, "Done — all copied"
 // appears and moves the trip to Done today. Nothing stamps it automatically.
@@ -289,6 +297,7 @@ export function BillingPrintTab({
   const [openBillId, setOpenBillId] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [copiedFlash, setCopiedFlash] = useState(false);
+  const [invFlash, setInvFlash] = useState(false);
   const [notice, setNotice] = useState<{ tone: "info" | "error"; text: string } | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
   /** "Done today" — collapsed by default; component state only (owner). */
@@ -392,6 +401,48 @@ export function BillingPrintTab({
       }
     } catch {
       setNotice({ tone: "error", text: "Copied, but could not reach the server — NOT recorded. Press Copy again." });
+    } finally {
+      setBusy(false);
+    }
+    await load();
+  }, [selected, busy, canEdit, load]);
+
+  // Copy inv: clipboard FIRST (each distinct invoice number once), then record
+  // every bill behind those numbers (canEdit only). No state rule (print.ts rule 7).
+  const runCopyInv = useCallback(async () => {
+    if (!selected || busy || selected.invoicePendingOrderIds.length === 0) return;
+    setNotice(null);
+    try {
+      await navigator.clipboard.writeText(selected.invoicePendingNos.join("\n"));
+    } catch {
+      setNotice({ tone: "error", text: "Couldn't reach the clipboard — copy blocked by the browser. Nothing was recorded." });
+      return;
+    }
+    setInvFlash(true);
+    window.setTimeout(() => setInvFlash(false), 1600);
+    if (!canEdit) return;
+
+    // The number the screen showed per bill — the server refuses a changed one.
+    const noById = new Map(selected.rows.map((r) => [r.orderId, (r.invoiceNo ?? "").trim()]));
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/billing/print/trip/${selected.id}/copy`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          orderIds: selected.invoicePendingOrderIds,
+          invoiceNos: selected.invoicePendingOrderIds.map((id) => noById.get(id) ?? ""),
+          kind: "invoice",
+        }),
+      });
+      const body = (await res.json().catch(() => ({}))) as { alreadyCopied?: number; error?: string };
+      if (!res.ok) {
+        setNotice({ tone: "error", text: body.error ?? `Copied, but not recorded (HTTP ${res.status}).` });
+      } else if ((body.alreadyCopied ?? 0) > 0) {
+        setNotice({ tone: "info", text: `${plural(body.alreadyCopied ?? 0, "bill")} had already been copied by someone else — not recorded again.` });
+      }
+    } catch {
+      setNotice({ tone: "error", text: "Copied, but could not reach the server — NOT recorded. Press Copy inv again." });
     } finally {
       setBusy(false);
     }
@@ -552,6 +603,22 @@ export function BillingPrintTab({
     }
   }
 
+  // ── Copy inv — beside the one action, HIDDEN when nothing is pending ─────
+  // Plain, never brand: the surface keeps one brand button (CLAUDE_UI §10).
+  // Independent of the trip state — invoice numbers often land after Done.
+  const invN = selected?.invoicePendingNos.length ?? 0;
+  const invAction: ReactNode =
+    selected && selected.invoicePendingOrderIds.length > 0 ? (
+      <button type="button" onClick={() => void runCopyInv()} disabled={busy} className={BTN_PLAIN}>
+        {busy ? "Recording…" : invFlash ? "Copied" : "Copy inv"}
+      </button>
+    ) : null;
+  const invCaption = invAction
+    ? canEdit
+      ? `${invN} inv — any picking state, held included.`
+      : `${invN} inv — clipboard only, records nothing.`
+    : "";
+
   return (
     <div className="flex min-h-0 flex-1 overflow-hidden bg-white">
       {railSlot ? createPortal(rail, railSlot) : null}
@@ -583,10 +650,16 @@ export function BillingPrintTab({
                     <Summary trip={selected} />
                   </span>
                 </div>
-                {(action || caption) && (
+                {(action || caption || invAction) && (
                   <div className="ml-auto flex flex-col items-end">
-                    {action}
+                    <div className="flex flex-wrap items-center justify-end gap-2">
+                      {invAction}
+                      {action}
+                    </div>
                     {caption && <span className="mt-1 max-w-[360px] text-right text-[10.5px] text-ink-400">{caption}</span>}
+                    {invCaption && (
+                      <span className="mt-0.5 max-w-[360px] text-right text-[10.5px] text-ink-400">{invCaption}</span>
+                    )}
                   </div>
                 )}
               </div>
@@ -599,6 +672,10 @@ export function BillingPrintTab({
               <LegendItem swatch="bg-brand-600" label="Ready — goes in the next Copy" />
               <LegendItem swatch="bg-danger" label="Pick finding — open it to copy" />
               <LegendItem swatch="bg-ink-200" label="Waiting — not picked yet" />
+              <span className="inline-flex items-center gap-1.5">
+                <span className="font-semibold text-ok-text">✓ inv</span>
+                Copied by invoice no
+              </span>
             </div>
 
             {notice && (
@@ -723,10 +800,20 @@ function BillRow({
   );
 }
 
+/** "✓ 13:34", plus "inv" when the copy was a Copy inv press. */
+function CopiedMark({ row: r }: { row: PrintBillRow }) {
+  return (
+    <span className="whitespace-nowrap font-semibold text-ok-text">
+      ✓ {hhmm(r.copiedAt)}
+      {r.copyKind === "invoice" && <span className="ml-1 text-[10px] font-semibold uppercase tracking-[0.04em]">inv</span>}
+    </span>
+  );
+}
+
 function CopyCell({ row: r }: { row: PrintBillRow }) {
   switch (r.state) {
     case "copied":
-      return <span className="whitespace-nowrap font-semibold text-ok-text">✓ {hhmm(r.copiedAt)}</span>;
+      return <CopiedMark row={r} />;
     case "ready":
       return <span className={`${CHIP} bg-brand-50 text-brand-700`}>next copy</span>;
     case "review":
@@ -734,7 +821,16 @@ function CopyCell({ row: r }: { row: PrintBillRow }) {
     case "waiting":
       return <span className="text-ink-400">not picked yet</span>;
     case "held":
-      return <span className="text-ink-400">on hold · not copied</span>;
+      // A held bill can carry a copy row (Copy inv includes held bills) — show
+      // it; it counts once the hold lifts.
+      return r.copiedAt !== null ? (
+        <span className="whitespace-nowrap">
+          <CopiedMark row={r} />
+          <span className="text-ink-400"> · on hold</span>
+        </span>
+      ) : (
+        <span className="text-ink-400">on hold · OBD not copied</span>
+      );
   }
 }
 

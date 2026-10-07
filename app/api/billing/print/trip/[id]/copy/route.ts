@@ -9,11 +9,16 @@ export const dynamic = "force-dynamic";
  * POST /api/billing/print/trip/[id]/copy — record a Copy on the Print tab
  * (slice 9, 2026-09-15; Billing Print v2, 2026-10-05).
  *
- * Body: `{ orderIds: number[], kind: "bulk" | "single" | "review" }` — the bills
- * whose OBD numbers the client just put on the clipboard.
- *   bulk   — "Copy N OBDs": every READY bill of the trip.
- *   single — "Copy this one" on a ready bill's panel (one bill).
- *   review — "Mark done" on a bill with a confirmed pick finding (one bill).
+ * Body: `{ orderIds: number[], kind: "bulk" | "single" | "review" | "invoice",
+ * invoiceNos?: string[] }` — the bills whose numbers the client just put on the
+ * clipboard.
+ *   bulk    — "Copy N OBDs": every READY bill of the trip.
+ *   single  — "Copy this one" on a ready bill's panel (one bill).
+ *   review  — "Mark done" on a bill with a confirmed pick finding (one bill).
+ *   invoice — "Copy inv" (v27.61, 2026-10-07): every bill with an invoice
+ *             number and no copy row yet — any picking state, held included.
+ *             `invoiceNos` is REQUIRED, parallel to `orderIds`: the number the
+ *             screen showed per bill. A changed number is a 409.
  * The server re-derives each bill's state and records only if every one is
  * still what the kind needs (lib/billing/print.ts copyTripBills); otherwise 409
  * and nothing is written. A bill someone else copied first is skipped and
@@ -48,7 +53,7 @@ export async function POST(
     return NextResponse.json({ error: "Invalid trip id" }, { status: 400 });
   }
 
-  const body = (await req.json().catch(() => ({}))) as { orderIds?: unknown; kind?: unknown };
+  const body = (await req.json().catch(() => ({}))) as { orderIds?: unknown; kind?: unknown; invoiceNos?: unknown };
   if (
     !Array.isArray(body.orderIds) ||
     body.orderIds.length === 0 ||
@@ -59,12 +64,24 @@ export async function POST(
   if (typeof body.kind !== "string" || !(PRINT_COPY_KINDS as readonly string[]).includes(body.kind)) {
     return NextResponse.json({ error: `kind must be one of ${PRINT_COPY_KINDS.join(", ")}` }, { status: 400 });
   }
+  if (
+    body.kind === "invoice" &&
+    (!Array.isArray(body.invoiceNos) ||
+      body.invoiceNos.length !== body.orderIds.length ||
+      !body.invoiceNos.every((s) => typeof s === "string" && s.trim() !== ""))
+  ) {
+    return NextResponse.json(
+      { error: "invoiceNos must list one non-empty invoice number per orderId" },
+      { status: 400 },
+    );
+  }
 
   const outcome = await copyTripBills({
     tripId,
     orderIds: body.orderIds as number[],
     kind: body.kind as PrintCopyKind,
     actorId,
+    invoiceNos: body.kind === "invoice" ? (body.invoiceNos as string[]) : undefined,
   });
   if (!outcome.ok) return NextResponse.json({ error: outcome.error }, { status: outcome.status });
 
@@ -73,6 +90,7 @@ export async function POST(
     recorded: outcome.recorded,
     alreadyCopied: outcome.alreadyCopied,
     obdNumbers: outcome.obdNumbers,
+    invoiceNos: outcome.invoiceNos,
     billingCopiedAt: outcome.billingCopiedAt,
   });
 }
