@@ -45,6 +45,10 @@ export default async function PlaceOrderLayout({
   // getAllPermissionsForRoles; everyone else needs a place_order_ship_to canEdit
   // tick. Absent row reads as false. canEdit only — canView means nothing here.
   const canShipTo = allPerms["place_order_ship_to"]?.canEdit ?? false;
+  // The Challan order switch (2026-10-07, Challan orders slice 3). Same map, same
+  // canEdit-only meaning. Drawing only — POST /api/place-order/challan-orders
+  // re-checks the tick on every create.
+  const canCreateChallan = allPerms["place_order_challan"]?.canEdit ?? false;
 
   const seen = new Set<string>();
   const dedupedNavItems = navItems.filter(item => {
@@ -64,7 +68,9 @@ export default async function PlaceOrderLayout({
         userInitials={userInitials}
         navItems={dedupedNavItems}
       >
-        <PlaceOrderAccessProvider canShipTo={canShipTo}>{children}</PlaceOrderAccessProvider>
+        <PlaceOrderAccessProvider canShipTo={canShipTo} canCreateChallan={canCreateChallan}>
+          {children}
+        </PlaceOrderAccessProvider>
       </RoleLayoutClient>
     </RoleSidebarProvider>
   );

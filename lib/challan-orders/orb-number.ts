@@ -20,3 +20,16 @@ export const ORB_NUMBER_RE = /^ORB-\d{4}-\d{5}$/;
 export function isOrbNumber(q: string): boolean {
   return ORB_NUMBER_RE.test(q);
 }
+
+/** Width of the sequence half — five digits, fixed by chk_orders_orb_number. */
+export const ORB_SEQ_WIDTH = 5;
+
+/** `ORB-2026-` — the prefix every number of one year shares. */
+export function orbYearPrefix(year: number): string {
+  return `ORB-${year}-`;
+}
+
+/** `ORB-2026-00007`. The allocator (lib/challan-orders/number.ts) is the one caller. */
+export function formatOrbNumber(year: number, seq: number): string {
+  return `${orbYearPrefix(year)}${String(seq).padStart(ORB_SEQ_WIDTH, "0")}`;
+}

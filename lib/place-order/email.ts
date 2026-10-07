@@ -208,6 +208,20 @@ export function buildSubject(
   return prefix + tail;
 }
 
+/**
+ * The humanised order remark — the email's "Remark:" line. ONE owner, shared by
+ * buildEmail below and the challan-order create (lib/challan-orders/create.ts,
+ * 2026-10-07), which stores the same words in orders.remarks so a challan order
+ * carries what the email would have said. Cross carries its source depot.
+ */
+export function orderRemarkText(marker: EmailMarker, crossDepot: string | null): string | null {
+  return marker === "Cross Delivery" ? `Cross billing from ${crossDepot ?? ""}`.trim()
+    : marker === "Truck"           ? "Truck order"
+    : marker === "Bounce"          ? "Bounce order"
+    : marker === "DTS"             ? "DTS order"
+    :                                null;
+}
+
 export function buildEmail(input: EmailInput): EmailOutput {
   const { customer, bills, shipTo, dispatch, callTarget, marker, crossDepot, notes } = input;
   const name = customer?.name ?? "";
@@ -224,12 +238,7 @@ export function buildEmail(input: EmailInput): EmailOutput {
     :                         null;
 
   // Order remark — humanized; Cross carries its source depot.
-  const remarkText =
-    marker === "Cross Delivery" ? `Cross billing from ${crossDepot ?? ""}`.trim()
-    : marker === "Truck"        ? "Truck order"
-    : marker === "Bounce"       ? "Bounce order"
-    : marker === "DTS"          ? "DTS order"
-    :                             null;
+  const remarkText = orderRemarkText(marker, crossDepot);
 
   // Ship To only for a real custom address — blank / "same as billing" omitted.
   const shipToTrim = shipTo.trim();

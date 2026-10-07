@@ -312,11 +312,14 @@ export type PageKey =
   //   challan_orders — the ONE shared Challan orders screen, mounted in Billing,
   //     Floor and Place Order (D8). canView = see it; canEdit = paste SO / Link /
   //     Unlink (hidden without it, never disabled).
-  // ⚠ REGISTERED ONLY — nothing reads either yet, no screen gates on them and no
-  // user_page_access rows exist. ALL_PAGE_KEYS / ACCESS_SECTIONS / ACTION_PAGES
-  // are left for the access slice: adding them would put two rows on
-  // /admin/access (and its "page rows missing" banner) before there is anything
-  // to grant. Deliberately NOT in PAGE_NAV_MAP or ICON_MAP (a control and a tab).
+  // place_order_challan IS LIVE since slice 3 (2026-10-07): read once in
+  // app/(place-order)/layout.tsx (the Challan order switch) and re-checked by
+  // POST /api/place-order/challan-orders. In ALL_PAGE_KEYS / ACTION_PAGES.canEdit
+  // / ACCESS_SECTIONS beside place_order_ship_to — the same precedent: registered
+  // with its first reader, no grants (admin / superuser only until slice 9).
+  // challan_orders is still REGISTERED ONLY — nothing reads it until slice 5, so
+  // it stays out of those three lists. Neither is in PAGE_NAV_MAP or ICON_MAP (a
+  // control and a tab).
   | "place_order_challan"
   | "challan_orders"
   | "trip_report"
@@ -478,7 +481,7 @@ const ALL_PAGE_KEYS: PageKey[] = [
   // ⚠ `billing_picking` (the Billing Picking TAB) sits beside `mail_orders`,
   // its host screen. It is NOT `picking` on the line above — that is the floor
   // board. Keep them visually apart in this list, never adjacent.
-  "place_order", "place_order_ship_to", "trip_report", "mail_orders", "billing_picking", "billing_print",
+  "place_order", "place_order_ship_to", "place_order_challan", "trip_report", "mail_orders", "billing_picking", "billing_print",
   "billing_telephonic", "billing_pick_delete", "mrn", "ci", "freight_trips",
   // The six Billing action ticks, kept together and next to their host screen
   // for the same reason `billing_picking` is — they are controls INSIDE
@@ -555,6 +558,11 @@ const ACTION_PAGES: Record<Exclude<ActionKey, "canView">, readonly PageKey[]> = 
     // /place-order layout reads its canEdit to draw the Ship To block. Without
     // this entry the Edit cell on /admin/access is a dash, i.e. ungrantable.
     "place_order_ship_to",
+    // place_order_challan (2026-10-07, Challan orders slice 3) — the desktop
+    // /place-order layout reads its canEdit to draw the Challan order switch, and
+    // POST /api/place-order/challan-orders re-checks it. Same reason as above:
+    // without this entry the Edit cell on /admin/access is a dash.
+    "place_order_challan",
     // The seven Tint Manager action ticks (2026-10-01, tabs build step 2).
     // canEdit is checked per action by lib/tint/manager-bill.ts checkTintAction,
     // on top of tint_manager canEdit — the billing_* pattern. Listed with their
@@ -669,8 +677,8 @@ const PAGE_LABEL_OVERRIDES: Record<string, string> = {
   // "Purchase Order ·" prefix keeps it apart from "Billing · Ship-to" above —
   // a different screen and a different key.
   place_order_ship_to: "Purchase Order · Ship-to",
-  // Challan orders (2026-10-06). Not in PAGE_NAV_MAP. Ready for when the access
-  // slice adds the keys to ALL_PAGE_KEYS / ACCESS_SECTIONS.
+  // Challan orders (2026-10-06). Not in PAGE_NAV_MAP. place_order_challan is in
+  // ALL_PAGE_KEYS since slice 3 (2026-10-07); challan_orders joins in slice 5.
   place_order_challan: "Purchase Order · Create challan order",
   challan_orders:      "Challan orders",
   // Not in PAGE_NAV_MAP. The "Tint Manager · Panel:" prefix keeps the three
@@ -727,7 +735,7 @@ export const ACCESS_SECTIONS: { label: string; keys: PageKey[] }[] = [
     "billing_print", "billing_telephonic", "billing_pick_delete",
     "billing_hold", "billing_slot", "billing_urgent", "billing_ship_to",
     "billing_hand", "billing_ci",
-    "place_order", "place_order_ship_to", "trip_report", "import_obd",
+    "place_order", "place_order_ship_to", "place_order_challan", "trip_report", "import_obd",
   ] },
   { label: "Tinting", keys: [
     "tint_manager",

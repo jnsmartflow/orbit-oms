@@ -10,12 +10,14 @@ import LastOrderRecall, { type RepeatOrderEntry } from "./components/last-order-
 import BrowseAllFamilies from "./components/browse-all-families";
 import CartPanel from "./components/cart-panel";
 import SendConfirmOverlay from "./components/send-confirm-overlay";
+import ChallanConfirmOverlay from "./components/challan-confirm-overlay";
+import type { ChallanLineInput, CreateChallanOrderRequest, CreateChallanOrderResponse } from "@/lib/challan-orders/types";
 import KeyboardHelpOverlay from "./components/keyboard-help-overlay";
 import RecentCustomers from "./components/recent-customers";
 import { addRecent } from "@/lib/place-order/recents";
 import type { Bill, CartLine, Customer, Product } from "./types";
 import type { RawPack } from "@/lib/place-order/pack-buckets";
-import { packKey, parsePackKey } from "@/lib/place-order/pack";
+import { formatPack, packKey, packToLitres, parsePackKey } from "@/lib/place-order/pack";
 import { buildEmail, buildMailtoUrl, type EmailCallTarget, type EmailDispatch, type EmailMarker } from "@/lib/place-order/email";
 import { clearDraft, loadDraft, saveDraft, type DraftSnapshot } from "@/lib/place-order/draft-storage";
 import type { QuickTile } from "@/lib/place-order/quick-tiles-config";
@@ -80,7 +82,7 @@ export default function PlaceOrderPage(): React.JSX.Element {
   // To block AND keeps any ship-to out of the email (see applyDraft + buildEmail
   // below) — a draft restored from this browser can carry one the viewer
   // cannot see.
-  const { canShipTo } = usePlaceOrderAccess();
+  const { canShipTo, canCreateChallan } = usePlaceOrderAccess();
   const [customers,   setCustomers]   = useState<Customer[]>([]);
   const [products,    setProducts]    = useState<Product[]>([]);
   const [dataLoading, setDataLoading] = useState(true);
@@ -115,6 +117,20 @@ export default function PlaceOrderPage(): React.JSX.Element {
   const [confirmOpen,  setConfirmOpen]  = useState<boolean>(false);
   const [helpOpen,     setHelpOpen]     = useState<boolean>(false);
   const [toastVisible, setToastVisible] = useState<boolean>(false);
+  const [toastText,    setToastText]    = useState<string>("Email opened in your mail client");
+
+  // ── Challan mode (2026-10-07, Challan orders slice 3 — web-update §4c S3-1…S3-7) ──
+  // Only a place_order_challan canEdit holder ever sees the switch. While it is
+  // OFF nothing below is reachable and the page behaves exactly as before.
+  // NOT saved in the draft: a page reload or a customer change returns to OFF,
+  // so a restored multi-bill draft can never land in challan mode.
+  const [challanMode,        setChallanMode]        = useState<boolean>(false);
+  const [challanRefusal,     setChallanRefusal]     = useState<string | null>(null);
+  const [challanShipMode,    setChallanShipMode]    = useState<"same" | "dealer">("same");
+  const [challanShipDealer,  setChallanShipDealer]  = useState<Customer | null>(null);
+  const [challanConfirmOpen, setChallanConfirmOpen] = useState<boolean>(false);
+  const [challanBusy,        setChallanBusy]        = useState<boolean>(false);
+  const [challanError,       setChallanError]       = useState<string | null>(null);
 
   const searchInputRef = useRef<HTMLInputElement>(null);
   const sendButtonRef  = useRef<HTMLButtonElement>(null);
@@ -364,6 +380,10 @@ export default function PlaceOrderPage(): React.JSX.Element {
     setJustAddedKeys({});
     setActiveState({ kind: "idle" });
     setFocusHint(null);
+    // Challan ship-to goes with the cart; the switch itself stays as it is.
+    setChallanShipMode("same");
+    setChallanShipDealer(null);
+    setChallanRefusal(null);
   }
 
   function currentSnapshot(): DraftSnapshot {
@@ -374,6 +394,8 @@ export default function PlaceOrderPage(): React.JSX.Element {
     if (selectedCustomer && selectedCustomer.code !== next.code) {
       saveDraft(selectedCustomer, currentSnapshot());
     }
+    // A new customer starts with challan mode OFF — their draft may hold 2+ bills.
+    setChallanMode(false);
     setSelectedCustomer(next);
     const draft = loadDraft(next.code);
     if (draft) applyDraft(draft);
@@ -384,6 +406,7 @@ export default function PlaceOrderPage(): React.JSX.Element {
     if (selectedCustomer) {
       saveDraft(selectedCustomer, currentSnapshot());
     }
+    setChallanMode(false);
     setSelectedCustomer(null);
     resetCart();
   }
@@ -651,9 +674,142 @@ export default function PlaceOrderPage(): React.JSX.Element {
       addRecent(selectedCustomer);
     }
     resetCart();
+    setToastText("Email opened in your mail client");
     setToastVisible(true);
     setTimeout(() => setToastVisible(false), 3000);
   }, [canSend, emailOutput.subject, emailOutput.body, selectedCustomer]);
+
+  // ── Challan mode ───────────────────────────────────────────────────────
+  // The one bill a challan order is made from (S3-1 keeps it to one).
+  const challanLines = useMemo<CartLine[]>(() => bills[0]?.lines ?? [], [bills]);
+
+  // Switching ON with 2+ bills is refused and the switch stays OFF (S3-1).
+  // Switching ON clears a stored Call — challan orders are Normal or Urgent (S3-2).
+  function handleToggleChallan(): void {
+    if (challanMode) {
+      setChallanMode(false);
+      setChallanRefusal(null);
+      return;
+    }
+    if (bills.length > 1) {
+      setChallanRefusal("Challan order needs a single bill — remove the extra bills first.");
+      return;
+    }
+    setChallanRefusal(null);
+    setActiveBillId(bills[0]?.id ?? 1);
+    if (dispatch === "Call") setDispatch("Normal");
+    setCallTarget(null);
+    setChallanMode(true);
+  }
+
+  // The refusal is about the bill count — it goes once the extra bills do.
+  useEffect(() => {
+    if (bills.length <= 1) setChallanRefusal(null);
+  }, [bills.length]);
+
+  const challanCanCreate =
+    challanMode &&
+    !!selectedCustomer &&
+    challanLines.length > 0 &&
+    (challanShipMode === "same" || challanShipDealer !== null);
+
+  /**
+   * The cart bill → the route's lines. The SAP material is the one the grid's
+   * own pack carried (RawPack.material from /api/place-order/data) — the code the
+   * cell showed (F2). A line with no product id (a pre-Phase-3 draft) or no
+   * material cannot be resolved: the create is blocked, naming it.
+   */
+  function buildChallanLines(): { lines: ChallanLineInput[]; problem: string | null } {
+    const lines: ChallanLineInput[] = [];
+    for (const line of challanLines) {
+      const product = line.productId !== undefined ? products.find((p) => p.id === line.productId) : undefined;
+      for (const key of Object.keys(line.packQtys)) {
+        const tins = line.packQtys[key] ?? 0;
+        if (tins <= 0) continue;
+        const { packCode, unit } = parsePackKey(key);
+        const label = `${line.displayName} · ${formatPack(packCode, unit)}`;
+        const pack = product?.packs.find((p) => packKey(p.packCode, p.unit) === key);
+        if (!product || !pack?.material) {
+          return { lines: [], problem: `${label} has no SAP code — remove it and add it again from the grid.` };
+        }
+        lines.push({ productId: product.id, packCode: pack.packCode, unit: pack.unit, material: pack.material, tins });
+      }
+    }
+    return { lines, problem: null };
+  }
+
+  const onConfirmChallan = useCallback((): void => {
+    if (!challanCanCreate) return;
+    setChallanError(null);
+    setChallanConfirmOpen(true);
+  }, [challanCanCreate]);
+
+  async function handleCreateChallan(): Promise<void> {
+    if (challanBusy || !selectedCustomer) return;
+    const built = buildChallanLines();
+    if (built.problem) {
+      setChallanError(built.problem);
+      return;
+    }
+    const body: CreateChallanOrderRequest = {
+      customerCode: selectedCustomer.code,
+      shipTo: challanShipMode === "dealer" && challanShipDealer
+        ? { mode: "dealer", customerCode: challanShipDealer.code }
+        : { mode: "same" },
+      dispatch: dispatch === "Urgent" ? "Urgent" : "Normal",
+      marker,
+      crossDepot,
+      notes,
+      lines: built.lines,
+    };
+    setChallanBusy(true);
+    setChallanError(null);
+    try {
+      const res = await fetch("/api/place-order/challan-orders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const json = (await res.json().catch(() => null)) as CreateChallanOrderResponse | null;
+      if (!res.ok || !json || !json.ok) {
+        setChallanError(json && !json.ok ? json.error : `Could not create the challan order (HTTP ${res.status}).`);
+        return;
+      }
+      setChallanConfirmOpen(false);
+      clearDraft(selectedCustomer.code);
+      addRecent(selectedCustomer);
+      resetCart();                                   // S3-7 — the switch stays ON
+      setToastText(`${json.orbNumber} created — sent to picking`);
+      setToastVisible(true);
+      setTimeout(() => setToastVisible(false), 3000);
+    } catch {
+      setChallanError("Could not reach the server — check your connection. Nothing was created.");
+    } finally {
+      setChallanBusy(false);
+    }
+  }
+
+  // The confirm dialog's summary rows.
+  const challanSummary = useMemo(() => {
+    let tins = 0;
+    let litres = 0;
+    const parts: string[] = [];
+    for (const line of challanLines) {
+      for (const key of Object.keys(line.packQtys)) {
+        const qty = line.packQtys[key] ?? 0;
+        if (qty <= 0) continue;
+        const { packCode, unit } = parsePackKey(key);
+        tins += qty;
+        litres += qty * packToLitres(packCode, unit);
+        parts.push(`${line.displayName} · ${formatPack(packCode, unit)} ×${qty}`);
+      }
+    }
+    const l = Math.abs(litres - Math.round(litres)) < 0.05 ? String(Math.round(litres)) : litres.toFixed(1);
+    return {
+      goodsLine: `${parts.length} ${parts.length === 1 ? "line" : "lines"} · ${tins} tins · ${l} L`,
+      goodsDetail: parts.slice(0, 3).join(", ") + (parts.length > 3 ? ` +${parts.length - 3} more` : ""),
+    };
+  }, [challanLines]);
 
   const onShowHelp   = useCallback((): void => { setHelpOpen(true); }, []);
   const onToggleHelp = useCallback((): void => { setHelpOpen((h) => !h); }, []);
@@ -680,7 +836,7 @@ export default function PlaceOrderPage(): React.JSX.Element {
     onClosePanel:  handleClosePanel,
     onFocusSearch: () => searchInputRef.current?.focus(),
     onToggleHelp,
-    enabled:       !confirmOpen && !helpOpen && !!selectedCustomer,
+    enabled:       !confirmOpen && !challanConfirmOpen && !helpOpen && !!selectedCustomer,
   });
 
   // ── Derived view state (no useMemo — bounded N, render-time fine) ──────
@@ -897,9 +1053,19 @@ export default function PlaceOrderPage(): React.JSX.Element {
           onCrossDepotChange={setCrossDepot}
           onNotesChange={setNotes}
           onRemovePack={handleRemovePack}
-          onConfirmSend={onConfirmSend}
-          canSend={canSend}
+          // Challan mode routes the footer button to the challan confirm — Send
+          // Email is unreachable while the switch is ON (S3-1).
+          onConfirmSend={challanMode ? onConfirmChallan : onConfirmSend}
+          canSend={challanMode ? challanCanCreate : canSend}
           sendButtonRef={sendButtonRef}
+          canCreateChallan={canCreateChallan}
+          challanMode={challanMode}
+          challanRefusal={challanRefusal}
+          onToggleChallan={handleToggleChallan}
+          challanShipMode={challanShipMode}
+          challanShipDealer={challanShipDealer}
+          onChallanShipModeChange={setChallanShipMode}
+          onChallanShipDealerChange={setChallanShipDealer}
         />
       </main>
 
@@ -912,6 +1078,25 @@ export default function PlaceOrderPage(): React.JSX.Element {
         />
       )}
 
+      {challanConfirmOpen && selectedCustomer && (
+        <ChallanConfirmOverlay
+          billToName={selectedCustomer.name}
+          billToCode={selectedCustomer.code}
+          shipToText={
+            challanShipMode === "dealer" && challanShipDealer
+              ? `${challanShipDealer.name} (${challanShipDealer.code})`
+              : `Same as billing${selectedCustomer.area ? ` · ${selectedCustomer.area}` : ""}`
+          }
+          dispatch={dispatch === "Urgent" ? "Urgent" : "Normal"}
+          goodsLine={challanSummary.goodsLine}
+          goodsDetail={challanSummary.goodsDetail}
+          busy={challanBusy}
+          error={challanError}
+          onCreate={() => void handleCreateChallan()}
+          onCancel={() => { if (!challanBusy) setChallanConfirmOpen(false); }}
+        />
+      )}
+
       {helpOpen && (
         <KeyboardHelpOverlay onClose={() => setHelpOpen(false)} />
       )}
@@ -921,7 +1106,7 @@ export default function PlaceOrderPage(): React.JSX.Element {
           role="status"
           className="fixed bottom-6 right-6 z-40 bg-gray-900 text-white text-[12px] px-4 py-2.5 rounded-[8px] shadow-lg"
         >
-          Email opened in your mail client
+          {toastText}
         </div>
       )}
     </>

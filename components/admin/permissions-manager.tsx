@@ -85,6 +85,9 @@ const PAGES_CONFIG = [
   // canEdit is its only meaning. Same ROLLBACK-editor caveat as the rows above.
   // ⚠ `place_order` itself has no row in this array (pre-existing gap).
   { key: "place_order_ship_to", label: "Purchase Order · Ship-to", path: "/place-order", section: "Operations" },
+  // place_order_challan — the Challan order switch on desktop /place-order
+  // (2026-10-07, Challan orders slice 3). canEdit only; same ROLLBACK caveat.
+  { key: "place_order_challan", label: "Purchase Order · Create challan order", path: "/place-order", section: "Operations" },
   // One tick per report in the /reports hub (2026-09-17). canView = see that
   // report; reports_ti_report canExport = its Download Excel button. Same
   // ROLLBACK-editor caveat as the rows above.

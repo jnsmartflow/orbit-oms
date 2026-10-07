@@ -3,6 +3,9 @@
 // Place Order ACTION ticks — carried from the server layout to the client tree.
 //
 //   place_order_ship_to   the Ship To block in the desktop cart panel
+//   place_order_challan   the Challan order switch (2026-10-07, Challan orders
+//                         slice 3). Unlike ship-to, this one IS backed by a server
+//                         write that re-checks it (POST /api/place-order/challan-orders).
 //
 // Resolved ONCE, server-side, in app/(place-order)/layout.tsx, off the SAME
 // `allPerms` map that layout already computes for buildNavItems — no extra
@@ -27,22 +30,29 @@ import { createContext, useContext, useMemo } from "react";
 export interface PlaceOrderAccess {
   /** May set a Ship To on the order (desktop cart panel). */
   canShipTo: boolean;
+  /** May switch the cart into Challan order mode and create one. */
+  canCreateChallan: boolean;
 }
 
-const NONE: PlaceOrderAccess = { canShipTo: false };
+const NONE: PlaceOrderAccess = { canShipTo: false, canCreateChallan: false };
 
 const PlaceOrderAccessContext = createContext<PlaceOrderAccess>(NONE);
 
 export function PlaceOrderAccessProvider({
   canShipTo,
+  canCreateChallan,
   children,
 }: {
   canShipTo: boolean;
+  canCreateChallan: boolean;
   children: React.ReactNode;
 }) {
-  // Memoised on the primitive so a consumer does not re-render on every parent
+  // Memoised on the primitives so a consumer does not re-render on every parent
   // render.
-  const value = useMemo<PlaceOrderAccess>(() => ({ canShipTo }), [canShipTo]);
+  const value = useMemo<PlaceOrderAccess>(
+    () => ({ canShipTo, canCreateChallan }),
+    [canShipTo, canCreateChallan],
+  );
   return (
     <PlaceOrderAccessContext.Provider value={value}>
       {children}

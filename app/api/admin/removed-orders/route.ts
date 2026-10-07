@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { isSuperuser } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@prisma/client";
+import { NOT_CHALLAN_STAGING_WHERE } from "@/lib/challan-orders/number";
 
 export const dynamic = "force-dynamic";
 
@@ -27,8 +28,12 @@ export async function GET(req: Request): Promise<NextResponse> {
   const pageSize = Number.isFinite(pageSizeParam) && pageSizeParam >= 1 && pageSizeParam <= 100 ? pageSizeParam : 25;
 
   // ── Build where clause ──────────────────────────────────────────────────────
+  // Challan orders slice 3 (2026-10-07): never a challan order or a dark row a
+  // challan create left behind — restoring one would show a half-built bill.
+  // AND-ed so its OR cannot collide with the search OR below.
   const where: Prisma.ordersWhereInput = {
     isRemoved: true,
+    AND: [NOT_CHALLAN_STAGING_WHERE],
     ...(searchRaw.length > 0 ? {
       OR: [
         { obdNumber:          { contains: searchRaw, mode: "insensitive" } },

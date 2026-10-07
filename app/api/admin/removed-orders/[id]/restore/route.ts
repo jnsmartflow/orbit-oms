@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { isSuperuser } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
+import { CHALLAN_STAGING } from "@/lib/challan-orders/number";
 
 export const dynamic = "force-dynamic";
 
@@ -59,6 +60,7 @@ export async function POST(
       id:            true,
       isRemoved:     true,
       removalReason: true,
+      isChallanOrder: true,
       challan:       { select: { id: true, isVoided: true } },
     },
   });
@@ -67,6 +69,14 @@ export async function POST(
   }
   if (!order.isRemoved) {
     return NextResponse.json({ ok: false, error: "Not removed" }, { status: 409 });
+  }
+  // Challan orders slice 3 (2026-10-07): a challan order, or a dark row a
+  // challan create left behind, is never restored by hand — it may be half-built.
+  if (order.isChallanOrder || order.removalReason === CHALLAN_STAGING) {
+    return NextResponse.json(
+      { ok: false, error: "This is an unfinished challan order and cannot be restored." },
+      { status: 409 },
+    );
   }
 
   // ── 2. Restore the order — keep removal* fields for audit trail ─────────────

@@ -50,6 +50,19 @@ interface CartPanelProps {
   // Page-owned ref so Send Email button participates in the Tab cycle
   // wiring (search → tiles → send → wrap).
   sendButtonRef?:  React.RefObject<HTMLButtonElement>;
+  // ── Challan mode (2026-10-07, Challan orders slice 3 — web-update §4c S3-1…S3-7) ──
+  // FALSE canCreateChallan (no place_order_challan canEdit) = no switch at all and
+  // the panel is exactly today's. challanMode ON: no bill bar, two-mode ship-to,
+  // no Call, and the footer button reads "Create challan order" (the parent
+  // routes onConfirmSend / canSend to the challan confirm while ON).
+  canCreateChallan:   boolean;
+  challanMode:        boolean;
+  challanRefusal:     string | null;
+  onToggleChallan:    () => void;
+  challanShipMode:    "same" | "dealer";
+  challanShipDealer:  Customer | null;
+  onChallanShipModeChange:   (mode: "same" | "dealer") => void;
+  onChallanShipDealerChange: (dealer: Customer | null) => void;
 }
 
 // Phase 3 (2026-05-13): productId is the canonical cart-line identity.
@@ -96,6 +109,8 @@ export default function CartPanel({
   onShipToChange, onDispatchChange, onCallTargetChange,
   onMarkerChange, onCrossDepotChange, onNotesChange,
   onRemovePack, onConfirmSend, canSend, sendButtonRef,
+  canCreateChallan, challanMode, challanRefusal, onToggleChallan,
+  challanShipMode, challanShipDealer, onChallanShipModeChange, onChallanShipDealerChange,
 }: CartPanelProps): React.JSX.Element {
 
   const activeBill = bills.find((b) => b.id === activeBillId);
@@ -132,6 +147,20 @@ export default function CartPanel({
   // Ship-to autocomplete + Notes quick-add open state.
   const [shipFocused,  setShipFocused]  = useState(false);
   const [quickAddOpen, setQuickAddOpen] = useState(false);
+
+  // Challan mode "Another dealer" search — its own query, the same suggestion
+  // rule as the Ship To box below (≥4 chars; digits → code, else name; cap 8),
+  // over the same customer list. Picking one sets a real customer (code), never
+  // free text.
+  const [dealerQuery,   setDealerQuery]   = useState("");
+  const [dealerFocused, setDealerFocused] = useState(false);
+  const dealerSuggestions = useMemo<Customer[]>(() => {
+    const q = dealerQuery.trim();
+    if (q.length < 4) return [];
+    if (/^\d+$/.test(q)) return customers.filter((c) => c.code.includes(q)).slice(0, 8);
+    const lower = q.toLowerCase();
+    return customers.filter((c) => c.name.toLowerCase().includes(lower)).slice(0, 8);
+  }, [dealerQuery, customers]);
 
   // Reuses CustomerSearch's suggestion filter (≥4 chars; digits → code prefix,
   // else name substring; cap 8). Selecting writes "Name (Code)" into shipTo.
@@ -184,9 +213,44 @@ export default function CartPanel({
         </div>
       )}
 
+      {/* Challan order switch — tick holders only (place_order_challan canEdit). */}
+      {customer && canCreateChallan && (
+        <div className={`px-4 py-2.5 border-b border-gray-100 flex items-center gap-2.5 ${challanMode ? "bg-brand-50" : ""}`}>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={challanMode}
+            aria-label="Challan order"
+            onClick={onToggleChallan}
+            className={`relative w-[34px] h-5 rounded-full flex-shrink-0 transition-colors ${challanMode ? "bg-brand-600" : "bg-gray-200"}`}
+          >
+            <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow-[0_1px_2px_rgba(0,0,0,0.2)] transition-all ${challanMode ? "left-4" : "left-0.5"}`} />
+          </button>
+          <div className="min-w-0">
+            <div className="text-[12.5px] font-medium text-gray-800">Challan order</div>
+            <div className="text-[10.5px] text-gray-400">
+              {challanMode ? "One bill · straight to picking · no email" : "Send goods now — SAP bill comes later"}
+            </div>
+          </div>
+          {challanMode && (
+            <span className="ml-auto text-[10px] font-bold tracking-[0.06em] text-violet-700 bg-violet-100 border border-violet-200 rounded px-1.5 py-px">
+              CHALLAN
+            </span>
+          )}
+        </div>
+      )}
+      {customer && canCreateChallan && challanRefusal && (
+        <div className="px-4 py-2.5 border-b border-gray-100">
+          <div role="alert" className="px-3 py-2 bg-red-50 border border-red-200 rounded-[8px] text-[12px] text-red-700">
+            {challanRefusal}
+          </div>
+        </div>
+      )}
+
       {/* Bill bar — always shown once a customer is locked, so "+ Add" is
-          reachable from the single-bill state. Neutral tabs (no teal). */}
-      {customer && (
+          reachable from the single-bill state. Neutral tabs (no teal).
+          Hidden in challan mode: a challan order is ONE bill (S3-1). */}
+      {customer && !challanMode && (
         <div className="px-3 py-[9px] border-b border-gray-100 flex items-center gap-2">
           <div className="flex items-center gap-0.5 bg-gray-100 rounded-[8px] p-[3px]">
             {bills.map((bill) => {
@@ -387,8 +451,96 @@ export default function CartPanel({
         {/* ── Order options — always visible (no "More options" collapse) ── */}
         {customer && (
           <>
-            {/* Ship to — gated on place_order_ship_to canEdit (hidden → email omits it) */}
-            {canShipTo && (
+            {/* Challan mode ship-to — two modes (S3-3), shown to every switch holder (M3). */}
+            {challanMode && (
+            <div className="px-4 py-[13px] border-t border-gray-100">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.06em] text-gray-400 mb-2">Ship to</p>
+              <div className="flex gap-0.5 bg-gray-100 rounded-[8px] p-[3px] mb-[9px]">
+                {(["same", "dealer"] as const).map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => onChallanShipModeChange(m)}
+                    className={`flex-1 text-[11.5px] py-[5px] rounded-[6px] whitespace-nowrap ${
+                      challanShipMode === m
+                        ? "bg-white text-gray-900 font-medium shadow-[0_1px_2px_rgba(0,0,0,0.06)]"
+                        : "text-gray-500 hover:text-gray-700"
+                    }`}
+                  >
+                    {m === "same" ? "Same as billing" : "Another dealer"}
+                  </button>
+                ))}
+              </div>
+              {challanShipMode === "same" ? (
+                <div className="text-[12px] text-gray-600 leading-snug px-px">
+                  <span className="font-semibold text-gray-900">{customer.name}</span>{" "}
+                  <span className="font-mono text-[10.5px] text-gray-400">{customer.code}</span>
+                  {customer.area && <> · {customer.area}</>}
+                  <span className="block text-[11px] text-gray-400">The truck goes to the billing dealer.</span>
+                </div>
+              ) : challanShipDealer ? (
+                <div className="flex items-start gap-2 px-3 py-2 border border-gray-200 rounded-[9px]">
+                  <span className="flex-1 min-w-0 text-[12px] text-gray-600">
+                    <span className="block font-semibold text-gray-900 truncate">{challanShipDealer.name}</span>
+                    <span className="font-mono text-[10.5px] text-gray-400">{challanShipDealer.code}</span>
+                    {challanShipDealer.area && <> · {challanShipDealer.area}</>}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => { onChallanShipDealerChange(null); setDealerQuery(""); }}
+                    aria-label="Change dealer"
+                    className="text-gray-300 hover:text-red-500 text-[14px] leading-none"
+                  >
+                    ×
+                  </button>
+                </div>
+              ) : (
+                <div className="relative">
+                  <span className="absolute left-[11px] top-[19px] -translate-y-1/2 text-gray-400 pointer-events-none">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
+                  </span>
+                  <input
+                    type="text"
+                    value={dealerQuery}
+                    onChange={(e) => setDealerQuery(e.target.value)}
+                    onFocus={() => setDealerFocused(true)}
+                    onBlur={() => setTimeout(() => setDealerFocused(false), 120)}
+                    placeholder="Search dealer name or code"
+                    autoComplete="off"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    className="w-full h-[38px] pl-[34px] pr-3 text-[13px] text-gray-900 placeholder:text-gray-400 border border-gray-200 rounded-[9px] bg-white focus:border-brand-500 focus:outline-none"
+                  />
+                  {dealerFocused && dealerSuggestions.length > 0 && (
+                    <div className="absolute left-0 right-0 top-[42px] z-30 bg-white border border-gray-200 rounded-[8px] shadow-lg overflow-hidden">
+                      {dealerSuggestions.map((c) => (
+                        <button
+                          key={c.code}
+                          type="button"
+                          onMouseDown={(e) => { e.preventDefault(); onChallanShipDealerChange(c); setDealerFocused(false); }}
+                          className="w-full flex items-center gap-2 px-3 py-2 text-left border-b border-gray-50 last:border-b-0 hover:bg-gray-50"
+                        >
+                          <span className="flex-1 min-w-0">
+                            <span className="block text-[13px] text-gray-900 truncate">{c.name}</span>
+                            <span className="block text-[11px] text-gray-400 font-mono truncate">
+                              {c.code}{c.area && <span className="font-sans"> · {c.area}</span>}
+                            </span>
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  <p className="text-[10.5px] text-gray-400 mt-[7px] leading-snug">
+                    Dealers from the customer master only. Floor shows this dealer as the stop; the bill-to stays {customer.name}.
+                  </p>
+                </div>
+              )}
+            </div>
+            )}
+
+            {/* Ship to — gated on place_order_ship_to canEdit (hidden → email omits it).
+                Not drawn in challan mode, which has its own block above. */}
+            {!challanMode && canShipTo && (
             <div className="px-4 py-[13px] border-t border-gray-100">
               <p className="text-[10px] font-semibold uppercase tracking-[0.06em] text-gray-400 mb-2">Ship to</p>
               <div className="relative">
@@ -438,7 +590,8 @@ export default function CartPanel({
                   { value: "Normal", dot: "#9C99AC" },
                   { value: "Urgent", dot: "#f59e0b" },
                   { value: "Call",   dot: "#ef4444" },
-                ] as const).map((d) => {
+                // Call is hidden in challan mode — it would hold the order (S3-2).
+                ] as const).filter((d) => !(challanMode && d.value === "Call")).map((d) => {
                   const on = dispatch === d.value;
                   return (
                     <button
@@ -569,7 +722,7 @@ export default function CartPanel({
 
       <div className="border-t border-gray-200 bg-gray-50 px-4 py-3 space-y-2">
         <div className="flex items-center justify-between pt-2 border-t border-gray-200 text-[12px]">
-          <span className="text-gray-500">Total · Bill {activeBillId}</span>
+          <span className="text-gray-500">{challanMode ? "Total · Challan order" : `Total · Bill ${activeBillId}`}</span>
           <span className="font-mono text-gray-900 font-semibold">
             {totalLines} {totalLines === 1 ? "line" : "lines"} · {formatLitres(totalLitres)} L
             {/* KG packs are excluded from the L total per policy C1 and
@@ -589,10 +742,24 @@ export default function CartPanel({
               : "bg-gray-100 text-gray-400 cursor-not-allowed"
           }`}
         >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-          </svg>
-          Send Email
+          {challanMode ? (
+            // Challan mode: this button IS "Create challan order" — it replaces
+            // Send Email as the one brand button (S3-1, CLAUDE_UI §10).
+            <>
+              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" />
+                <line x1="8" y1="13" x2="16" y2="13" /><line x1="8" y1="17" x2="13" y2="17" />
+              </svg>
+              Create challan order
+            </>
+          ) : (
+            <>
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+              </svg>
+              Send Email
+            </>
+          )}
         </button>
       </div>
     </aside>
