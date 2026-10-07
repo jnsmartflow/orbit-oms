@@ -3,11 +3,14 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Place Order — Create challan order (mockup)</title>
-<!-- Mockup for slice 3 of docs/prompts/drafts/web-update-2026-10-06-challan-orders.md (D2, D3, F1a, F1c).
+<title>Place Order — Challan mode (mockup)</title>
+<!-- Mockup for slice 3, REV 1 (7 Oct 2026): owner decisions S3-1…S3-7 in
+     docs/prompts/drafts/web-update-2026-10-06-challan-orders.md §4c. Replaces the v1 design (a secondary button above
+     Send Email + a three-way ship-to).
      Cart panel copied from app/(place-order)/place-order/components/cart-panel.tsx (live, 340px),
      confirm dialog from send-confirm-overlay.tsx, toast from place-order-page.tsx:920.
-     NEW on this page: the "Create challan order" button, the three-way Ship to, the confirm copy, the toast copy. -->
+     NEW: the Challan order switch; in challan mode — no Bill tabs, two-mode Ship to, Normal/Urgent only,
+     "Create challan order" in place of Send Email. -->
 <style>
   :root{
     --brand50:#F5F3FF; --brand200:#DDD6FE; --brand400:#A78BFA; --brand500:#8B5CF6; --brand600:#7C3AED; --brand700:#6D28D9; --brand800:#5B21B6;
@@ -122,10 +125,20 @@
   .tot{display:flex;justify-content:space-between;align-items:center;padding-top:8px;border-top:1px solid var(--g200);font-size:12px}
   .tot .l{color:var(--g500)}
   .tot .r{font-family:var(--mono);color:var(--g900);font-weight:600}
-  .btn-challan{margin-top:10px;width:100%;height:34px;border:1px solid var(--g200);background:#fff;color:var(--g600);border-radius:8px;font-size:12.5px;font-weight:500;display:flex;align-items:center;justify-content:center;gap:7px}
-  .btn-challan:hover{background:var(--g50)}
+  /* the challan mode switch — NEW (S3-1) */
+  .mode{padding:10px 16px;border-bottom:1px solid var(--g100);display:flex;align-items:center;gap:10px}
+  .mode.onrow{background:var(--brand50)}
+  .mode .t{font-size:12.5px;color:var(--g800);font-weight:500}
+  .mode .t small{display:block;font-size:10.5px;color:var(--g400);font-weight:400;margin-top:1px}
+  .sw{width:34px;height:20px;border-radius:999px;background:var(--g200);position:relative;flex:0 0 auto}
+  .sw::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.2)}
+  .sw.on{background:var(--brand600)}
+  .sw.on::after{left:16px}
+  .chip{font-size:10px;font-weight:700;letter-spacing:.06em;color:#6D28D9;background:#EDE9FE;border:1px solid #DDD6FE;border-radius:4px;padding:1px 6px}
+  .refuse-wrap{padding:10px 16px;border-bottom:1px solid var(--g100)}
+  .refuse{padding:9px 12px;background:var(--red50);border:1px solid #fecaca;border-radius:8px;font-size:12px;color:#b91c1c;line-height:1.45}
   /* empty cart → disabled is grey, never faded (CLAUDE_UI §10) */
-  body[data-state="done"] .btn-challan{background:var(--g100);color:var(--g400);cursor:not-allowed}
+  .btn-send.dis{background:var(--g100);color:var(--g400);cursor:not-allowed}
   .btn-send{margin-top:8px;width:100%;height:40px;border:0;background:var(--brand600);color:#fff;border-radius:8px;font-size:14px;font-weight:500;display:flex;align-items:center;justify-content:center;gap:8px}
   .btn-send:hover{background:var(--brand700)}
   .btn-send.off{background:var(--g100);color:var(--g400);cursor:not-allowed}
@@ -158,14 +171,16 @@
 
   /* state visibility */
   [data-show]{display:none}
-  body[data-state="cart"] [data-show~="cart"],
+  body[data-state="off"] [data-show~="off"],
+  body[data-state="refuse"] [data-show~="refuse"],
+  body[data-state="on"] [data-show~="on"],
   body[data-state="dealer"] [data-show~="dealer"],
-  body[data-state="site"] [data-show~="site"],
   body[data-state="confirm"] [data-show~="confirm"],
   body[data-state="done"] [data-show~="done"]{display:revert}
-  body[data-state="cart"] .flexshow[data-show~="cart"],
+  body[data-state="off"] .flexshow[data-show~="off"],
+  body[data-state="refuse"] .flexshow[data-show~="refuse"],
+  body[data-state="on"] .flexshow[data-show~="on"],
   body[data-state="dealer"] .flexshow[data-show~="dealer"],
-  body[data-state="site"] .flexshow[data-show~="site"],
   body[data-state="confirm"] .flexshow[data-show~="confirm"],
   body[data-state="done"] .flexshow[data-show~="done"]{display:flex}
 
@@ -176,23 +191,26 @@
   @media (max-width:900px){ .work{display:none} .cart{width:100%;flex:1 1 auto} .main{min-height:0} }
 </style>
 </head>
-<body data-state="cart">
+<body data-state="off">
 <div class="wrap">
   <a class="back" href="index.html">← Challan orders mockups</a>
-  <h1>Place Order — Create challan order</h1>
+  <h1>Place Order — Challan mode <span style="font-size:13px;font-weight:500;color:#6b7280">rev 1 · 7 Oct</span></h1>
   <p class="sub">
-    The desktop cart panel exactly as it ships (<b>cart-panel.tsx</b>), plus one secondary button directly above
-    <b>Send Email</b>. Send Email stays the one brand button on the screen. The button is tick-gated
-    (“Place Order · Create challan order”); without the tick it is not drawn at all.
+    Owner decisions S3-1…S3-7 (<b>web-update §4c</b>). A <b>Challan order</b> switch at the top of the cart, drawn only
+    for holders of “Purchase Order · Create challan order” — without the tick the row does not exist. <b>OFF</b> =
+    Place Order exactly as today. <b>ON</b> = one bill (no Bill tabs), Ship to <b>Same as billing / Another dealer</b>,
+    Dispatch <b>Normal / Urgent</b> (no Call), and <b>Create challan order</b> in place of Send Email — still the one
+    brand button. Typed site address is PARKED (S3-3).
   </p>
 
   <div class="demo" role="tablist" aria-label="Mockup state">
     <span class="lbl">State</span>
-    <button data-go="cart" class="on">1 · Cart (Ship to: same as billing)</button>
-    <button data-go="dealer">2 · Ship to: another dealer</button>
-    <button data-go="site">3 · Ship to: typed site address</button>
-    <button data-go="confirm">4 · Confirm</button>
-    <button data-go="done">5 · Created</button>
+    <button data-go="off" class="on">1 · Switch OFF (today, 2 bills)</button>
+    <button data-go="refuse">2 · Switch pressed with 2 bills</button>
+    <button data-go="on">3 · Challan mode ON</button>
+    <button data-go="dealer">4 · Ship to: another dealer</button>
+    <button data-go="confirm">5 · Confirm</button>
+    <button data-go="done">6 · Created — cart reset</button>
   </div>
 
   <div class="app">
@@ -217,7 +235,7 @@
           <table class="vg">
             <thead><tr><th class="b"></th><th>1L · box 6</th><th>500ML · box 12</th><th>200ML · box 24</th><th>100ML · box 48</th></tr></thead>
             <tbody>
-              <tr><td class="b">Black</td><td><div class="cell">0</div></td><td><div class="cell has flexshow" data-show="cart dealer site confirm">36</div><div class="cell flexshow" data-show="done">0</div></td><td><div class="cell">0</div></td><td><div class="cell">0</div></td></tr>
+              <tr><td class="b">Black</td><td><div class="cell">0</div></td><td><div class="cell has flexshow" data-show="off refuse on dealer confirm">36</div><div class="cell flexshow" data-show="done">0</div></td><td><div class="cell">0</div></td><td><div class="cell">0</div></td></tr>
               <tr><td class="b">Brilliant White</td><td><div class="cell">0</div></td><td><div class="cell">0</div></td><td><div class="cell">0</div></td><td><div class="cell">0</div></td></tr>
               <tr><td class="b">Golden Brown</td><td><div class="cell">0</div></td><td><div class="cell">0</div></td><td><div class="cell">0</div></td><td><div class="cell">0</div></td></tr>
               <tr><td class="b">Signal Red</td><td><div class="cell">0</div></td><td><div class="cell">0</div></td><td><div class="cell">0</div></td><td><div class="cell">0</div></td></tr>
@@ -231,8 +249,24 @@
       <aside class="cart">
         <div class="cust"><div class="n">MOHAN COLOUR CO</div><div class="c">102425</div></div>
 
-        <div class="billbar">
-          <div class="seg"><span class="on">Bill 1</span></div>
+        <!-- NEW: the Challan order switch (S3-1). Tick-gated: without place_order_challan this row is not drawn. -->
+        <div class="mode flexshow" data-show="off refuse">
+          <span class="sw"></span>
+          <span class="t">Challan order<small>Send goods now — SAP bill comes later</small></span>
+        </div>
+        <div class="mode onrow flexshow" data-show="on dealer confirm done">
+          <span class="sw on"></span>
+          <span class="t">Challan order<small>One bill · straight to picking · no email</small></span>
+          <span class="flex1"></span><span class="chip">CHALLAN</span>
+        </div>
+        <!-- Switch pressed with 2+ bills: refused, switch stays OFF. -->
+        <div class="refuse-wrap" data-show="refuse">
+          <div class="refuse">Challan order needs a single bill — remove the extra bills first.</div>
+        </div>
+
+        <!-- Bill bar — today's, switch OFF only. Hidden in challan mode (one bill). -->
+        <div class="billbar flexshow" data-show="off refuse">
+          <div class="seg"><span class="on">Bill 1</span><span>Bill 2</span></div>
           <span class="iconbtn addb"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
           <span class="flex1"></span>
           <span class="iconbtn"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></span>
@@ -241,7 +275,7 @@
 
         <div style="flex:1;overflow:auto">
           <div class="lines">
-            <div data-show="cart dealer site confirm">
+            <div data-show="off refuse on dealer confirm">
               <div class="gh"><b>GLOSS</b><span>1 line</span></div>
               <div class="ln"><span class="nm">Black · 500ML</span><span class="q">×36<i>· 3 box</i></span></div>
               <div class="more">+ search or tap a tile to add more</div>
@@ -249,20 +283,21 @@
             <div data-show="done"><div class="empty">No items yet — search or tap a tile to add.</div></div>
           </div>
 
-          <!-- SHIP TO — NEW: three choices. The live block is one autocomplete box whose placeholder reads "Same as billing". -->
+          <!-- SHIP TO — OFF: today's single autocomplete box (place_order_ship_to), unchanged.
+               ON: two modes only (S3-3) — typed site address is PARKED. -->
           <div class="sec">
             <p class="cap">Ship to</p>
-            <div class="shipseg flexshow" data-show="cart confirm done">
-              <span class="on">Same as billing</span><span>Another dealer</span><span>Site address</span>
+            <div data-show="off refuse">
+              <div class="inp"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><span class="ph">Same as billing</span></div>
+            </div>
+            <div class="shipseg flexshow" data-show="on confirm done">
+              <span class="on">Same as billing</span><span>Another dealer</span>
             </div>
             <div class="shipseg flexshow" data-show="dealer">
-              <span>Same as billing</span><span class="on">Another dealer</span><span>Site address</span>
-            </div>
-            <div class="shipseg flexshow" data-show="site">
-              <span>Same as billing</span><span>Another dealer</span><span class="on">Site address</span>
+              <span>Same as billing</span><span class="on">Another dealer</span>
             </div>
 
-            <div class="same" data-show="cart confirm done">
+            <div class="same" data-show="on confirm done">
               <b>Mohan Colour CO</b> <span class="m">102425</span> · Udhna<br>
               <span style="color:#9ca3af;font-size:11px">The truck goes to the billing dealer.</span>
             </div>
@@ -277,23 +312,17 @@
                   <div><span class="n">SHREE SIDDHI COLOURS</span><span class="c">105230 <em>· Adajan</em></span></div>
                 </div>
               </div>
-              <div class="hint" style="margin-top:118px">Dealers from the customer master only — the same list the live box searches. Picking one fills “Name (Code)”.</div>
-            </div>
-
-            <div data-show="site">
-              <textarea class="ta focus" rows="3">Plot 14, Rajhans Platinum (site office), Vesu, Surat 395007</textarea>
-              <div class="inp noicon" style="margin-top:7px"><span>Rakesh Patel · 98250 11223</span></div>
-              <div class="hint">Site contact is optional — it prints in the challan’s Site / Receiver box.<br>A typed site never shares a trip stop: Floor groups it under the bill-to dealer.</div>
+              <div class="hint" style="margin-top:118px">Dealers from the customer master only — the same list the live box searches. Floor shows this dealer as the stop; the bill-to stays Mohan Colour CO.</div>
             </div>
           </div>
 
-          <!-- DISPATCH — unchanged -->
+          <!-- DISPATCH — OFF: Normal / Urgent / Call (today). ON: Normal / Urgent only — Call hidden (S3-2). -->
           <div class="sec">
             <p class="cap">Dispatch</p>
             <div class="opts">
               <span class="opt3 on"><span class="dt" style="background:#9C99AC"></span>Normal</span>
               <span class="opt3"><span class="dt" style="background:#f59e0b"></span>Urgent</span>
-              <span class="opt3"><span class="dt" style="background:#ef4444"></span>Call</span>
+              <span class="opt3 flexshow" data-show="off refuse"><span class="dt" style="background:#ef4444"></span>Call</span>
             </div>
           </div>
 
@@ -317,22 +346,24 @@
 
         <div class="foot">
           <div class="tot">
-            <span class="l">Total · Bill 1</span>
-            <span class="r" data-show="cart dealer site confirm">1 line · 18 L</span>
+            <span class="l" data-show="off refuse">Total · Bill 1</span>
+            <span class="l" data-show="on dealer confirm done">Total · Challan order</span>
+            <span class="r" data-show="off refuse on dealer confirm">1 line · 18 L</span>
             <span class="r" data-show="done">0 lines · 0 L</span>
           </div>
-          <!-- NEW: secondary, ABOVE the primary. White + gray border (CLAUDE_UI §10 Secondary), never brand. -->
-          <button class="btn-challan" data-go="confirm" title="Send the goods now on an Orbit challan; billing links the SAP SO later">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="13" y2="17"/></svg>
+          <!-- OFF: today's Send Email. ON: "Create challan order" IN ITS PLACE — the one brand button (CLAUDE_UI §10). -->
+          <button class="btn-send flexshow" data-show="off refuse">
+            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
+            Send Email
+          </button>
+          <button class="btn-send flexshow" data-show="on dealer confirm" data-go="confirm">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="13" y2="17"/></svg>
             Create challan order
           </button>
-          <button class="btn-send flexshow" data-show="cart dealer site confirm">
-            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
-            Send Email
-          </button>
-          <button class="btn-send off flexshow" data-show="done">
-            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
-            Send Email
+          <!-- empty cart after create → grey, never faded -->
+          <button class="btn-send dis flexshow" data-show="done">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="13" y2="17"/></svg>
+            Create challan order
           </button>
         </div>
       </aside>
@@ -349,12 +380,13 @@
         <div class="b">
           <div class="kv"><span class="k">Bill to</span><span class="v">MOHAN COLOUR CO<span class="m">102425</span><small>The dealer SAP will bill</small></span></div>
           <div class="kv"><span class="k">Ship to</span><span class="v">Same as billing · Udhna</span></div>
+          <div class="kv"><span class="k">Dispatch</span><span class="v">Normal</span></div>
           <div class="kv"><span class="k">Goods</span><span class="v"><b style="font-weight:600">1 line · 36 tins</b> · 18 L<small>Gloss · Black · 500ML ×36</small></span></div>
         </div>
         <div class="f">
           <span class="k"><span class="kbd">Enter</span> create · <span class="kbd">Esc</span> cancel</span>
           <span style="display:flex;gap:8px">
-            <button class="b-cancel" data-go="cart">Cancel</button>
+            <button class="b-cancel" data-go="on">Cancel</button>
             <button class="b-go" data-go="done">Create challan order</button>
           </span>
         </div>
@@ -369,13 +401,15 @@
   </div>
 
   <div class="notes-box">
-    <h4>What changes, what does not</h4>
+    <h4>What changes, what does not (rev 1 — owner decisions S3-1…S3-7, 7 Oct)</h4>
     <ul>
-      <li><b>New:</b> “Create challan order” (secondary, 34px, above Send Email) · the three-way Ship to · the confirm dialog · the toast.</li>
-      <li><b>Unchanged:</b> top bar, customer pill, bill bar, line list, Dispatch, Order remarks, Notes, Total line, Send Email (still the only <code>brand-600</code> button).</li>
-      <li><b>Confirm button is gray-900</b>, not brand — the modal rule (CLAUDE_UI §13) and what <code>send-confirm-overlay.tsx</code> ships.</li>
-      <li><b>Bill to</b> is the customer chosen at the top (master only, never typed — F1a). Material codes are resolved silently from the existing SKU mapping (F2) — no popup, nothing to show here.</li>
-      <li>After create, the active bill clears (shown as state 5). Whether ALL bills clear or only the one sent is open — see the reply notes.</li>
+      <li><b>New:</b> the Challan order switch (tick holders only) · in challan mode: no Bill bar, two-mode Ship to, no Call, “Create challan order” in place of Send Email · the confirm dialog · the toast.</li>
+      <li><b>Switch OFF is today's screen, untouched</b> — Bill tabs, the single ship-to box (still gated by <code>place_order_ship_to</code>), Normal / Urgent / Call, Send Email.</li>
+      <li><b>Switching ON with 2+ bills is refused</b> (state 2) and the switch stays OFF. A single bill switches straight in, lines kept.</li>
+      <li><b>One brand button per state</b> (CLAUDE_UI §10): Send Email when OFF, Create challan order when ON; an empty cart greys it, never fades it. Confirm button is gray-900 (§13).</li>
+      <li><b>Bill to</b> is the customer chosen at the top (master only — F1a). Material codes come silently from the grid's own pack (F2). Base / tintable products go as plain goods (S3-5).</li>
+      <li><b>After create the cart resets</b> (S3-7, state 6). The switch stays ON so the next challan can be keyed at once.</li>
+      <li><b>Not here:</b> typed site address + contact — PARKED to ROADMAP (S3-3).</li>
     </ul>
   </div>
 </div>
@@ -393,7 +427,7 @@
     if (t) go(t.getAttribute('data-go'));
   });
   var h = location.hash.slice(1);
-  if (['cart', 'dealer', 'site', 'confirm', 'done'].indexOf(h) >= 0) go(h);
+  if (['off', 'refuse', 'on', 'dealer', 'confirm', 'done'].indexOf(h) >= 0) go(h);
 </script>
 </body>
 </html>
