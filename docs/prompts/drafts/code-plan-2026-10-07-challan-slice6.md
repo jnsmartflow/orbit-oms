@@ -1,5 +1,10 @@
 # code-plan-2026-10-07 — Challan Orders slice 6: the import catch + late-paste safety net
 
+> **Revision 1 (7 Oct, same day).** Adds: **F** — admin-only cancel of a linked OBD from the Challan orders screen, and the
+> rule for a linked OBD whose ORB order is cancelled after linking (§11); the owner's pre-slice-6 test data, read live
+> (§0); a full, exact safe-test method covering every path (§9, replaces the first draft's sketch). §1–§8, B and E are
+> unchanged.
+
 **Status:** PLAN ONLY. No code, no DDL. Read-only SELECTs against production, 2026-10-07.
 Builds on slices 1–5 (`e9143c1f` … `fe33eeab`, all pushed). Design: web-update-2026-10-06-challan-orders.md D4, D9,
 D10, D11, F1b, F5, M6, S5-2, S5-3.
@@ -20,6 +25,25 @@ the import route's preview handlers and shadow runners, `lib/ci/bill-only.ts`. L
 **0**, challan-order 2 · every OBD of the last 90 days has a raw-summary `billToCustomerId` (10,288 / 10,288);
 bill-to = ship-to code on 8,775 of 10,290 · **221** SOs had more than one live OBD in 90 days · 0 orders with an
 OBD starting `9999`.
+
+---
+
+## 0. The owner's test of 7 Oct (before slice 6) — live state, read-only, nothing changed
+
+| Item | Live state |
+|---|---|
+| ORB-2026-00001 / -00002 (Mohan Colour Co) / **-00003 (Shree Colour House)** | all `cancelled`, not removed, on no trip |
+| Link 1 — SO `7567796327` → ORB-00002 | `unlinked` 07:18:14 by user 1 (the auto-unlink on cancel — the ✕ unlink + re-paste is still unproven, see slice 5) |
+| Link 2 — SO **`7567796325`** → ORB-00003 | `unlinked` 09:01:10.14 by user 1 — 0.2 s before ORB-00003's cancel log (09:01:10.33): the S5-3 auto-unlink. 0 live links remain |
+| Dummy OBD **`7567796327`** (id 18985), SO `7567796325` | `cancelled`, `dispatchStatus` null, `challanOrderId` null, no trip, no pick assignment (cleared), no CHN, no CI. Came in through **manual-SAP xlsx** (`BATCH-20261007-024`, "challan test.XLSX"), released by the no-mail fallback 08:57, picked + checked, cancelled "Other · test" |
+| `so_tags` / `mo_orders` on `756779632x` | 0 / 0 — neither number is a real SO in Orbit |
+| Orders with OBD or SO starting `9999` | 0 — the §9 fake range is clean |
+
+**Leftovers:** none that need action — every row is in a terminal state (cancelled / unlinked). Rows are never deleted,
+so ORB-00001…00003, link rows 1–2 and OBD 7567796327 stay as history. ⚠ **Observation, not a challan issue:** the dummy
+OBD's picking logs (assign 09:03:47, done 09:03:54, check 09:04:04) carry timestamps AFTER its cancel (09:01:11) although
+the cancel's `fromStage` is `pick_checked` — the picking test-mode logs are stamped later than they happened.
+(`order_status_logs.createdAt` is `timestamp without time zone`.) Worth a look in Picking, separately.
 
 ---
 
@@ -163,22 +187,67 @@ import of a different OBD on the same SO calling R1 for that SO.
 and the Night fallback, `route.ts:153`). The import's `resolveSlot` becomes a call to it; `lib/challan-orders/create.ts`
 drops its `legacySlot` copy and imports it. Behaviour byte-identical.
 
-## 9. Safe hand test (one fresh ORB order + a fake OBD)
+## 9. SAFE TEST METHOD (rev 1 — exact)
 
-The **manual template** path (`/admin/import` → Template 1, `?action=preview` → `?action=confirm`) creates exactly the
-OBDs in the file; Auto-Import never re-offers a number it did not get from SAP. A fake OBD **`9999000001`** (live: 0
-orders start `9999`; real OBDs are `910…`) cannot collide with a real bill.
-1. Create test ORB order (admin) → paste a fake SO `9999100001` (Waiting).
-2. Template header file: one row — OBD `9999000001`, `SONum 9999100001`, `Bill To Customer Id` = the ORB's dealer code,
-   `ShipToCustomerId` = same, `OBD Email Date/Time` = now; line file: one line, a real SKU, 1 unit.
-   Import → **expect:** the OBD appears NOWHERE (not Picking, not Floor, not Hold); Challan screen → Billed, OBD
-   `9999000001` ✓; the verify SELECT shows `challan_linked`, `challanOrderId` = ORB id, `dispatchStatus` null, no CHN.
-3. Mismatch test: second ORB + SO `9999100002`, OBD `9999000002` with a DIFFERENT `Bill To Customer Id` → per Q1.
-4. Late paste: import OBD `9999000003` with SO `9999100003` and NO link → it releases to Picking (briefly visible on
-   Assign); paste `9999100003` on a third ORB → pulled back, gone from Picking. (Assign it first instead → refused +
-   red warning on the Challan screen and Floor.)
-5. Clean-up: cancel the ORB orders as admin; the fake OBDs stay as `challan_linked` / cancelled rows (never deleted),
-   invisible everywhere.
+**Why it cannot touch a real bill:** every number is fake and out of range. Live: 0 orders have an OBD or SO starting
+`9999`; real OBDs are `910…` and real SOs `104…` / `451…` (the SO rule's own census). Auto-Import only ever creates
+OBDs it got from SAP, so it can never re-offer a fake number. Fake OBDs `99999990NN`, fake SOs `99990000NN`.
+
+**Path: Template 2 — Combined File** (`/admin/import` → Import → "Template 2 — Combined File (Two Sheets)" → Preview →
+Confirm; needs `import_obd` canImport). Same create code as Template 1 and the same release order as Auto-Import (§1).
+(Manual-SAP xlsx — the path the owner's own test used — goes through `upsertObd`; run test T1 once on it too, by editing
+the OBD / SO / bill-to cells of the owner's "challan test.XLSX".)
+
+**The file — one `.xlsx`, two sheets, exact names, row 1 = these headers:**
+
+Sheet `LogisticsTrackerWareHouse` (one row per OBD):
+
+| OBD Number | Status | SMU | MaterialType | OBD Email Date | OBD Email Time | UnitQty | GrossWeight | Volume | Bill To Customer Id | Bill To Customer Name | ShipToCustomerId | Ship To Customer Name | SONum |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 9999999001 | Open | Deco Retail | FERT | today's date | 10:15 | 4 | 4 | 4 | *the test ORB's dealer code* | *its name* | *same code* | *same name* | 9999000001 |
+
+Sheet `LineItems` (one row per line):
+
+| obd_number | line_id | sku_codes | sku_description | unit_qty | volume_line | Tinting |
+|---|---|---|---|---|---|---|
+| 9999999001 | 10 | IN28140071 | (any) | 4 | 4 | FALSE |
+
+(`IN28140071` is the SKU the owner's own dummy used. `SMU` and `MaterialType` are not GIFTS / not required; leave
+`InvoiceNo` out — a challan's SAP bill arrives un-invoiced.)
+
+**Before each test:** create ONE fresh test ORB order (admin, `/place-order` challan mode, a test dealer) and note its
+number. Read-only pre-check: `SELECT count(*)::text FROM orders WHERE "obdNumber" LIKE '9999%' OR "soNumber" LIKE '9999%';`
+
+| # | Test | Steps (owner clicks) | Must show |
+|---|---|---|---|
+| T0 | **✕ unlink + re-paste (left over from slice 5)** | Challan orders → Not billed → paste `9999000001` → Link → Waiting → **✕** → (back in Not billed) → paste `9999000001` again | History shows the first link **struck through / unlinked**, a second link **waiting**. SELECT: 2 link rows for the SO, one `unlinked` (by you), one `waiting` |
+| T1 | **Main catch** | SO `9999000001` is waiting on ORB-A → import the file above (OBD `9999999001`) | Import says 1 created. The OBD is on **no** board — not Picking, not Floor (any tab), not Hold, not Tint. Challan orders → ORB-A moves to **Billed**, OBD `9999999001` ✓. SELECT: OBD `challan_linked`, `challanOrderId` = ORB-A id, `dispatchStatus` null, 0 CHN, one log "Linked to challan …"; link `linked`, `linkedOrderId` = the OBD |
+| T2 | **Part-billing — 2nd OBD, same SO** | Import a second file: OBD `9999999002`, same SO `9999000001` | Also hidden; also `challan_linked` → ORB-A; the link is unchanged (still points at `9999999001`); ORB-A's Billed row lists both OBDs |
+| T3 | **Part-billing — 2nd SO, same ORB** | ORB-B: paste `9999000002` and `9999000003`. Import OBD `9999999003` with SO `9999000002` only | ORB-B stays in **Waiting for OBD** ("part-billed — 1 of 2"); then import `9999999004` with SO `9999000003` → ORB-B moves to Billed |
+| T4 | **An SO with no link flows normally** | Import OBD `9999999005`, SO `9999000005` (no paste anywhere) | It appears on Floor / Picking as an ordinary bill (`pending_picking`, `dispatch`). Clean-up: Floor-cancel it |
+| T5 | **Late paste, NOT touched → pull-back** | Import OBD `9999999006`, SO `9999000006` (no link) → it reaches Picking's Assign list → on ORB-C paste `9999000006` | Paste succeeds; the OBD **vanishes** from Picking/Floor; ORB-C → Billed. SELECT: OBD `challan_linked`, log "pulled back …" |
+| T6 | **Late paste, TOUCHED → refuse + warn** | Import OBD `9999999007`, SO `9999000007` → **assign it to a picker** → on ORB-D paste `9999000007` | Red **"DOUBLE DISPATCH RISK — OBD 9999999007 is with a picker"** on the paste; the red banner on the Challan screen and a red strip on Floor stay until the OBD is cancelled (or the SO unlinked). Clean-up: Floor-cancel the OBD → both warnings clear |
+| T7 | **Dealer mismatch at import** | ORB-E: paste `9999000008`. Import OBD `9999999008`, SO `9999000008`, with a DIFFERENT `Bill To Customer Id` | Per Q1 — recommended: the OBD is **held** (Floor → Hold tab, "Held from: Billing · challan"), NOT linked; red alert on the Challan screen naming both dealers |
+| T8 | **Re-import** | Import the T1 file again | "1 skipped (duplicate)"; nothing changes |
+| T9 | **Clean-up (F, §11)** | As admin: Challan orders → each linked test OBD → **Cancel OBD**; then cancel each test ORB order | Every `9999…` OBD `cancelled`; every test link `unlinked`; nothing on any board. A non-admin sees no Cancel OBD button and the route refuses them |
+
+**Verify after each test (read-only):**
+```sql
+SELECT 'obd'::text AS a, o."obdNumber"::text AS b, o."workflowStage"::text AS c, coalesce(o."dispatchStatus",'(null)')::text AS d,
+       coalesce(o."challanOrderId"::text,'(null)') AS e, coalesce(o."soNumber",'(null)')::text AS f
+  FROM orders o WHERE o."obdNumber" LIKE '9999999%'
+UNION ALL
+SELECT 'link', l.id::text, l."soNumber", l.status, coalesce(l."linkedOrderId"::text,'(null)'), coalesce(l."unlinkedAt"::text,'')
+  FROM challan_order_so_links l WHERE l."soNumber" LIKE '99990000%'
+UNION ALL
+SELECT 'chn', c."challanNumber"::text, o."obdNumber", c."isVoided"::text, '', ''
+  FROM delivery_challans c JOIN orders o ON o.id = c."orderId" WHERE o."obdNumber" LIKE '9999999%'
+UNION ALL
+SELECT 'log', o."obdNumber", g."toStage"::text, coalesce(g."fromStage",'(null)')::text, g.note::text, g."createdAt"::text
+  FROM order_status_logs g JOIN orders o ON o.id = g."orderId" WHERE o."obdNumber" LIKE '9999999%'
+ORDER BY 1, 2;
+```
+Expect 0 `chn` rows, ever.
 
 ## 10. Risks + owner questions
 
@@ -187,10 +256,48 @@ orders start `9999`; real OBDs are `910…`) cannot collide with a real bill.
 2. The paste-time rule depends on "touched" being read correctly; the CAS write closes the race with an assign.
 3. 221 SOs / 90 days have several OBDs — part-billing is common; the Billed tab must list OBDs by `challanOrderId`, not
    by the one `linkedOrderId` (slice 5's loader reads `linkedOrder` — slice 6 widens it).
-4. The manual template has had 0 batches in 90 days — the test path is real but little used.
+4. The manual template has had 0 batches in 90 days — the test path is real but little used (T1 is repeated on manual-SAP).
+5. Picking test-mode log timestamps run late (§0) — not a challan risk, but it makes log-based checks on test bills
+   misleading.
 
 **Owner questions**
 1. **Dealer mismatch at import:** (b) hold + red alert, billing decides (recommended) — or (a) link anyway with ⚠?
 2. **Late paste on a TOUCHED OBD:** store the link as `waiting` and show a persistent red warning on the Challan screen and
    Floor until resolved (recommended) — or keep refusing the paste (nothing stored, no Floor warning)?
-3. Paste when the SO carries a live **Telephonic** tag (0 today): warn, or ignore (the challan wins at import anyway)?
+3. **Cancelling a linked OBD (F):** the challan becomes unbilled again — put its link back to **waiting**, so the next OBD
+   SAP issues on that SO is caught (recommended) — or **unlink** it, so a re-issued OBD on the same SO flows to picking?
+4. **An ORB order cancelled AFTER an OBD was linked to it:** return each linked OBD to the floor (`pending_support`,
+   status null — a person releases it) and unlink (recommended, §11) — or refuse the ORB cancel while it has linked OBDs?
+5. Paste when the SO carries a live **Telephonic** tag (0 today): warn, or ignore (the challan wins at import anyway)?
+
+## 11. F — cancelling a linked OBD (admin only) + an ORB cancelled after linking
+
+**Where:** the Challan orders screen — the Billed tab and the History row of an ORB order list its linked OBDs
+(`orders WHERE challanOrderId = <ORB>`); each gets a **Cancel OBD** action, rendered only for admin (the screen gets an
+`isAdmin` flag from each mount's server side, `lib/rbac.ts isSuperuser`). A linked OBD is on no other screen, so this is
+the only door.
+
+**Route:** `POST /api/challan-orders/linked-obds/[orderId]/cancel` (`force-dynamic`). Body `{ reason, remark }` (the
+desk cancel reasons, `lib/floor/desk-cancel-reasons.ts`). Checks: session; `challan_orders` canView; then the ONE guard
+`lib/challan-orders/cancel-guard.ts` — extended with `linkedObdCancelRefusal(actorIsAdmin)` → "Only admin can cancel a
+challan-linked bill." (same text family, same owner); the order exists, not removed, `workflowStage = 'challan_linked'`
+(anything else → 409 "This bill is not linked to a challan").
+
+**Writes** (sequential, no `$transaction`):
+1. `orders.updateMany` CAS `WHERE id AND workflowStage = 'challan_linked'` → `{ workflowStage: 'cancelled',
+   dispatchStatus: null }`. **`challanOrderId` is KEPT** — the history of which challan it belonged to.
+2. `order_status_logs` — `challan_linked → cancelled`, admin's id, the desk cancel note.
+3. The link row: if this OBD is the link's `linkedOrderId` AND no other live `challan_linked` OBD carries this
+   `challanOrderId` + SO → per Q3, recommended: the link goes back to **`waiting`** (`linkedOrderId` / `obdLinkedAt`
+   null — the `chk_challan_order_so_links_shape` waiting shape) via a CAS updateMany; otherwise it stays `linked` and
+   re-points `linkedOrderId` to the oldest remaining linked OBD.
+**Line match (slice 7):** counts only OBDs at `challan_linked` — a cancelled OBD drops out of the sum automatically.
+
+**An ORB order cancelled AFTER linking** (recommended rule for real life, Q4). An ORB order can only be cancelled before
+it is on a trip or dispatched (`offFloorRefusal`, admin-only since S5-4) — so its goods have NOT left. Its linked SAP
+OBD(s) are therefore the real bill for goods that must now ship as a normal order. The ORB cancel (every path in the
+slice-5 guard table) also: for each `orders WHERE challanOrderId = <ORB> AND workflowStage = 'challan_linked'` →
+CAS update to **`pending_support`, `dispatchStatus` null** (Floor's undecided arm — a person releases it with a slot;
+nothing auto-releases a bill on cancel), one log "Challan ORB-… cancelled — bill returned to the floor"; and every link
+→ `unlinked` (extends S5-3's `unlinkWaitingOnCancel` to `linked` rows too). `challanOrderId` is kept as history.
+**Test-data clean-up (T9)** = cancel the linked test OBDs first (F), then the test ORB orders.
