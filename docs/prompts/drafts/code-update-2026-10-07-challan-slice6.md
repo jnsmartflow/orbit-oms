@@ -119,3 +119,89 @@ T4 `pending_picking` / `dispatch` · T7 held (`hold`) until Link anyway, then `c
 **Clean-up check (read-only, expect 0 / 0):**
 `SELECT (SELECT count(*) FROM orders WHERE "obdNumber" LIKE '9999999%' AND "workflowStage" <> 'cancelled')::text, (SELECT count(*) FROM challan_order_so_links WHERE "soNumber" LIKE '99990000%' AND status <> 'unlinked')::text;`
 Rows are never deleted — the test OBDs, ORB orders and links stay as cancelled / unlinked history.
+
+---
+
+## Slice 6c — check-failed visibility (2026-10-07)
+
+**Problem.** If an import could not read the challan link table, its whole batch was withheld from every release
+(fail closed) and Floor showed those bills as ordinary undecided "no slot" bills — no alert, no reason.
+
+**Where the failure is recorded:** `import_batches.status = 'challan_check_failed'` on that import's batch
+(`lib/challan-orders/check-failed.ts`). One row per import, written by every import path anyway, **no CHECK on the column
+(live, read-only 2026-10-07: only `completed` exists, 3,832 rows)** — so **no DDL**. It never depends on the link table.
+All four import paths now end with `status: finalBatchStatus(<their catch>.excludeAll)` — `"completed"` exactly as before
+unless the check failed. The withheld bills = the batch's orders (`orders.batchId`) still `pending_support` + null status +
+not removed; a bill someone already handled drops out of the count.
+
+**The alert.** `GET /api/challan-orders/alerts` now also returns `batches` (read from `import_batches` + `orders`, never the
+link table) and reads the two sources separately. The strip (Floor AND the Challan screen) shows one red line per batch:
+**"Import BATCH-… : N bills held — challan check failed — Retry"** + "Do not release them by hand". If the alert source itself
+fails (or the link-based half fails), it shows **"Challan check status unknown — contact admin"** instead of nothing.
+401/403 still stay silent.
+
+**Retry** = `POST /api/import/obd?action=challan-check-retry {batchId}` (inside the import route, beside the release
+functions it reuses):
+1. the normal `catchChallanObds` over the batch's bills — still unreadable → 503, nothing written, the line stays;
+2. for the bills NOT caught / held / left: the import's own release steps in its order — `applyMailOrderEnrichment` (R1) →
+   `applySoTagHolds` (Telephonic) → `applyNoMailOrderFallback` (R2) → CHN (eligible SMU + an active line,
+   `createChallanForOrder`);
+3. batch → `completed`; the line clears.
+Idempotent: a batch already `completed` answers `alreadyDone`; R2 moves only `pending_support` + null; tags claim once;
+`createChallanForOrder` returns if a CHN exists. Safe to press twice.
+
+**Who can press Retry:** **`floor` canEdit** — the permission that already releases bills on Floor
+(`/api/floor/release`). The server returns `canRetryBatches`; without it the button is not drawn and the line says "ask
+someone with Floor edit access to press Retry".
+
+**Small guards:** the confirm handler treats a flagged batch as already confirmed (409) — a second confirm would only collide
+on `obdNumber` and overwrite the flag with `failed`. The import log (`/api/import/log`) lists flagged batches too, so the
+import doesn't vanish from history.
+
+**How the failure path was tested without live:**
+- `lib/challan-orders/check-failed.test.ts` (5/5): with the test-only flag on, `catchChallanObds` throws inside its `try`
+  BEFORE its first query → `excludeAll = true`, no sets, no results, and `finalBatchStatus` gives the flag. No database
+  connection is used. Also: the flag can never fire when `NODE_ENV=production`; the strip message wording; an empty batch is
+  never flagged.
+- The flag: `CHALLAN_CHECK_FORCE_FAIL=1`, honoured ONLY when `NODE_ENV !== "production"` — never set on Vercel, and Vercel's
+  build runs with `NODE_ENV=production`, so it cannot fire live.
+- Nothing was imported, and the failure was not triggered on live.
+
+**No behaviour change for a normal import:** the only new write on the normal path is the status value, and
+`finalBatchStatus(false)` is the same `"completed"` string. Retry is a new action no import calls. AN IMPORT IS NOT A CALL.
+
+**Files:** NEW `lib/challan-orders/check-failed.ts`, `check-failed-message.ts` (client-safe half for the strip),
+`check-failed.test.ts`, `docs/test-data/challan-slice6/T10-check-failed.xlsx` · EDITED `app/api/import/obd/route.ts`
+(4 final statuses, the confirm guard, `handleChallanCheckRetry` + its dispatch), `lib/challan-orders/reconcile.ts` (the
+test-only throw), `app/api/challan-orders/alerts/route.ts`, `components/challan-orders/challan-alert-strip.tsx`,
+`app/api/import/log/route.ts`. tsc clean · build exit 0, 414 routes (Retry is an action, not a new route), 84/84 static.
+
+**Limit.** A bill the failed import PATCHED (SAP / paste path, already in Orbit) keeps its own older `batchId` and is not
+in the count — it was released by its own import long ago; only the enrichment re-run was skipped for it.
+
+### T10 — check failed (owner, local only; run after T9)
+
+Safe because the flag only works on your local dev server, only the import you make while it is on is affected, and the
+file holds a fake OBD.
+1. Change `OBD Email Date` in `T10-check-failed.xlsx` to today.
+2. Stop the dev server. In PowerShell: `$env:CHALLAN_CHECK_FORCE_FAIL='1'; npm run dev`. Do NOT use Auto-Import or any
+   real file while it runs.
+3. `/admin/import` → import `T10-check-failed.xlsx` → you see it complete.
+4. Floor → red line "Import BATCH-…: 1 bill held — challan check failed — Retry". `9999999009` is on Floor undecided, NOT on
+   Picking. The same line shows on Challan orders.
+5. Press **Retry** while the flag is still on → red error "The challan check still cannot run — nothing was released"; the
+   line stays.
+6. Stop the dev server. Start it normally: `Remove-Item Env:CHALLAN_CHECK_FORCE_FAIL; npm run dev`.
+7. Press **Retry** → the line disappears; `9999999009` is on **Picking Assign** (no link on its SO → released as normal).
+   **⚠ cancel after:** cancel `9999999009` on Floor.
+
+Verify (read-only):
+```sql
+SELECT 'batch'::text AS a, b."batchRef"::text AS b, b.status::text AS c, ''::text AS d
+  FROM import_batches b JOIN orders o ON o."batchId" = b.id WHERE o."obdNumber" = '9999999009'
+UNION ALL
+SELECT 'obd', o."obdNumber"::text, o."workflowStage"::text, coalesce(o."dispatchStatus",'(null)')::text
+  FROM orders o WHERE o."obdNumber" = '9999999009';
+```
+Expect after step 4: `challan_check_failed` · `pending_support` · `(null)`. After step 7: `completed` ·
+`pending_picking` · `dispatch`. After the cancel: `cancelled`.

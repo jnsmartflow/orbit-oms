@@ -45,6 +45,8 @@ import { computeArticleInfo, loadPackCatalog, rollupArticleTagsBySku } from "@/l
 import type { ArticleRollup, PackCatalog } from "@/lib/article-tag";
 import { applySoTagHolds } from "@/lib/billing/telephonic-apply";
 import { catchChallanObds } from "@/lib/challan-orders/reconcile";
+import { CHALLAN_ELIGIBLE_SMU } from "@/lib/import-upsert/types";
+import { CHALLAN_CHECK_FAILED_STATUS, finalBatchStatus } from "@/lib/challan-orders/check-failed";
 import { CHALLAN_LINKED, NOT_CHALLAN_LINKED } from "@/lib/workflow-stages";
 import { BILLING_CI_HOLD_NOTE, MAIL_ORDER_AUTO_HOLD_NOTE, MAIL_ORDER_BILLING_HOLD_NOTE } from "@/lib/floor/hold-log";
 
@@ -1360,7 +1362,9 @@ async function handleConfirm(req: Request, session: Session): Promise<NextRespon
   if (!batch) {
     return NextResponse.json({ error: "Batch not found" }, { status: 404 });
   }
-  if (batch.status === "completed") {
+  // + the slice-6c flag: such a batch WAS confirmed (its orders exist) — a second
+  // confirm would only collide on obdNumber and overwrite the flag with "failed".
+  if (batch.status === "completed" || batch.status === CHALLAN_CHECK_FAILED_STATUS) {
     return NextResponse.json({ error: "Batch already confirmed" }, { status: 409 });
   }
 
@@ -1766,7 +1770,8 @@ async function handleConfirm(req: Request, session: Session): Promise<NextRespon
     .update({
       where: { id: batchId },
       data: {
-        status:     "completed",
+        // Slice 6c: the challan check failed → the flag, so the withheld bills are seen.
+        status:     finalBatchStatus(templateCatch.excludeAll),
         totalObds:  confirmedObdIds.length,
         skippedObds,
         failedObds,
@@ -2195,7 +2200,8 @@ async function handleManualSapConfirm(_req: Request, session: Session): Promise<
       .update({
         where: { id: batchId },
         data: {
-          status:      "completed",
+          // Slice 6c — see the manual-template site.
+          status:      finalBatchStatus(sapCatch.excludeAll),
           totalObds:   parseResult.skipped.length + results.length,
           skippedObds: parseResult.skipped.length,
           failedObds:  counters.errored,
@@ -2756,7 +2762,8 @@ async function handleSapPasteConfirm(req: Request, session: Session): Promise<Ne
       .update({
         where: { id: batchId },
         data: {
-          status:      "completed",
+          // Slice 6c — see the manual-template site.
+          status:      finalBatchStatus(sapCatch.excludeAll),
           totalObds:   parseResult.skipped.length + results.length,
           skippedObds: parseResult.skipped.length,
           failedObds:  counters.errored,
@@ -4258,7 +4265,8 @@ async function processAutoImportRows(
     .update({
       where: { id: batchId },
       data: {
-        status:      "completed",
+        // Slice 6c — see the manual-template site.
+        status:      finalBatchStatus(autoCatch.excludeAll),
         totalObds:   validSummaryIds.length,
         // See the note on the early-return update above.
         skippedObds: duplicateCount + emptyPayloadSkips.length,
@@ -4787,6 +4795,114 @@ async function handleAutoImportDayObds(req: Request): Promise<NextResponse> {
 
 // ── Main handler ──────────────────────────────────────────────────────────────
 
+// ── SLICE 6c — Retry an import whose challan check failed ────────────────────
+//
+// POST /api/import/obd?action=challan-check-retry  body { batchId }
+//
+// An import that could not read the challan link table withheld ALL its bills from
+// every release (catchChallanObds excludeAll) and flagged its batch
+// (import_batches.status = CHALLAN_CHECK_FAILED_STATUS, lib/challan-orders/check-failed.ts).
+// Retry finishes that import exactly as a normal one would have:
+//   1. the normal catch over the batch's bills (catchChallanObds) — still unreadable →
+//      503, nothing written, the flag stays;
+//   2. for the bills it does NOT catch / hold / leave: the SAME release steps the import
+//      runs, in the same order — mail-order enrichment (R1), Telephonic holds, the
+//      no-mail fallback (R2), then CHN for the eligible ones;
+//   3. the batch → "completed" — the red line clears.
+// IDEMPOTENT — every step is: R2 only moves pending_support + null status, the tags claim
+// once, enrichment re-applies the same mail-order facts (auto-done only from
+// pending_support), createChallanForOrder returns if a CHN exists, and a batch already
+// "completed" answers alreadyDone without touching anything.
+//
+// The batch's bills = orders.batchId (stamped on create, never changed). On the SAP /
+// paste paths an existing bill PATCHED by that import keeps its own older batchId and is
+// not re-run here — it was released by its own import long before.
+//
+// WHO: floor canEdit — the permission that already releases bills on Floor
+// (/api/floor/release). Retry only completes a normal import. Sequential awaits.
+async function handleChallanCheckRetry(req: Request): Promise<NextResponse> {
+  const session = await auth();
+  if (!session?.user) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+  const roles = session.user.roles ?? [session.user.role];
+  if (!(await checkAnyPermission(roles, "floor", "canEdit"))) {
+    return NextResponse.json({ ok: false, error: "You need Floor edit access to release these bills." }, { status: 403 });
+  }
+  const actorId = Number(session.user.id);
+  if (!Number.isInteger(actorId) || actorId <= 0) {
+    return NextResponse.json({ ok: false, error: "Invalid session user id" }, { status: 500 });
+  }
+  const body = (await req.json().catch(() => ({}))) as { batchId?: unknown };
+  const batchId = Number(body.batchId);
+  if (!Number.isInteger(batchId) || batchId <= 0) {
+    return NextResponse.json({ ok: false, error: "batchId is required" }, { status: 400 });
+  }
+  const batch = await prisma.import_batches.findUnique({ where: { id: batchId }, select: { id: true, batchRef: true, status: true } });
+  if (!batch) return NextResponse.json({ ok: false, error: "Batch not found" }, { status: 404 });
+  if (batch.status !== CHALLAN_CHECK_FAILED_STATUS) {
+    return NextResponse.json({ ok: true, alreadyDone: true, batchRef: batch.batchRef });
+  }
+
+  const orders = await prisma.orders.findMany({
+    where: { batchId, isRemoved: false, isChallanOrder: false },
+    select: { id: true, obdNumber: true, soNumber: true, smu: true },
+    orderBy: { id: "asc" },
+  });
+  const obdNumbers = orders.map((o) => o.obdNumber);
+
+  // 1. The catch — the same call every import makes.
+  const retryCatch = await catchChallanObds(obdNumbers, actorId);
+  if (retryCatch.excludeAll) {
+    return NextResponse.json(
+      { ok: false, error: "The challan check still cannot run — nothing was released. Try again shortly." },
+      { status: 503 },
+    );
+  }
+  const releasable = orders.filter((o) => !retryCatch.excludeObds.has(o.obdNumber));
+  const releasableObds = releasable.map((o) => o.obdNumber);
+
+  // 2. The release steps, in the import's order.
+  await applyMailOrderEnrichment(
+    releasable.map((o) => o.soNumber).filter((so): so is string => so !== null && !retryCatch.excludeSos.has(so)),
+  );
+  await applySoTagHolds(releasableObds, new Date());
+  await applyNoMailOrderFallback(releasableObds);
+
+  // CHN — the import's own rule: an eligible SMU and at least one active line.
+  const eligible = releasable.filter((o) => o.smu !== null && CHALLAN_ELIGIBLE_SMU.includes(o.smu));
+  let chn = 0;
+  if (eligible.length > 0) {
+    const lastChallan = await prisma.delivery_challans.findFirst({ orderBy: { id: "desc" }, select: { challanNumber: true } });
+    let nextSeq = 1;
+    if (lastChallan?.challanNumber) {
+      const parts = lastChallan.challanNumber.split("-");
+      const lastNum = parseInt(parts[parts.length - 1], 10);
+      if (!isNaN(lastNum)) nextSeq = lastNum + 1;
+    }
+    const year = new Date().getFullYear();
+    for (const o of eligible) {
+      const lines = await prisma.import_raw_line_items.count({ where: { obdNumber: o.obdNumber, lineStatus: "active" } });
+      if (lines === 0) continue;
+      try {
+        await createChallanForOrder(o.id, () => nextSeq++, year);
+        chn += 1;
+      } catch (err) {
+        console.error(`[challan-check-retry] CHN for ${o.obdNumber} failed`, err);
+      }
+    }
+  }
+
+  // 3. Done — the red line clears.
+  await prisma.import_batches.update({ where: { id: batchId }, data: { status: "completed" } });
+  return NextResponse.json({
+    ok: true,
+    batchRef: batch.batchRef,
+    bills: orders.length,
+    released: releasableObds.length,
+    caughtOrHeld: retryCatch.excludeObds.size,
+    chnAttempted: chn,
+  });
+}
+
 export async function POST(req: Request): Promise<NextResponse> {
   const url = new URL(req.url, "http://localhost");
   const action = url.searchParams.get("action");
@@ -4804,6 +4920,11 @@ export async function POST(req: Request): Promise<NextResponse> {
   if (action === "patch-headers")     return handleAutoImportPatchHeaders(req);
   if (action === "pending-invoices")  return handleAutoImportPendingInvoices(req);
   if (action === "day-obds")          return handleAutoImportDayObds(req);
+
+  // 🔴 SLICE 6c — a PEOPLE path, but deliberately ABOVE the import tick below: Retry of
+  // an import whose challan check failed is gated on floor canEdit (the permission that
+  // releases bills on Floor), checked inside the handler with its own session read.
+  if (action === "challan-check-retry") return handleChallanCheckRetry(req);
 
   // ── PEOPLE — one rule (owner, 2026-09-16) ──────────────────────────────────
   // The Import OBDs tick (import_obd canImport, /admin/access) decides who may

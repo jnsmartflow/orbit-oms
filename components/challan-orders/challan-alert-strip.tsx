@@ -13,8 +13,16 @@
 //   DEALER_MISMATCH → Link anyway (billing decides, S6-1)
 //   DOUBLE_DISPATCH → none: the fix is to cancel that OBD (Floor) or unlink the SO.
 // Polls every 30 s while the tab is visible, and refetches after its own action.
+//
+// SLICE 6c — also one red line per IMPORT whose challan check could not run
+// ("Import <batchRef>: N bills held — challan check failed — Retry"), read from
+// import_batches so it shows even while the link table is down. Retry
+// (POST /api/import/obd?action=challan-check-retry) is drawn for floor canEdit only —
+// the server says so in `canRetryBatches`. If the alert source itself fails, the strip
+// says "Challan check status unknown — contact admin" instead of going quiet.
 
 import { useCallback, useEffect, useState } from "react";
+import { checkFailedMessage, type CheckFailedBatch } from "@/lib/challan-orders/check-failed-message";
 
 type AlertKind = "DOUBLE_DISPATCH" | "DEALER_MISMATCH" | "CATCH_FAILED";
 interface ChallanAlert {
@@ -43,17 +51,35 @@ export function ChallanAlertStrip({
   onChanged?: () => void;
 }) {
   const [alerts, setAlerts] = useState<ChallanAlert[]>([]);
+  const [batches, setBatches] = useState<CheckFailedBatch[]>([]);
+  const [canRetryBatches, setCanRetryBatches] = useState(false);
+  const [unknown, setUnknown] = useState(false);
   const [busy, setBusy] = useState<number | null>(null);
+  const [busyBatch, setBusyBatch] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
       const res = await fetch("/api/challan-orders/alerts", { cache: "no-store" });
-      if (!res.ok) return;
-      const json = (await res.json()) as { alerts?: ChallanAlert[] };
+      // 401 / 403: not this viewer's alerts — stay quiet. Anything else failing means
+      // nobody can tell whether a challan check is stuck: say so (slice 6c).
+      if (res.status === 401 || res.status === 403) return;
+      if (!res.ok) {
+        setUnknown(true);
+        return;
+      }
+      const json = (await res.json()) as {
+        alerts?: ChallanAlert[];
+        batches?: CheckFailedBatch[];
+        linkAlertsFailed?: boolean;
+        canRetryBatches?: boolean;
+      };
       setAlerts(json.alerts ?? []);
+      setBatches(json.batches ?? []);
+      setUnknown(json.linkAlertsFailed === true);
+      setCanRetryBatches(json.canRetryBatches === true);
     } catch {
-      /* silent — the next tick retries */
+      setUnknown(true);
     }
   }, []);
 
@@ -88,9 +114,63 @@ export function ChallanAlertStrip({
     }
   }
 
-  if (alerts.length === 0 && error === null) return null;
+  async function retryBatch(b: CheckFailedBatch) {
+    if (busyBatch !== null) return;
+    setBusyBatch(b.batchId);
+    setError(null);
+    try {
+      const res = await fetch("/api/import/obd?action=challan-check-retry", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ batchId: b.batchId }),
+      });
+      if (!res.ok) {
+        const json = (await res.json().catch(() => null)) as { error?: string } | null;
+        setError(json?.error ?? `Could not retry ${b.batchRef} (HTTP ${res.status}).`);
+      }
+      await load();
+      onChanged?.();
+    } catch {
+      setError("Could not reach the server — nothing changed.");
+    } finally {
+      setBusyBatch(null);
+    }
+  }
+
+  if (alerts.length === 0 && batches.length === 0 && !unknown && error === null) return null;
   return (
     <div className="flex flex-col gap-1.5 px-3.5 py-2">
+      {batches.map((b) => (
+        <div
+          key={`batch-${b.batchId}`}
+          role="alert"
+          className="flex items-start gap-2 rounded-md border border-red-300 bg-red-50 px-3 py-2 text-[12px] text-red-800"
+        >
+          <span className="mt-px flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full bg-red-600 text-[10px] font-bold text-white">
+            !
+          </span>
+          <span className="min-w-0 flex-1">
+            <b className="font-bold">{checkFailedMessage(b)}</b>
+            {" · "}These bills were NOT released to picking. Do not release them by hand —{" "}
+            {canRetryBatches ? "press Retry." : "ask someone with Floor edit access to press Retry."}
+          </span>
+          {canRetryBatches && (
+            <button
+              type="button"
+              onClick={() => void retryBatch(b)}
+              disabled={busyBatch !== null}
+              className="h-6 flex-shrink-0 rounded-md border border-red-300 bg-white px-2 text-[11px] font-medium text-red-800 hover:bg-red-100"
+            >
+              {busyBatch === b.batchId ? "Retrying…" : "Retry"}
+            </button>
+          )}
+        </div>
+      ))}
+      {unknown && (
+        <div role="alert" className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-[12px] font-semibold text-red-800">
+          Challan check status unknown — contact admin.
+        </div>
+      )}
       {alerts.map((a) => (
         <div
           key={`${a.kind}-${a.orderId}`}

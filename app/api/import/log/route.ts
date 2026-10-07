@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { CHALLAN_CHECK_FAILED_STATUS } from "@/lib/challan-orders/check-failed";
 import { checkAnyPermission } from "@/lib/permissions";
 import { getISTDayRange } from "@/lib/dates";
 import type { ImportLogHow, ImportLogResponse, ImportLogRow } from "@/lib/import-types";
@@ -53,7 +54,9 @@ export async function GET(): Promise<NextResponse> {
   const batches = await prisma.import_batches.findMany({
     where: {
       createdAt:  { gte: start, lt: end },
-      status:     { in: ["completed", "failed"] },
+      // + the challan-check flag (2026-10-07, slice 6c) — such an import DID complete;
+      // without this it would vanish from the log while its bills wait.
+      status:     { in: ["completed", "failed", CHALLAN_CHECK_FAILED_STATUS] },
       NOT:        { headerFile: { startsWith: "[auto-import]" } },
     },
     orderBy: { createdAt: "desc" },

@@ -34,6 +34,7 @@ import { prisma } from "@/lib/prisma";
 import { CHALLAN_LINKED } from "@/lib/workflow-stages";
 import { CHALLAN_DEALER_HOLD_NOTE } from "@/lib/floor/hold-log";
 import { TINT_ASSIGNMENT_ACTIVE_STATUSES } from "@/lib/tint/assignment-status";
+import { challanCheckForcedToFail } from "./check-failed";
 
 const CANCELLED = "cancelled";
 const LIVE_LINK = ["waiting", "linked"];
@@ -274,7 +275,8 @@ export interface CatchResult {
   /** OBDs on those SOs — kept out of the Telephonic holds, the no-mail fallback and CHN. */
   excludeObds: Set<string>;
   /** The link table could not be read — the caller keeps EVERY OBD of the batch out of
-   *  every release (fail closed); they wait on Floor's undecided list for a person. */
+   *  every release (fail closed) and writes import_batches.status = CHALLAN_CHECK_FAILED_STATUS
+   *  (check-failed.ts), which the red alert strip reads (slice 6c). */
   excludeAll: boolean;
   results: ReconcileResult[];
 }
@@ -292,6 +294,8 @@ export async function catchChallanObds(obdNumbers: string[], actorId: number): P
   let soByObd: Map<string, string>;
   let linkedSos: Set<string>;
   try {
+    // TESTING ONLY (slice 6c) — never in production; see check-failed.ts.
+    if (challanCheckForcedToFail()) throw new Error("CHALLAN_CHECK_FORCE_FAIL is on (test only)");
     const rows = await prisma.orders.findMany({
       where: { obdNumber: { in: unique }, soNumber: { not: null } },
       select: { obdNumber: true, soNumber: true },
