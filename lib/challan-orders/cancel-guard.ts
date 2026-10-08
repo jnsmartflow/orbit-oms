@@ -18,8 +18,9 @@
 //   S5-3 + S6-4  When an ORB order IS cancelled / removed (releaseChallanOnCancel):
 //         its goods never left (an ORB order cannot be cancelled once on a trip or
 //         dispatched), so each SAP bill linked to it goes back to Floor's UNDECIDED
-//         list (pending_support, status null — a person releases or holds it), and
-//         every live link on it — 'waiting' AND 'linked' — becomes 'unlinked'.
+//         list (pending_support, status null — a person releases or holds it) with
+//         challanOrderId CLEARED (slice 7), and every live link on it — 'waiting' AND
+//         'linked' — becomes 'unlinked'.
 //   S6-3  When a linked OBD is cancelled, its link goes back to 'waiting' so a
 //         re-issued OBD on that SO is caught again (lib/challan-orders/linked-cancel.ts).
 //
@@ -52,8 +53,15 @@ export function linkedObdCancelRefusal(actorIsAdmin: boolean): string | null {
 /**
  * S5-3 + S6-4 — after an ORB order's cancel / remove write.
  *   1. each SAP bill linked to it (challanOrderId = the ORB, still 'challan_linked')
- *      → pending_support, dispatchStatus null (compare-and-swap on the stage), one
- *      log. challanOrderId is KEPT as history.
+ *      → pending_support, dispatchStatus null, challanOrderId null — ONE write,
+ *      compare-and-swap on the stage — and one log. The pointer is CLEARED (slice 7,
+ *      2026-10-08): from here the bill is an ordinary bill, not one billed against a
+ *      surviving challan, and a kept pointer listed it under the cancelled ORB in
+ *      History once it was later cancelled (board.ts challanLinkedOrders reads the
+ *      'cancelled' stage). History stays in the log below (it names the ORB) and in
+ *      the 'unlinked' link row (SO + orbOrderId). ⚠ Contrast S6-3
+ *      (linked-cancel.ts): a linked OBD cancelled as such KEEPS its pointer — it WAS
+ *      billed against the challan and is shown struck through under it.
  *   2. every live link on it ('waiting' and 'linked') → 'unlinked' — linkedOrderId and
  *      obdLinkedAt cleared, as chk_challan_order_so_links_shape requires.
  * A bill with no ORB link is never touched. Returns the counts.
@@ -71,7 +79,7 @@ export async function releaseChallanOnCancel(
   for (const b of linked) {
     const moved = await prisma.orders.updateMany({
       where: { id: b.id, workflowStage: CHALLAN_LINKED },
-      data: { workflowStage: "pending_support", dispatchStatus: null },
+      data: { workflowStage: "pending_support", dispatchStatus: null, challanOrderId: null },
     });
     if (moved.count === 0) continue;
     billsReturned += 1;

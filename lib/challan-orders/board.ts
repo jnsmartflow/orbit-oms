@@ -10,11 +10,14 @@
 // the link status), so plain equality needs no null arm (CORE §13). The optional
 // relations (ship-to override, trip, snapshot, linked OBD) are null-checked in
 // toRow(). Sequential awaits, never prisma.$transaction (CORE §3).
+// Slice 7 (2026-10-08): billed rows also carry the live line match
+// (line-match.ts attachLineMatches — one lines read per board load / History page).
 
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getISTDayRange } from "@/lib/dates";
 import type { ChallanBoard, ChallanHistory, ChallanLinkRow, ChallanRow, ChallanStatus } from "./board-types";
+import { attachLineMatches } from "./line-match";
 
 const CANCELLED = "cancelled";
 const CHALLAN_LINKED_STAGE = "challan_linked";
@@ -120,6 +123,7 @@ function toRow(o: BoardOrder, today: string): ChallanRow {
       workflowStage: b.workflowStage,
       tins: b.totalUnitQty,
     })),
+    match: null, // set on billed rows by attachLineMatches (slice 7)
   };
 }
 
@@ -151,6 +155,8 @@ export async function loadChallanBoard(now: Date): Promise<ChallanBoard> {
     .filter((r) => r.links.length > 0 && r.links.every((l) => l.status === "linked"))
     .filter((r) => lastObdLink(r) >= billedFrom)
     .sort((a, b) => lastObdLink(b) - lastObdLink(a) || b.orderId - a.orderId);
+  // Slice 7 — the live line match, one lines read for every Billed row.
+  await attachLineMatches(billed);
 
   return {
     notBilled,
@@ -208,7 +214,10 @@ export async function loadChallanHistory(args: {
     take: HISTORY_PAGE_SIZE,
   });
   const today = istDate(args.now);
-  return { rows: orders.map((o) => toRow(o, today)), total, page, pageSize: HISTORY_PAGE_SIZE };
+  const rows = orders.map((o) => toRow(o, today));
+  // Slice 7 — the line match for the page's billed rows, one lines read per page.
+  await attachLineMatches(rows);
+  return { rows, total, page, pageSize: HISTORY_PAGE_SIZE };
 }
 
 /**

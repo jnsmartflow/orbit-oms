@@ -63,6 +63,31 @@ export interface ChallanRow {
   links: ChallanLinkRow[];
   /** The SAP bills linked to this challan (slice 6). */
   linkedObds: ChallanLinkedObd[];
+  /** The live line match (slice 7) — set on BILLED rows only; null = no chip
+   *  (not billed, waiting / part-billed, cancelled). lib/challan-orders/line-match.ts. */
+  match: ChallanLineMatch | null;
+}
+
+/** One material of the line match (slice 7). diff = sapTins − challanTins. */
+export interface ChallanMatchLine {
+  material: string;
+  product: string;
+  challanTins: number;
+  sapTins: number;
+  diff: number;
+}
+
+/** Challan lines vs the SAP lines of every live linked OBD, by material code + tins (D12). */
+export interface ChallanLineMatch {
+  /** ✅ — every material's tins are equal. */
+  ok: boolean;
+  /** Materials whose tins differ (the "⚠ N lines differ" count). */
+  differing: number;
+  challanTins: number;
+  sapTins: number;
+  /** The SAP OBDs summed (workflowStage 'challan_linked'). */
+  obdNumbers: string[];
+  lines: ChallanMatchLine[];
 }
 
 export interface ChallanBoard {

@@ -12,8 +12,8 @@
 //   3. the link (S6-3): if this bill was the link's linkedOrderId —
 //        another live bill on the same SO + ORB → the link re-points to the oldest;
 //        none → the link goes back to 'waiting', so a re-issued OBD is caught again.
-// The future line match (slice 7) counts only challan_linked bills, so a cancelled
-// one drops out of it with no extra write.
+// The line match (slice 7, line-match.ts) counts only challan_linked bills, so a
+// cancelled one drops out of it with no extra write.
 
 import { prisma } from "@/lib/prisma";
 import { CHALLAN_LINKED } from "@/lib/workflow-stages";

@@ -29,6 +29,7 @@ import {
   ageTone,
   type ChallanBoard,
   type ChallanHistory,
+  type ChallanLineMatch,
   type ChallanRow,
   type ChallanStatus,
   type PasteSoResponse,
@@ -81,6 +82,84 @@ const STATUS_CHIP: Record<ChallanStatus, { label: string; cls: string }> = {
   billed: { label: "Billed", cls: "bg-emerald-50 text-emerald-700 border-emerald-200" },
   cancelled: { label: "Cancelled", cls: "bg-red-50 text-red-700 border-red-200" },
 };
+
+// Slice 7 — the line match (mockup .match.ok / .match.bad, the ok / warn tokens).
+const MATCH_OK = "bg-[#ECFDF5] border-[#a7f3d0] text-[#047857]";
+const MATCH_BAD = "bg-[#FFFBEB] border-[#fde68a] text-[#B45309]";
+
+function MatchChip({ m }: { m: ChallanLineMatch }) {
+  return (
+    <span className={`inline-flex items-center gap-1 whitespace-nowrap rounded-full border px-2 py-px text-[10.5px] font-semibold ${m.ok ? MATCH_OK : MATCH_BAD}`}>
+      {m.ok ? "✅ Match" : `⚠ ${m.differing} line${m.differing === 1 ? "" : "s"} differ${m.differing === 1 ? "s" : ""}`}
+    </span>
+  );
+}
+
+/** Tins cell: the challan's tins, plus SAP's (muted) when they differ — "36 / 34". */
+function TinsCell({ r }: { r: ChallanRow }) {
+  const m = r.match;
+  if (m && m.challanTins !== m.sapTins) {
+    return (
+      <>
+        {m.challanTins} <span className="text-[#9ca3af]">/ {m.sapTins}</span>
+      </>
+    );
+  }
+  return <>{r.tins ?? "—"}</>;
+}
+
+/** The expanded side-by-side lines (mockup "detail" row). */
+function MatchDetail({ r, m }: { r: ChallanRow; m: ChallanLineMatch }) {
+  const DTH = "h-[28px] border-b border-[#ebebeb] bg-gray-50 px-3 text-left text-[10px] font-medium uppercase tracking-[0.05em] text-[#9ca3af]";
+  const DTD = "h-[32px] border-b border-[#f0f0f0] px-3 text-[11px] text-[#4b5563] whitespace-nowrap overflow-hidden text-ellipsis";
+  const diffCls = (d: number) => (d === 0 ? "text-gray-300" : "font-bold text-[#B45309]");
+  const signed = (d: number) => (d > 0 ? `+${d}` : d < 0 ? `−${-d}` : "0");
+  return (
+    <div className="pb-3 pl-[46px] pr-[18px] pt-1">
+      <div className="py-1.5 text-[10.5px] text-gray-500">
+        Challan <b className="font-semibold text-gray-900">{r.orbNumber}</b> vs SAP{" "}
+        <b className="font-mono font-semibold text-gray-900">{m.obdNumbers.join(", ")}</b> — matched by material code, tins
+        summed over every linked OBD
+      </div>
+      <table className="w-full table-fixed border-collapse">
+        <colgroup>
+          {[16, 42, 14, 14, 14].map((w, i) => <col key={i} style={{ width: `${w}%` }} />)}
+        </colgroup>
+        <thead>
+          <tr>
+            <th className={DTH}>Material code</th>
+            <th className={DTH}>Product</th>
+            <th className={`${DTH} text-right`}>Challan tins</th>
+            <th className={`${DTH} text-right`}>SAP tins</th>
+            <th className={`${DTH} text-right`}>Diff</th>
+          </tr>
+        </thead>
+        <tbody>
+          {m.lines.map((l) => (
+            <tr key={l.material} className={l.diff !== 0 ? "bg-[#fffdf5]" : undefined}>
+              <td className={`${DTD} font-mono`}>{l.material}</td>
+              <td className={DTD}>{l.product || "—"}</td>
+              <td className={`${DTD} text-right tabular-nums`}>{l.challanTins}</td>
+              <td className={`${DTD} text-right tabular-nums`}>{l.sapTins}</td>
+              <td className={`${DTD} text-right tabular-nums ${diffCls(l.diff)}`}>{signed(l.diff)}</td>
+            </tr>
+          ))}
+        </tbody>
+        <tfoot>
+          <tr className="bg-gray-50 font-bold text-gray-900">
+            <td className={`${DTD} border-t border-gray-200`} />
+            <td className={`${DTD} border-t border-gray-200 text-gray-900`}>Total</td>
+            <td className={`${DTD} border-t border-gray-200 text-right tabular-nums text-gray-900`}>{m.challanTins}</td>
+            <td className={`${DTD} border-t border-gray-200 text-right tabular-nums text-gray-900`}>{m.sapTins}</td>
+            <td className={`${DTD} border-t border-gray-200 text-right tabular-nums ${diffCls(m.sapTins - m.challanTins)}`}>
+              {signed(m.sapTins - m.challanTins)}
+            </td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  );
+}
 
 function Dealer({ r }: { r: ChallanRow }) {
   return (
@@ -165,6 +244,9 @@ export function ChallanOrdersScreen({
   const [cancelReason, setCancelReason] = useState<DeskCancelReason>("other");
   const [cancelRemark, setCancelRemark] = useState<string>("");
   const [cancelError, setCancelError] = useState<string | null>(null);
+  // Slice 7 — rows whose side-by-side line match is open (Billed + History), by ORB order id.
+  const [openMatch, setOpenMatch] = useState<Record<number, boolean>>({});
+  const toggleMatch = (orderId: number) => setOpenMatch((o) => ({ ...o, [orderId]: !o[orderId] }));
 
   // History filters.
   const [from, setFrom] = useState<string>(istDaysAgo(29));
@@ -581,7 +663,7 @@ export function ChallanOrdersScreen({
 
   function billedTable() {
     const rows = board?.billed ?? [];
-    const widths = [14, 21, 14, 15, 13, 9, 14];
+    const widths = [13, 19, 13, 15, 13, 9, 14, 4];
     return (
       <table className="w-full table-fixed border-collapse">
         <colgroup>{widths.map((w, i) => <col key={i} style={{ width: `${w}%` }} />)}</colgroup>
@@ -594,28 +676,43 @@ export function ChallanOrdersScreen({
             <th className={HEAD_TH}>Invoice no.</th>
             <th className={`${HEAD_TH} text-right`}>Tins</th>
             <th className={HEAD_TH}>Match</th>
+            <th className={HEAD_TH} aria-label="Lines" />
           </tr>
         </thead>
         <tbody>
           {rows.length === 0 ? (
             <tr><td colSpan={widths.length} className="px-3 py-8 text-center text-[12px] text-gray-400">Nothing billed in the last 7 days — older ones are in History.</td></tr>
           ) : (
-            rows.map((r) => (
-              <tr key={r.orderId}>
-                <td className={TD}><span className="font-mono font-medium text-[#111827]">{r.orbNumber}</span></td>
-                <td className={TD}><Dealer r={r} /></td>
-                <td className={`${TD} font-mono`}>{r.links.map((l) => <div key={l.id}>{l.soNumber}</div>)}</td>
-                {/* Every SAP bill billed against this challan (slice 6) — part-billing lists
-                    them all; admin can cancel one (S6-7). */}
-                <td className={TD}>{linkedObdsCell(r)}</td>
-                <td className={`${TD} font-mono`}>
-                  {r.linkedObds.filter((b) => b.workflowStage === "challan_linked").map((b) => <div key={b.orderId}>{b.invoiceNo ?? "—"}</div>)}
-                </td>
-                <td className={`${TD} text-right tabular-nums`}>{r.tins ?? "—"}</td>
-                {/* Line match (✅ / ⚠) is slice 7. */}
-                <td className={`${TD} text-[#9ca3af]`}>—</td>
-              </tr>
-            ))
+            rows.map((r) => {
+              const m = r.match;
+              const open = m !== null && openMatch[r.orderId] === true;
+              return (
+                <FragmentRows key={r.orderId}>
+                  {/* Slice 7: the row opens the side-by-side lines. */}
+                  <tr onClick={m ? () => toggleMatch(r.orderId) : undefined} className={m ? "cursor-pointer hover:bg-gray-50" : undefined}>
+                    <td className={TD}><span className="font-mono font-medium text-[#111827]">{r.orbNumber}</span></td>
+                    <td className={TD}><Dealer r={r} /></td>
+                    <td className={`${TD} font-mono`}>{r.links.map((l) => <div key={l.id}>{l.soNumber}</div>)}</td>
+                    {/* Every SAP bill billed against this challan (slice 6) — part-billing lists
+                        them all; admin can cancel one (S6-7). Its clicks never toggle the row. */}
+                    <td className={`${TD} cursor-auto`} onClick={(e) => e.stopPropagation()}>{linkedObdsCell(r)}</td>
+                    <td className={`${TD} font-mono`}>
+                      {r.linkedObds.filter((b) => b.workflowStage === "challan_linked").map((b) => <div key={b.orderId}>{b.invoiceNo ?? "—"}</div>)}
+                    </td>
+                    <td className={`${TD} text-right tabular-nums`}><TinsCell r={r} /></td>
+                    <td className={TD}>{m ? <MatchChip m={m} /> : <span className="text-[#9ca3af]">—</span>}</td>
+                    <td className={`${TD} text-right text-[11px] text-gray-400`}>{m ? (open ? "▾" : "▸") : ""}</td>
+                  </tr>
+                  {open && m && (
+                    <tr>
+                      <td colSpan={widths.length} className="border-b border-[#f0f0f0] p-0">
+                        <MatchDetail r={r} m={m} />
+                      </td>
+                    </tr>
+                  )}
+                </FragmentRows>
+              );
+            })
           )}
         </tbody>
       </table>
@@ -661,15 +758,30 @@ export function ChallanOrdersScreen({
             ) : (
               rows.map((r) => {
                 const chip = STATUS_CHIP[r.status];
+                // Slice 7: a billed row's chip carries the match and opens the lines.
+                const m = r.match;
+                const open = m !== null && openMatch[r.orderId] === true;
                 return (
-                  <tr key={r.orderId}>
+                  <FragmentRows key={r.orderId}>
+                  <tr onClick={m ? () => toggleMatch(r.orderId) : undefined} className={m ? "cursor-pointer hover:bg-gray-50" : undefined}>
                     <td className={TD}><span className="font-mono font-medium text-[#111827]">{r.orbNumber}</span></td>
                     <td className={TD}><Dealer r={r} /></td>
                     <td className={TD}>{fmtDateTime(r.createdAt)}</td>
                     <td className={TD}>
-                      <span className={`inline-block rounded border px-1.5 py-px text-[10.5px] font-semibold ${chip.cls}`}>{chip.label}</span>
+                      {m ? (
+                        <>
+                          <span className={`inline-block rounded border px-1.5 py-px text-[10.5px] font-semibold ${m.ok ? MATCH_OK : MATCH_BAD}`}>
+                            Billed {m.ok ? "✅" : "⚠"}
+                          </span>
+                          {!m.ok && (
+                            <div className="text-[10px] text-[#9ca3af]">{m.challanTins} / {m.sapTins} tins</div>
+                          )}
+                        </>
+                      ) : (
+                        <span className={`inline-block rounded border px-1.5 py-px text-[10.5px] font-semibold ${chip.cls}`}>{chip.label}</span>
+                      )}
                     </td>
-                    <td className={TD}>
+                    <td className={`${TD} cursor-auto`} onClick={(e) => e.stopPropagation()}>
                       {r.links.length === 0 ? (
                         <span className="text-[#9ca3af]">—</span>
                       ) : (
@@ -700,6 +812,14 @@ export function ChallanOrdersScreen({
                     </td>
                     <td className={`${TD} text-right tabular-nums`}>{r.tins ?? "—"}</td>
                   </tr>
+                  {open && m && (
+                    <tr>
+                      <td colSpan={widths.length} className="border-b border-[#f0f0f0] p-0">
+                        <MatchDetail r={r} m={m} />
+                      </td>
+                    </tr>
+                  )}
+                  </FragmentRows>
                 );
               })
             )}
