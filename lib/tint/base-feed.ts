@@ -95,8 +95,10 @@ export async function baseTripCutoffWhere(date?: string): Promise<Prisma.ordersW
 export async function getTintBaseRows(date?: string): Promise<FloorBoardRow[]> {
   const cutoff = await baseTripCutoffWhere(date);
   const baseWhere = await tintManagerBaseWhere();
+  // skipInvoicePartners (2026-10-08): this tab never reads invoicePartners, so
+  // the extra read is skipped; rows carry [] for it.
   const board = date
-    ? await getFloorBoard({ mode: "history", date, extraWhere: { AND: [baseWhere, cutoff] } })
-    : await getFloorBoard({ mode: "live", extraWhere: { AND: [baseWhere, cutoff] } });
+    ? await getFloorBoard({ mode: "history", date, extraWhere: { AND: [baseWhere, cutoff] }, skipInvoicePartners: true })
+    : await getFloorBoard({ mode: "live", extraWhere: { AND: [baseWhere, cutoff] }, skipInvoicePartners: true });
   return board.rows.filter(isTintManagerBaseRow);
 }

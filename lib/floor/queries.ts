@@ -97,6 +97,8 @@ import {
 } from "@/lib/customers/sales-officer";
 // Pure (no prisma, no clock) — the one owner of "which division is this bill".
 import { divisionOf } from "./division-blocks";
+// One invoice, several OBDs (2026-10-08) — pure, no prisma.
+import { buildPartnerMap, partnersOf, type InvoicePartner } from "./invoice-pairs";
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
@@ -826,6 +828,11 @@ export async function getFloorBoard(
     // to before. NEVER pass it for the board or the marker. Like onlyIds, the
     // whole-set extras describe the subset and the two SKU reads are skipped.
     anyStageIds?: number[];
+    // INVOICE PARTNERS (2026-10-08): true skips the one extra read below and
+    // leaves every row's `invoicePartners` as []. ONLY the Tint Manager Base
+    // feed passes it (lib/tint/base-feed.ts) — it never reads the field.
+    // Omitted → the lookup runs, so every other caller is unchanged.
+    skipInvoicePartners?: boolean;
   } = {},
 ): Promise<FloorBoardResult> {
   const mode = opts.mode ?? "live";
@@ -981,6 +988,42 @@ export async function getFloorBoard(
   // so board and marker stay on the ONE shared predicate (FLOOR §3/§5); the
   // marker folds the decisions clock into `latest`.
   const duplicateSoNumbers = await getDuplicateSoNumbers(orders.map((o) => o.soNumber));
+
+  // ── One invoice, several OBDs (2026-10-08) ───────────────────────────────
+  // The other bills on each row's invoice, and where each one is now
+  // (lib/floor/invoice-pairs.ts). Same post-fetch contract as the two lookups
+  // above: ONE read keyed `invoiceNo IN (…)` (orders_invoiceNo_idx), skipped
+  // when no row has an invoice, NO predicate term — floorBoardWhere and
+  // getFloorLiveMarkerWhere are untouched, so board and marker still watch one
+  // set (FLOOR §3/§5/§10). SELECT-only.
+  //
+  // Keyed on the invoice, never on "the other rows in this result": an
+  // `onlyIds` row patch (lib/floor/rows.ts) must get the same answer a full
+  // load does.
+  //
+  // REMOVED partners ARE read (place "removed") — the invoice still names that
+  // OBD, and "1 of 2, the other removed" is the truth the planner needs. HIDDEN
+  // ones are NOT: `hide` is AND-ed on, the same rule every Floor read and the
+  // search apply — a hidden bill does not exist on Floor.
+  const invoiceNos = opts.skipInvoicePartners
+    ? []
+    : Array.from(new Set(orders.map((o) => o.invoiceNo).filter((n): n is string => n !== null)));
+  const partnerMap =
+    invoiceNos.length > 0
+      ? buildPartnerMap(
+          await prisma.orders.findMany({
+            where: { AND: [{ invoiceNo: { in: invoiceNos } }, hide] },
+            select: {
+              id: true,
+              obdNumber: true,
+              invoiceNo: true,
+              workflowStage: true,
+              dispatchStatus: true,
+              isRemoved: true,
+            },
+          }),
+        )
+      : new Map<string, InvoicePartner[]>();
 
   // TINT vs BASE — same post-fetch contract as the line above: batched once for
   // the page, and NO predicate touched, so board and marker stay on the one
@@ -1207,6 +1250,8 @@ export async function getFloorBoard(
       // §5/§10 — the live marker keys on MAX(orders.updatedAt), so a second
       // write would fire a false "changed" on every board).
       invoiceNo: order.invoiceNo ?? null,
+      // The other bills on this invoice — map lookup only; the read ran once above.
+      invoicePartners: partnersOf(partnerMap, order.invoiceNo, order.id),
       // SEARCH ONLY — never displayed (owner decision 2026-09-29; FloorBoardRow).
       soNumber: order.soNumber ?? null,
       // Whose bill it is — map lookup only; the reads ran once above.

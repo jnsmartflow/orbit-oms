@@ -6,6 +6,7 @@
 import type { PickingQueueRow, SortRule } from "@/lib/picking/types";
 import type { ColourWork } from "@/lib/picking/colour-work";
 import type { HeldSinceSource, HoldSourceLabel } from "./hold-log";
+import type { InvoicePartner } from "./invoice-pairs";
 
 export type { SortRule };
 
@@ -356,6 +357,21 @@ export interface FloorBoardRow extends PickingQueueRow {
   /** SAP's ship-to customer code (`orders.shipToCustomerId`), as SAP sent it.
    *  Display only — the All tab's Missing customer card (2026-10-02). */
   shipToCode: string;
+  /**
+   * THE OTHER BILLS ON THIS BILL'S INVOICE (2026-10-08) — SAP can cover two or
+   * more OBDs with one `invoiceNo`. Self excluded, OBD ascending; [] when the
+   * bill has no invoice or is the only bill on it. Each carries its place NOW
+   * (lib/floor/invoice-pairs.ts — "live" means "on the board": the client finds
+   * the loaded row for its tab). Removed partners are included (place
+   * "removed"); partners an admin Hide rule hides are left out, as every Floor
+   * read leaves them out.
+   *
+   * ⚠ NOT relative to the viewed day: a History row gets today's places. History
+   * reads only the COUNT ("k of n"), never the places.
+   * ⚠ [] also when the caller skipped the lookup (`skipInvoicePartners`, the
+   * Tint Manager Base feed) — that feed never reads it.
+   */
+  invoicePartners: InvoicePartner[];
   // ⚠ `totalArticle` was added here on 2026-08-11 for the By-picker card and
   // REMOVED the same day, superseded: the card now shows a typed breakdown
   // ("18 D · 14 C") built from `articleTag` via formatArticleBreakdown()
