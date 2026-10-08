@@ -8,15 +8,14 @@
 // rows come from POST /api/floor/rows, which builds them with the SAME feed
 // functions as a full load, so after a merge each list is exactly what a full
 // load would return for those ids, re-sorted with the feed's own rule:
-//   board     → sortPickingQueue(rows, FLOOR_SPINE)   (getFloorBoard)
+//   board     → sortFloorRows (FLOOR_SPINE + keepPairsAdjacent, getFloorBoard)
 //   hold      → compareHoldRows      (getFloorHold — shared via lib/floor/sort.ts)
 //   cancelled → compareCancelledRows (getFloorCancelled — same)
 // Ties among equal sort keys may land in a different order than a full load
 // (Array.sort is stable over whatever order the rows are in) — the same as two
 // full loads of the same data already can.
 
-import { sortPickingQueue } from "@/lib/picking/sort";
-import { FLOOR_SPINE, compareCancelledRows, compareHoldRows } from "@/lib/floor/sort";
+import { sortFloorRows, compareCancelledRows, compareHoldRows } from "@/lib/floor/sort";
 import type { FloorBoardResult, FloorBoardRow, FloorCancelledRow, FloorHoldRow } from "@/lib/floor/types";
 import type { TripSummary } from "@/lib/trips/queries";
 // Pure, client-safe — the one "drop self" rule, shared with getFloorBoard.
@@ -87,7 +86,7 @@ export function mergeFloorRows(
     else if (p.tab === "cancelled" && p.row && cancelled !== null) cancelled.push(p.row as FloorCancelledRow);
   }
 
-  board = sortPickingQueue(board, FLOOR_SPINE) as FloorBoardRow[];
+  board = sortFloorRows(board);
   if (hold !== null) hold = hold.sort(compareHoldRows);
   if (cancelled !== null) cancelled = cancelled.sort(compareCancelledRows);
 

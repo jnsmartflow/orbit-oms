@@ -22,8 +22,7 @@
 // its route heading can never disagree about a kilo. Hand and upcoming bills
 // never reach this module (they keep their own list under the route section).
 
-import { sortPickingQueue } from "@/lib/picking/sort";
-import { FLOOR_SPINE } from "@/lib/floor/sort";
+import { keepPairsAdjacent, sortFloorRows } from "@/lib/floor/sort";
 import type { FloorBoardRow } from "@/lib/floor/types";
 
 export type DivisionKey = "70" | "77" | "74" | "other";
@@ -89,10 +88,12 @@ export interface DivisionBand {
   blocks: ShipToBlock[];
 }
 
-/** Tint bills (orderType "tint") first, then FLOOR_SPINE — a stable partition. */
+/** Tint bills (orderType "tint") first, then FLOOR_SPINE — a stable partition.
+ *  THEN keepPairsAdjacent (2026-10-08): OBDs sharing an invoice stay together,
+ *  so a tint + non-tint pair sits in the tint half, under its tint member. */
 function sortBlockRows(rows: FloorBoardRow[]): FloorBoardRow[] {
-  const spine = sortPickingQueue(rows, FLOOR_SPINE) as FloorBoardRow[];
-  return [...spine.filter((r) => r.isTint), ...spine.filter((r) => !r.isTint)];
+  const spine = sortFloorRows(rows);
+  return keepPairsAdjacent([...spine.filter((r) => r.isTint), ...spine.filter((r) => !r.isTint)]);
 }
 
 function buildBlock(key: string, rows: FloorBoardRow[], isSite: (r: FloorBoardRow) => boolean): ShipToBlock {

@@ -20,8 +20,7 @@ import { inScope } from "./scope";
 import { parseCancelNote } from "./off-floor";
 import { asCiSource, asCiStatus, type CiSource } from "@/lib/ci/types";
 import { getISTDayRange } from "@/lib/dates";
-import { sortPickingQueue } from "@/lib/picking/sort";
-import { FLOOR_SPINE, compareCancelledRows, compareHoldRows } from "@/lib/floor/sort";
+import { sortFloorRows, compareCancelledRows, compareHoldRows } from "@/lib/floor/sort";
 import { resolveFloorDisplayDate } from "@/lib/floor/format";
 import { tintPhaseOf } from "@/lib/floor/tint-phase";
 import {
@@ -1329,7 +1328,7 @@ export async function getFloorBoard(
 
   // Spine sort (reused, never copied), MINUS byAssigned via FLOOR_SPINE so
   // Assigned/Done rows hold their place. Cast back — sort returns the same objects.
-  rows = sortPickingQueue(rows, FLOOR_SPINE) as FloorBoardRow[];
+  rows = sortFloorRows(rows);
 
   const dueRows = rows.filter((r) => r.zone !== "upcoming");
   const windows = activeWindows.map((w) => ({

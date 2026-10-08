@@ -26,12 +26,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { FloorTable, type FloorTableVariant } from "./floor-table";
 import { formatWeightKg, sumWeightKg } from "./status-pill";
-import { sortPickingQueue } from "@/lib/picking/sort";
-import { FLOOR_SPINE } from "@/lib/floor/sort";
+import { sortFloorRows } from "@/lib/floor/sort";
 import { planLoads, summarisePlan, type LoadPlanConfig, type PlannedTruck } from "@/lib/trips/load-plan";
 import type { FloorBoardRow } from "@/lib/floor/types";
 
-const sort = (rows: FloorBoardRow[]) => sortPickingQueue(rows, FLOOR_SPINE) as FloorBoardRow[];
+const sort = (rows: FloorBoardRow[]) => sortFloorRows(rows);
 const plural = (n: number, one: string, many: string) => `${n.toLocaleString("en-US")} ${n === 1 ? one : many}`;
 const kgNum = (kg: number) => Math.round(kg).toLocaleString("en-US");
 

@@ -30,8 +30,7 @@
 // single Esc owner for the floor tree (FLOOR §4.6).
 
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import { sortPickingQueue } from "@/lib/picking/sort";
-import { FLOOR_SPINE } from "@/lib/floor/sort";
+import { sortFloorRows } from "@/lib/floor/sort";
 import { FloorTable } from "./floor-table";
 import { RouteRow } from "./route-row";
 import { AllRouteCards, RouteCards, buildRouteCards, shownCards, tabHasClubs, useCardColumns } from "./route-cards";
@@ -119,7 +118,7 @@ const LOAD_PLAN_SCOPES: FloorScope[] = ["Upcountry"];
 const defaultPoolView = (_scope: FloorScope): PoolView => "route";
 
 // FLOOR_SPINE, imported and never re-implemented (FLOOR §3).
-const sort = (rows: FloorBoardRow[]) => sortPickingQueue(rows, FLOOR_SPINE) as FloorBoardRow[];
+const sort = (rows: FloorBoardRow[]) => sortFloorRows(rows);
 
 /**
  * Is this row in the POOL — the "To plan" list the Floor tab shows? On no trip,

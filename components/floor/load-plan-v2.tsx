@@ -29,8 +29,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { FloorTable, type FloorTableVariant } from "./floor-table";
-import { sortPickingQueue } from "@/lib/picking/sort";
-import { FLOOR_SPINE } from "@/lib/floor/sort";
+import { sortFloorRows } from "@/lib/floor/sort";
 import type { FloorBoardRow } from "@/lib/floor/types";
 import type { AvailableVehicle, V2Card, V2Plan, VehicleType } from "@/lib/trips/load-plan-v2";
 import type { LoadPlanV2Response, V2Limits } from "@/lib/floor/load-plan-v2-run";
@@ -39,7 +38,7 @@ const TYPES: VehicleType[] = ["ace", "big", "gc"];
 const LABEL: Record<VehicleType, string> = { ace: "Ace", big: "Big", gc: "GC" };
 const kgNum = (kg: number) => Math.round(kg).toLocaleString("en-US");
 const plural = (n: number, one: string, many: string) => `${n.toLocaleString("en-US")} ${n === 1 ? one : many}`;
-const sort = (rows: FloorBoardRow[]) => sortPickingQueue(rows, FLOOR_SPINE) as FloorBoardRow[];
+const sort = (rows: FloorBoardRow[]) => sortFloorRows(rows);
 const isTruck = (c: V2Card): c is V2Card & { type: VehicleType } => c.type === "ace" || c.type === "big" || c.type === "gc";
 const GREEN = "#2eb862";
 const AMBER = "#e0a832";

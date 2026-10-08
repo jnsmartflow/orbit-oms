@@ -56,8 +56,7 @@ import { DivisionBand, ShipToBlockHeader } from "./ship-to-blocks";
 import { billedToOf, buildDivisionBands } from "@/lib/floor/division-blocks";
 import { DIRECT_SEGMENT, NEEDS_CHECK_SEGMENT } from "./progress-bar";
 import { Truck } from "lucide-react";
-import { sortPickingQueue } from "@/lib/picking/sort";
-import { FLOOR_SPINE } from "@/lib/floor/sort";
+import { keepPairsAdjacent, sortFloorRows } from "@/lib/floor/sort";
 import type { FloorDeskKey } from "@/lib/floor/selection";
 import type { FloorBoardRow, FloorRouteClub, FloorScope } from "@/lib/floor/types";
 import { rowsInScope, scopeTypes } from "@/lib/floor/scope";
@@ -368,16 +367,18 @@ export function shownCards(model: RouteCardModel): RouteCard[] {
 
 // FLOOR_SPINE, imported and never re-implemented (FLOOR §3) — the same sort
 // every other floor table uses, so a bill sits in the same order as in Flat.
-const sort = (rows: FloorBoardRow[]) => sortPickingQueue(rows, FLOOR_SPINE) as FloorBoardRow[];
+const sort = (rows: FloorBoardRow[]) => sortFloorRows(rows);
 
 /**
  * Upcoming bills by due date, earliest first (owner). FLOOR_SPINE first, then a
  * STABLE sort on the date, so bills due the same day keep the spine's order.
  * `dispatchTargetDate` is the row's "YYYY-MM-DD" string, so text order is date
  * order; an upcoming row always has one (a null date is never upcoming).
+ * THEN keepPairsAdjacent (2026-10-08): OBDs sharing an invoice stay together,
+ * at the earliest-dated member's place.
  */
 const sortUpcoming = (rows: FloorBoardRow[]) =>
-  sort(rows).sort((a, b) => (a.dispatchTargetDate ?? "").localeCompare(b.dispatchTargetDate ?? ""));
+  keepPairsAdjacent(sort(rows).sort((a, b) => (a.dispatchTargetDate ?? "").localeCompare(b.dispatchTargetDate ?? "")));
 
 /** What each route's FloorTable needs beyond its rows — trip-desk's LeafProps. */
 interface LeafWiring {
