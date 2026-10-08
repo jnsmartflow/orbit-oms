@@ -29,7 +29,7 @@
 // ⚠ NO WINDOW-LEVEL KEY LISTENER ANYWHERE UNDER HERE. floor-page.tsx is the
 // single Esc owner for the floor tree (FLOOR §4.6).
 
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { sortFloorRows } from "@/lib/floor/sort";
 import { FloorTable } from "./floor-table";
 import { RouteRow } from "./route-row";
@@ -41,6 +41,7 @@ import type { LoadPlanConfig } from "@/lib/trips/load-plan";
 import { TripRail, type RailSelection } from "./trip-rail";
 import { TripDetailHeader } from "./trip-detail-header";
 import { TripAddBand } from "./trip-add-band";
+import { FloorPairRowsContext } from "./pair-cells";
 import { lastUpdateTime } from "./connection-strip";
 import {
   rowStatus,
@@ -412,6 +413,10 @@ export function TripDesk({
   const [openRoute, setOpenRoute] = useState<string | null>(null);
   // Cards per row for the route cards, by screen width (route-cards.tsx).
   const cardColumns = useCardColumns();
+  // INVOICE PAIRS (2026-10-08): every loaded row by id — the UNFILTERED,
+  // unscoped board — so a split pair row in any table below can say where its
+  // partner is (pair-cells.tsx). Provided once, around the whole desk.
+  const pairRowsById = useMemo(() => new Map(unfilteredRows.map((r) => [r.orderId, r] as const)), [unfilteredRows]);
 
   const isHistory = floor.mode === "history";
   const variant = isHistory ? "history" : "live";
@@ -1183,6 +1188,7 @@ export function TripDesk({
     activeTab === "tinting" ? tintingBody : activeTab === "floor" ? middle : sideBody;
 
   return (
+    <FloorPairRowsContext.Provider value={pairRowsById}>
     <div className="grid min-h-0 flex-1 overflow-hidden" style={{ gridTemplateColumns: "298px 1fr" }}>
       <TripRail
         trips={trips}
@@ -1238,6 +1244,7 @@ export function TripDesk({
         {bottomBar}
       </div>
     </div>
+    </FloorPairRowsContext.Provider>
   );
 }
 

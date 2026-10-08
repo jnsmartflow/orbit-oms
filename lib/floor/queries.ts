@@ -51,7 +51,7 @@ import { SMU_CODE_BY_NAME } from "@/lib/import-upsert/types";
 // here exactly as assign/unassign and the sort rule objects are. One owner per
 // behaviour: a second copy of "what counts as a duplicate" is how the phone and
 // the desk would come to flag different bills.
-import { getDuplicateSoNumbers } from "@/lib/picking/duplicate-so";
+import { getDuplicateGroups, getDuplicateSoNumbers } from "@/lib/picking/duplicate-so";
 // TINT vs BASE — also OWNED BY PICKING, and imported for the same reason. Floor
 // renders the word on four of its own surfaces (the board table, Hold,
 // Cancelled and the detail panel), and a second copy of "was this colour
@@ -557,6 +557,42 @@ export async function getInvoicePartnerMap(
   return map;
 }
 
+/**
+ * FLOOR'S SAME-SO ANSWER (2026-10-08, owner) — Picking's flagged groups
+ * (getDuplicateGroups, lib/picking/duplicate-so.ts, UNCHANGED and still the
+ * owner of the twin rule) MINUS every SO whose twins are all ONE invoice's OBDs.
+ *
+ * WHY. SAP splits one SO into two OBDs and bills both on one invoice; each is
+ * then the other's "twin", and Floor wore the Same-SO tag on 17 of the 21 live
+ * invoice pairs. The pair is drawn together now, so that tag says nothing.
+ *
+ * WHY PER SO IS EXACT. The owner rule is per ROW: "hide the flag when EVERY
+ * other OBD sharing its SO is also an invoice partner". That holds for a row
+ * iff every twin carries the row's own (non-null) invoiceNo — i.e. iff ALL the
+ * SO's twins carry ONE invoice number. That is a fact about the SO, so it rides
+ * the existing per-SO `hasDuplicateSo` / soFlags path (lib/floor/rows.ts →
+ * applySoFlags) with no new field and no new live-feed step. A twin with no
+ * invoice, or on a different invoice, keeps the flag on every row of the SO.
+ *
+ * Picking's red flag and the Tint Manager Base feed are untouched: they call
+ * getDuplicateSoNumbers directly. One extra bounded read (the flagged groups'
+ * ids only), skipped when nothing is flagged. SELECT-only.
+ */
+export async function getFloorDuplicateSoNumbers(soNumbers: (string | null)[]): Promise<Set<string>> {
+  const groups = await getDuplicateGroups(soNumbers);
+  if (groups.size === 0) return new Set();
+  const ids = Array.from(new Set(Array.from(groups.values()).flat()));
+  const twins = await prisma.orders.findMany({ where: { id: { in: ids } }, select: { id: true, invoiceNo: true } });
+  const invoiceById = new Map(twins.map((t) => [t.id, t.invoiceNo] as const));
+  const out = new Set<string>();
+  groups.forEach((twinIds, so) => {
+    const invoices = new Set(twinIds.map((id) => invoiceById.get(id) ?? null));
+    const oneInvoice = invoices.size === 1 && !invoices.has(null);
+    if (!oneInvoice) out.add(so);
+  });
+  return out;
+}
+
 export interface FloorSalesOfficer {
   name: string;
   source: FloorSalesOfficerSource;
@@ -1016,7 +1052,13 @@ export async function getFloorBoard(
   // post-fetch: floorBoardWhere() and getFloorLiveMarkerWhere() are untouched,
   // so board and marker stay on the ONE shared predicate (FLOOR §3/§5); the
   // marker folds the decisions clock into `latest`.
-  const duplicateSoNumbers = await getDuplicateSoNumbers(orders.map((o) => o.soNumber));
+  //
+  // FLOOR'S NARROWING (2026-10-08): an SO whose twins are all one invoice's
+  // OBDs is not flagged here — getFloorDuplicateSoNumbers. The Tint Manager
+  // Base feed (skipInvoicePartners) keeps Picking's plain answer.
+  const duplicateSoNumbers = opts.skipInvoicePartners
+    ? await getDuplicateSoNumbers(orders.map((o) => o.soNumber))
+    : await getFloorDuplicateSoNumbers(orders.map((o) => o.soNumber));
 
   // ── One invoice, several OBDs (2026-10-08) ───────────────────────────────
   // The other bills on each row's invoice, and where each one is now

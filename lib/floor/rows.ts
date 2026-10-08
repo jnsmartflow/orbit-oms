@@ -43,8 +43,8 @@
 import { prisma } from "@/lib/prisma";
 import { getHideExclusion } from "@/lib/hide/visibility";
 import { getTodayIST } from "@/lib/dates";
-import { getDuplicateSoNumbers } from "@/lib/picking/duplicate-so";
-import { getFloorBoard, getFloorCancelled, getFloorHold, getFloorPickers, getInvoicePartnerMap } from "@/lib/floor/queries";
+// Floor's Same-SO answer (2026-10-08) — Picking's rule minus one-invoice groups.
+import { getFloorBoard, getFloorCancelled, getFloorDuplicateSoNumbers, getFloorHold, getFloorPickers, getInvoicePartnerMap } from "@/lib/floor/queries";
 import type { InvoicePartner } from "@/lib/floor/invoice-pairs";
 import type { FloorBoardRow, FloorCancelledRow, FloorHoldRow, FloorPicker } from "@/lib/floor/types";
 
@@ -99,7 +99,7 @@ export async function getFloorRowsByIds(ids: number[]): Promise<FloorRowsResult>
   const soNumbers = Array.from(
     new Set(facts.map((f) => f.soNumber).filter((s): s is string => s !== null && s.trim() !== "")),
   );
-  const duplicates = soNumbers.length > 0 ? await getDuplicateSoNumbers(soNumbers) : new Set<string>();
+  const duplicates = soNumbers.length > 0 ? await getFloorDuplicateSoNumbers(soNumbers) : new Set<string>();
   const soFlags: Record<string, boolean> = {};
   for (const so of soNumbers) soFlags[so] = duplicates.has(so);
 

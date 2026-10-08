@@ -69,8 +69,18 @@ import { deskKeyOf, isAllDeskSelected, type FloorDeskKey } from "@/lib/floor/sel
 // the top of duplicate-so-tag.tsx.
 import {
   DuplicateSoTag,
+  DUP_SO_SOFT_ACCENT,
   DUP_SO_SOFT_BAR,
 } from "@/components/shared/duplicate-so-tag";
+// INVOICE PAIRS (2026-10-08) — which rows merge, what a split row says.
+import {
+  KOfNChip,
+  PairPlaceChip,
+  buildPairRenders,
+  pairBarShadow,
+  useFloorPairRows,
+  type PairRender,
+} from "./pair-cells";
 import type { FloorBoardRow } from "@/lib/floor/types";
 
 export type FloorTableVariant = "live" | "history" | "upcoming";
@@ -741,6 +751,30 @@ export function FloorTable({
   const tableRows = upcoming.length > 0 ? [...rows, ...upcoming] : rows;
   const allOn = interactive && selection ? isAllDeskSelected(selection, tableRows) : false;
 
+  // ── INVOICE PAIRS (2026-10-08, owner) ─────────────────────────────────────
+  // Worked out PER LIST: the due rows and the upcoming rows separately, so a
+  // pair is never merged across the divider (a member on the other side reads
+  // as split). `pairLive` false (History / upcoming variants) = "k of n" and
+  // the merge only — no place chips, no amber.
+  //
+  // 🔴 A MERGED BLOCK'S ROWS 2..n DRAW FEWER CELLS, AND THAT IS THE LANDMINE
+  // ABOVE `widths`, SPENT ON PURPOSE. Row 1 carries the ☐ (when `tickColumn`)
+  // and the Invoice cell (when `invCell`) with rowSpan = n; the rows under it
+  // leave out EXACTLY those two, so every column to their right still lines up.
+  // Per arm, row 1 → rows 2..n:
+  //   ship-to block         9 → 8   (Invoice merged; the row is its own tick)
+  //   interactive + extra  11 → 9   (☐ and Invoice merged)
+  //     … Tinting/Operator 11 → 10  (☐ only — the operator is per bill)
+  //   interactive, no extra 10 → 9  (☐ only)
+  //   read-only + extra    10 → 9   (Invoice only — History, load-plan panels)
+  //   read-only, no extra   9 → 9   (nothing merged; chips only)
+  const pairRows = useFloorPairRows();
+  const pairLive = variant === "live";
+  const pairsDue = buildPairRenders(rows, pairLive, pairRows);
+  const pairsUp = buildPairRenders(upcoming, pairLive, pairRows);
+  // The Invoice cell is drawn (the third slot is Invoice, not Operator).
+  const invCell = hasExtra && !operatorByOrderId;
+
   return (
     <table className="w-full table-fixed border-collapse">
       <colgroup>
@@ -803,10 +837,15 @@ export function FloorTable({
       </thead>
       )}
       {part !== "head" && (
-      <tbody>
-        {rows.map(renderRow)}
+      <>
+        {/* ONE <tbody> PER RUN (2026-10-08): plain rows share one; a merged
+            invoice pair gets its own, so hovering any of its rows shades the
+            whole block (a rowspan'd cell belongs to row 1 only — a per-<tr>
+            hover would leave it white under row 2). See renderList. */}
+        {renderList(rows, pairsDue, "d")}
         {upcoming.length > 0 && (
           <>
+          <tbody>
             {/* ── THE UPCOMING DIVIDER ────────────────────────────────────
                 🔴 A ROW INSIDE THIS TABLE, SPANNING EVERY COLUMN. The table is
                 `table-fixed` with a colgroup of percentages (CLAUDE_UI §27), so
@@ -841,13 +880,48 @@ export function FloorTable({
                 </span>
               </td>
             </tr>
-            {upcoming.map(renderRow)}
+          </tbody>
+          {renderList(upcoming, pairsUp, "u")}
           </>
         )}
-      </tbody>
+      </>
       )}
     </table>
   );
+
+  /**
+   * One list's rows as <tbody> runs: consecutive plain (and split-pair) rows
+   * share a tbody; each MERGED invoice block gets its own, with the hover on the
+   * tbody. Nothing is merged across lists — the caller calls this once per list.
+   */
+  function renderList(list: FloorBoardRow[], pairs: Map<number, PairRender>, keyBase: string): ReactNode[] {
+    const out: ReactNode[] = [];
+    let plain: ReactNode[] = [];
+    const flush = () => {
+      if (plain.length === 0) return;
+      out.push(<tbody key={`${keyBase}-${out.length}`}>{plain}</tbody>);
+      plain = [];
+    };
+    let i = 0;
+    while (i < list.length) {
+      const p = pairs.get(list[i].orderId);
+      if (p?.together) {
+        flush();
+        const block = list.slice(i, i + p.size);
+        out.push(
+          <tbody key={`${keyBase}-inv-${list[i].invoiceNo}`} className="hover:bg-[#fafafa]">
+            {block.map((r) => renderRow(r, pairs.get(r.orderId) ?? null))}
+          </tbody>,
+        );
+        i += p.size;
+      } else {
+        plain.push(renderRow(list[i], p ?? null));
+        i++;
+      }
+    }
+    flush();
+    return out;
+  }
 
   /**
    * ONE row renderer, called for the due rows and again for the upcoming ones.
@@ -861,8 +935,13 @@ export function FloorTable({
    * so this reads top-down as "the table, then the row" rather than burying the
    * 200-line row body between the colgroup and the tbody.
    */
-  function renderRow(row: FloorBoardRow) {
+  function renderRow(row: FloorBoardRow, pair: PairRender | null) {
     const st = rowStatus(row);
+    // INVOICE PAIR (2026-10-08) — see renderList / pair-cells.tsx. `spanned` =
+    // a merged block's rows 2..n: the ☐ and Invoice cells above already cover
+    // them, so this row leaves both out (the per-arm counts above `pairRows`).
+    const merged = pair?.together === true;
+    const spanned = merged && !pair.first;
     // 🔴 EVERY ROW IN AN INTERACTIVE TABLE IS SELECTABLE (2026-09-10 d).
     //
     // This read `st === "waiting" || st === "withPicker"` and was THE reason a
@@ -921,7 +1000,19 @@ export function FloorTable({
     // `interactive`: the checkbox cell when the table is selectable, the
     // OBD cell when it is not (history / upcoming / the read-only
     // "what he's holding" list).
-    const barStyle = dup ? { boxShadow: DUP_SO_SOFT_BAR } : undefined;
+    //
+    // ── THE PAIR BAR (2026-10-08) — 3px violet (all members past the tint
+    // room) or amber (one still tinting / a member elsewhere), on the same
+    // first-cell edge. Both bars are inline shadows, so they COMPOSE: pair bar
+    // outermost, the duplicate-SO red beside it. On a merged block with a tick
+    // column the pair bar rides the rowspan'd ☐ (one bar down the whole block)
+    // and the red moves to each row's OBD cell.
+    const pairShadow = pairBarShadow(pair?.bar ?? null);
+    const dupShadow = dup ? DUP_SO_SOFT_BAR : null;
+    const bothShadow =
+      pairShadow && dupShadow ? `${pairShadow}, inset 7px 0 0 ${DUP_SO_SOFT_ACCENT}` : pairShadow ?? dupShadow;
+    const tickShadow = merged ? pairShadow : bothShadow;
+    const asStyle = (s: string | null) => (s ? { boxShadow: s } : undefined);
 
     // ── THE DUE CELL ─────────────────────────────────────────────────
     //
@@ -1196,24 +1287,39 @@ export function FloorTable({
           },
         }
       : {};
+    // A merged pair's rows take their hover from their own <tbody> (renderList).
+    const hoverCls = merged ? "" : " hover:bg-[#fafafa]";
     const rowCls = !shipToBlock
-      ? "group hover:bg-[#fafafa]"
+      ? `group${hoverCls}`
       : blockSelected
         ? "group cursor-pointer bg-brand-50 outline-none focus-visible:bg-brand-100 [&>td:first-child]:shadow-[inset_3px_0_0_theme(colors.brand.600)]"
         : blockClickable
-          ? "group cursor-pointer outline-none hover:bg-[#fafafa] focus-visible:bg-brand-50"
-          : "group hover:bg-[#fafafa]";
+          ? `group cursor-pointer outline-none${hoverCls} focus-visible:bg-brand-50`
+          : `group${hoverCls}`;
     const stop = (e: React.MouseEvent) => e.stopPropagation();
     return (
       <tr key={String(selKey)} className={`${rowCls} ${SEARCH_HIT_ROW_CLS}`} data-order-id={row.orderId} {...blockRowProps}>
-        {tickColumn && (
-          /* FIRST CELL when the table is selectable — it carries the bar. */
-          <td className={TD_NARROW} style={barStyle}>
+        {tickColumn && !spanned && (
+          /* FIRST CELL when the table is selectable — it carries the bar. On a
+             merged invoice block it spans every row of the block. */
+          <td className={TD_NARROW} style={asStyle(tickShadow)} rowSpan={merged ? pair.size : undefined}>
             {/* Checkbox on Waiting / With-picker rows only (design §7.8).
                 accent-brand-600 stays: it now sits on a pale wash rather
                 than a red fill, and reads the same on every row either
                 way. */}
-            {selectable && (
+            {selectable && merged ? (
+              // ONE TICK FOR THE INVOICE. Reads checked when EVERY member is
+              // selected. ⚠ THIS COMMIT toggles the FIRST member only (the
+              // existing per-bill toggle); the next commit (5) makes it toggle
+              // every member together.
+              <input
+                type="checkbox"
+                aria-label={`Select invoice ${row.invoiceNo ?? ""}`}
+                className="h-[13px] w-[13px] cursor-pointer align-middle accent-brand-600"
+                checked={pair.memberIds.every((id) => selection?.has(id) ?? false)}
+                onChange={() => onToggleRow?.(pair.memberIds[0])}
+              />
+            ) : selectable && (
               <input
                 type="checkbox"
                 aria-label={`Select ${row.obdNumber}`}
@@ -1229,7 +1335,10 @@ export function FloorTable({
             rendered, so THIS is the first cell and the bar lands here
             instead. `interactive` is the same flag that drives `widths`
             above, so the two can never disagree about which cell is first. */}
-        <td className={TD} style={tickColumn || blockSelected ? undefined : barStyle}>
+        <td
+          className={TD}
+          style={asStyle(blockSelected ? null : tickColumn ? (merged ? dupShadow : null) : bothShadow)}
+        >
           {shipToBlock ? (
             // The DETAIL PANEL opens from the number on the block table (the
             // row click selects). Same handlers as the ⋯ button; never toggles.
@@ -1250,6 +1359,10 @@ export function FloorTable({
             {row.obdNumber}
           </span>
           )}
+          {/* INVOICE PAIR (2026-10-08) — "k of n", right after the number,
+              every arm. Its place chip goes in the Invoice cell, or on the
+              date line below where there is no Invoice cell. */}
+          {pair && <KOfNChip k={pair.k} n={pair.n} invoiceNo={row.invoiceNo} />}
           {/* SHIP-TO BLOCK (2026-10-06): the TINT / BASE word moves here from the
               Ship-to cell, right after the number (the mockup's place), as a
               SQUARE tag (BlockTag below). Same `colourWork` rule as
@@ -1307,7 +1420,16 @@ export function FloorTable({
           <ObdDateLine
             iso={obd}
             isEmailTime={row.isEmailTime}
-            trailing={row.tripNumber && !hideTripTag && !rd && row.isChallanOrder ? tripTag : undefined}
+            trailing={
+              <>
+                {row.tripNumber && !hideTripTag && !rd && row.isChallanOrder ? tripTag : null}
+                {/* No Invoice cell on this arm (Tinting's Operator slot, or a
+                    read-only table without the column) → a SPLIT row's chip
+                    rides here, e.g. "1 on Floor". A merged block's "N at tint"
+                    is not repeated per row here — its amber bar says it. */}
+                {!invCell && !merged && pair?.chip && <PairPlaceChip chip={pair.chip} />}
+              </>
+            }
           />
           {/* Per-row "billed to" — only when the block's bills disagree (the
               header says it once otherwise). See `billedToFor`. */}
@@ -1367,9 +1489,17 @@ export function FloorTable({
                 <span className="text-[11.5px] text-[#d1d5db]">—</span>
               )}
             </td>
-          ) : (
-            <td className={TD}>
+          ) : spanned ? null : (
+            // ONE Invoice cell for a merged pair (rowSpan = n, centred), and the
+            // pair chip under it: "1 at tint" on a block, or the missing
+            // member(s) on a split row — "2 on hold", "2 at tint"…
+            <td className={`${TD} align-middle`} rowSpan={merged ? pair.size : undefined}>
               <InvoiceLines invoiceNo={row.invoiceNo} invoiceDate={row.invoiceDate} />
+              {pair?.chip && (
+                <div className="mt-0.5 overflow-hidden text-ellipsis">
+                  <PairPlaceChip chip={pair.chip} />
+                </div>
+              )}
             </td>
           ))}
         {!shipToBlock && (
