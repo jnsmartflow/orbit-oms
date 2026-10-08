@@ -1,12 +1,13 @@
 // lib/floor/live-merge.test.ts — npx tsx --test lib/floor/live-merge.test.ts (npm run test:floor-live)
 //
 // The pure Floor merge rules for the live feed (7b): placement by tab, removal
-// (tab null), re-sort with each feed's own rule, soFlags spread, trip-id union,
+// (tab null), re-sort with each feed's own rule, soFlags spread, invoice-partner spread, trip-id union,
 // trip-list merge, date mismatch. No database, no React.
 
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  applyInvoicePartners,
   applySoFlags,
   boardIdsOnTrips,
   isDateMismatch,
@@ -17,6 +18,7 @@ import {
 } from "./live-merge";
 import type { FloorBoardRow, FloorCancelledRow, FloorHoldRow } from "./types";
 import type { TripSummary } from "@/lib/trips/queries";
+import { buildPartnerMap, type InvoicePartner, type InvoicePartnerSource } from "./invoice-pairs";
 
 // Only the fields the merge and the FLOOR_SPINE sort read; the rest is opaque.
 function b(orderId: number, over: Partial<FloorBoardRow> = {}): FloorBoardRow {
@@ -225,4 +227,103 @@ test("withBoardRows recomputes window counts and total (due = not upcoming)", as
   assert.deepEqual(out.windows.map((w) => w.count), [1, 1]);
   assert.equal(out.rows, rows);
   assert.equal(out.date, "2026-09-30");
+});
+
+// ── invoice partners (2026-10-08) ───────────────────────────────────────────
+// The server sends each invoice's WHOLE group (lib/floor/rows.ts
+// partnersByInvoice, built by buildPartnerMap — the one place rule); the merge
+// drops self per row. Groups here go through buildPartnerMap for the same reason.
+
+const src = (id: number, inv: string, over: Partial<InvoicePartnerSource> = {}): InvoicePartnerSource => ({
+  id,
+  obdNumber: `OBD${String(id).padStart(4, "0")}`,
+  invoiceNo: inv,
+  workflowStage: "pick_checked",
+  dispatchStatus: "dispatch",
+  isRemoved: false,
+  ...over,
+});
+const groups = (sources: InvoicePartnerSource[], extraEmpty: string[] = []): Record<string, InvoicePartner[]> => {
+  const out: Record<string, InvoicePartner[]> = {};
+  for (const [k, v] of Array.from(buildPartnerMap(sources).entries())) out[k] = v;
+  for (const k of extraEmpty) out[k] ??= [];
+  return out;
+};
+// A board row on invoice `inv` whose partners are currently the given live ids.
+const pb = (orderId: number, inv: string, liveIds: number[]): FloorBoardRow =>
+  b(orderId, {
+    invoiceNo: inv,
+    invoicePartners: liveIds.map((id) => ({ orderId: id, obdNumber: `OBD${String(id).padStart(4, "0")}`, workflowStage: "pick_checked", place: "live" as const })),
+  } as Partial<FloorBoardRow>);
+const placesOf = (rows: FloorBoardRow[], id: number) =>
+  rows.find((r) => r.orderId === id)!.invoicePartners.map((p) => `${p.orderId}:${p.place}`);
+
+test("partner goes on hold → the OTHER row (not patched) shows 'hold'", () => {
+  const lists: FloorLists = { board: [pb(1, "I1", [2]), pb(2, "I1", [1])], hold: null, cancelled: null };
+  const r = mergeFloorRows(
+    lists,
+    [{ id: 2, tab: "hold", row: h(2, "2026-10-08T05:00:00Z") }],
+    {},
+    groups([src(1, "I1"), src(2, "I1", { dispatchStatus: "hold" })]),
+  );
+  assert.deepEqual(ids(r.lists.board), [1]);
+  assert.deepEqual(placesOf(r.lists.board, 1), ["2:hold"]);
+});
+
+test("partner dispatched → 'dispatched' (it left the board: tab null)", () => {
+  const r = mergeFloorRows(
+    { board: [pb(1, "I1", [2]), pb(2, "I1", [1])], hold: null, cancelled: null },
+    [{ id: 2, tab: null, row: null }],
+    {},
+    groups([src(1, "I1"), src(2, "I1", { workflowStage: "dispatched" })]),
+  );
+  assert.deepEqual(placesOf(r.lists.board, 1), ["2:dispatched"]);
+});
+
+test("partner removed → 'removed'", () => {
+  const r = mergeFloorRows(
+    { board: [pb(1, "I1", [2]), pb(2, "I1", [1])], hold: null, cancelled: null },
+    [{ id: 2, tab: null, row: null }],
+    {},
+    groups([src(1, "I1"), src(2, "I1", { isRemoved: true })]),
+  );
+  assert.deepEqual(placesOf(r.lists.board, 1), ["2:removed"]);
+});
+
+test("partner hidden → dropped from the list (the server's group no longer holds it)", () => {
+  // Hidden = left out of the server read (hide rule AND-ed on), so the group is
+  // the asking bill alone.
+  const r = mergeFloorRows(
+    { board: [pb(1, "I1", [2]), pb(2, "I1", [1])], hold: null, cancelled: null },
+    [{ id: 2, tab: null, row: null }],
+    {},
+    groups([src(1, "I1")]),
+  );
+  assert.deepEqual(placesOf(r.lists.board, 1), []);
+});
+
+test("an invoice whose every visible bill is gone arrives as [] and clears the stale list", () => {
+  const out = applyInvoicePartners([pb(1, "I1", [2])], groups([], ["I1"]));
+  assert.deepEqual(out[0].invoicePartners, []);
+});
+
+test("a 3-OBD invoice: one goes on hold → both other rows update, self excluded, no size assumed", () => {
+  const board = [pb(1, "I3", [2, 3]), pb(2, "I3", [1, 3]), pb(3, "I3", [1, 2])];
+  const r = mergeFloorRows(
+    { board, hold: null, cancelled: null },
+    [{ id: 3, tab: "hold", row: h(3, "2026-10-08T05:00:00Z") }],
+    {},
+    groups([src(1, "I3"), src(2, "I3"), src(3, "I3", { dispatchStatus: "hold" })]),
+  );
+  assert.deepEqual(placesOf(r.lists.board, 1), ["2:live", "3:hold"]);
+  assert.deepEqual(placesOf(r.lists.board, 2), ["1:live", "3:hold"]);
+});
+
+test("applyInvoicePartners keeps identity for unchanged rows and rows on other invoices; {} is a no-op", () => {
+  const rows = [pb(1, "I1", [2]), pb(5, "I9", [6]), b(7, { invoiceNo: null, invoicePartners: [] } as Partial<FloorBoardRow>)];
+  const out = applyInvoicePartners(rows, groups([src(1, "I1"), src(2, "I1")]));
+  assert.equal(out[0], rows[0]); // same answer → same object
+  assert.equal(out[1], rows[1]); // invoice not in the answer
+  assert.equal(out[2], rows[2]); // no invoice
+  assert.equal(applyInvoicePartners(rows, {}), rows);
 });

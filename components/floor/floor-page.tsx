@@ -90,6 +90,7 @@ import { applyFloorFilters, applyFlagFilters, EMPTY_FILTERS, type FloorFilters }
 import type { DispatchWindow } from "@/components/floor/dispatch-slot-picker";
 import type { FloorScope, FloorBoardResult, FloorBoardRow, FloorPicker, FloorHoldRow, FloorCancelledRow, FloorDetailSource, FloorRouteClub, FloorSearchHit } from "@/lib/floor/types";
 import type { FloorLoadPlanPayload } from "@/lib/floor/load-plan-config";
+import type { InvoicePartner } from "@/lib/floor/invoice-pairs";
 import type { RailSelection } from "./trip-rail";
 import type { TripSummary, TripDetail, TripRedeliveryRow } from "@/lib/trips/queries";
 import { chooseTripTypeName } from "@/lib/trips/type-choice";
@@ -2592,6 +2593,8 @@ export function FloorPage({
     date?: string;
     rows?: FloorRowPatchIn[];
     soFlags?: Record<string, boolean>;
+    // Invoice partners (2026-10-08) — carried to every row on the invoice, like soFlags.
+    partnersByInvoice?: Record<string, InvoicePartner[]>;
     tripIds?: number[];
     pickers?: FloorPicker[];
   };
@@ -2655,6 +2658,7 @@ export function FloorPage({
       const seq0 = loadSeq.current;
       const patches: FloorRowPatchIn[] = [];
       const soFlags: Record<string, boolean> = {};
+      const partnersByInvoice: Record<string, InvoicePartner[]> = {};
       const nowTripIds: number[] = [];
       let pickers: FloorPicker[] | null = null;
       let date: string | null = null;
@@ -2664,6 +2668,7 @@ export function FloorPage({
           if (body.enabled === false) return ctl.noteDisabled();
           patches.push(...(body.rows ?? []));
           Object.assign(soFlags, body.soFlags ?? {});
+          Object.assign(partnersByInvoice, body.partnersByInvoice ?? {});
           nowTripIds.push(...(body.tripIds ?? []));
           pickers = body.pickers ?? pickers;
           date = body.date ?? date;
@@ -2689,6 +2694,7 @@ export function FloorPage({
           { board: before.floor.rows, hold: holdRowsRef.current, cancelled: cancelledRowsRef.current },
           patches,
           soFlags,
+          partnersByInvoice,
         );
         const next: BoardData = { floor: withBoardRows(before.floor, m.lists.board), pickers: pickers ?? before.pickers };
         dataRef.current = next;

@@ -19,6 +19,8 @@ import { sortPickingQueue } from "@/lib/picking/sort";
 import { FLOOR_SPINE, compareCancelledRows, compareHoldRows } from "@/lib/floor/sort";
 import type { FloorBoardResult, FloorBoardRow, FloorCancelledRow, FloorHoldRow } from "@/lib/floor/types";
 import type { TripSummary } from "@/lib/trips/queries";
+// Pure, client-safe — the one "drop self" rule, shared with getFloorBoard.
+import { partnersOf, type InvoicePartner } from "@/lib/floor/invoice-pairs";
 
 export type FloorTab = "board" | "hold" | "cancelled";
 
@@ -58,6 +60,9 @@ export function mergeFloorRows(
   lists: FloorLists,
   patches: FloorRowPatchIn[],
   soFlags: Record<string, boolean>,
+  // Invoice partners (2026-10-08) — POST /api/floor/rows `partnersByInvoice`.
+  // Optional: omitted → no partner list changes, as before.
+  partnersByInvoice: Record<string, InvoicePartner[]> = {},
 ): FloorMergeResult {
   const ids = new Set(patches.map((p) => p.id));
   const tabsTouched = new Set<FloorTab>();
@@ -87,6 +92,7 @@ export function mergeFloorRows(
   if (cancelled !== null) cancelled = cancelled.sort(compareCancelledRows);
 
   board = applySoFlags(board, soFlags);
+  board = applyInvoicePartners(board, partnersByInvoice);
 
   return {
     lists: { board, hold, cancelled },
@@ -103,6 +109,40 @@ export function applySoFlags(board: FloorBoardRow[], soFlags: Record<string, boo
     const flag = soFlags[r.soNumber];
     return r.hasDuplicateSo === flag ? r : { ...r, hasDuplicateSo: flag };
   });
+}
+
+/**
+ * Rewrite `invoicePartners` on EVERY board row whose invoice has an answer —
+ * the invoice twin of applySoFlags (2026-10-08). A partner that went on hold,
+ * was dispatched, removed or hidden changes the OTHER rows on its invoice,
+ * which did not change themselves. Each group is the whole invoice (server,
+ * lib/floor/rows.ts); the row's own entry is dropped here (`partnersOf`), so
+ * any group size works. Rows that come out the same keep their identity.
+ */
+export function applyInvoicePartners(
+  board: FloorBoardRow[],
+  partnersByInvoice: Record<string, InvoicePartner[]>,
+): FloorBoardRow[] {
+  if (Object.keys(partnersByInvoice).length === 0) return board;
+  const map = new Map(Object.entries(partnersByInvoice));
+  return board.map((r) => {
+    if (r.invoiceNo === null || !map.has(r.invoiceNo)) return r;
+    const next = partnersOf(map, r.invoiceNo, r.orderId);
+    return samePartners(r.invoicePartners ?? [], next) ? r : { ...r, invoicePartners: next };
+  });
+}
+
+function samePartners(a: InvoicePartner[], b: InvoicePartner[]): boolean {
+  return (
+    a.length === b.length &&
+    a.every(
+      (p, i) =>
+        p.orderId === b[i].orderId &&
+        p.obdNumber === b[i].obdNumber &&
+        p.workflowStage === b[i].workflowStage &&
+        p.place === b[i].place,
+    )
+  );
 }
 
 /**

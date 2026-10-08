@@ -528,6 +528,36 @@ export async function billToByObd(obdNumbers: string[]): Promise<Map<string, str
   return map;
 }
 
+/**
+ * EVERY bill on each of these invoices, with its place NOW (2026-10-08) —
+ * lib/floor/invoice-pairs.ts. THE ONE READ for invoice partners, shared by the
+ * full board (getFloorBoard) and the live feed's by-id patch (lib/floor/rows.ts),
+ * so a patched row and a full load can never disagree.
+ *
+ * ONE findMany keyed `invoiceNo IN (…)` (orders_invoiceNo_idx), skipped when
+ * the list is empty. REMOVED bills are read (place "removed"); HIDDEN ones are
+ * not — `hide` is AND-ed on, as every Floor read does.
+ *
+ * Every asked-for invoice gets a key, [] when nothing visible is left on it, so
+ * a caller spreading the answer to other rows clears a stale list rather than
+ * skipping it. Groups INCLUDE every bill — callers drop self (`partnersOf`).
+ * SELECT-only.
+ */
+export async function getInvoicePartnerMap(
+  invoiceNos: Array<string | null>,
+  hide: Prisma.ordersWhereInput,
+): Promise<Map<string, InvoicePartner[]>> {
+  const wanted = Array.from(new Set(invoiceNos.filter((n): n is string => n !== null)));
+  if (wanted.length === 0) return new Map();
+  const rows = await prisma.orders.findMany({
+    where: { AND: [{ invoiceNo: { in: wanted } }, hide] },
+    select: { id: true, obdNumber: true, invoiceNo: true, workflowStage: true, dispatchStatus: true, isRemoved: true },
+  });
+  const map = buildPartnerMap(rows);
+  for (const inv of wanted) if (!map.has(inv)) map.set(inv, []);
+  return map;
+}
+
 export interface FloorSalesOfficer {
   name: string;
   source: FloorSalesOfficerSource;
@@ -1005,25 +1035,9 @@ export async function getFloorBoard(
   // OBD, and "1 of 2, the other removed" is the truth the planner needs. HIDDEN
   // ones are NOT: `hide` is AND-ed on, the same rule every Floor read and the
   // search apply — a hidden bill does not exist on Floor.
-  const invoiceNos = opts.skipInvoicePartners
-    ? []
-    : Array.from(new Set(orders.map((o) => o.invoiceNo).filter((n): n is string => n !== null)));
-  const partnerMap =
-    invoiceNos.length > 0
-      ? buildPartnerMap(
-          await prisma.orders.findMany({
-            where: { AND: [{ invoiceNo: { in: invoiceNos } }, hide] },
-            select: {
-              id: true,
-              obdNumber: true,
-              invoiceNo: true,
-              workflowStage: true,
-              dispatchStatus: true,
-              isRemoved: true,
-            },
-          }),
-        )
-      : new Map<string, InvoicePartner[]>();
+  const partnerMap = opts.skipInvoicePartners
+    ? new Map<string, InvoicePartner[]>()
+    : await getInvoicePartnerMap(orders.map((o) => o.invoiceNo), hide);
 
   // TINT vs BASE — same post-fetch contract as the line above: batched once for
   // the page, and NO predicate touched, so board and marker stay on the one

@@ -30,6 +30,13 @@
 //                it; any assign / done / unassign moves those counts.
 //   · date     — the board's anchor day (IST). If it is not the day the client
 //                loaded, the client must do a full load instead of merging.
+//   · partnersByInvoice — (2026-10-08) EVERY bill on each asked-for bill's
+//                invoice, with its place now (lib/floor/invoice-pairs.ts). A
+//                bill going on hold, dispatched, removed or hidden changes what
+//                its PARTNER's row says; the client applies this to every board
+//                row carrying that invoice (applyInvoicePartners), exactly as it
+//                applies soFlags. Built by the SAME read the full board uses
+//                (getInvoicePartnerMap), so the two cannot disagree.
 //
 // SELECT-only, sequential awaits, never prisma.$transaction (CORE §3).
 
@@ -37,7 +44,8 @@ import { prisma } from "@/lib/prisma";
 import { getHideExclusion } from "@/lib/hide/visibility";
 import { getTodayIST } from "@/lib/dates";
 import { getDuplicateSoNumbers } from "@/lib/picking/duplicate-so";
-import { getFloorBoard, getFloorCancelled, getFloorHold, getFloorPickers } from "@/lib/floor/queries";
+import { getFloorBoard, getFloorCancelled, getFloorHold, getFloorPickers, getInvoicePartnerMap } from "@/lib/floor/queries";
+import type { InvoicePartner } from "@/lib/floor/invoice-pairs";
 import type { FloorBoardRow, FloorCancelledRow, FloorHoldRow, FloorPicker } from "@/lib/floor/types";
 
 export const FLOOR_ROWS_MAX_IDS = 300;
@@ -56,13 +64,15 @@ export interface FloorRowsResult {
   soFlags: Record<string, boolean>;
   tripIds: number[];
   pickers: FloorPicker[];
+  /** invoiceNo → every visible bill on it (self included; [] = none left). */
+  partnersByInvoice: Record<string, InvoicePartner[]>;
 }
 
 export async function getFloorRowsByIds(ids: number[]): Promise<FloorRowsResult> {
   const unique = Array.from(new Set(ids.filter((n) => Number.isInteger(n) && n > 0)));
 
   if (unique.length === 0) {
-    return { date: getTodayIST(), rows: [], soFlags: {}, tripIds: [], pickers: await getFloorPickers() };
+    return { date: getTodayIST(), rows: [], soFlags: {}, tripIds: [], pickers: await getFloorPickers(), partnersByInvoice: {} };
   }
 
   const hide = await getHideExclusion();
@@ -77,11 +87,13 @@ export async function getFloorRowsByIds(ids: number[]): Promise<FloorRowsResult>
 
   const rows: FloorRowPatch[] = unique.map((id) => found.get(id) ?? { id, tab: null, row: null });
 
-  // The asked-for bills' SO and trip pointer — one small read, whatever tab
-  // (or none) each is on now.
+  // The asked-for bills' SO, trip pointer and invoice — one small read,
+  // whatever tab (or none) each is on now. No isRemoved / hide filter: a bill
+  // that LEFT Floor (removed, hidden, dispatched) still names its invoice here,
+  // which is how its partner's row learns it has gone.
   const facts = await prisma.orders.findMany({
     where: { id: { in: unique } },
-    select: { id: true, soNumber: true, tripDropId: true },
+    select: { id: true, soNumber: true, tripDropId: true, invoiceNo: true },
   });
 
   const soNumbers = Array.from(
@@ -100,5 +112,10 @@ export async function getFloorRowsByIds(ids: number[]): Promise<FloorRowsResult>
 
   const pickers = await getFloorPickers();
 
-  return { date: board.date, rows, soFlags, tripIds, pickers };
+  // Invoice partners — the full board's own read, for these bills' invoices.
+  const partnerMap = await getInvoicePartnerMap(facts.map((f) => f.invoiceNo), hide);
+  const partnersByInvoice: Record<string, InvoicePartner[]> = {};
+  for (const [inv, list] of Array.from(partnerMap.entries())) partnersByInvoice[inv] = list;
+
+  return { date: board.date, rows, soFlags, tripIds, pickers, partnersByInvoice };
 }
