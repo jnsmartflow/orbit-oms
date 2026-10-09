@@ -53,6 +53,7 @@ export function FloorBottomBar({
   onHold,
   onOffFloor,
   redeliveryCount = 0,
+  countLabel = null,
 }: {
   count: number;
   /** Already formatted by the caller through formatLitres. */
@@ -115,6 +116,12 @@ export function FloorBottomBar({
    * route, re-deliveries → the re-delivery route).
    */
   redeliveryCount?: number;
+  /**
+   * "1 invoice · 2 OBDs" when the selection holds a multi-OBD invoice
+   * (lib/floor/selection.ts selectionCountLabel, 2026-10-08); null keeps
+   * "N selected". Not used beside a ticked re-delivery.
+   */
+  countLabel?: string | null;
 }) {
   // 🔴 INSIDE A TRIP THE FORM IS OFFERED GREY, NOT HIDDEN (owner, 2026-09-22):
   // every bill there would be refused ("On trip … — remove it from the trip
@@ -182,7 +189,7 @@ export function FloorBottomBar({
   }
 
   return (
-    <FloorActionBar count={count} figures={figures} extra={contextLabel ?? undefined} onClear={onClear}>
+    <FloorActionBar count={count} countLabel={countLabel} figures={figures} extra={contextLabel ?? undefined} onClear={onClear}>
       {cta}
       <BarDivider />
       <MoreMenu

@@ -32,20 +32,47 @@ export const FloorPairRowsContext = createContext<ReadonlyMap<number, FloorBoard
 export const useFloorPairRows = () => useContext(FloorPairRowsContext);
 
 /**
- * The pair bar's two colours, as inline box-shadow values — they compose with
- * the duplicate-SO bar on the same cell, which is itself an inline shadow
- * (DUP_SO_SOFT_BAR), so a class cannot be used. Token VALUES, copied from
- * tailwind.config.ts the way the sidebar accent spells brand-600
- * (CLAUDE_UI §2.2): keep them in step with the config.
+ * THE PAIR BAR — three states, one 3px left edge (owner, 2026-10-08):
+ *   ok        `pair` periwinkle — every member fine (or gone for good:
+ *             dispatched, on challan, on this trip, elsewhere)
+ *   warn      `warn` amber — a member still with the tint room, or a split
+ *             with a partner not ready
+ *   selected  `brand-600` violet — the merged block is ticked. On Floor violet
+ *             means SELECTED and nothing else; it outranks ok / warn.
+ *
+ * TWO WAYS TO DRAW IT, chosen by floor-table per layout:
+ *   - a CLASS border (`pairBarBorderCls`) on each row's OBD cell where there is
+ *     no tick column. Collapsed borders of cells in consecutive rows join, so the
+ *     line runs unbroken through the row dividers (an inset shadow stops at each
+ *     cell's border-bottom and leaves a 1px gap per row).
+ *   - an INLINE inset shadow (`pairBarShadow`) on the tick cell — rowspan'd on a
+ *     merged block, so one cell and one unbroken line. Inline because on a split
+ *     row it composes with the duplicate-SO bar (DUP_SO_SOFT_BAR), itself inline.
+ *     Token VALUES copied from tailwind.config.ts, the way the sidebar accent
+ *     spells brand-600 (CLAUDE_UI §2.2): keep them in step with the config.
  */
-const PAIR_BAR_OK = "#7C3AED"; // brand-600
-const PAIR_BAR_WARN = "#D97706"; // warn.DEFAULT
+const PAIR_BAR_HEX: Record<PairBarKind, string> = {
+  ok: "#818CF8", // pair.DEFAULT
+  warn: "#D97706", // warn.DEFAULT
+  selected: "#7C3AED", // brand-600
+};
+const PAIR_BAR_BORDER: Record<PairBarKind, string> = {
+  ok: "border-l-pair",
+  warn: "border-l-warn",
+  selected: "border-l-brand-600",
+};
 
 export type PairBar = "ok" | "warn";
+export type PairBarKind = PairBar | "selected";
 
-export function pairBarShadow(bar: PairBar | null): string | null {
+export function pairBarShadow(bar: PairBarKind | null): string | null {
   if (bar === null) return null;
-  return `inset 3px 0 0 ${bar === "warn" ? PAIR_BAR_WARN : PAIR_BAR_OK}`;
+  return `inset 3px 0 0 ${PAIR_BAR_HEX[bar]}`;
+}
+
+/** The bar as a 3px collapsed left BORDER (Tailwind classes), or "" for none. */
+export function pairBarBorderCls(bar: PairBarKind | null): string {
+  return bar === null ? "" : ` border-l-[3px] ${PAIR_BAR_BORDER[bar]}`;
 }
 
 /** What one row needs to draw its pair facts. Null = not paired. */
@@ -54,6 +81,10 @@ export interface PairRender {
   together: boolean;
   /** Merged only: first row of the block (draws the rowspan'd cells). */
   first: boolean;
+  /** Merged only: last row of the block (keeps the strong divider under it). */
+  last: boolean;
+  /** Merged only: the block's rows, block order — what its one tick toggles. */
+  members: FloorBoardRow[];
   /** Merged only: rows in the block (the rowspan). */
   size: number;
   /** Merged only: every member's orderId, block order. */
@@ -150,6 +181,8 @@ export function buildPairRenders(
         out.set(x.orderId, {
           together: true,
           first: idx === 0,
+          last: idx === run.length - 1,
+          members: run,
           size: run.length,
           memberIds: run.map((m) => m.orderId),
           k: idx + 1,
@@ -190,7 +223,7 @@ export function buildPairRenders(
           }
           bar = warn ? "warn" : "ok";
         }
-        out.set(x.orderId, { together: false, first: true, size: 1, memberIds: [x.orderId], k, n, bar, chip });
+        out.set(x.orderId, { together: false, first: true, last: true, members: [x], size: 1, memberIds: [x.orderId], k, n, bar, chip });
       }
     }
     i = j;

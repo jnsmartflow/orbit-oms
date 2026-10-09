@@ -53,6 +53,7 @@ export function FloorActionBar({
   extra,
   onClear,
   clearDisabled = false,
+  countLabel,
   children,
 }: {
   count: number;
@@ -61,6 +62,8 @@ export function FloorActionBar({
   extra?: ReactNode;
   onClear: () => void;
   clearDisabled?: boolean;
+  /** Replaces "{count} selected" (2026-10-08 — Floor's "1 invoice · 2 OBDs"). Omitted → unchanged. */
+  countLabel?: string | null;
   /** The right-hand action area: main CTA, then <BarDivider/> + <MoreMenu/>. */
   children: ReactNode;
 }) {
@@ -69,7 +72,7 @@ export function FloorActionBar({
     <div className="absolute inset-x-0 bottom-0 z-20 flex min-h-[76px] items-center gap-4 border-t border-gray-200 bg-white px-[18px] py-2.5 shadow-[0_-6px_18px_-12px_rgba(0,0,0,0.25)]">
       <div className="flex min-w-0 flex-col gap-1">
         <div className="flex items-center gap-2.5">
-          <span className="whitespace-nowrap text-[18px] font-bold leading-tight text-ink-900">{count} selected</span>
+          <span className="whitespace-nowrap text-[18px] font-bold leading-tight text-ink-900">{countLabel ?? `${count} selected`}</span>
           {/* ⚠ THE GLOBAL CLEAR STAYS (CLAUDE_FLOOR §4.6). toggleAll() is per
               group and selects-all on a partial selection, so no header
               checkbox can clear a selection that spans groups. */}

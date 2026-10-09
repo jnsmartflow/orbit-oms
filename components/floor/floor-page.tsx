@@ -83,7 +83,7 @@ import {
 // 🔴 toggleAllIds / (no isSelectable), NOT the stage-gated pair (2026-09-10 d).
 // Selecting a bill on this screen means putting it on a TRIP, and trip
 // membership is not stage-gated — see the two families in lib/floor/selection.ts.
-import { toggleDeskKey, toggleAllDesk, rdKey, isRdKey, rdIdOf, type FloorDeskSelection } from "@/lib/floor/selection";
+import { toggleDeskKey, toggleAllDesk, rdKey, isRdKey, rdIdOf, selectionCountLabel, type FloorDeskSelection } from "@/lib/floor/selection";
 import { rowsInScope, scopeBoard } from "@/lib/floor/scope";
 import { parseSearch, applySearch, searchReport, lookupTermOf, type Searchable, type ParsedSearch } from "@/lib/floor/search";
 import { applyFloorFilters, applyFlagFilters, EMPTY_FILTERS, type FloorFilters } from "@/lib/floor/filter";
@@ -1529,7 +1529,15 @@ export function FloorPage({
       const fromTrips = rowsToHold.filter((x) => heldSet.has(x.orderId) && x.tripDropId !== null).length;
       const n = done.length;
       const tripsBit = fromTrips > 0 ? ` · ${fromTrips} from trip${fromTrips === 1 ? "" : "s"}` : "";
-      const undo = { duration: 8_000, action: { label: "Undo", onClick: () => void undoHold(done) } };
+      // EVERY OBD HELD, BY NUMBER (owner, 2026-10-08). Hold has no confirm —
+      // its 8 s Undo is the safety net — so the toast is where the planner
+      // sees that an invoice pair's tick held BOTH OBDs, and which ones.
+      const heldObds = rowsToHold.filter((x) => heldSet.has(x.orderId)).map((x) => x.obdNumber);
+      const undo = {
+        duration: 8_000,
+        description: heldObds.join(", "),
+        action: { label: "Undo", onClick: () => void undoHold(done) },
+      };
       if (failed.length > 0) {
         toast.warning(
           `${n} held · ${failed.length} could not be held${tripsBit} — ${failed[0]?.error ?? "not valid at its current state"}`,
@@ -2159,6 +2167,8 @@ export function FloorPage({
   const [offFloor, setOffFloor] = useState<{
     bills: OffFloorFormBill[];
     onApplied: (doneIds: number[], notDoneIds: number[]) => void;
+    /** One tick per bill in the form (2026-10-08) — the Floor bar only. */
+    perBillTicks?: boolean;
   } | null>(null);
   // Esc must not close the form while a request is in flight — the result
   // would land on a closed form and the planner would never see it.
@@ -2188,11 +2198,15 @@ export function FloorPage({
     }
   }, []);
   const openOffFloor = useCallback(
-    (bills: OffFloorFormBill[], onApplied: (doneIds: number[], notDoneIds: number[]) => void) => {
+    (
+      bills: OffFloorFormBill[],
+      onApplied: (doneIds: number[], notDoneIds: number[]) => void,
+      opts?: { perBillTicks?: boolean },
+    ) => {
       if (bills.length === 0) return;
       setMoreOpen(false);
       setHoldMoreOpen(false);
-      setOffFloor({ bills, onApplied });
+      setOffFloor({ bills, onApplied, perBillTicks: opts?.perBillTicks });
       void loadCiReasons();
     },
     [loadCiReasons],
@@ -3647,6 +3661,9 @@ export function FloorPage({
                 barVisible ? (
                   <FloorBottomBar
                     count={selectedRows.length + selectedRedeliveryIds.length}
+                    // "1 invoice · 2 OBDs" when an invoice pair is ticked; null
+                    // keeps "N selected" (and always beside a re-delivery).
+                    countLabel={selectedRedeliveryIds.length > 0 ? null : selectionCountLabel(selectedRows)}
                     redeliveryCount={selectedRedeliveryIds.length}
                     litres={formatLitres(sumLitres(selectedRows))}
                     weight={formatWeightKg(selectionWeight.kg)}
@@ -3671,8 +3688,13 @@ export function FloorPage({
                     onMenuOpenChange={setMoreOpen}
                     onHold={() => void bulkHold(selectedRows)}
                     onOffFloor={() =>
-                      openOffFloor(selectedRows.map(boardRowToOffFloorBill), (_done, notDone) =>
-                        setSelection(new Set(notDone)),
+                      // One tick per OBD in the form, all pre-ticked — an invoice
+                      // pair's members arrive as two lines and either can be
+                      // unticked (owner, 2026-10-08). Unticked ones stay selected.
+                      openOffFloor(
+                        selectedRows.map(boardRowToOffFloorBill),
+                        (_done, notDone) => setSelection(new Set(notDone)),
+                        { perBillTicks: true },
                       )
                     }
                   />
@@ -3795,6 +3817,7 @@ export function FloorPage({
           }}
           onBusyChange={setOffFloorBusy}
           onClose={() => setOffFloor(null)}
+          perBillTicks={offFloor.perBillTicks}
         />
       )}
     </div>

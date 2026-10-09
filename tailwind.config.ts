@@ -111,6 +111,12 @@ const config: Config = {
           bg:      "#FFFBEB",
           text:    "#B45309",
         },
+        // Invoice-pair bracket on Floor, and nothing else. (2026-10-08, owner.)
+        // The 3px bar beside OBDs that share one invoice, when every member is
+        // fine. Periwinkle, NOT brand: on Floor violet means "selected".
+        pair: {
+          DEFAULT: "#818CF8",
+        },
         // Direct Loading (2026-10-03, owner) — the picking supervisor sent the bill
         // straight to pick_checked with no picker (orders.directLoadedAt, v27.52).
         // A STATUS, so never brand (CLAUDE_UI §1): solid Orbit ink — ink-900's

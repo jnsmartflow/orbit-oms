@@ -84,6 +84,7 @@ export function OffFloorDialog({
   endpoints = FLOOR_ENDPOINTS,
   initialTab = "ci",
   tabs = ["ci", "cancel"],
+  perBillTicks = false,
 }: {
   bills: OffFloorFormBill[];
   /** Active CI reasons, pinned first then sortOrder. null while loading. */
@@ -108,6 +109,14 @@ export function OffFloorDialog({
   initialTab?: Tab;
   /** The tabs to offer (a caller without a tick hides that tab). Default both. */
   tabs?: readonly Tab[];
+  /**
+   * ONE TICK PER BILL (2026-10-08, owner — invoice pairs): every line gets its
+   * own tick, all pre-ticked, and an unticked bill is not sent. It stays in the
+   * caller's selection (passed back as not-done) and is not listed as refused.
+   * The Floor bar passes it; Hold bar, detail panel and Tint Manager do not, so
+   * their form is unchanged.
+   */
+  perBillTicks?: boolean;
 }) {
   // 🔴 RAISE CI IS THE DEFAULT TAB, EVERY TIME THE FORM OPENS (owner) — for
   // Floor. A caller may open on another tab it offers (initialTab).
@@ -128,8 +137,20 @@ export function OffFloorDialog({
   // Never leave floor-page thinking a request is in flight after unmount.
   useEffect(() => () => onBusyChange(false), [onBusyChange]);
 
-  const eligible = bills.filter((b) => b.refusal === null);
+  // Bills the planner unticked in the form (perBillTicks only) — not sent.
+  const [unticked, setUnticked] = useState<ReadonlySet<number>>(() => new Set());
+  const toggleBill = (id: number) =>
+    setUnticked((cur) => {
+      const next = new Set(cur);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const eligible = bills.filter((b) => b.refusal === null && !unticked.has(b.orderId));
   const refused = bills.filter((b) => b.refusal !== null);
+  // Unticked bills are handed back as not-done so they STAY ticked on the desk,
+  // but they are not "refused" and the result view does not list them.
+  const untickedIds = bills.filter((b) => b.refusal === null && unticked.has(b.orderId)).map((b) => b.orderId);
   const n = eligible.length;
   const remark = tab === "ci" ? ciRemark : cancelRemark;
   const remarkTooLong = remark.trim().length > FLOOR_REMARK_MAX;
@@ -169,7 +190,7 @@ export function OffFloorDialog({
           ...body.skipped.map((s) => ({ orderId: s.orderId, obdNumber: s.obdNumber ?? obdOf(s.orderId), reason: s.reason })),
           ...preRefused,
         ];
-        onApplied(body.raised.map((r) => r.orderId), notDone.map((x) => x.orderId));
+        onApplied(body.raised.map((r) => r.orderId), [...notDone.map((x) => x.orderId), ...untickedIds]);
         if (notDone.length === 0) {
           const k = body.raised.length;
           toast.success(k === 1 ? `${body.raised[0].ciNumber} raised · with billing` : `${k} CIs raised · with billing`);
@@ -201,7 +222,7 @@ export function OffFloorDialog({
           ...body.failed.map((f) => ({ orderId: f.orderId, obdNumber: obdOf(f.orderId), reason: f.error })),
           ...preRefused,
         ];
-        onApplied(body.done, notDone.map((x) => x.orderId));
+        onApplied(body.done, [...notDone.map((x) => x.orderId), ...untickedIds]);
         if (notDone.length === 0) {
           const k = body.done.length;
           toast.success(`${k} bill${k === 1 ? "" : "s"} cancelled`);
@@ -304,16 +325,30 @@ export function OffFloorDialog({
               <div className="overflow-hidden rounded-[10px] border border-ink-100">
                 {bills.map((b) => {
                   const off = b.refusal !== null;
+                  // perBillTicks: an unticked line is not sent — drawn quiet.
+                  const left = perBillTicks && !off && unticked.has(b.orderId);
                   return (
                     <div
                       key={b.orderId}
                       className={`flex items-center justify-between gap-3 border-b border-ink-50 px-3 py-2 text-[13px] last:border-b-0 ${
-                        off ? "text-ink-400" : "text-ink-900"
+                        off || left ? "text-ink-400" : "text-ink-900"
                       }`}
                     >
-                      <span className="min-w-0 truncate">
-                        <span className="font-mono">{b.obdNumber}</span>
-                        {b.dealerName && <span className={off ? "" : "text-ink-600"}> · {b.dealerName}</span>}
+                      <span className="flex min-w-0 items-center gap-2.5">
+                        {perBillTicks && (
+                          <input
+                            type="checkbox"
+                            aria-label={`Include ${b.obdNumber}`}
+                            className="h-[14px] w-[14px] shrink-0 cursor-pointer accent-brand-600 disabled:cursor-not-allowed"
+                            checked={!off && !unticked.has(b.orderId)}
+                            disabled={off || busy}
+                            onChange={() => toggleBill(b.orderId)}
+                          />
+                        )}
+                        <span className="min-w-0 truncate">
+                          <span className="font-mono">{b.obdNumber}</span>
+                          {b.dealerName && <span className={off || left ? "" : "text-ink-600"}> · {b.dealerName}</span>}
+                        </span>
                       </span>
                       <span className="flex shrink-0 items-center gap-2">
                         {off ? (

@@ -79,6 +79,8 @@ import {
   buildPairRenders,
   pairBarShadow,
   useFloorPairRows,
+  pairBarBorderCls,
+  type PairBarKind,
   type PairRender,
 } from "./pair-cells";
 import type { FloorBoardRow } from "@/lib/floor/types";
@@ -908,8 +910,11 @@ export function FloorTable({
       if (p?.together) {
         flush();
         const block = list.slice(i, i + p.size);
+        // A SELECTED block wears the selected wash on the whole <tbody> — both
+        // rows and the rowspan'd cells, which belong to row 1 only.
+        const blockOn = interactive && !!selection && p.memberIds.every((id) => selection.has(id));
         out.push(
-          <tbody key={`${keyBase}-inv-${list[i].invoiceNo}`} className="hover:bg-[#fafafa]">
+          <tbody key={`${keyBase}-inv-${list[i].invoiceNo}`} className={blockOn ? "bg-brand-50" : "hover:bg-[#fafafa]"}>
             {block.map((r) => renderRow(r, pairs.get(r.orderId) ?? null))}
           </tbody>,
         );
@@ -942,6 +947,16 @@ export function FloorTable({
     // them, so this row leaves both out (the per-arm counts above `pairRows`).
     const merged = pair?.together === true;
     const spanned = merged && !pair.first;
+    // Every member ticked → the block is SELECTED: violet bar, outranking the
+    // pair / amber bar (pair-cells.tsx PairBarKind).
+    const pairSelected = merged && interactive && !!selection && pair.memberIds.every((id) => selection.has(id));
+    const barKind: PairBarKind | null = pair ? (pairSelected ? "selected" : pair.bar) : null;
+    // THE LINE BETWEEN ROWS INSIDE A MERGED BLOCK is faint and dashed; the
+    // normal divider stays under the block's last row. TDR is TD for this row —
+    // every per-row cell below uses it. The rowspan'd ☐ / Invoice cells keep the
+    // base classes: their bottom edge IS the block's bottom.
+    const TDR =
+      merged && !pair.last ? TD.replace("border-[#f0f0f0]", "border-ink-100 [border-bottom-style:dashed]") : TD;
     // 🔴 EVERY ROW IN AN INTERACTIVE TABLE IS SELECTABLE (2026-09-10 d).
     //
     // This read `st === "waiting" || st === "withPicker"` and was THE reason a
@@ -1007,7 +1022,16 @@ export function FloorTable({
     // outermost, the duplicate-SO red beside it. On a merged block with a tick
     // column the pair bar rides the rowspan'd ☐ (one bar down the whole block)
     // and the red moves to each row's OBD cell.
-    const pairShadow = pairBarShadow(pair?.bar ?? null);
+    //
+    // ── HOW THE PAIR BAR STAYS ONE UNBROKEN LINE (2026-10-08) ──────────────
+    // With a tick column, the bar rides the ☐ cell as an inline inset shadow;
+    // on a merged block that cell is rowspan'd, so it is ONE cell and ONE line.
+    // Without a tick column (ship-to block, History, load plan, read-only), it
+    // is a 3px collapsed LEFT BORDER on each row's OBD cell: collapsed borders
+    // of stacked cells join through the row dividers, where an inset shadow
+    // would stop 1px short at every border-bottom. The duplicate-SO red stays
+    // an inline inset shadow on the same cell, just inside that border.
+    const pairShadow = pairBarShadow(barKind);
     const dupShadow = dup ? DUP_SO_SOFT_BAR : null;
     const bothShadow =
       pairShadow && dupShadow ? `${pairShadow}, inset 7px 0 0 ${DUP_SO_SOFT_ACCENT}` : pairShadow ?? dupShadow;
@@ -1270,9 +1294,14 @@ export function FloorTable({
     // brand-50 ground + a 3px brand bar on the first cell — which replaces the
     // duplicate-SO bar while selected (the SAME tag still says it). History and
     // a locked selection: no toggle at all.
-    const toggleThis = () => (rd ? onToggleRedelivery?.(rd.id) : onToggleRow?.(row.orderId));
+    // A MERGED invoice row toggles its WHOLE block through onToggleAll — the
+    // existing all-or-none toggle (lib/floor/selection.ts toggleAllDesk: adds
+    // every member unless all are on, then removes them all). Same handler the
+    // merged ☐ uses, so the row click and the tick can never disagree.
+    const toggleThis = () =>
+      rd ? onToggleRedelivery?.(rd.id) : merged ? onToggleAll?.(pair.members) : onToggleRow?.(row.orderId);
     const blockClickable = shipToBlock && interactive && selectable;
-    const blockSelected = blockClickable && (selection?.has(selKey) ?? false);
+    const blockSelected = blockClickable && (merged ? pairSelected : (selection?.has(selKey) ?? false));
     const blockRowProps = blockClickable
       ? {
           tabIndex: 0,
@@ -1287,11 +1316,13 @@ export function FloorTable({
           },
         }
       : {};
-    // A merged pair's rows take their hover from their own <tbody> (renderList).
+    // A merged pair's rows take their hover AND their selected wash from their
+    // own <tbody> (renderList), and their selected bar from the pair bar
+    // (barKind "selected") — never the per-row selected classes below.
     const hoverCls = merged ? "" : " hover:bg-[#fafafa]";
     const rowCls = !shipToBlock
       ? `group${hoverCls}`
-      : blockSelected
+      : blockSelected && !merged
         ? "group cursor-pointer bg-brand-50 outline-none focus-visible:bg-brand-100 [&>td:first-child]:shadow-[inset_3px_0_0_theme(colors.brand.600)]"
         : blockClickable
           ? `group cursor-pointer outline-none${hoverCls} focus-visible:bg-brand-50`
@@ -1308,16 +1339,15 @@ export function FloorTable({
                 than a red fill, and reads the same on every row either
                 way. */}
             {selectable && merged ? (
-              // ONE TICK FOR THE INVOICE. Reads checked when EVERY member is
-              // selected. ⚠ THIS COMMIT toggles the FIRST member only (the
-              // existing per-bill toggle); the next commit (5) makes it toggle
-              // every member together.
+              // ONE TICK FOR THE INVOICE: checked when EVERY member is
+              // selected; a press adds or removes them ALL (toggleThis →
+              // onToggleAll over the block's rows).
               <input
                 type="checkbox"
-                aria-label={`Select invoice ${row.invoiceNo ?? ""}`}
+                aria-label={`Select invoice ${row.invoiceNo ?? ""} — ${pair.size} OBDs`}
                 className="h-[13px] w-[13px] cursor-pointer align-middle accent-brand-600"
-                checked={pair.memberIds.every((id) => selection?.has(id) ?? false)}
-                onChange={() => onToggleRow?.(pair.memberIds[0])}
+                checked={pairSelected}
+                onChange={toggleThis}
               />
             ) : selectable && (
               <input
@@ -1336,8 +1366,11 @@ export function FloorTable({
             instead. `interactive` is the same flag that drives `widths`
             above, so the two can never disagree about which cell is first. */}
         <td
-          className={TD}
-          style={asStyle(blockSelected ? null : tickColumn ? (merged ? dupShadow : null) : bothShadow)}
+          // No tick column → the pair bar is this cell's collapsed left border.
+          className={`${TDR}${tickColumn ? "" : pairBarBorderCls(barKind)}`}
+          style={asStyle(
+            tickColumn ? (merged ? dupShadow : null) : blockSelected && !pair ? null : dupShadow,
+          )}
         >
           {shipToBlock ? (
             // The DETAIL PANEL opens from the number on the block table (the
@@ -1477,7 +1510,7 @@ export function FloorTable({
             `operatorByOrderId` for why they share rather than sit side by side. */}
         {hasExtra &&
           (operatorByOrderId ? (
-            <td className={TD}>
+            <td className={TDR}>
               {/* A DASH, NEVER A BLANK. A bill at pending_tint_assignment has no
                   assignment row at all, and an empty cell reads as "unknown"
                   rather than "nobody has it yet". */}
@@ -1503,7 +1536,7 @@ export function FloorTable({
             </td>
           ))}
         {!shipToBlock && (
-        <td className={TD}>
+        <td className={TDR}>
           {/* CHALLAN (2026-10-07, Challan orders M2) — BEFORE the dealer name, in
               the cell where TINT / BASE / GIFT / HAND already sit; no new column. */}
           {row.isChallanOrder && (
@@ -1607,7 +1640,7 @@ export function FloorTable({
             same as its <th>. Ellipsis from TD; the full name on hover. A depot
             mailbox reads "Telecaller" in grey; not found is a grey dash. */}
         <td
-          className={TD}
+          className={TDR}
           title={
             row.salesOfficerSource === "telecaller"
               ? "Telecaller — the mail order came from a depot mailbox"
@@ -1637,10 +1670,10 @@ export function FloorTable({
             real cells plus one commented one read as nine. Count the cells
             against the list in the widths block above, by eye, and never
             trust a regex that has not been made comment-blind. */}
-        <td className={TD} title={shipToBlock ? row.area ?? undefined : undefined}>
+        <td className={TDR} title={shipToBlock ? row.area ?? undefined : undefined}>
           {(areaCol ? row.area : row.route) ?? "—"}
         </td>
-        <td className={`${TD} whitespace-nowrap tabular-nums`}>{dueCell}</td>
+        <td className={`${TDR} whitespace-nowrap tabular-nums`}>{dueCell}</td>
         {/* ── VOL / KG, ONE STACKED CELL (2026-09-10 c) ──────────────────
             Litres on line one, kilos underneath, both right-aligned and
             tabular so the digits line up down the column. Two positions
@@ -1670,7 +1703,7 @@ export function FloorTable({
         <td
           // SWAP TD's text colour, never stack a second one: two colour
           // utilities on one element resolve by stylesheet order, not class order.
-          className={`${row.isGift ? TD.replace("text-[#4b5563]", "text-ink-400") : TD} text-right tabular-nums`}
+          className={`${row.isGift ? TDR.replace("text-[#4b5563]", "text-ink-400") : TDR} text-right tabular-nums`}
           title={row.isGift ? "Gift — not counted in L / kg" : undefined}
         >
           <div>{formatLitres(row.volumeLitres ?? 0)} L</div>
@@ -1682,7 +1715,7 @@ export function FloorTable({
             )}
           </div>
         </td>
-        <td className={`${TD} text-[10.5px]`}>
+        <td className={`${TDR} text-[10.5px]`}>
           <span className="text-[#6b7280]">
             {row.articleTag ? formatArticleTag(row.articleTag) : "—"}
           </span>
@@ -1703,13 +1736,13 @@ export function FloorTable({
         <td
           className={`${
             (st === "done" || st === "dispatched") && row.articleCount != null
-              ? TD.replace("text-[#4b5563]", "text-ok-text font-semibold")
-              : TD.replace("text-[#4b5563]", "text-ink-400")
+              ? TDR.replace("text-[#4b5563]", "text-ok-text font-semibold")
+              : TDR.replace("text-[#4b5563]", "text-ink-400")
           } text-right tabular-nums`}
         >
           {st === "done" || st === "dispatched" ? (row.articleCount ?? "—") : null}
         </td>
-        <td className={TD}>{statusCell}</td>
+        <td className={TDR}>{statusCell}</td>
       </tr>
     );
   }

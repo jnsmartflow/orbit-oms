@@ -159,3 +159,26 @@ export function toggleAllIds(sel: FloorSelection, rows: IdRow[]): FloorSelection
   }
   return next;
 }
+
+// ── The bottom bar's count, when a selection holds an invoice pair (2026-10-08) ──
+//
+// "1 invoice · 2 OBDs", "3 invoices · 4 OBDs" — ONLY when the selection holds a
+// MULTI-OBD invoice (a row whose invoice names another OBD). Otherwise null and
+// the bar keeps its "N selected". Invoices = distinct invoice numbers; OBDs =
+// every selected bill. A ticked bill with no invoice yet is not an invoice, so
+// it is said apart rather than counted as one: "1 invoice + 1 not invoiced ·
+// 3 OBDs". Pure; no size is assumed.
+
+type CountRow = { invoiceNo: string | null; invoicePartners?: readonly unknown[] };
+
+export function selectionCountLabel(rows: readonly CountRow[]): string | null {
+  if (!rows.some((r) => r.invoiceNo !== null && (r.invoicePartners?.length ?? 0) > 0)) return null;
+  const invoices = new Set(rows.filter((r) => r.invoiceNo !== null).map((r) => r.invoiceNo)).size;
+  const notInvoiced = rows.filter((r) => r.invoiceNo === null).length;
+  const n = rows.length;
+  return (
+    `${invoices} invoice${invoices === 1 ? "" : "s"}` +
+    (notInvoiced > 0 ? ` + ${notInvoiced} not invoiced` : "") +
+    ` · ${n} OBD${n === 1 ? "" : "s"}`
+  );
+}
