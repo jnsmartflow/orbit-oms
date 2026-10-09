@@ -282,6 +282,16 @@ function liveTime(row: FloorBoardRow, nowMs: number): string | null {
   return null;
 }
 
+// The person the pill names in place of its word (display only): the picker
+// while picking / awaiting check, the checker once Done. Direct Loading
+// deliberately names nobody (owner decision); every other state → null.
+function livePerson(row: FloorBoardRow): string | null {
+  const st = rowStatus(row);
+  if (st === "withPicker" || st === "needsCheck") return row.assignedToName;
+  if (st === "done") return row.checkedByName;
+  return null;
+}
+
 // Ship-to flags (design §7.5). Both markers are exact: the site rule reads the
 // SMU set above, and a redirect now prints the real ORIGINAL → REDIRECT pair —
 // FloorBoardRow carries `customerName` + `shipToOverrideName` alongside the
@@ -1188,7 +1198,7 @@ export function FloorTable({
           <span className="inline-flex items-center gap-1.5">
             {/* `st`, never a literal. It carries "done" or "dispatched" and the
                 pill's own META owns both labels and both colours. */}
-            <StatusPill status={st} time={timeStr} />
+            <StatusPill status={st} time={timeStr} person={livePerson(row)} />
             {lateDays > 0 && (
               <span
                 className={
@@ -1247,6 +1257,7 @@ export function FloorTable({
             status={st}
             time={liveTime(row, nowMs)}
             heldBack={gateOn && isHeldBack(row)}
+            person={livePerson(row)}
           />
           {/* Row hover actions (design §7.10). ⚡ is LIVE (instant urgent
               toggle, lights red when urgent); ⋯ is INERT (detail panel is

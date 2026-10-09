@@ -325,10 +325,13 @@ export function StatusPill({
   time,
   onRed = false,
   heldBack = false,
+  person,
 }: {
   status: FloorStatus;
   time?: string | null;
   onRed?: boolean;
+  /** Floor-only: shows picker (with picker / needs check) or checker (done) first name; old label goes to tooltip. Statuses unchanged. */
+  person?: string | null;
   /**
    * Render the "At desk" reading instead of "Waiting" (2026-09-09).
    *
@@ -350,11 +353,15 @@ export function StatusPill({
   // another. The caller has already asked isHeldBack(); a second, narrower test
   // here is the drift. One rule, one place.
   const m = heldBack ? HELD_BACK_META : META[status];
+  // First name only. Empty/absent → undefined, so the pill renders exactly as
+  // before (no title, the label as plain text).
+  const firstName = person?.trim().split(/\s+/)[0] || undefined;
   return (
     <span
       className={`inline-flex items-center rounded-[4px] px-2 py-[2px] text-[10px] font-semibold ${
         onRed ? DUP_SO_BADGE_CLASS : m.cls
       }`}
+      title={firstName ? m.label : undefined}
     >
       {/* The tick on Tint done — see TICKED. `strokeWidth` 3 because at 10px a
           default-weight check reads as a smudge. */}
@@ -365,7 +372,9 @@ export function StatusPill({
           shared white pill the label alone would say it, but the glyph is what
           tells it from Done at a glance. */}
       {status === "direct" && !heldBack && <Truck size={11} strokeWidth={2.4} className="mr-1 shrink-0" />}
-      {m.label}
+      {/* 56px ≈ 9 chars at 10px semibold: "Name · 12m" stays inside a 16%
+          status column with the hover ⚡/⋯ (~58px); longer names ellipse. */}
+      {firstName ? <span className="max-w-[56px] truncate">{firstName}</span> : m.label}
       {time ? (
         <>
           <span className="mx-1 font-normal opacity-40">·</span>
