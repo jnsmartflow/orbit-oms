@@ -37,7 +37,7 @@ This is **not** the NTS trip mirror. See §2 before touching anything named "tri
 | The `/floor` screen shell (`TripDesk` layout, the pool, the table, tabs, detail panel), the board predicate `floorBoardWhere` and its four arms, the bill actions (hold / cancel / release / change-slot), and Floor live sync | `CLAUDE_FLOOR.md` §2–§5 |
 | The Billing **Print** tab that consumes Send to billing: `billing_print`, `/api/billing/print/*`, the copy rules, `billingCopiedAt` writes | `CLAUDE_BILLING.md` §7 |
 | The NTS mirror: `trip_report`, `/trips`, `/api/trips`, the puller | `CLAUDE_TRIP_REPORT.md` |
-| The reports that READ `trips` (Trip Detail, Freight Report, Old Format, and **NTS Trips** — one row per Nagadhiraj trip, by `createdAt`, 2026-10-09; `lib/reports/nts-trips-data.ts`). Read-only; no report writes a trip | `CLAUDE_CORE.md` §12 Reports |
+| The reports that READ `trips` (Trip Detail, Freight Report, Old Format, and **NTS Trips** — one row per Nagadhiraj (`transporterId = 4`) trip, by `createdAt`, also printing `dieselAmount` and `note`, 2026-10-09; `lib/reports/nts-trips-data.ts`). Read-only; no report writes a trip | `CLAUDE_CORE.md` §12 Reports |
 | **Applying** the gate: `buildPickingWhere` ORs `waitingBranchWhere(gateOn)` into the Assign tab (`lib/picking/queue.ts:398`), the held-back band, the picking marker | `CLAUDE_PICKING.md` §5, §10. This file owns the gate's **definition** (the key, the predicate, the count); Picking owns where it is applied |
 | The stage ladder and `lib/workflow-stages.ts` | `CLAUDE_PICKING.md` §2 |
 | `checkAnyPermission`, `PageKey`, per-user access | `CLAUDE_CORE.md` §5 |

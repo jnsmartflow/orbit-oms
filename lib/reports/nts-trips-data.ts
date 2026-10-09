@@ -10,8 +10,8 @@
 //
 // ── WHICH TRIPS (owner, 2026-10-09) ──────────────────────────────────────────
 //   Orbit FLOOR trips only (`trips`) — never freight_trips, never trip_report.
-//   trips.transporterId = the transporter_master row named "Nagadhiraj" (id 4
-//   live, found by name, case-insensitive). EVERY such trip that is not
+//   trips.transporterId = 4, Nagadhiraj (verified 2026-10-09 as the only
+//   transporter_master row of that name). EVERY such trip that is not
 //   cancelled — including trips with zero bills, and typed plates such as
 //   "HAND", "CI" or "TESTTRIP", printed exactly as typed (owner: no exclusions).
 //   Period: trips.createdAt as an IST date (NOT manualDispatchAt — owner).
@@ -46,8 +46,9 @@ import {
   loadSnapshots,
 } from "@/lib/reports/bill-facts";
 
-/** The transporter this report is for, matched by name (owner, 2026-10-09). */
-export const NTS_TRANSPORTER_NAME = "Nagadhiraj";
+/** transporter_master.id of Nagadhiraj — the transporter this report is for
+ *  (owner, 2026-10-09; the only row of that name, verified live that day). */
+export const NTS_TRANSPORTER_ID = 4;
 
 /** One trip, already resolved to what the sheet prints. */
 export interface NtsTripRow {
@@ -71,6 +72,10 @@ export interface NtsTripRow {
   typeLetter: string;
   /** Typed ship-to names of free-text redirects, ", " — "" when none. */
   remarks: string;
+  /** trips.dieselAmount in rupees, rounded; 0 when null. */
+  diesel: number;
+  /** trips.note (the drawer's "Reason / note"), line breaks → space; "" when empty. */
+  tripNote: string;
 }
 
 export interface NtsTripsParams {
@@ -101,17 +106,10 @@ export async function getNtsTripsRows(params: NtsTripsParams): Promise<NtsTripRo
   const winStart = new Date(fromDate.getTime() - IST_MS);
   const winEnd = new Date(toDate.getTime() + DAY_MS - IST_MS);
 
-  // ── 1. The transporter, by name ──────────────────────────────────────────
-  const transporters = await prisma.transporter_master.findMany({
-    where: { name: { equals: NTS_TRANSPORTER_NAME, mode: "insensitive" } },
-    select: { id: true },
-  });
-  if (transporters.length === 0) return [];
-
-  // ── 2. Its trips created in the period ───────────────────────────────────
+  // ── 1. Nagadhiraj's trips created in the period ─────────────────────────
   const trips = await prisma.trips.findMany({
     where: {
-      transporterId: { in: transporters.map((t) => t.id) },
+      transporterId: NTS_TRANSPORTER_ID,
       status: { not: TRIP_CANCELLED },
       createdAt: { gte: winStart, lt: winEnd },
       ...(params.deliveryTypeId ? { deliveryTypeId: params.deliveryTypeId } : {}),
@@ -123,6 +121,8 @@ export async function getNtsTripsRows(params: NtsTripsParams): Promise<NtsTripRo
       createdAt: true,
       adhocVehicleNo: true,
       driverName: true,
+      dieselAmount: true,
+      note: true,
       deliveryType: { select: { id: true, name: true } },
       vehicle: { select: { vehicleNo: true, category: true } },
     },
@@ -130,7 +130,7 @@ export async function getNtsTripsRows(params: NtsTripsParams): Promise<NtsTripRo
   });
   if (trips.length === 0) return [];
 
-  // ── 3. Their stops and live bills ────────────────────────────────────────
+  // ── 2. Their stops and live bills ────────────────────────────────────────
   const drops = await prisma.trip_drops.findMany({
     where: { tripId: { in: trips.map((t) => t.id) } },
     select: { id: true, tripId: true },
@@ -160,7 +160,7 @@ export async function getNtsTripsRows(params: NtsTripsParams): Promise<NtsTripRo
       })
     : [];
 
-  // ── 4. The per-bill facts (shared with the other trip reports) ───────────
+  // ── 3. The per-bill facts (shared with the other trip reports) ───────────
   const allIds = orders.map((o) => o.id);
   const snapByOrder = await loadSnapshots(allIds);
   const billToByObd = await loadBillToByObd(orders.map((o) => o.obdNumber));
@@ -173,7 +173,7 @@ export async function getNtsTripsRows(params: NtsTripsParams): Promise<NtsTripRo
   );
   const billToAreaByCode = await loadBillToAreas(billToByObd);
 
-  // ── 5. Typed ship-to names for free-text redirects ───────────────────────
+  // ── 4. Typed ship-to names for free-text redirects ───────────────────────
   const freeTextSos = Array.from(
     new Set(
       orders
@@ -286,6 +286,8 @@ export async function getNtsTripsRows(params: NtsTripsParams): Promise<NtsTripRo
       deliveryTypes: [own, ...others].map(typeLabel).join(", "),
       typeLetter: t.typeCode,
       remarks: acc.remarks.join(", "),
+      diesel: t.dieselAmount === null ? 0 : Math.round(t.dieselAmount.toNumber()),
+      tripNote: (t.note ?? "").replace(/\s*[\r\n]+\s*/g, " ").trim(),
     };
   });
 }
