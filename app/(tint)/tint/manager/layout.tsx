@@ -23,7 +23,14 @@ export default async function TintManagerLayout({
   const roles       = session.user.roles ?? [session.user.role];
   const primaryRole = session.user.role;
 
-  const allowed = await checkAnyPermission(roles, "tint_manager", "canView");
+  // tint_manager OR delivery_challans (2026-10-09): the Delivery Challans screen
+  // lives under this layout, and its own tick must be enough to reach it. 🔴 So
+  // this layout is NOT the board's gate — every page under it carries its own
+  // (page.tsx = tint_manager; challan = delivery_challans; the master-data pages
+  // their own keys; shades + ti-report requireRole). A new page here needs one.
+  const allowed =
+    (await checkAnyPermission(roles, "tint_manager", "canView")) ||
+    (await checkAnyPermission(roles, "delivery_challans", "canView"));
   if (!allowed) redirect("/unauthorized");
 
   const allPerms = await getAllPermissionsForRoles(roles);

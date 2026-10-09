@@ -12,11 +12,10 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  // Per-user tick, not a job title (2026-09-06). Reads were held back when the
-  // tint WRITES converted; this closes the split. Operations User loses these —
-  // he holds no tint_manager tick and both tint layouts already redirect him.
+  // The Delivery Challans tick (2026-10-09; was tint_manager canView since
+  // 2026-09-06). The screen at /tint/manager/challan is gated on the same key.
   const roles = session.user.roles ?? [session.user.role];
-  const allowed = await checkAnyPermission(roles, "tint_manager", "canView");
+  const allowed = await checkAnyPermission(roles, "delivery_challans", "canView");
   if (!allowed) return NextResponse.json({ error: "Permission denied" }, { status: 403 });
 
   const { searchParams } = new URL(req.url);

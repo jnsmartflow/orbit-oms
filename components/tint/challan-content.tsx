@@ -58,7 +58,11 @@ function initFormulaValues(lineItems: ChallanApiResponse["order"]["lineItems"]):
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-export function ChallanContent() {
+// `canEdit` draws the Edit button (2026-10-09): /tint/manager/challan passes its
+// delivery_challans canEdit. Drawing only — the PATCH re-checks the same tick.
+// ⚠ Defaults to TRUE so the second mount (app/(tint)/challan/page.tsx, role-gated,
+// passes nothing) keeps the button it always had; the PATCH still refuses there.
+export function ChallanContent({ canEdit = true }: { canEdit?: boolean } = {}) {
   // Import button: the Import OBDs tick, the same rule the import route enforces.
   const canImportOBDs = useCanImportObds();
 
@@ -572,8 +576,9 @@ export function ChallanContent() {
                       }
                     </button>
                   </>
-                ) : (
-                  /* Edit button — outline (disabled when voided per Phase 2e) */
+                ) : canEdit ? (
+                  /* Edit button — outline (disabled when voided per Phase 2e).
+                     Not drawn without delivery_challans canEdit. */
                   <button
                     type="button"
                     onClick={() => { if (!challanData.challan.isVoided) setIsEditing(true); }}
@@ -591,7 +596,7 @@ export function ChallanContent() {
                   >
                     <Edit2 size={13} /> Edit
                   </button>
-                )}
+                ) : null}
 
                 {/* Print — dark (disabled when voided per Phase 2e) */}
                 <button

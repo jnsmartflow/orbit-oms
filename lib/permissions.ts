@@ -568,6 +568,9 @@ const ACTION_PAGES: Record<Exclude<ActionKey, "canView">, readonly PageKey[]> = 
     // challan_orders (2026-10-07, Challan orders slice 5) — paste SO / Unlink on
     // the shared screen (POST /api/challan-orders/links, …/unlink) gate on canEdit.
     "challan_orders",
+    // delivery_challans (2026-10-09) — Edit/Save on /tint/manager/challan; PATCH
+    // /api/tint/manager/challans/[orderId] gates on it (was tint_manager canEdit).
+    "delivery_challans",
     // The seven Tint Manager action ticks (2026-10-01, tabs build step 2).
     // canEdit is checked per action by lib/tint/manager-bill.ts checkTintAction,
     // on top of tint_manager canEdit — the billing_* pattern. Listed with their

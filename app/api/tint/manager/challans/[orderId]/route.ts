@@ -29,11 +29,10 @@ export async function GET(
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  // Per-user tick, not a job title (2026-09-06). Reads were held back when the
-  // tint WRITES converted; this closes the split. Operations User loses these —
-  // he holds no tint_manager tick and both tint layouts already redirect him.
+  // The Delivery Challans tick (2026-10-09; was tint_manager canView since
+  // 2026-09-06). The screen at /tint/manager/challan is gated on the same key.
   const roles = session.user.roles ?? [session.user.role];
-  const allowed = await checkAnyPermission(roles, "tint_manager", "canView");
+  const allowed = await checkAnyPermission(roles, "delivery_challans", "canView");
   if (!allowed) return NextResponse.json({ error: "Permission denied" }, { status: 403 });
 
   const orderId = parseInt(params.orderId, 10);
@@ -435,14 +434,11 @@ export async function PATCH(
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  // Per-user tick, not a job title (2026-09-06). tint_manager/canEdit rather than
-  // delivery_challans/canEdit: both keys resolve to the same three people today
-  // (SELECT 2026-09-06), and tint_manager is what every other converted tint write
-  // route uses, so the module stays on one key. If challan authority is ever meant
-  // to diverge from board authority, this is the line that changes first.
-  // The GET above deliberately still uses requireRole — reads were out of scope.
+  // The Delivery Challans tick, canEdit (2026-10-09; was tint_manager canEdit).
+  // Challan authority is now its own key, separate from board authority. The
+  // screen draws Edit/Save from the same canEdit (challan/page.tsx).
   const roles = session.user.roles ?? [session.user.role];
-  const allowed = await checkAnyPermission(roles, "tint_manager", "canEdit");
+  const allowed = await checkAnyPermission(roles, "delivery_challans", "canEdit");
   if (!allowed) return NextResponse.json({ error: "Permission denied" }, { status: 403 });
 
   const orderId = parseInt(params.orderId, 10);
