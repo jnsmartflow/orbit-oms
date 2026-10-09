@@ -86,6 +86,10 @@ export const ICON_MAP: Record<string, React.ComponentType<{ className?: string }
   // `Truck` (vehicles), `Route` (trip_report) or `Container` (mrn): each is
   // already a row in the same sidebar and Menu sheet.
   freight_trips:       ReceiptText,
+  // Trip Sheets (2026-10-09). `ClipboardList` — a printed sheet with lines.
+  // ⚠ NOT `Truck` (vehicles) or `Route` (trip_report, the NTS mirror, which six
+  // users still see beside it): the same one-glyph-per-row rule as MRN / CI.
+  trip_sheet:          ClipboardList,
 };
 
 export const DEFAULT_ICON = User;

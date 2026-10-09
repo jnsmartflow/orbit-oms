@@ -107,6 +107,12 @@ export const PAGE_NAV_MAP: NavItemConfig[] = [
   // Home): at this commit NO user holds freight_trips, so the derived Home is
   // unchanged for every person. Re-derive against the grants before moving it.
   { pageKey: "freight_trips",      label: "Freight Trips", href: "/freight-trips" },
+  // Trip Sheets (2026-10-09) — the phone list of a day's Orbit trips + the A4
+  // sheet / WhatsApp share (lib/trip-sheet). Placed AFTER freight_trips, so it
+  // displaces nobody's navItems[0] (MobileShell's Home): at this commit NO user
+  // holds trip_sheet. ⚠ The row follows the trip_sheet tick only — the pages
+  // also admit `floor` canView, but a floor-only user gets no menu row.
+  { pageKey: "trip_sheet",         label: "Trip Sheets",   href: "/trip-sheets" },
   { pageKey: "delivery_challans",  label: "Delivery Challans", href: "/tint/manager/challan" },
   { pageKey: "shade_master",       label: "Shade Master",      href: "/tint/manager/shades" },
   { pageKey: "sampling_library",   label: "Sampling Library",  href: "/tint/sampling-library" },
@@ -415,8 +421,9 @@ export type PageKey =
   // docs/prompts/drafts/web-update-2026-10-09-trip-sheet.md §2). canView = open a
   // trip's A4 sheet (app/trip-sheets/[id]/sheet, which also admits `floor`
   // canView). ⚠ NOT `trip_report` — that key is the NTS mirror's /trips.
-  // ⚠ No user_page_access rows yet (Smart Flow SQL at the grants step), and NOT
-  // in PAGE_NAV_MAP / ICON_MAP until the phone list /trip-sheets ships.
+  // ⚠ No user_page_access rows yet (Smart Flow SQL at the grants step). In
+  // PAGE_NAV_MAP (→ /trip-sheets, after freight_trips) and ICON_MAP (ClipboardList)
+  // since the phone list shipped (2026-10-09).
   | "trip_sheet"
   | "delivery_challans"
   | "shade_master"
@@ -697,9 +704,9 @@ const PAGE_LABEL_OVERRIDES: Record<string, string> = {
   // place_order_challan since slice 3, challan_orders since slice 5 (2026-10-07).
   place_order_challan: "Purchase Order · Create challan order",
   challan_orders:      "Challan orders",
-  // Trip Sheets (2026-10-09). Not in PAGE_NAV_MAP yet (no phone list route), so
-  // without this the row would read its raw key. Not "Trip Report" — that is
-  // the NTS mirror's `trip_report` row, a different key and screen.
+  // Trip Sheets (2026-10-09). Same text as its PAGE_NAV_MAP label; kept so the
+  // /admin/access row can never fall back to the raw key. Not "Trip Report" —
+  // that is the NTS mirror's `trip_report` row, a different key and screen.
   trip_sheet:          "Trip Sheets",
   // Not in PAGE_NAV_MAP. The "Tint Manager · Panel:" prefix keeps the three
   // reading as tabs of that one screen, directly under its own row.

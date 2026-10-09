@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect, notFound } from "next/navigation";
 import { auth } from "@/lib/auth";
-import { checkAnyPermission } from "@/lib/permissions";
+import { canViewTripSheets } from "@/lib/trip-sheet/access";
 import { getTripSheet } from "@/lib/trip-sheet/load";
 import { OrbitTripSheetDocument } from "@/components/trip-sheet/trip-sheet-document";
 import { OrbitTripSheetPrintButton } from "@/components/trip-sheet/print-button";
@@ -38,10 +38,7 @@ export default async function OrbitTripSheetPage({ params }: { params: { id: str
   if (!session?.user) redirect("/login");
 
   const roles = session.user.roles ?? [session.user.role];
-  const allowed =
-    (await checkAnyPermission(roles, "trip_sheet", "canView")) ||
-    (await checkAnyPermission(roles, "floor", "canView"));
-  if (!allowed) return <Message text="You do not have access to trip sheets." />;
+  if (!(await canViewTripSheets(roles))) return <Message text="You do not have access to trip sheets." />;
 
   const id = Number(params.id);
   if (!Number.isInteger(id) || id <= 0) notFound();
