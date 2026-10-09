@@ -4,7 +4,8 @@
 //
 // 🔴 REDESIGNED 2026-09-15 TO THE OWNER'S LOCKED DESIGN. Six rows:
 //
-//   1  the trip number chip          [Send to billing] [Show to floor] [···]
+//   1  the trip number chip   [Trip sheet] [Send to billing] [Show to floor] [···]
+//      (Trip sheet added 2026-10-09 — a link, shown on every non-cancelled trip)
 //   2  the ROUTE, large, "+N" grey — route only, never the area
 //   3  plate (mono) · vehicle type · transporter #their-no   driver · phone  ✎  🕒3
 //      (the note, italic, on its own line when set)
@@ -142,6 +143,8 @@ export function TripDetailHeader({
   const redeliveryOnly = isEmpty && redeliveryCount > 0;
   const isClosed = trip.status === "cancelled" || trip.status === "dispatched";
   const canWrite = !isClosed && !readOnly;
+  // The Trip sheet link is a read — every trip but a cancelled one (2026-10-09).
+  const showSheet = trip.status !== "cancelled";
   const plate = trip.vehicleNo ?? trip.adhocVehicleNo;
   const shownTime = istTime(trip.shownAt);
   const sentTime = istTime(trip.sentToBillingAt);
@@ -179,8 +182,35 @@ export function TripDetailHeader({
             </span>
           )}
 
-          {canWrite && (
+          {(canWrite || showSheet) && (
             <div className="ml-auto flex shrink-0 items-center gap-2">
+              {/* TRIP SHEET (2026-10-09) — a plain link to the A4 Orbit trip sheet
+                  (app/trip-sheets/[id]/sheet) in a new tab. A READ, not a trip
+                  action: no API call, no write. So unlike the buttons beside it,
+                  it also shows on a dispatched trip and a past day; only a
+                  cancelled trip hides it. A Hand trip has no sheet (spec §3):
+                  disabled, reason on a WRAPPER (a disabled button fires no mouse
+                  events, the Show-to-floor rule). */}
+              {showSheet &&
+                (trip.isHand ? (
+                  <span title="Hand trip — no trip sheet" className="inline-flex">
+                    <button type="button" disabled className={`${BUTTON} whitespace-nowrap`}>
+                      Trip sheet
+                    </button>
+                  </span>
+                ) : (
+                  <a
+                    href={`/trip-sheets/${trip.id}/sheet`}
+                    target="_blank"
+                    rel="noopener"
+                    className={`${BUTTON} whitespace-nowrap`}
+                  >
+                    Trip sheet
+                  </a>
+                ))}
+
+              {canWrite && (
+              <>
               {/* SEND TO BILLING (slice 9). An empty trip has nothing for billing
                   to copy: disabled, with the reason as the wrapper's tooltip. */}
               {trip.sentToBillingAt && trip.billingDoneAt ? (
@@ -289,6 +319,8 @@ export function TripDetailHeader({
                   </>
                 )}
               </div>
+              </>
+              )}
             </div>
           )}
         </div>
