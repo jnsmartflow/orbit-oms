@@ -11,6 +11,18 @@ const nextConfig = {
           { key: "Permissions-Policy", value: "camera=(self), microphone=(self), geolocation=(self)" },
         ],
       },
+      // The ONE frameable path (2026-10-09). Floor's DC column prints a challan by
+      // loading this page in a hidden SAME-ORIGIN iframe (components/floor/
+      // use-challan-print.ts); DENY above blocked it. Must stay AFTER "/(.*)":
+      // Next applies matches in order and the later same-key header wins.
+      // Every other path stays DENY — do not widen this source or copy it.
+      {
+        source: "/challan-print/:orderId",
+        headers: [
+          { key: "X-Frame-Options", value: "SAMEORIGIN" },
+          { key: "Content-Security-Policy", value: "frame-ancestors 'self'" },
+        ],
+      },
     ];
   },
   // /demo → public/order-demo.html (URL stays /demo for cleaner WhatsApp shares).

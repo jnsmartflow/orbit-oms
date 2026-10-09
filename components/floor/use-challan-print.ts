@@ -48,6 +48,8 @@ export function useChallanPrint(): ChallanPrintApi | null {
 // A4 at 96 dpi. Off-screen, real size.
 const FRAME_STYLE =
   "position:fixed;left:-10000px;top:0;width:794px;height:1123px;border:0;";
+type FailReason = "no-frame-document" | "no-ready-marker" | "image-decode" | "print-threw" | "timeout";
+
 // No print box within this long → give up with the message.
 const LOAD_TIMEOUT_MS = 20_000;
 
@@ -84,8 +86,11 @@ function useChallanPrintEngine(): ChallanPrintApi {
       busyRef.current = false;
       setPrintingOrderId(null);
     };
-    const fail = () => {
+    // Every failure names itself in the Console, so the next one needs no
+    // diagnosis: [dc-print] <reason> <orderId>. The toast stays generic.
+    const fail = (reason: FailReason) => {
       if (done) return;
+      console.warn("[dc-print]", reason, orderId);
       teardown();
       toast.error(`Couldn't load challan ${challanNumber} — try again`);
     };
@@ -96,28 +101,38 @@ function useChallanPrintEngine(): ChallanPrintApi {
         try {
           const win = frame.contentWindow;
           const doc = frame.contentDocument;
-          if (!win || !doc) return fail();
+          // null doc = the frame was refused (X-Frame-Options / CSP) or left the origin.
+          if (!win || !doc) return fail("no-frame-document");
           // Missing = refused, voided, not found, or a /login bounce.
-          if (!doc.querySelector("[data-challan-ready] #challan-print-area")) return fail();
+          if (!doc.querySelector("[data-challan-ready] #challan-print-area")) return fail("no-ready-marker");
           await doc.fonts.ready;
           // A logo that will not decode fails the job — never print without it.
-          await Promise.all(Array.from(doc.images).map((img) => img.decode()));
+          try {
+            await Promise.all(Array.from(doc.images).map((img) => img.decode()));
+          } catch {
+            return fail("image-decode");
+          }
           if (done) return; // torn down while waiting (unmount / timeout)
           if (timer) clearTimeout(timer);
           win.addEventListener("afterprint", teardown, { once: true });
           document.title = challanNumber;
           win.focus();
-          win.print();
+          try {
+            win.print();
+          } catch {
+            return fail("print-threw");
+          }
           // print() has returned, so the box is closed. Fallback for a missed
           // afterprint; teardown is idempotent.
           setTimeout(teardown, 500);
         } catch {
-          fail();
+          // Anything else on the way (e.g. fonts.ready rejecting) — still named.
+          fail("no-frame-document");
         }
       })();
     });
 
-    timer = setTimeout(fail, LOAD_TIMEOUT_MS);
+    timer = setTimeout(() => fail("timeout"), LOAD_TIMEOUT_MS);
     frame.src = `/challan-print/${orderId}`;
     document.body.appendChild(frame);
   }, []);
