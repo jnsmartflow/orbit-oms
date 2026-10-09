@@ -21,8 +21,11 @@
 //   orders.tripDropId → trip_drops.tripId, not isRemoved, not cancelled.
 //   HELD bills COUNT — they are on the truck plan (owner).
 //
-// ── REMARKS — the typed ship-to of a free-text redirect ──────────────────────
-//   A bill with shipToOverride = true and NO shipToOverrideCustomerId has no
+// ── REMARKS — the name of every CHANGED ship-to (owner, 2026-10-09) ─────────
+//   A master redirect (shipToOverrideCustomerId set AND not SAP's own point —
+//   the same test as the area rule) prints that delivery_point_master row's
+//   customerName as stored: a dealer or a transporter godown alike.
+//   A legacy bill with shipToOverride = true and NO shipToOverrideCustomerId has no
 //   master row, so no name on the order itself. The name the operator typed
 //   lives on the MAIL ORDER: mo_orders.deliveryRemarks (same soNumber, its own
 //   shipToOverride true), parsed by splitDeliveryRemarks — the read Billing's
@@ -70,7 +73,7 @@ export interface NtsTripRow {
   deliveryTypes: string;
   /** The trip's own letter — L / U / I / C. */
   typeLetter: string;
-  /** Typed ship-to names of free-text redirects, ", " — "" when none. */
+  /** Names of the changed ship-tos (master redirects + legacy typed names), ", " — "" when none. */
   remarks: string;
   /** trips.dieselAmount in rupees, rounded; 0 when null. */
   diesel: number;
@@ -258,7 +261,12 @@ export async function getNtsTripsRows(params: NtsTripsParams): Promise<NtsTripRo
       typeRank.set(dt.name, dt.id);
     }
 
-    // Remarks — free-text redirects only.
+    // Remarks — the CHANGED ship-to's name. A master redirect (the same test
+    // as the area above) prints the override point's name as stored — a
+    // dealer or a transporter godown alike.
+    const redirectName = blank(redirect?.customerName);
+    if (redirectName !== null && !acc.remarks.includes(redirectName)) acc.remarks.push(redirectName);
+    // Legacy free-text redirects (no override point) print the typed name.
     if (o.shipToOverride && o.shipToOverrideCustomerId === null) {
       const so = blank(o.soNumber);
       for (const name of so !== null ? (typedNamesBySo.get(so) ?? []) : []) {
