@@ -26,6 +26,17 @@
   margin: 10mm;
 }
 
+/* @page (named) — ORBIT Trip Sheet (2026-10-09, built from Orbit's own trips;
+   lib/trip-sheet, components/trip-sheet). A SEPARATE page name from the NTS
+   `trip-sheet` above on purpose: that one is archived with the NTS mirror, and
+   this sheet must not break when it goes. Same 10mm even margin. Top-level per
+   CORE §3 / UI §32 — never inside @media print. Applied via
+   `page: orbit-trip-sheet` on #orbit-trip-sheet-print-area (print block below). */
+@page orbit-trip-sheet {
+  size: A4 portrait;
+  margin: 10mm;
+}
+
 /* @page (named) — MRN A4 print sheet. Top-level per CORE §3 / UI §32, exactly
    like the two above: an @page nested inside @media print is silently ignored
    by every engine, and this file has been bitten by that before.
@@ -760,6 +771,46 @@ html, body { overscroll-behavior: none; }
   /* Ack band + footer must never split across a page break. */
   #trip-sheet-print-area .trip-sheet-ack-band,
   #trip-sheet-print-area .trip-sheet-footer {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+}
+
+/* ═════════════════════════════════════════════
+   ORBIT Trip Sheet — printable A4 isolation (2026-10-09)
+   Same mechanism as the NTS block above, under its OWN id and page name so the
+   two never touch: the challan block already hides `body *` in print; this
+   reveals only #orbit-trip-sheet-print-area and switches it to the
+   `orbit-trip-sheet` @page (top of file). visibility, not display:none.
+   The bottom band (ack + footer) is NORMAL FLOW after the table; blank filler
+   rows to 20 do the spacing, exactly like the NTS sheet and the challan.
+   ═════════════════════════════════════════════ */
+@media print {
+  #orbit-trip-sheet-print-area,
+  #orbit-trip-sheet-print-area * {
+    visibility: visible !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  #orbit-trip-sheet-print-area {
+    position: absolute !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 100% !important;
+    page: orbit-trip-sheet;
+  }
+
+  #orbit-trip-sheet-print-area .orbit-trip-sheet-inner {
+    box-sizing: border-box !important;
+    box-shadow: none !important;
+  }
+
+  #orbit-trip-sheet-print-area tr { page-break-inside: avoid; }
+
+  /* Bottom band + footer never split across a page break. */
+  #orbit-trip-sheet-print-area .orbit-trip-sheet-bottom,
+  #orbit-trip-sheet-print-area .orbit-trip-sheet-footer {
     break-inside: avoid;
     page-break-inside: avoid;
   }

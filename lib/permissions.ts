@@ -410,6 +410,14 @@ export type PageKey =
   // In PAGE_NAV_MAP (→ /freight-trips, after ci), ACCESS_SECTIONS "Operations"
   // and ICON_MAP since the screen shipped (step 7, 2026-10-02).
   | "freight_trips"
+  // Trip Sheets (2026-10-09) — the ORBIT trip sheet built from Floor trips
+  // (lib/trip-sheet, components/trip-sheet; spec
+  // docs/prompts/drafts/web-update-2026-10-09-trip-sheet.md §2). canView = open a
+  // trip's A4 sheet (app/trip-sheets/[id]/sheet, which also admits `floor`
+  // canView). ⚠ NOT `trip_report` — that key is the NTS mirror's /trips.
+  // ⚠ No user_page_access rows yet (Smart Flow SQL at the grants step), and NOT
+  // in PAGE_NAV_MAP / ICON_MAP until the phone list /trip-sheets ships.
+  | "trip_sheet"
   | "delivery_challans"
   | "shade_master"
   | "sampling_library"
@@ -484,7 +492,7 @@ const ALL_PAGE_KEYS: PageKey[] = [
   // its host screen. It is NOT `picking` on the line above — that is the floor
   // board. Keep them visually apart in this list, never adjacent.
   "place_order", "place_order_ship_to", "place_order_challan", "challan_orders", "trip_report", "mail_orders", "billing_picking", "billing_print",
-  "billing_telephonic", "billing_pick_delete", "mrn", "ci", "freight_trips",
+  "billing_telephonic", "billing_pick_delete", "mrn", "ci", "freight_trips", "trip_sheet",
   // The six Billing action ticks, kept together and next to their host screen
   // for the same reason `billing_picking` is — they are controls INSIDE
   // /mail-orders, not routes of their own.
@@ -689,6 +697,10 @@ const PAGE_LABEL_OVERRIDES: Record<string, string> = {
   // place_order_challan since slice 3, challan_orders since slice 5 (2026-10-07).
   place_order_challan: "Purchase Order · Create challan order",
   challan_orders:      "Challan orders",
+  // Trip Sheets (2026-10-09). Not in PAGE_NAV_MAP yet (no phone list route), so
+  // without this the row would read its raw key. Not "Trip Report" — that is
+  // the NTS mirror's `trip_report` row, a different key and screen.
+  trip_sheet:          "Trip Sheets",
   // Not in PAGE_NAV_MAP. The "Tint Manager · Panel:" prefix keeps the three
   // reading as tabs of that one screen, directly under its own row.
   tint_panel_items:    "Tint Manager · Panel: Items",
@@ -739,7 +751,7 @@ export const ACCESS_SECTIONS: { label: string; keys: PageKey[] }[] = [
     // The six action ticks follow "Billing · Picking" so the whole Billing
     // family reads as one block on /admin/access: the screen, its Picking tab,
     // then the six decisions the Orders tab allows.
-    "picking", "floor", "mrn", "ci", "freight_trips", "mail_orders", "billing_picking",
+    "picking", "floor", "mrn", "ci", "freight_trips", "trip_sheet", "mail_orders", "billing_picking",
     "billing_print", "billing_telephonic", "billing_pick_delete",
     "billing_hold", "billing_slot", "billing_urgent", "billing_ship_to",
     "billing_hand", "billing_ci",
