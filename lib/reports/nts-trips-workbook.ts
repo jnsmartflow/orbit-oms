@@ -5,8 +5,8 @@
 //
 // 🔴 SERVER-ONLY (xlsx). Same library as the other trip workbooks.
 //
-// 🔴 LAYOUT IS COPIED, NOT DESIGNED: rows 1–9 empty, headers on row 10, data
-// from row 11, one sheet "NTS Trips", 16 columns. Unlike the Freight Report,
+// 🔴 LAYOUT IS COPIED, NOT DESIGNED: headers on row 1, data from row 2 (the
+// Tempo Report's 9 empty top rows dropped — owner, 2026-10-09), one sheet "NTS Trips", 16 columns. Unlike the Freight Report,
 // cells are REAL values: Month / Dispatch Date / Dispatch Time are Excel dates
 // and times with a number format, Total Dealer / Ltr / Total KG / Diesel Amt
 // are numbers.
@@ -36,8 +36,8 @@ const COLUMNS: { header: string; width: number }[] = [
 ];
 
 const SHEET_NAME = "NTS Trips";
-/** 0-based row index of the header row — Excel row 10. */
-const HEADER_ROW = 9;
+/** 0-based row index of the header row — Excel row 1. */
+const HEADER_ROW = 0;
 
 const IST_MS = 5.5 * 60 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
