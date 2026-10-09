@@ -256,6 +256,17 @@ export function ReportsDialog({
                   filePrefix="TripDetailOld"
                 />
               )}
+              {current?.id === "nts-trips" && (
+                // Same panel, the NTS Trips route — one row per trip, not per bill.
+                <TripDetailPanel
+                  key="nts-trips"
+                  deliveryTypes={options.deliveryTypes}
+                  endpoint="/api/reports/nts-trips"
+                  title="NTS Trips"
+                  description="One row per Nagadhiraj trip — Tempo Report layout"
+                  filePrefix="NTSTrips"
+                />
+              )}
               {current?.id === "tint-summary" && (
                 <ReportsTopBar params={tintParams} roster={options.roster} onParamsChange={setTintParams} />
               )}

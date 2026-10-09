@@ -1,5 +1,5 @@
 # CLAUDE_FLOOR_TRIPS.md — Floor Trips (Orbit's own truck plan)
-# v1.1 · Schema v27.24 · October 2026 · updated 2026-10-03 · Lives in: orbit-oms/docs/
+# v1.2 · Schema v27.24 · October 2026 · updated 2026-10-09 · Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md + docs/CLAUDE_FLOOR.md
 
 Trip tables / new columns are live-verified 2026-09-18; their schema version numbers are assigned in the CORE pass (batch C2).
@@ -37,6 +37,7 @@ This is **not** the NTS trip mirror. See §2 before touching anything named "tri
 | The `/floor` screen shell (`TripDesk` layout, the pool, the table, tabs, detail panel), the board predicate `floorBoardWhere` and its four arms, the bill actions (hold / cancel / release / change-slot), and Floor live sync | `CLAUDE_FLOOR.md` §2–§5 |
 | The Billing **Print** tab that consumes Send to billing: `billing_print`, `/api/billing/print/*`, the copy rules, `billingCopiedAt` writes | `CLAUDE_BILLING.md` §7 |
 | The NTS mirror: `trip_report`, `/trips`, `/api/trips`, the puller | `CLAUDE_TRIP_REPORT.md` |
+| The reports that READ `trips` (Trip Detail, Freight Report, Old Format, and **NTS Trips** — one row per Nagadhiraj trip, by `createdAt`, 2026-10-09; `lib/reports/nts-trips-data.ts`). Read-only; no report writes a trip | `CLAUDE_CORE.md` §12 Reports |
 | **Applying** the gate: `buildPickingWhere` ORs `waitingBranchWhere(gateOn)` into the Assign tab (`lib/picking/queue.ts:398`), the held-back band, the picking marker | `CLAUDE_PICKING.md` §5, §10. This file owns the gate's **definition** (the key, the predicate, the count); Picking owns where it is applied |
 | The stage ladder and `lib/workflow-stages.ts` | `CLAUDE_PICKING.md` §2 |
 | `checkAnyPermission`, `PageKey`, per-user access | `CLAUDE_CORE.md` §5 |
@@ -689,6 +690,10 @@ a trip never closes (`dispatch` unreachable); `isReady` and the carry rule treat
 15. **Floor rows for later-dated bills on today's trip** get no explanation on screen
     (`docs/prompts/archive/2026-09/web-update-2026-09-09-floor-trip-module.md:210-214`). Not re-verified.
 
+### Data quality (live reads)
+
+- **2026-10-09:** typed plates "HAND" (10 trips) and "CI" (1) seen in `adhocVehicleNo` on transporter 4 (Nagadhiraj) trips with `isHand = false` — staff should use the **Hand trip** switch instead. The NTS Trips report includes them, printed as typed, by owner decision.
+
 ### Questions for Smart Flow (need a DB read)
 
 - `SELECT count(*), min("createdAt"), max("createdAt") FROM order_status_logs WHERE "toStage"='dispatched' AND note LIKE 'Dispatched with trip %';` (the app path's total), and orders at `dispatched` with no `toStage='dispatched'` log row. Tells whether anything outside the repo moved rows after 2026-09-15.
@@ -699,4 +704,4 @@ a trip never closes (`dispatch` unreachable); `isReady` and the carry rule treat
 
 ---
 
-*CLAUDE_FLOOR_TRIPS.md v1.1 · Schema v27.24 · OrbitOMS · updated 2026-10-03 — §2 and landmine 1: THREE trip systems (Freight trips added, owned by `CLAUDE_FREIGHT_TRIPS.md`); wording only. Prior, v1.0 (2026-09-18) — first canonical file for Orbit's own trips (trips / trip_drops / trip_activity, lib/trips, /api/floor/trips, the pick visibility gate, Send to billing). Written from the code at ec6343ba and the live results of 2026-09-18; drafts are history.*
+*CLAUDE_FLOOR_TRIPS.md v1.2 · Schema v27.24 · OrbitOMS · updated 2026-10-09 — §1 notes the reports that read `trips` (NTS Trips added); §17 data-quality note on typed "HAND"/"CI" plates. Schema stamp not bumped — no reconciliation pass. Prior, v1.1 (2026-10-03) — §2 and landmine 1: THREE trip systems (Freight trips added, owned by `CLAUDE_FREIGHT_TRIPS.md`); wording only. Prior, v1.0 (2026-09-18) — first canonical file for Orbit's own trips (trips / trip_drops / trip_activity, lib/trips, /api/floor/trips, the pick visibility gate, Send to billing). Written from the code at ec6343ba and the live results of 2026-09-18; drafts are history.*
