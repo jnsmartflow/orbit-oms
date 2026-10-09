@@ -52,6 +52,7 @@ import { ColourWorkBadge } from "@/components/picking/card-atoms";
 import { GiftBadge } from "./gift-badge";
 import { HandBadge } from "@/components/shared/hand-badge";
 import { ChallanBadge } from "@/components/shared/challan-badge";
+import { ChallanCell } from "./challan-cell";
 import {
   StatusPill,
   rowStatus,
@@ -681,14 +682,15 @@ export function FloorTable({
   //   8  Vol / KG
   //   9  Article tag  (SAP's plan — header was "Article" until 2026-10-06)
   //  10  Article      (2026-10-06 — the supervisor's article no.)
-  //  11  Status
+  //  11  DC       only when `dcCol` (= `hasExtra`) — 2026-10-09
+  //  12  Status
   //
   // A `{cond && <td>}` that is false renders NOTHING — it does not leave a
   // gap — so one missing cell shifts every column to its right by one and the
   // headers quietly describe the wrong values. That is exactly what happened
   // to Route between e656ad80 and this fix; see the note on its cell.
   //
-  //                        ☐  OBD INV Ship SO Rt Due V/KG Tag Art Status
+  //                        ☐  OBD INV Ship SO Rt Due V/KG Tag Art DC Status
   //
   // ── 2026-10-06 — ARTICLE TAG + ARTICLE (owner) ────────────────────────────
   // The old "Article" column is now headed "Article tag" (content unchanged,
@@ -715,7 +717,7 @@ export function FloorTable({
   // the block's ticks sit at the OBD column's left edge instead. Ship to is
   // gone (the block header names it); Area is back, in the Route/Area slot.
   // ONE arm, live and History alike — `tickColumn` is false on both.
-  //                    OBD INV SO Area Due V/KG Tag Art Status
+  //                    OBD INV SO Area Due V/KG Tag Art DC Status
   const tickColumn = interactive && !shipToBlock;
   const areaCol = showArea || shipToBlock;
   // ── 2026-10-06 — SO (owner) ──────────────────────────────────────────────
@@ -730,14 +732,25 @@ export function FloorTable({
   //   read-only, no extra    [15,19,10,13,8,12,6,17]       → [15,11,8,10,13,8,12,6,17]
   // ⚠ interactive + extra (the Floor tab's own arm) had the least Ship to to
   // give: 13 → 7 + 6. Eyeball it at depot width before trusting it.
+  //
+  // ── 2026-10-09 — DC, the DELIVERY challan (owner) ────────────────────────
+  // A 3% icon column (📎, challan-cell.tsx) IMMEDIATELY BEFORE Status, on every
+  // arm that has the third slot — `dcCol = hasExtra`, Tinting's Operator arm
+  // included (tint bills carry challans). "DC", not "Challan": the Challan tab
+  // means challan ORDERS. Ship to and Status give nothing; the donors are OBD,
+  // Due and Article tag. The two no-extra arms are unchanged. BEFORE → AFTER:
+  //   ship-to block          [18,14,7,8,13,10,8,6,16]      → [16,14,7,8,12,10,8,6,3,16]
+  //   interactive + extra    [3,13,9,7,6,9,11,7,11,6,18]   → [3,12,9,7,6,9,10,7,10,6,3,18]
+  //   read-only + extra      [14,10,8,7,9,11,7,11,6,17]    → [13,10,8,7,9,10,7,10,6,3,17]
+  const dcCol = hasExtra;
   const widths = shipToBlock
-    ? [18, 14, 7, 8, 13, 10, 8, 6, 16] //   OBD INV SO Area Due V/KG Tag Art Status = 100
+    ? [16, 14, 7, 8, 12, 10, 8, 6, 3, 16] //   OBD INV SO Area Due V/KG Tag Art DC Status = 100
     : interactive
     ? hasExtra
-      ? [3, 13, 9, 7, 6, 9, 11, 7, 11, 6, 18] // ☐ OBD INV Ship SO Rt Due V/KG Tag Art Status = 100
+      ? [3, 12, 9, 7, 6, 9, 10, 7, 10, 6, 3, 18] // ☐ OBD INV Ship SO Rt Due V/KG Tag Art DC Status = 100
       : [3, 14, 10, 7, 9, 12, 7, 12, 6, 20] //   ☐ OBD Ship SO Rt Due V/KG Tag Art Status = 100
     : hasExtra
-      ? [14, 10, 8, 7, 9, 11, 7, 11, 6, 17] //  OBD INV Ship SO Rt Due V/KG Tag Art Status = 100
+      ? [13, 10, 8, 7, 9, 10, 7, 10, 6, 3, 17] //  OBD INV Ship SO Rt Due V/KG Tag Art DC Status = 100
       : [15, 11, 8, 10, 13, 8, 12, 6, 17]; //    OBD Ship SO Rt Due V/KG Tag Art Status   = 100
   // ⚠ THE HEADER CHECKBOX COVERS BOTH HALVES OF THIS TABLE. Select-all is
   // per-TABLE (lib/floor/selection.ts documents it as per band), and the
@@ -763,12 +776,13 @@ export function FloorTable({
   // ABOVE `widths`, SPENT ON PURPOSE. Row 1 carries the ☐ (when `tickColumn`)
   // and the Invoice cell (when `invCell`) with rowSpan = n; the rows under it
   // leave out EXACTLY those two, so every column to their right still lines up.
-  // Per arm, row 1 → rows 2..n:
-  //   ship-to block         9 → 8   (Invoice merged; the row is its own tick)
-  //   interactive + extra  11 → 9   (☐ and Invoice merged)
-  //     … Tinting/Operator 11 → 10  (☐ only — the operator is per bill)
+  // Per arm, row 1 → rows 2..n (DC, 2026-10-09, is per OBD and NEVER merged —
+  // every row draws its own, so it adds one to both sides of the extra arms):
+  //   ship-to block        10 → 9   (Invoice merged; the row is its own tick)
+  //   interactive + extra  12 → 10  (☐ and Invoice merged)
+  //     … Tinting/Operator 12 → 11  (☐ only — the operator is per bill)
   //   interactive, no extra 10 → 9  (☐ only)
-  //   read-only + extra    10 → 9   (Invoice only — History, load-plan panels)
+  //   read-only + extra    11 → 10  (Invoice only — History, load-plan panels)
   //   read-only, no extra   9 → 9   (nothing merged; chips only)
   const pairRows = useFloorPairRows();
   const pairLive = variant === "live";
@@ -834,6 +848,9 @@ export function FloorTable({
               Operator arm included (its bills are never checked, so the cells
               are empty there): one column set, no new width arm. */}
           <th className={`${HEAD_TH} text-right`}>Article</th>
+          {/* DC (2026-10-09) — the DELIVERY challan, immediately before Status,
+              on the SAME `dcCol` the colgroup and the <td> test. */}
+          {dcCol && <th className={HEAD_TH_NARROW}>DC</th>}
           <th className={HEAD_TH}>Status</th>
         </tr>
       </thead>
@@ -1504,7 +1521,7 @@ export function FloorTable({
         {/* ⚠ `shipToBlock` drops the SHIP TO cell below (and the ☐ cell above,
             via `tickColumn`), and the Route cell reads Area — the same flags
             the colgroup and the <th> row test (count: OBD INV SO Area Due V/KG
-            Tag Art Status = 9 on that arm). */}
+            Tag Art DC Status = 10 on that arm). */}
         {/* THE SHARED THIRD SLOT — Invoice, or Operator on the Tinting tab. One
             condition, `hasExtra`, matching the colgroup and the <th> above; see
             `operatorByOrderId` for why they share rather than sit side by side. */}
@@ -1742,6 +1759,13 @@ export function FloorTable({
         >
           {st === "done" || st === "dispatched" ? (row.articleCount ?? "—") : null}
         </td>
+        {/* DC (2026-10-09) — per OBD, never row-spanned; same `dcCol` as the
+            colgroup and the <th>. TDR keeps a merged block's dashed divider. */}
+        {dcCol && (
+          <td className={`${TDR.replace("px-3.5", "px-1")} text-center`}>
+            <ChallanCell orderId={row.orderId} challanNumber={row.challanNumber} voided={row.challanVoided} />
+          </td>
+        )}
         <td className={TDR}>{statusCell}</td>
       </tr>
     );

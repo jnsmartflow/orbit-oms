@@ -272,6 +272,13 @@ export interface FloorBoardRow extends PickingQueueRow {
   // 6,962 rows, zero exceptions), so an IST render lands on the same calendar
   // day and there is no midnight-rollover class here.
   invoiceDate: string | null;
+  // The DELIVERY CHALLAN (delivery_challans, Tint-owned) — NOT a challan ORDER
+  // (isChallanOrder / the "Challan" tab). Drives the DC column (2026-10-09):
+  // 📎 prints it, "—" when null. One include on the board query (1:1, unique
+  // orderId). Voided = faded 📎; in practice only removed orders carry a voided
+  // challan and the board never shows those, so this is defensive.
+  challanNumber: string | null;
+  challanVoided: boolean;
   /**
    * orders.soNumber — 🔴 FOR SEARCH ONLY, NEVER DISPLAYED (owner decision
    * 2026-09-29). It rides the row so lib/floor/search.ts can match an SO; no

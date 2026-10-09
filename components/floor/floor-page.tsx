@@ -35,6 +35,7 @@ import { ChallanOrdersScreen } from "@/components/challan-orders/challan-orders-
 import { ChallanCountProbe } from "@/components/challan-orders/use-challan-count";
 import { ChallanAlertStrip } from "@/components/challan-orders/challan-alert-strip";
 import { toast } from "sonner";
+import { ChallanPrintProvider } from "./use-challan-print";
 import { TripDesk, isPoolRow } from "./trip-desk";
 import { TripRedeliveryDialog } from "./trip-redelivery-dialog";
 import { TripRedeliveryInfo } from "./trip-redelivery-info";
@@ -3390,6 +3391,9 @@ export function FloorPage({
   );
 
   return (
+    // The DC column's printer (2026-10-09) — ONE engine above every FloorTable,
+    // so the spinner and "one print at a time" survive table re-renders.
+    <ChallanPrintProvider>
     <div className="flex h-screen flex-col overflow-hidden bg-white">
       {/* The old live-sync — mounted only while the live feed is not live. */}
       {legacySyncMounted && (
@@ -3821,6 +3825,7 @@ export function FloorPage({
         />
       )}
     </div>
+    </ChallanPrintProvider>
   );
 }
 

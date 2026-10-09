@@ -832,6 +832,9 @@ const FLOOR_BOARD_INCLUDE = {
   pickEarlyReleasedBy: { select: { name: true } },
   // Direct Loading (v27.52) — who pressed it, for the pill / panel / card line.
   directLoadedBy: { select: { name: true } },
+  // The DC column (2026-10-09) — the delivery challan, two columns. 1:1 on the
+  // UNIQUE delivery_challans.orderId, so one extra statement on that index.
+  challan: { select: { challanNumber: true, isVoided: true } },
   // ⚠ THE ONLY TINT READ ON THIS QUERY, AND IT IS ONE COLUMN. Measured before
   // it was added: +1 statement, 0.05 ms server-side, wall-clock delta below the
   // noise floor (interleaved n=8, alternating lead: -46 ms). `splitId: null` +
@@ -1317,6 +1320,9 @@ export async function getFloorBoard(
       // date-only in practice (all values 00:00:00 UTC, verified live
       // 2026-08-31) — formatting is the renderer's job, not this feed's.
       invoiceDate: order.invoiceDate ? order.invoiceDate.toISOString() : null,
+      // The DC column (2026-10-09) — from the include above.
+      challanNumber: order.challan?.challanNumber ?? null,
+      challanVoided: order.challan?.isVoided ?? false,
       // ⚠ `pickVisibleAt` WAS ON THIS PAYLOAD UNTIL SLICE 8 (2026-09-15). Visibility
       // is decided per TRIP now — see `isAwaitingShow` below — and nothing reads
       // the per-bill column.
