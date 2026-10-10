@@ -262,6 +262,7 @@ async function loadSheetCore(tripIds: number[]): Promise<Map<number, SheetCore>>
       shipToChanged: billToCode !== null && deliveryCode !== null && billToCode !== deliveryCode,
       billToName: blank(billTo?.name),
       soName: blank(soByOrder.get(o.id)?.name),
+      soId: soByOrder.get(o.id)?.salesOfficerId ?? null,
       pickerName: a ? blank(userName.get(a.pickerId)) : null,
       checkerName: checkerId !== null ? blank(userName.get(checkerId)) : null,
       directLoaded,
@@ -301,6 +302,8 @@ async function loadSheetCore(tripIds: number[]): Promise<Map<number, SheetCore>>
     const totals: TripSheetTotals = { stops: stops.length, bills: 0, articles: 0, litres: 0, kg: 0, kgUnknownCount: 0 };
     const captionAreas: string[] = [];
     const soNames: string[] = [];
+    // One entry per PERSON: the master id when known, else the shown name.
+    const soSeen = new Set<string>();
     stops.forEach((s, i) => {
       s.no = i + 1;
       s.bills.sort((a, b) => a.obd.localeCompare(b.obd));
@@ -312,7 +315,13 @@ async function loadSheetCore(tripIds: number[]): Promise<Map<number, SheetCore>>
         const kg = loadKg(b.kg, b.gift);
         if (kg === null) totals.kgUnknownCount += 1;
         else totals.kg += kg;
-        if (b.soName !== null && !soNames.includes(b.soName)) soNames.push(b.soName);
+        if (b.soName !== null) {
+          const key = b.soId !== null ? `id:${b.soId}` : `name:${b.soName.toLowerCase()}`;
+          if (!soSeen.has(key)) {
+            soSeen.add(key);
+            soNames.push(b.soName);
+          }
+        }
       }
     });
     out.set(tripId, { stops, totals, captionAreas, soNames });

@@ -87,13 +87,14 @@ import type {
   FloorOilSkus,
   FloorSalesOfficerSource,
 } from "./types";
-// Whose bill it is — the challan's SO cascade and the mail-order name rule,
-// shared so Floor and the challan can never name two people for one bill.
-import {
-  SO_CASCADE_SELECT,
-  resolveSalesOfficer,
-  mailOrderSalesOfficer,
-} from "@/lib/customers/sales-officer";
+// Whose bill it is — the mail-order name rule (displaySoName + the Telecaller
+// mailboxes), shared with the challan's module. The customer-master cascade is
+// Floor's OWN copy (./sales-officer) in the challan's arm order: it also reads
+// the master's id + "displayName", which the challan must never show (owner,
+// 2026-10-10). Free-text names go through the alias dictionary.
+import { mailOrderSalesOfficer } from "@/lib/customers/sales-officer";
+import { FLOOR_SO_CASCADE_SELECT, floorSoCascade, masterShownName } from "./sales-officer";
+import { resolveSoNames } from "@/lib/sales-officer/resolve";
 // Pure (no prisma, no clock) — the one owner of "which division is this bill".
 import { divisionOf } from "./division-blocks";
 // One invoice, several OBDs (2026-10-08) — pure, no prisma.
@@ -594,10 +595,19 @@ export async function getFloorDuplicateSoNumbers(soNumbers: (string | null)[]): 
 }
 
 export interface FloorSalesOfficer {
+  /** As SHOWN: the master's "displayName" (else its name) when the person is
+   *  known; else the free text as today (displaySoName), or "Telecaller". */
   name: string;
   source: FloorSalesOfficerSource;
-  /** Master source only (the challan's phone); null for a mail order. */
+  /** The master's phone when the person is known (any source); a matched
+   *  ship-to contact keeps its own phone first. Null otherwise. */
   phone: string | null;
+  /** sales_officer_master.id when the person is known (master arm or an alias
+   *  match); null for unmatched free text and the Telecaller label. */
+  salesOfficerId: number | null;
+  /** The text the name came from — the mail order's soName, the master's full
+   *  name, or the contact's name. SEARCH ONLY: matched beside `name`, never shown. */
+  rawName: string | null;
 }
 
 /** Divisions whose SO comes from CUSTOMER MASTER — the person the delivery
@@ -609,15 +619,24 @@ const MASTER_SO_DIVISIONS = new Set(["74", "77"]);
  * keyed by `orders.id`. Chosen BY DIVISION (`divisionOf`, off `orders.smu`):
  *
  *   74 Decorative Projects / 77 Retail Offtake → CUSTOMER MASTER: the
- *     challan's cascade (resolveSalesOfficer) on the SHIP-TO point,
+ *     challan's cascade, in the challan's arm order (Floor's copy,
+ *     floorSoCascade in ./sales-officer), on the SHIP-TO point,
  *     `shipToOverrideCustomerId ?? customerId` — the redirect wins, exactly as
  *     the challan resolves it.
  *   every other bill → the MAIL ORDER: `orders.soNumber = mo_orders.soNumber`,
- *     newest `createdAt` wins (the rule applyMailOrderEnrichment uses), shown
- *     through displaySoName; a depot mailbox reads "Telecaller".
+ *     newest `createdAt` wins (the rule applyMailOrderEnrichment uses); a
+ *     depot mailbox reads "Telecaller".
  *
- * At most TWO reads, each keyed `IN (…)` and skipped when its list is empty —
- * the same post-fetch shape as billToByObd above. SELECT-only, no predicate
+ * SHORT NAMES (2026-10-10). A known person shows the master's "displayName"
+ * (else its full name) and the master's phone: a master arm directly, and a
+ * free-text name (the mail order's soName, an arm-c contact) when the alias
+ * dictionary matches it (lib/sales-officer/resolve.ts). An unmatched name is
+ * shown as before, through displaySoName. 🔴 The delivery challan does NOT
+ * take short names (owner) — it keeps its own cascade and full name.
+ *
+ * At most THREE reads, each keyed `IN (…)`/`unnest` and skipped when its list
+ * is empty — mo_orders, delivery_point_master, then ONE alias-resolver call
+ * over every free-text name. The same post-fetch shape as billToByObd above. SELECT-only, no predicate
  * term, no `orders.update`, so the board and the live marker stay on the one
  * shared `floorBoardWhere` (FLOOR §3/§5/§10). The mo_orders read is served by
  * `mo_orders_soNumber_idx` (Schema v27.59); before that index it scanned the
@@ -662,9 +681,19 @@ export async function salesOfficerByOrder(
       if (m.soNumber && !soNameBySo.has(m.soNumber)) soNameBySo.set(m.soNumber, m.soName);
     }
   }
+  // Free text waiting for the ONE resolver call below, per order.
+  const pendingMail: Array<{ orderId: number; raw: string; fallback: string }> = [];
+  const pendingContact: Array<{ orderId: number; raw: string; phone: string | null }> = [];
   for (const o of mailOrders) {
-    const so = o.soNumber ? mailOrderSalesOfficer(soNameBySo.get(o.soNumber)) : null;
-    if (so) result.set(o.id, { name: so.name, source: so.source, phone: null });
+    const raw = o.soNumber ? soNameBySo.get(o.soNumber) : undefined;
+    const so = mailOrderSalesOfficer(raw);
+    if (!so || raw === undefined) continue;
+    // Telecaller first, unchanged — a depot mailbox is never a person.
+    if (so.source === "telecaller") {
+      result.set(o.id, { name: so.name, source: "telecaller", phone: null, salesOfficerId: null, rawName: raw });
+    } else {
+      pendingMail.push({ orderId: o.id, raw, fallback: so.name });
+    }
   }
 
   // ── Customer master — the challan's cascade on the ship-to ───────────────
@@ -675,14 +704,45 @@ export async function salesOfficerByOrder(
   if (pointIds.length > 0) {
     const points = await prisma.delivery_point_master.findMany({
       where: { id: { in: pointIds } },
-      select: { id: true, ...SO_CASCADE_SELECT },
+      select: { id: true, ...FLOOR_SO_CASCADE_SELECT },
     });
     const pointById = new Map(points.map((p) => [p.id, p]));
     for (const o of masterOrders) {
       const pid = pointIdOf(o);
-      const so = pid !== null ? resolveSalesOfficer(pointById.get(pid)) : null;
-      if (so) result.set(o.id, { name: so.name, source: "master", phone: so.phone });
+      const hit = pid !== null ? floorSoCascade(pointById.get(pid)) : null;
+      if (hit?.kind === "master") {
+        result.set(o.id, {
+          name: masterShownName(hit.master),
+          source: "master",
+          phone: hit.master.phone,
+          salesOfficerId: hit.master.id,
+          rawName: hit.master.name,
+        });
+      } else if (hit?.kind === "contact") {
+        pendingContact.push({ orderId: o.id, raw: hit.name, phone: hit.phone });
+      }
     }
+  }
+
+  // ── Free text → the person — ONE batched alias read ──────────────────────
+  const known = await resolveSoNames([...pendingMail.map((p) => p.raw), ...pendingContact.map((p) => p.raw)]);
+  for (const p of pendingMail) {
+    const m = known.get(p.raw);
+    result.set(
+      p.orderId,
+      m
+        ? { name: m.displayName, source: "mail", phone: m.phone, salesOfficerId: m.salesOfficerId, rawName: p.raw }
+        : { name: p.fallback, source: "mail", phone: null, salesOfficerId: null, rawName: p.raw },
+    );
+  }
+  for (const p of pendingContact) {
+    const m = known.get(p.raw);
+    result.set(
+      p.orderId,
+      m
+        ? { name: m.displayName, source: "master", phone: p.phone ?? m.phone, salesOfficerId: m.salesOfficerId, rawName: p.raw }
+        : { name: p.raw, source: "master", phone: p.phone, salesOfficerId: null, rawName: p.raw },
+    );
   }
 
   return result;
@@ -1316,6 +1376,7 @@ export async function getFloorBoard(
       salesOfficerName: salesOfficers.get(order.id)?.name ?? null,
       salesOfficerSource: salesOfficers.get(order.id)?.source ?? null,
       salesOfficerPhone: salesOfficers.get(order.id)?.phone ?? null,
+      salesOfficerRawName: salesOfficers.get(order.id)?.rawName ?? null,
       // ISO for the wire, like every other date on this payload. The column is
       // date-only in practice (all values 00:00:00 UTC, verified live
       // 2026-08-31) — formatting is the renderer's job, not this feed's.

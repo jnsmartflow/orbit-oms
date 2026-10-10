@@ -75,8 +75,12 @@ export interface TripSheetBill {
   billToName: string | null;
 
   // ── PHONE ONLY (2026-10-10). Never printed on the A4 sheet, never in the caption. ──
-  /** Sales Officer — Floor's own rule, salesOfficerByOrder (lib/floor/queries.ts). */
+  /** Sales Officer — Floor's own rule, salesOfficerByOrder (lib/floor/queries.ts):
+   *  the master's short "displayName" when the person is known (2026-10-10). */
   soName: string | null;
+  /** sales_officer_master.id when the person is known, else null — the trip's
+   *  SO line de-duplicates by it, so two spellings of one person show once. */
+  soId: number | null;
   /** pick_assignments.picker_id → users.name. Null on a Direct Loaded bill (no picker). */
   pickerName: string | null;
   /** Who checked it: pick_assignments.checked_by_id → users.name, or the Direct Loading

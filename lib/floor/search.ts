@@ -56,6 +56,9 @@ export interface Searchable {
   /** The Sales Officer as the SO column shows it (2026-10-06) — text mode
    *  only. Optional: board rows carry it, Hold / Cancelled rows do not. */
   salesOfficerName?: string | null;
+  /** The text that SO name came from (2026-10-10) — matched too, so a short
+   *  name ("Roopesh") is still found by the long one ("Jha"). */
+  salesOfficerRawName?: string | null;
 }
 
 /** Invoice and SO need at least this many digits — a shorter tail is too
@@ -107,6 +110,7 @@ function matchesText(row: Searchable, text: string): boolean {
     row.dealerName.toLowerCase().includes(text) ||
     (row.route ?? "").toLowerCase().includes(text) ||
     (row.salesOfficerName ?? "").toLowerCase().includes(text) ||
+    (row.salesOfficerRawName ?? "").toLowerCase().includes(text) ||
     // The synthetic term, as lib/picking/search.ts keeps it: "" for a bill in
     // master (matches nothing), "unmatched" for one that is not — so the word
     // still finds these bills whatever name the row happens to print.

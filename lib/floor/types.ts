@@ -295,13 +295,17 @@ export interface FloorBoardRow extends PickingQueueRow {
    * DIVISION (`divisionOf`): 74 / 77 → customer master, the cascade the
    * delivery challan prints; every other bill → its mail order's `soName`
    * ONLY (newest per SO), depot mailboxes shown as "Telecaller". Resolved by
-   * `salesOfficerByOrder` (lib/floor/queries.ts) through
-   * lib/customers/sales-officer.ts. Null = not found ("—").
+   * `salesOfficerByOrder` (lib/floor/queries.ts). A known person shows the
+   * master's "displayName" (2026-10-10, alias dictionary); unmatched free text
+   * shows as before. Null = not found ("—").
    */
   salesOfficerName: string | null;
   salesOfficerSource: FloorSalesOfficerSource | null;
-  /** Master source only (the challan's phone) — for the detail panel. */
+  /** The master's phone when the person is known — for the detail panel. */
   salesOfficerPhone: string | null;
+  /** SEARCH ONLY — the text the SO name came from (mail order soName, master
+   *  full name, contact name), so "Jha" still finds a bill shown as "Roopesh". */
+  salesOfficerRawName: string | null;
   // ── Show to floor, PER TRIP (slice 8, 2026-09-15) ─────────────────────────
   // `pickVisibleAt` (the per-bill handover stamp) was here until slice 8 and is
   // gone: the desk shows the supervisor one TRUCK at a time now.

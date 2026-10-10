@@ -16,6 +16,7 @@ import { getTodayIST } from "@/lib/dates";
 import { getTripSummariesByIds, parseTripDate } from "@/lib/trips/queries";
 import { salesOfficerByOrder } from "@/lib/floor/queries";
 import { loadBillToByObd } from "@/lib/reports/bill-facts";
+import { displaySoName } from "@/lib/mail-orders/utils";
 import { blank, listRowsFor, vehicleNoFor } from "./load";
 import type { TripSheetMatchField, TripSheetSearchHit } from "./types";
 
@@ -93,6 +94,12 @@ export async function searchTripSheets(q: string): Promise<TripSheetSearchHit[]>
   const tripOf = (o: { tripDropId: number | null }) => (o.tripDropId !== null ? tripIdByDrop.get(o.tripDropId) : undefined);
   for (const o of orders) consider(tripOf(o), "dealer", billToByObd.get(o.obdNumber)?.name);
   for (const o of orders) consider(tripOf(o), "so", soByOrder.get(o.id)?.name);
+  // The SO's long name too (2026-10-10): a bill shown as "Roopesh" is still found
+  // by "Jha". The hit shows that long name, title-cased, "(JSW)" dropped.
+  for (const o of orders) {
+    const raw = soByOrder.get(o.id)?.rawName;
+    consider(tripOf(o), "so", raw ? displaySoName(raw) : null);
+  }
   for (const o of orders) consider(tripOf(o), "invoice", o.invoiceNo);
   for (const o of orders) consider(tripOf(o), "obd", o.obdNumber);
   if (hit.size === 0) return [];
