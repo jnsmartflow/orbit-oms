@@ -29,14 +29,35 @@ export function driverFirstName(name: string | null): string | null {
   return first ? first : null;
 }
 
+/** "2026-10-10" → "10 Oct" (the sheet's own date, read UTC-anchored). */
+function dayMonth(isoDate: string): string {
+  return new Date(isoDate + "T00:00:00Z").toLocaleDateString("en-GB", { day: "2-digit", month: "short", timeZone: "UTC" });
+}
+
+/**
+ * The caption, owner's 5-line format (2026-10-10):
+ *
+ *   🚚 L-261010-02
+ *   🕐 10 Oct 10:30 AM
+ *   👤 Prahalad · 7984732765
+ *   📦 2 stops
+ *   📍 Adajan
+ *
+ * No word "Trip" and no delivery type. Date = the sheet's trip date; time = the
+ * sheet's time (manualDispatchAt IST, else the slot window) — no time → the date
+ * alone. No phone → "👤 {name}"; no driver → the line is skipped. N = the stops
+ * on the sheet. Areas = unique, in sheet order; no areas → the line is skipped.
+ */
 export function buildTripSheetCaption(sheet: TripSheet): string {
   const h = sheet.header;
+  const lines: string[] = [`🚚 ${h.tripNumber}`];
   const time = to12h(h.timeLabel);
-  const lines: string[] = [time ? `🕐 ${time} · ${h.tripNumber}` : `🕐 ${h.tripNumber}`];
-  const who = [driverFirstName(h.driverName), h.driverPhone].filter((s): s is string => !!s).join(" ");
-  if (who) lines.push(who);
+  lines.push(`🕐 ${dayMonth(h.tripDate)}${time ? ` ${time}` : ""}`);
+  const first = driverFirstName(h.driverName);
+  if (first) lines.push(h.driverPhone ? `👤 ${first} · ${h.driverPhone}` : `👤 ${first}`);
   const n = sheet.totals.stops;
-  const areas = sheet.captionAreas.map((a) => smartTitleCase(a)).join(", ");
-  lines.push(`${n} ${n === 1 ? "stop" : "stops"}${areas ? ` · ${areas}` : ""}`);
+  lines.push(`📦 ${n} ${n === 1 ? "stop" : "stops"}`);
+  const areas = sheet.captionAreas.map((a) => smartTitleCase(a)).filter(Boolean).join(", ");
+  if (areas) lines.push(`📍 ${areas}`);
   return lines.join("\n");
 }

@@ -70,9 +70,8 @@ export function TripSheetScreen({
     }
   }
 
-  // "{Driver full name} · {vehicle} · {time}" — driver first (2026-10-10), the trip SNAPSHOT.
+  // The driver, title-cased — the trip's SNAPSHOT (trips.driverName / driverPhone).
   const driverName = smartTitleCase(h.driverName);
-  const subline = [driverName || "No driver", h.vehicleNo ?? (h.isHand ? "Hand" : "No vehicle"), h.timeLabel ?? "—"].join(" · ");
 
   return (
     <RoleLayoutClient role={role} userName={userName} userInitials={userInitials} navItems={navItems} hideBar>
@@ -90,11 +89,16 @@ export function TripSheetScreen({
             >
               <ChevronLeft size={20} />
             </Link>
+            {/* Trip no · driver full name · driver phone (2026-10-10) — the
+                vehicle and time left the masthead; they are on the sheet. */}
             <div className="min-w-0 flex-1">
               <h1 className="font-mono text-[17px] font-extrabold text-brand-600 tracking-tight truncate">{h.tripNumber}</h1>
-              <div className="flex items-center gap-2 min-w-0">
-                <p className="truncate text-[11.5px] font-medium text-ink-500 tabular-nums">{subline}</p>
-              </div>
+              <p className={`truncate text-[13px] font-medium ${driverName ? "text-ink-900" : "text-ink-400"}`}>
+                {driverName || "No driver"}
+              </p>
+              {h.driverPhone && (
+                <p className="truncate font-mono text-[11.5px] text-ink-500 tabular-nums">{h.driverPhone}</p>
+              )}
             </div>
             {!h.isHand && <CallButton phone={h.driverPhone} name={driverName || null} />}
           </div>

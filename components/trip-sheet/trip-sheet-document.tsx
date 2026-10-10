@@ -27,6 +27,12 @@ export interface OrbitTripSheetDocumentProps {
   sheet: TripSheet;
   /** The print route passes "orbit-trip-sheet-print-area"; a hidden capture copy omits it. */
   printAreaId?: string;
+  /**
+   * The WhatsApp image (2026-10-10): NO blank filler rows — the table ends after
+   * the last bill and the totals row sits directly under it. Everything else is
+   * identical. The print route leaves this false (full A4 with filler rows).
+   */
+  compact?: boolean;
 }
 
 /** Rows are padded with blank ledger lines to this many — sized like the NTS sheet so header + table + bottom band ≈ one A4 page. */
@@ -197,7 +203,7 @@ function BillRow({ bill, stopNo, stopName, area, first }: {
   );
 }
 
-export function OrbitTripSheetDocument({ sheet, printAreaId }: OrbitTripSheetDocumentProps) {
+export function OrbitTripSheetDocument({ sheet, printAreaId, compact = false }: OrbitTripSheetDocumentProps) {
   const { header: h, stops, totals } = sheet;
   const driver = smartTitleCase(h.driverName) || "—";
   const rowCount = totals.bills;
@@ -301,7 +307,7 @@ export function OrbitTripSheetDocument({ sheet, printAreaId }: OrbitTripSheetDoc
                   <BillRow key={`${s.dropId}-${b.orderId}`} bill={b} stopNo={s.no} stopName={s.name} area={s.area} first={i === 0} />
                 )),
               )}
-              {Array.from({ length: Math.max(0, MIN_ROWS - rowCount) }).map((_, i) => (
+              {Array.from({ length: compact ? 0 : Math.max(0, MIN_ROWS - rowCount) }).map((_, i) => (
                 <tr key={`blank-${i}`}>
                   {Array.from({ length: 7 }).map((__, c) => (
                     <td key={c} style={{ height: 30, borderBottom: `1px solid ${BLANK_BORDER}` }} />

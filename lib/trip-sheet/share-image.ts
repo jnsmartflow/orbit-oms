@@ -42,7 +42,9 @@ async function captureSheet(sheet: TripSheet): Promise<Blob> {
   try {
     await new Promise<void>((resolve) => {
       // No printAreaId — the hidden copy must never be revealed by a stray print.
-      root.render(createElement(OrbitTripSheetDocument, { sheet }));
+      // compact: no blank filler rows in the image (2026-10-10) — the print
+      // route keeps them. Every logo precaution below is unchanged.
+      root.render(createElement(OrbitTripSheetDocument, { sheet, compact: true }));
       requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
     });
 
