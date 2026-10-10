@@ -1117,7 +1117,13 @@ function MissingCustomerRow({ row: r, onOpen }: { row: FloorBoardRow; onOpen: ()
   const billTo = r.billToName?.trim() || null;
   const obdIso = r.obdDateTime instanceof Date ? r.obdDateTime.toISOString() : r.obdDateTime;
   return (
-    <button type="button" className="block w-full cursor-pointer px-4 py-3 text-left hover:bg-ink-25" onClick={onOpen}>
+    // Between bills: a SOLID ink-200 line, a step darker than the dashed ink-100
+    // one inside the row, so two bills never read as one block (owner, 2026-10-10).
+    <button
+      type="button"
+      className="block w-full cursor-pointer border-t border-ink-200 px-4 py-4 text-left first:border-t-0 hover:bg-ink-25"
+      onClick={onOpen}
+    >
       <span className="flex items-baseline justify-between gap-2">
         <span className="min-w-0 truncate text-[13px] font-semibold text-ink-900">{r.dealerName}</span>
         <span className="shrink-0 text-[13px] font-semibold tabular-nums text-ink-900">
@@ -1215,7 +1221,8 @@ function MissingCustomerCard({ rows, onOpenDetail }: { rows: FloorBoardRow[]; on
         </span>
         <StatusRing rows={counted} label={rows.length} />
       </div>
-      <div className="flex flex-1 flex-col py-1.5 [&>*+*]:shadow-[inset_0_1px_0_#f3f4f7]">
+      {/* The line between rows is MissingCustomerRow's own border-t. */}
+      <div className="flex flex-1 flex-col py-1.5">
         {sort(rows).map((r) => (
           <MissingCustomerRow key={r.orderId} row={r} onOpen={() => onOpenDetail(r.orderId)} />
         ))}
