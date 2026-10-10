@@ -9,7 +9,7 @@
 // READ-ONLY. The sheet arrives from the server page; Share captures it from
 // memory — no fetch, no write.
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { CheckCircle2, ChevronLeft, Loader2, PackageCheck, UserRound } from "lucide-react";
 import { toast } from "sonner";
@@ -42,14 +42,25 @@ export function TripSheetScreen({
 }) {
   const h = sheet.header;
   const [sharing, setSharing] = useState(false);
+  // The capture code + the inlined logo (~140 KB) are a separate chunk so the
+  // screen paints without them — but they are fetched as soon as the screen
+  // MOUNTS, not on the tap (2026-10-10): the logo string is in memory before the
+  // hidden sheet renders, and the tap does not spend iOS's share gesture window
+  // on a network fetch. The tap awaits the same promise.
+  const shareModule = useRef<Promise<typeof import("@/lib/trip-sheet/share-image")> | null>(null);
+  useEffect(() => {
+    if (h.isHand) return;
+    shareModule.current = import("@/lib/trip-sheet/share-image");
+    shareModule.current.catch(() => {
+      shareModule.current = null; // retried on the tap
+    });
+  }, [h.isHand]);
 
   async function onShare() {
     if (sharing) return;
     setSharing(true);
     try {
-      // Loaded on the first tap: the capture code + the inlined logo (~140 KB)
-      // never weigh on the screen itself.
-      const { shareTripSheet } = await import("@/lib/trip-sheet/share-image");
+      const { shareTripSheet } = await (shareModule.current ?? import("@/lib/trip-sheet/share-image"));
       const outcome = await shareTripSheet(sheet);
       if (outcome === "downloaded") toast("Image downloaded and caption copied — attach it in WhatsApp");
     } catch (err) {
@@ -82,11 +93,6 @@ export function TripSheetScreen({
               <h1 className="font-mono text-[17px] font-extrabold text-brand-600 tracking-tight truncate">{h.tripNumber}</h1>
               <div className="flex items-center gap-2 min-w-0">
                 <p className="truncate text-[11.5px] font-medium text-ink-500 tabular-nums">{subline}</p>
-                {h.provisional && !h.isHand && (
-                  <span className="shrink-0 rounded-full bg-warn-bg px-[7px] py-px text-[10px] font-bold tracking-wide text-warn-text">
-                    PROVISIONAL
-                  </span>
-                )}
               </div>
             </div>
           </div>

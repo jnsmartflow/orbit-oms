@@ -218,15 +218,19 @@ export function OrbitTripSheetDocument({ sheet, printAreaId }: OrbitTripSheetDoc
           color: "#111827",
         }}
       >
-        {/* ── HEADER — logo | TRIP SHEET | (PROVISIONAL) trip no + date · time ── */}
+        {/* ── HEADER — logo | TRIP SHEET | trip no + date · time ── */}
         <div style={{ display: "flex", alignItems: "center", padding: "18px 24px", borderBottom: `2px solid ${BORDER_HEAVY}` }}>
           <div style={{ flexShrink: 0 }}>
             <img
               src={ORBIT_SHEET_LOGO_DATA_URI}
               alt="JSW Dulux"
               // Data URI AND explicit 141×34, both required (header comment).
+              // eager + sync decode: the share capture clones this node right
+              // after mount, so the bitmap must never be deferred.
               width={141}
               height={34}
+              loading="eager"
+              decoding="sync"
               style={{ height: 34, width: 141, display: "block" }}
             />
           </div>
@@ -234,23 +238,6 @@ export function OrbitTripSheetDocument({ sheet, printAreaId }: OrbitTripSheetDoc
             <div style={{ fontSize: 17, fontWeight: 700, letterSpacing: "0.34em" }}>TRIP SHEET</div>
           </div>
           <div style={{ flexShrink: 0, textAlign: "right", minWidth: 140 }}>
-            {h.provisional && (
-              <div
-                style={{
-                  display: "inline-block",
-                  marginBottom: 4,
-                  padding: "1px 6px",
-                  border: "1px solid #E11D48",
-                  borderRadius: 3,
-                  fontSize: 8,
-                  fontWeight: 700,
-                  letterSpacing: "0.12em",
-                  color: "#E11D48",
-                }}
-              >
-                PROVISIONAL
-              </div>
-            )}
             <div style={{ fontSize: 14, fontWeight: 700, fontFamily: MONO }}>{h.tripNumber}</div>
             <div style={{ fontSize: 10.5, color: "#94a3b8", marginTop: 3 }}>
               {formatSheetDate(h.tripDate)} &middot; {h.timeLabel ?? "—"}

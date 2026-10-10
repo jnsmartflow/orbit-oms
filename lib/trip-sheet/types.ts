@@ -18,6 +18,8 @@ export type ArticleSource =
   /** import_obd_query_summary.totalArticle — SAP's count (or none at all). */
   | "sap";
 
+export type TripSheetPending = null | "picking" | "vehicle" | "both";
+
 export interface TripSheetHeader {
   id: number;
   tripNumber: string;
@@ -36,8 +38,13 @@ export interface TripSheetHeader {
   transporterName: string | null;
   /** A Hand trip (dealer collects) — spec §3: no sheet, no Share. The UI decides; the loader still answers. */
   isHand: boolean;
-  /** No vehicle, OR picking not done (the trip's own isReady). */
-  provisional: boolean;
+  /**
+   * What the trip is still waiting on — DATA ONLY, displayed nowhere (owner,
+   * 2026-10-10: the PROVISIONAL mark was removed from the sheet and the phone).
+   * "vehicle" = no vehicleId and no typed plate; "picking" = not isReady;
+   * "both"; null = neither.
+   */
+  pending: TripSheetPending;
   /** The trip's own isReady (lib/trips/queries.ts), exposed for the list chip. */
   isReady: boolean;
 }

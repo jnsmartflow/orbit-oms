@@ -123,7 +123,7 @@ function headerFor(t: TripSummary): TripSheetHeader {
     driverPhone: blank(t.driverPhone),
     transporterName: blank(t.transporterName),
     isHand: t.isHand,
-    provisional: !hasVehicle || !t.isReady,
+    pending: !hasVehicle && !t.isReady ? "both" : !hasVehicle ? "vehicle" : !t.isReady ? "picking" : null,
     isReady: t.isReady,
   };
 }

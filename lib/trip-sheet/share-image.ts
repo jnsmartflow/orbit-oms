@@ -6,9 +6,12 @@
 // §6), re-implemented here so nothing imports the NTS code:
 //   - render <OrbitTripSheetDocument> into a hidden SAME-DOCUMENT div — never an
 //     iframe: html-to-image cannot capture a node from another realm;
-//   - wait two frames, then await every <img> decode, so the logo (a data URI
-//     with an explicit 141×34) is never captured blank;
-//   - toBlob at pixelRatio 2, cacheBust false.
+//   - an off-screen container that is still PAINTED (opacity 1, never
+//     display:none / visibility:hidden);
+//   - wait two frames, await every <img> decode, then one more frame, so the
+//     logo (a data URI with an explicit 141×34, eager + sync decode) is ready;
+//   - toBlob at pixelRatio 2, cacheBust false — TWICE, keeping the second
+//     (the WebKit first-draw quirk, see captureSheet).
 // The data is the TripSheet already in memory — no fetch.
 
 import { createElement } from "react";
@@ -18,12 +21,21 @@ import { OrbitTripSheetDocument } from "@/components/trip-sheet/trip-sheet-docum
 import { buildTripSheetCaption } from "./caption";
 import type { TripSheet } from "./types";
 
+const nextFrame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+
+const CAPTURE_OPTIONS = { pixelRatio: 2, backgroundColor: "#ffffff", cacheBust: false } as const;
+
 async function captureSheet(sheet: TripSheet): Promise<Blob> {
+  // Off-screen but PAINTED: fixed, far left, fully opaque. Never display:none or
+  // visibility:hidden — WebKit skips decoding/painting images in a box it is
+  // not rendering, and the capture then clones an unpainted logo.
   const container = document.createElement("div");
   container.style.position = "fixed";
   container.style.left = "-10000px";
   container.style.top = "0";
   container.style.width = "210mm";
+  container.style.opacity = "1";
+  container.style.pointerEvents = "none";
   document.body.appendChild(container);
   const root = createRoot(container);
 
@@ -37,6 +49,7 @@ async function captureSheet(sheet: TripSheet): Promise<Blob> {
     const node = container.querySelector(".orbit-trip-sheet-inner") as HTMLElement | null;
     if (!node) throw new Error("Trip sheet did not render");
 
+    // EVERY image decoded before the capture (decode(), falling back to load).
     await Promise.all(
       Array.from(node.querySelectorAll("img")).map(async (img) => {
         try {
@@ -44,7 +57,7 @@ async function captureSheet(sheet: TripSheet): Promise<Blob> {
         } catch {
           // decode() can reject on some engines for a valid image — fall back
           // to the load event and never block the capture on one image.
-          if (img.complete) return;
+          if (img.complete && img.naturalWidth > 0) return;
           await new Promise<void>((resolve) => {
             img.addEventListener("load", () => resolve(), { once: true });
             img.addEventListener("error", () => resolve(), { once: true });
@@ -52,8 +65,19 @@ async function captureSheet(sheet: TripSheet): Promise<Blob> {
         }
       }),
     );
+    await nextFrame();
 
-    const blob = await toBlob(node, { pixelRatio: 2, backgroundColor: "#ffffff", cacheBust: false });
+    // 🔴 CAPTURED TWICE, THE FIRST RESULT THROWN AWAY — the known WebKit
+    // first-draw quirk (2026-10-10). html-to-image serialises the node into an
+    // SVG <foreignObject> and draws that onto a canvas; on iOS Safari the
+    // <img> inside the foreignObject is often NOT painted on the FIRST draw of
+    // that SVG, even with a data URI, an explicit 141×34 and a resolved
+    // decode(). The second draw has it. That is the symptom reported (logo
+    // missing in the PNG, present on the print page, which never goes through
+    // foreignObject). Costs one extra capture (~a few hundred ms). Do not
+    // "optimise" back to one call.
+    await toBlob(node, CAPTURE_OPTIONS);
+    const blob = await toBlob(node, CAPTURE_OPTIONS);
     if (!blob) throw new Error("The image came back empty");
     return blob;
   } finally {
