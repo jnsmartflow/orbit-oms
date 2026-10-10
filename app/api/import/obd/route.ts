@@ -18,6 +18,7 @@ import type {
   PasteUnresolvedCustomer,
 } from "@/lib/import-types";
 import { upsertObd, resolveSmuFromDivision } from "@/lib/import-upsert";
+import { createSapInvoiceRowsForObds, syncSapInvoiceRow } from "@/lib/order-invoices/sap-row";
 import { resolveArrivalSlotId } from "@/lib/slots/slot-ruler";
 import { resolveLegacySlot } from "@/lib/dispatch/legacy-slot";
 import { evaluateDispatchSlot } from "@/lib/dispatch/dispatch-engine";
@@ -1529,6 +1530,9 @@ async function handleConfirm(req: Request, session: Session): Promise<NextRespon
       data: orderInterims.map((o) => o.orderData),
     });
     ordersCreated = orderInterims.length;
+    // Add invoices (v27.63): every new order gets its seq-1 'sap' row. Never
+    // throws — a failure is logged and repaired by the DDL file's PART 3.
+    await createSapInvoiceRowsForObds(confirmedObdNumbers);
   } catch (err) {
     await prisma.import_batches
       .update({ where: { id: batchId }, data: { status: "failed" } })
@@ -4045,6 +4049,8 @@ async function processAutoImportRows(
   try {
     await prisma.orders.createMany({ data: autoOrderInterims.map((o) => o.orderData) });
     ordersCreated = autoOrderInterims.length;
+    // Add invoices (v27.63): the seq-1 'sap' row — see the manual-template site.
+    await createSapInvoiceRowsForObds(confirmedObdNumbers);
   } catch (err) {
     await prisma.import_batches
       .update({ where: { id: batchId }, data: { status: "failed" } })
@@ -4613,6 +4619,10 @@ async function handleAutoImportPatchHeaders(req: Request): Promise<NextResponse>
         where: { id: existing.id },
         data:  updateData as Prisma.ordersUpdateInput,
       });
+      // Add invoices (v27.63): mirror the fill into the seq-1 'sap' row, same
+      // null-only rule. A SEPARATE table, so this is not a second orders.update
+      // and does not touch the live-sync marker (see c. above). Never throws.
+      if (invoiceTouched) await syncSapInvoiceRow(existing.id);
     }
   }
 

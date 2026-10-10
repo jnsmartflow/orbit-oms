@@ -340,6 +340,10 @@ model users {
   // above, and the opposite of the Mrn*/PickFinding*/CiReturn* clusters, which
   // have several FKs each and MUST stay named on both sides (CORE §7.3).
   pageAccess                  user_page_access[]
+  // Add invoices (2026-10-10, v27.63) — who typed a manual invoice. One FK from
+  // order_invoices, NAMED anyway in the CiReturnOrder style: a later per-invoice
+  // hold/dispatch actor would be a second FK, and the name costs nothing now.
+  orderInvoicesCreated        order_invoices[]         @relation("OrderInvoiceCreatedBy")
 }
 
 // Per-user page permissions — the table the role→user access conversion is
@@ -1049,6 +1053,9 @@ model import_raw_line_items {
   // Picking finding (2026-08-07). SINGULAR + optional, not a list: the FK side
   // carries @unique (pick_findings_rawLineItemId_key), so this is one-to-one.
   pickFinding         pick_findings?
+  // Add invoices (2026-10-10, v27.63) — this line's share on each invoice of a
+  // SPLIT OBD. Empty for an unsplit OBD ("no line rows" = all lines).
+  orderInvoiceLines   order_invoice_lines[]       @relation("OrderInvoiceLineRawLine")
 
   @@index([obdNumber, lineStatus])
 }
@@ -1185,6 +1192,10 @@ model orders {
   // Billing Print v2 (2026-10-05, Schema v27.56) — this bill copied on a trip.
   // A STORED LINK: copying never writes this order (lib/billing/print.ts).
   tripBillCopies           trip_bill_copies[]        @relation("TripBillCopyOrder")
+  // Add invoices (2026-10-10, Schema v27.63) — EVERY order has a seq-1 row that
+  // mirrors invoiceNo/invoiceDate above; a split OBD has more. Phase 1: written
+  // on create and on invoice fill only, read by nothing yet.
+  invoices                 order_invoices[]          @relation("OrderInvoiceOrder")
   // TM Remove OBD (Feature 1)
   isRemoved                Boolean                   @default(false)
   removalReason            String?
@@ -1373,6 +1384,83 @@ model orders {
   // Challan orders (2026-10-06, v27.60) — orders_challanOrderId_idx, Prisma's
   // default name, so no `map:`. Backs the FK and "the SAP bills of this challan".
   @@index([challanOrderId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ADD INVOICES — Phase 1, DATA ONLY (2026-10-10, Schema v27.63,
+// sql/2026-10-10-order-invoices-ddl.sql, run live by the owner 2026-10-10 and
+// verified by its PART 4: 18,109 orders = 18,109 seq-1 rows, 0 mismatches).
+//
+// SAP sometimes bills ONE OBD as SEVERAL invoices; import delivers only one.
+// MODEL A (owner, 2026-10-09): EVERY order has order_invoices rows.
+//   · Unsplit OBD = exactly ONE row (seq 1, source 'sap') and NO line rows —
+//     "no line rows" MEANS "all lines of the OBD".
+//   · Split OBD = n rows (seq 1 stays the SAP invoice) + order_invoice_lines.
+//   · orders.invoiceNo STAYS the SAP invoice; order_invoices seq 1 MIRRORS it.
+//     Every writer of orders.invoiceNo also writes the seq-1 row
+//     (lib/order-invoices/sap-row.ts), with the same null-only rule.
+//
+// 🔴 NO @@unique([orderId, invoiceNo]) — EVER. The identity is (orderId, seq) so a
+// later "Split load" can make one invoice two rows. "Same number twice on one
+// OBD" is the app's refusal, not the database's.
+//
+// ⚠ NOTHING ON A SCREEN READS THESE YET, so they carry NO live_changes trigger.
+// The trigger goes on with the first screen read (CORE §13, LIVE FEED).
+//
+// LIVE CHECKs — NOT EXPRESSIBLE IN PRISMA, pg_get_constraintdef read back 2026-10-10:
+//   chk_order_invoices_seq_positive   CHECK ((seq >= 1))
+//   chk_order_invoices_source         CHECK ((source = ANY (ARRAY['sap'::text, 'manual'::text])))
+//   chk_order_invoices_manual_has_no  CHECK (((source <> 'manual'::text) OR ("invoiceNo" IS NOT NULL)))
+//   chk_order_invoices_no_not_blank   CHECK ((("invoiceNo" IS NULL) OR (btrim("invoiceNo") <> ''::text)))
+// Every constraint and index name below is Prisma's default, so none needs `map:`.
+// ─────────────────────────────────────────────────────────────────────────────
+model order_invoices {
+  id          Int       @id @default(autoincrement())
+  // Live FK order_invoices_orderId_fkey ON DELETE RESTRICT — no code deletes an
+  // order; a hand DELETE must fail rather than lose the invoices.
+  orderId     Int
+  order       orders    @relation("OrderInvoiceOrder", fields: [orderId], references: [id], onDelete: Restrict)
+  invoiceNo   String?
+  invoiceDate DateTime? @db.Timestamptz(6)
+  seq         Int
+  /// 'sap' | 'manual' (chk_order_invoices_source). Seq 1 of every order is 'sap'.
+  source      String
+  // NULL = system (back-fill, import, patch-headers). Live FK
+  // order_invoices_createdById_fkey ON DELETE SET NULL. NAMED — users carries
+  // many FKs (CORE §7.3).
+  createdById Int?
+  createdBy   users?    @relation("OrderInvoiceCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt   DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+
+  lines order_invoice_lines[]
+
+  // The row identity and the back-fill's ON CONFLICT target. Its index also
+  // serves every lookup by orderId, so there is deliberately no separate
+  // @@index([orderId]) (the ci_return_lines precedent).
+  @@unique([orderId, seq])
+  @@index([invoiceNo])
+}
+
+// Which raw line, how many TINS, sits on which invoice — split OBDs only.
+// LIVE CHECK: chk_order_invoice_lines_qty_positive CHECK ((qty > 0)).
+model order_invoice_lines {
+  id             Int                   @id @default(autoincrement())
+  // Live FK ON DELETE CASCADE — the lines are part of the invoice row.
+  orderInvoiceId Int
+  orderInvoice   order_invoices        @relation(fields: [orderInvoiceId], references: [id], onDelete: Cascade)
+  // A REAL FK (unlike ci_return_lines.rawLineItemId), ON DELETE RESTRICT: raw
+  // line ids are stable — re-import patches a line in place by (lineId, sku)
+  // and soft-removes it (lineStatus), never deletes it (lib/import-upsert/lines.ts).
+  // ⚠ A line here can later be soft-removed, or have its unitQty patched below
+  // this qty — a reader must expect both.
+  rawLineItemId  Int
+  rawLineItem    import_raw_line_items @relation("OrderInvoiceLineRawLine", fields: [rawLineItemId], references: [id], onDelete: Restrict)
+  qty            Int
+  createdAt      DateTime              @default(now()) @db.Timestamptz(6)
+
+  @@unique([orderInvoiceId, rawLineItemId])
+  @@index([rawLineItemId])
 }
 
 // ─────────────────────────────────────────────

@@ -24,6 +24,7 @@ import { applyHeaderPatch, patchHeader } from "./import-upsert/header";
 import { applyLinePatch, patchLines } from "./import-upsert/lines";
 import { formatAuditNote, writeAuditLogs } from "./import-upsert/audit";
 import { buildEffects } from "./import-upsert/effects";
+import { createSapInvoiceRows } from "./order-invoices/sap-row";
 import type {
   ExistingLine,
   ExistingOrder,
@@ -193,6 +194,9 @@ async function createPath(
         select: { id: true },
       });
       createdOrderId = created.id;
+      // Add invoices (v27.63): every new order gets its seq-1 'sap' row. Never
+      // throws (lib/order-invoices/sap-row.ts).
+      await createSapInvoiceRows([created.id]);
     } catch (err) {
       if ((err as { code?: string }).code === "P2002") {
         // Race: another batch created the OBD between our findUnique and create.

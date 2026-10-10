@@ -36,6 +36,7 @@ import { computeArticleInfo, loadPackCatalog, rollupArticleTagsBySku, type Artic
 import { packToLitres } from "@/lib/place-order/pack";
 import { orderRemarkText } from "@/lib/place-order/email";
 import { CHALLAN_STAGING, lowestFreeOrbNumber, releaseClaim, releaseStaleClaims } from "./number";
+import { createSapInvoiceRows } from "@/lib/order-invoices/sap-row";
 import type {
   CreateChallanOrderErrorCode,
   CreateChallanOrderRequest,
@@ -347,6 +348,10 @@ export async function createChallanOrder(
       select: { id: true },
     });
     orderId = order.id;
+    // Add invoices (v27.63): every order — an ORB one too — gets its seq-1
+    // 'sap' row (invoiceNo NULL: a challan never gets an SAP invoice). Keyed by
+    // id, so the re-key in step 7 does not touch it. Never throws.
+    await createSapInvoiceRows([order.id]);
 
     // ── 3. raw summary ───────────────────────────────────────────────────────
     const summary = await prisma.import_raw_summary.create({

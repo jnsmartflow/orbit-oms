@@ -23,6 +23,7 @@ import type { Prisma } from "@prisma/client";
 import { prisma } from "../prisma";
 import { mergeEmailDateTime, resolveSlotFromTime } from "./helpers";
 import { resolveArrivalSlotId } from "../slots/slot-ruler";
+import { syncSapInvoiceRow } from "../order-invoices/sap-row";
 import type {
   ExistingOrder,
   ExistingSummary,
@@ -156,6 +157,11 @@ export async function applyHeaderPatch(
 ): Promise<void> {
   if (Object.keys(plan.orderUpdate).length > 0) {
     await prisma.orders.update({ where: { id: orderId }, data: plan.orderUpdate });
+    // Add invoices (v27.63): an invoice fill above is mirrored into the seq-1
+    // 'sap' row, same null-only rule. Never throws.
+    if ("invoiceNo" in plan.orderUpdate || "invoiceDate" in plan.orderUpdate) {
+      await syncSapInvoiceRow(orderId);
+    }
   }
   if (summaryId !== null && Object.keys(plan.summaryUpdate).length > 0) {
     await prisma.import_raw_summary.update({ where: { id: summaryId }, data: plan.summaryUpdate });
