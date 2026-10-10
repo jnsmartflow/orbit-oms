@@ -622,6 +622,16 @@ Sampling Library is operationally stable. Reactive items only.
 
 Also: **add `@deprecated` JSDoc** to `delivery_point_master.salesOfficerId` in Prisma schema, flagging the field as legacy-only.
 
+### P1 — `sales_officer_master.employeeCode`: live and Prisma disagree (opened 2026-10-10)
+
+sales_officer_master.employeeCode is nullable in live but required in Prisma — make them agree
+(NOT NULL DEFAULT '' via SQL Editor + schema chain entry). Bit on 2026-10-10 when the SO alias
+prefill inserted NULLs for the 15 new masters (#22–#36): every read of a full row or of
+`employeeCode` threw, which took down `/admin/sales-officers`, `/admin/so-groups`, the customer-page SO
+dropdowns, Tint ship-to options and `lib/so-auth/*`. Patched the same day by data only (NULL → '');
+the column can still take a NULL. Recorded in `CLAUDE_CORE.md` v27.62's live-vs-schema drift note,
+alongside the undeclared live `"updatedAt"` and the `email` @unique that has no live constraint.
+
 ---
 
 ## Tint Module
