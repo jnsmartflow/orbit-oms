@@ -87,18 +87,32 @@ export function telHref(phone: string): string {
  * call is a positive action, not a commit, so never brand. Renders NOTHING
  * without a phone. It stops the tap from reaching anything behind it, so a
  * card's own link never opens from it.
+ *
+ * `compact` (the SO on a bill card, 2026-10-10): a 30px disc inside a 40px hit
+ * area, pulled into the text row with negative margins so a card with a phone
+ * is no taller than one without.
  */
-export function CallButton({ phone, name }: { phone: string | null; name: string | null }) {
+export function CallButton({
+  phone,
+  name,
+  compact = false,
+}: {
+  phone: string | null;
+  name: string | null;
+  compact?: boolean;
+}) {
   if (!phone) return null;
   return (
     <a
       href={telHref(phone)}
       onClick={(e) => e.stopPropagation()}
       aria-label={name ? `Call ${name}` : "Call driver"}
-      className="relative z-[2] flex h-11 w-11 shrink-0 items-center justify-center"
+      className={`relative z-[2] flex shrink-0 items-center justify-center ${compact ? "-my-[11px] -mr-1.5 h-10 w-10" : "h-11 w-11"}`}
     >
-      <span className="flex h-10 w-10 items-center justify-center rounded-full bg-ok-bg text-ok active:opacity-70">
-        <Phone size={18} strokeWidth={2.2} />
+      <span
+        className={`flex items-center justify-center rounded-full bg-ok-bg text-ok active:opacity-70 ${compact ? "h-[30px] w-[30px]" : "h-10 w-10"}`}
+      >
+        <Phone size={compact ? 15 : 18} strokeWidth={2.2} />
       </span>
     </a>
   );

@@ -81,6 +81,9 @@ export interface TripSheetBill {
   /** sales_officer_master.id when the person is known, else null — the trip's
    *  SO line de-duplicates by it, so two spellings of one person show once. */
   soId: number | null;
+  /** The SO's phone (the master's, when the person is known) — the bill card's
+   *  tap-to-call. Null → no button. Phone screen only. */
+  soPhone: string | null;
   /** pick_assignments.picker_id → users.name. Null on a Direct Loaded bill (no picker). */
   pickerName: string | null;
   /** Who checked it: pick_assignments.checked_by_id → users.name, or the Direct Loading

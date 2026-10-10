@@ -263,6 +263,7 @@ async function loadSheetCore(tripIds: number[]): Promise<Map<number, SheetCore>>
       billToName: blank(billTo?.name),
       soName: blank(soByOrder.get(o.id)?.name),
       soId: soByOrder.get(o.id)?.salesOfficerId ?? null,
+      soPhone: blank(soByOrder.get(o.id)?.phone),
       pickerName: a ? blank(userName.get(a.pickerId)) : null,
       checkerName: checkerId !== null ? blank(userName.get(checkerId)) : null,
       directLoaded,

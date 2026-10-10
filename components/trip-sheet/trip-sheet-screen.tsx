@@ -177,11 +177,14 @@ function BillCard({ bill }: { bill: TripSheetBill }) {
             <span className="truncate text-[12.5px] text-[#667085]">Bill of {smartTitleCase(bill.billToName)}</span>
           </div>
         )}
-        {/* PHONE ONLY (2026-10-10) — never on the A4 sheet or in the caption. */}
+        {/* PHONE ONLY (2026-10-10) — never on the A4 sheet or in the caption.
+            Tap-to-call on the right when the SO's phone is known; no phone →
+            no button and the row is exactly as before. */}
         {bill.soName && (
           <div className="mt-1.5 flex min-w-0 items-center gap-1.5 text-[12.5px] text-[#475467]">
             <UserRound size={14} className="shrink-0 text-brand-600" />
-            <span className="truncate">SO: {smartTitleCase(bill.soName)}</span>
+            <span className="min-w-0 flex-1 truncate">SO: {smartTitleCase(bill.soName)}</span>
+            <CallButton phone={bill.soPhone} name={smartTitleCase(bill.soName)} compact />
           </div>
         )}
         <div className="mt-1 flex min-w-0 items-center gap-1.5 text-[12.5px] text-[#475467]">

@@ -8,6 +8,7 @@
 // moved to lib/floor/format.ts (verbatim — same options, same "" on null) when
 // the floor TABLE grew an Invoice column, so this panel and that cell cannot
 // render the same invoice date two different ways.
+import type { ReactNode } from "react";
 import { formatDateIST } from "@/lib/floor/format";
 import type { FloorDetail } from "@/lib/floor/types";
 
@@ -32,7 +33,7 @@ function Section({ title }: { title: string }) {
   return <div className="px-5 pb-1 pt-3.5 text-[9.5px] font-semibold uppercase tracking-[0.05em] text-[#9ca3af]">{title}</div>;
 }
 
-function Cell({ k, v, sub, mono }: { k: string; v: string | null; sub?: string | null; mono?: boolean }) {
+function Cell({ k, v, sub, mono }: { k: string; v: string | null; sub?: ReactNode; mono?: boolean }) {
   const has = Boolean(v);
   return (
     <div className="border-b border-[#f5f5f5] px-5 pb-2.5 pt-2 odd:border-r odd:border-r-[#f5f5f5]">
@@ -53,13 +54,23 @@ export function DetailDetails({ d }: { d: FloorDetail }) {
         <Cell k="Bill to" v={d.billToName} sub={d.billToCode} mono={false} />
         <Cell k="Ship to" v={d.shipToName} sub={d.shipToCode} mono={false} />
         {/* Whose bill it is (2026-10-06) — the same resolver as the table's SO
-            column. Phone only from customer master (the challan's). */}
+            column. A known person's phone (2026-10-10: the master's, mail
+            orders included once the alias matches) is a tel: link — a TEXT
+            ACTION, brand-700 (UI §59.9). No phone → the old sub line. */}
         <Cell
           k="Sales officer"
           v={d.salesOfficerName}
           sub={
-            d.salesOfficerSource === "master"
-              ? d.salesOfficerPhone
+            d.salesOfficerPhone
+              ? (
+                  <a
+                    href={`tel:${d.salesOfficerPhone.replace(/[^\d+]/g, "")}`}
+                    className="font-medium text-brand-700 hover:underline"
+                    aria-label={d.salesOfficerName ? `Call ${d.salesOfficerName}` : "Call sales officer"}
+                  >
+                    {d.salesOfficerPhone}
+                  </a>
+                )
               : d.salesOfficerSource === "telecaller"
                 ? "mail order from a depot mailbox"
                 : d.salesOfficerSource === "mail"
