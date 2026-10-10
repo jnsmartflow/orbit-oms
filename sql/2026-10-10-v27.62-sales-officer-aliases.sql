@@ -114,15 +114,15 @@ WHERE table_schema = 'public' AND table_name = 'sales_officer_master' AND column
 UNION ALL
 SELECT '2 table sales_officer_aliases', (to_regclass('public.sales_officer_aliases') IS NOT NULL)::text
 UNION ALL
-SELECT '3 column ' || column_name, (data_type || ' · nullable ' || is_nullable || ' · default ' || coalesce(column_default, '—'))::text
+SELECT '3 column ' || column_name::text, (data_type || ' · nullable ' || is_nullable || ' · default ' || coalesce(column_default, '—'))::text
 FROM information_schema.columns
 WHERE table_schema = 'public' AND table_name = 'sales_officer_aliases'
 UNION ALL
-SELECT '4 constraint ' || con.conname, pg_get_constraintdef(con.oid)::text
+SELECT '4 constraint ' || con.conname::text, pg_get_constraintdef(con.oid)::text
 FROM pg_constraint con
 WHERE con.conrelid = to_regclass('public.sales_officer_aliases')
 UNION ALL
-SELECT '5 index ' || indexname, indexdef::text
+SELECT '5 index ' || indexname::text, indexdef::text
 FROM pg_indexes
 WHERE schemaname = 'public' AND tablename = 'sales_officer_aliases'
 UNION ALL
