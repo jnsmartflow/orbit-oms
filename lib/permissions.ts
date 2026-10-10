@@ -233,6 +233,12 @@ export type PageKey =
   | "operations_tint_operator"
   | "picking"
   | "floor"
+  // floor_add_invoices — "Add invoices" on Floor (2026-10-10, owner): record the
+  // other SAP invoices of ONE OBD that SAP billed as several
+  // (app/api/floor/orders/[orderId]/invoices POST/DELETE). canEdit is its only
+  // meaning, on top of floor canEdit — the billing_* / tint_* pattern. Phase 2
+  // is RECORD-ONLY: trips, hold, picking and CI still act on the whole OBD.
+  | "floor_add_invoices"
   | "dashboard"
   | "users"
   | "system_config"
@@ -481,6 +487,8 @@ const ALL_PAGE_KEYS: PageKey[] = [
   "attendance", "attendance_admin",
   "operations_tinting", "operations_tint_operator",
   "picking", "floor",
+  // Floor's first action tick (2026-10-10), beside its host screen.
+  "floor_add_invoices",
   "dashboard", "users", "system_config", "permissions",
   "customers", "skus", "routes_areas", "vehicles",
   "import_obd", "tint_manager",
@@ -601,6 +609,9 @@ const ACTION_PAGES: Record<Exclude<ActionKey, "canView">, readonly PageKey[]> = 
     // Freight Trips (2026-10-02) — every write under app/api/freight-trips gates
     // on freight_trips canEdit (create, PATCH, bills add/remove, cancel).
     "freight_trips",
+    // Add invoices (2026-10-10) — POST/DELETE app/api/floor/orders/[orderId]/invoices,
+    // on top of floor canEdit. Backed from day one.
+    "floor_add_invoices",
   ],
   // Two helper call sites — import/obd:3796 and sampling-library:253 — plus the
   // CSV import buttons on the four master-data screens, which read canImport
@@ -652,11 +663,12 @@ export function isActionAvailable(pageKey: string, action: ActionKey): boolean {
 
 // ── Display metadata for the /admin/access screen ─────────────────────────────
 //
-// Friendly names come from PAGE_NAV_MAP wherever the key appears there. THIRTY-ONE
-// of the 54 ALL_PAGE_KEYS are not in it and are labelled here instead: dashboard,
+// Friendly names come from PAGE_NAV_MAP wherever the key appears there. THIRTY-TWO
+// of the 55 ALL_PAGE_KEYS are not in it and are labelled here instead: dashboard,
 // users, system_config, permissions, settings_hide, billing_picking,
 // billing_print, billing_telephonic, billing_pick_delete, the six billing action ticks, place_order_ship_to, the three
-// Tint Manager panel tabs, the ten Tint Manager action ticks, and the two older report ticks.
+// Tint Manager panel tabs, the ten Tint Manager action ticks, floor_add_invoices, and the two
+// older report ticks.
 // (⚠ reports_trip_detail, added 2026-10-01, has no label here yet and falls
 // through to its raw key — recorded, not fixed in the tint ticks commit.)
 // (`ti_report` IS in PAGE_NAV_MAP as "Reports", but is overridden here because
@@ -726,6 +738,9 @@ const PAGE_LABEL_OVERRIDES: Record<string, string> = {
   tint_shop_delivery:  "Tint Manager · Shop delivery",
   tint_urgent:         "Tint Manager · Urgent",
   tint_ti_bulk:        "Tint Manager · Bulk TI",
+  // Floor's first action tick (2026-10-10). Not in PAGE_NAV_MAP. "Floor ·" names
+  // the screen the button lives on, as "Billing · Hold" does.
+  floor_add_invoices:  "Floor · Add invoices",
   attendance:      "Attendance — their own",
   attendance_admin: "Attendance — everyone",
   // The per-report ticks (2026-09-17). Not in PAGE_NAV_MAP.
@@ -745,7 +760,7 @@ export function pageLabel(pageKey: string): string {
 }
 
 /**
- * The 54 keys grouped for display. Every key in ALL_PAGE_KEYS appears exactly
+ * The 55 keys grouped for display. Every key in ALL_PAGE_KEYS appears exactly
  * once — ACCESS_SECTIONS is asserted against it by the access page, so adding a
  * key to ALL_PAGE_KEYS without adding it here is caught rather than silently
  * hiding a row.
@@ -758,7 +773,8 @@ export const ACCESS_SECTIONS: { label: string; keys: PageKey[] }[] = [
     // The six action ticks follow "Billing · Picking" so the whole Billing
     // family reads as one block on /admin/access: the screen, its Picking tab,
     // then the six decisions the Orders tab allows.
-    "picking", "floor", "mrn", "ci", "freight_trips", "trip_sheet", "mail_orders", "billing_picking",
+    // floor_add_invoices sits directly under its host screen, `floor`.
+    "picking", "floor", "floor_add_invoices", "mrn", "ci", "freight_trips", "trip_sheet", "mail_orders", "billing_picking",
     "billing_print", "billing_telephonic", "billing_pick_delete",
     "billing_hold", "billing_slot", "billing_urgent", "billing_ship_to",
     "billing_hand", "billing_ci",

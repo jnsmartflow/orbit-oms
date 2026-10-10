@@ -38,6 +38,8 @@ import { asCiSource, asCiStatus } from "./types";
 // put it in the graph of every CI route that imports this file, none of which
 // writes a workbook except the export one.
 import type { CiRegisterRow } from "./workbook";
+import { LAST_FOUR_DIGITS, normaliseCiSearchTerm } from "./search-term";
+export { normaliseCiSearchTerm } from "./search-term";
 import type {
   CiBillLine,
   CiBillResult,
@@ -53,11 +55,7 @@ import type {
 } from "./types";
 
 // ── Search-term normalisation (spec §4) ──────────────────────────────────────
-
-const BARE_INVOICE_DIGITS = /^\d{9}$/;
-
-/** The last-4 shortcut: exactly four digits and nothing else. */
-const LAST_FOUR_DIGITS = /^\d{4}$/;
+// The rule itself lives in ./search-term (pure, shared with Add invoices).
 
 /**
  * 🔴 HOW FAR BACK A BILL IS SEARCHABLE (owner ruling 2026-09-01, step 9).
@@ -70,34 +68,6 @@ const LAST_FOUR_DIGITS = /^\d{4}$/;
  * forever.
  */
 export const CI_SEARCH_WINDOW_DAYS = 31;
-
-/**
- * Normalise what the supervisor typed into what we query.
- *
- * Measured over all 6,950 live invoice numbers (2026-08-31): EVERY one is `I`
- * plus 9 digits, length 10, uppercase, no spaces, no padding — a single shape
- * with zero exceptions. So normalising is `trim().toUpperCase()` and nothing
- * more elaborate.
- *
- * ⚠ THE BARE-9-DIGITS RULE IS DELIBERATE (spec §4). A supervisor reading a
- * paper invoice will type the digits and leave the `I` off; without this he
- * gets an empty result for a number he read correctly, which looks like a
- * broken search rather than a typo. 9 digits is unambiguous — an OBD number is
- * 10 — so the two cannot collide.
- *
- * Returns the term to match against BOTH `invoiceNo` and `obdNumber`; the caller
- * does not need to know which one it will hit.
- *
- * ⚠ FOUR DIGITS ARE LEFT ALONE. The last-4 shortcut is a SUFFIX, not a whole
- * number, so it must not be prefixed with `I` — `I2577` is not the start of
- * anything. searchCiBills below decides what to do with it; this function's job
- * is only to canonicalise a WHOLE term.
- */
-export function normaliseCiSearchTerm(raw: string): string {
-  const q = raw.trim().toUpperCase();
-  if (LAST_FOUR_DIGITS.test(q)) return q;
-  return BARE_INVOICE_DIGITS.test(q) ? `I${q}` : q;
-}
 
 // ── Stage 1: find the bill ───────────────────────────────────────────────────
 

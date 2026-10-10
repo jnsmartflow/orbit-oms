@@ -113,6 +113,9 @@ const PAGES_CONFIG = [
   { key: "tint_urgent", label: "Tint Manager · Urgent", path: "/tint/manager", section: "Operations" },
   // Bulk TI (2026-10-02) — same canEdit-only meaning and caveat.
   { key: "tint_ti_bulk", label: "Tint Manager · Bulk TI", path: "/tint/manager", section: "Operations" },
+  // Add invoices (2026-10-10) — Floor's first action tick. Same canEdit-only
+  // meaning and ROLLBACK-editor caveat. (`floor` itself has no row here — pre-existing gap.)
+  { key: "floor_add_invoices", label: "Floor · Add invoices", path: "/floor", section: "Operations" },
 ] as const;
 
 const ACTIONS: { key: ActionKey; label: string; short: string }[] = [
