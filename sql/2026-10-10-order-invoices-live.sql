@@ -1,8 +1,11 @@
 -- sql/2026-10-10-order-invoices-live.sql — LIVE FEED: order_invoices (Add invoices, Phase 2)
 --
--- Proposed Schema v27.65 (CORE header read 2026-10-10: v139 · Schema v27.64).
--- ⚠ NOT YET RUN. Smart Flow runs it; CORE is minted AFTER the run, from the
--- verify's read-back (do not mint it from this file).
+-- Schema v27.65. ✅ RUN by owner 10 Oct 2026 (Supabase SQL Editor, one paste). Verify 3/3, no
+-- MISSING — every trigger AFTER · STATEMENT · enabled O, args order\000parent\000orderId\000:
+--   trg_live_changes_order_invoices_del → live_changes_child_del
+--   trg_live_changes_order_invoices_ins → live_changes_child_ins
+--   trg_live_changes_order_invoices_upd → live_changes_child_upd
+-- Minted as Schema v27.65 in docs/CLAUDE_CORE.md v140 (chain + §13 trigger list).
 --
 -- WHY
 --   CORE §13: every table a screen reads needs a live_changes trigger, added with the
