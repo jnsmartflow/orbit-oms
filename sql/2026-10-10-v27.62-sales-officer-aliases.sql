@@ -1,8 +1,8 @@
 -- ═══════════════════════════════════════════════════════════════════════════
 -- 2026-10-10 · Sales officer ALIAS DICTIONARY — proposed Schema v27.62
--- RUN STATUS: NOT RUN. Run once, top to bottom, in the Supabase SQL Editor
--- (Smart Flow). Every statement is IF NOT EXISTS / OR REPLACE, so a re-run is
--- harmless.
+-- RUN STATUS: RUN on live 2026-10-10 (Smart Flow); section 4 verified. Minted
+-- v27.62 in CLAUDE_CORE.md §7. Every statement is IF NOT EXISTS / OR REPLACE,
+-- so a re-run is harmless, but there is no need for one.
 --
 -- ⚠ VERSION CLASH TO WATCH. CORE header AND footer read v136 · Schema v27.61 on
 -- 2026-10-10, so the next number is v27.62 — but sql/2026-10-10-order-invoices-

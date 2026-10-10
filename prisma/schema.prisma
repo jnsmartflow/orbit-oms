@@ -774,8 +774,15 @@ model sales_officer_master {
   employeeCode            String
   email                   String?                   @unique
   phone                   String?
+  // Schema v27.62 (2026-10-10) — how a person should be SHOWN, filled later.
+  // Live: text NULL. Nothing reads it yet.
+  displayName             String?
   isActive                Boolean                   @default(true)
   createdAt               DateTime                  @default(now())
+  // ⚠ Live-vs-schema drift recorded 2026-10-10 (CLAUDE_CORE.md v27.62 entry),
+  // NOT fixed here: the live table also has "updatedAt" timestamp(3) NOT NULL
+  // DEFAULT CURRENT_TIMESTAMP (not declared below); "employeeCode" is NULLABLE
+  // live; and "email" has NO unique constraint live despite @unique.
   deliveryPoints          delivery_point_master[]
   groups                  sales_officer_group[]
   samplingRegisterEntries sampling_register[]
@@ -792,6 +799,34 @@ model sales_officer_master {
   liveDraft               so_live_drafts?           @relation("SoLiveDraftOfficer")
   favProducts             so_fav_products[]         @relation("SoFavProductOfficer")
   starredDealers          so_starred_dealers[]      @relation("SoStarredDealerOfficer")
+  // Spelling dictionary (Schema v27.62) — sales_officer_aliases below.
+  aliases                 SalesOfficerAlias[]
+}
+
+// ─────────────────────────────────────────────
+// Sales officer ALIAS DICTIONARY — Schema v27.62 (2026-10-10).
+// sql/2026-10-10-v27.62-sales-officer-aliases.sql, RUN LIVE 2026-10-10.
+// One row per NORMALISED spelling of a sales officer's name → the master row.
+// The key is computed by the live IMMUTABLE function so_alias_key(text):
+// lowercase → drop a leading "(jsw)"/"jsw " → drop digits → keep a–z only.
+// "(JSW) Rahul Pal" and "RAHUL PAL - 9714487000" both key to "rahulpal".
+// Live constraints, NOT expressible in Prisma beyond what is below:
+//   chk_sales_officer_aliases_key CHECK (("aliasKey" ~ '^[a-z]+$'::text))
+// ONE FK from here to sales_officer_master, so the relation is unnamed.
+// Constraint / index names are Prisma's own defaults — no map: needed.
+// ⚠ No live_changes trigger yet (CORE §13) — added in the commit that first
+// makes a screen read this table.
+// ─────────────────────────────────────────────
+model SalesOfficerAlias {
+  id             Int                  @id @default(autoincrement())
+  aliasKey       String               @unique
+  rawExample     String?
+  salesOfficerId Int
+  salesOfficer   sales_officer_master @relation(fields: [salesOfficerId], references: [id], onDelete: Cascade)
+  createdAt      DateTime             @default(now()) @db.Timestamptz(6)
+
+  @@index([salesOfficerId])
+  @@map("sales_officer_aliases")
 }
 
 model sales_officer_group {
