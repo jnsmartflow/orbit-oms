@@ -95,6 +95,13 @@ export interface TripSheetStop {
   name: string;
   /** trip_drops.areaName (snapshot). */
   area: string | null;
+  /**
+   * The EFFECTIVE delivery point (after any ship-to change) is a SITE, by the
+   * one site rule (lib/reports/bill-facts.ts isSiteDelivery) — true when it is
+   * for any shown bill on the stop. PHONE ONLY (the building icon); the A4
+   * sheet does not read it.
+   */
+  isSite: boolean;
   bills: TripSheetBill[];
 }
 
@@ -136,6 +143,9 @@ export interface TripSheetListRow {
   soNames: string[];
   vehicleNo: string | null;
   driverFirstName: string | null;
+  /** The trip's driver SNAPSHOT (trips.driverName / driverPhone) — the card leads with it. */
+  driverName: string | null;
+  driverPhone: string | null;
   timeLabel: string | null;
   /** TripSummary.areaLabel (lib/trips/queries.ts deriveAreaLabel) — e.g. "Pandesara +5"; null when no stop has an area. */
   areaLabel: string | null;

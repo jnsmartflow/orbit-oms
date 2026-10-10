@@ -11,15 +11,14 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { CheckCircle2, ChevronLeft, Loader2, PackageCheck, UserRound } from "lucide-react";
+import { Building2, CheckCircle2, ChevronLeft, Loader2, PackageCheck, UserRound } from "lucide-react";
 import { toast } from "sonner";
 import { RoleLayoutClient } from "@/components/shared/role-layout-client";
 import type { RoleSidebarRole } from "@/components/shared/role-sidebar";
 import type { NavItemConfig } from "@/lib/permissions";
 import { smartTitleCase } from "@/lib/mail-orders/utils";
-import { driverFirstName } from "@/lib/trip-sheet/caption";
 import type { TripSheet, TripSheetBill } from "@/lib/trip-sheet/types";
-import { CardShell, CardShelf, fmtNum } from "./card-bits";
+import { CallButton, CardShell, CardShelf, fmtNum } from "./card-bits";
 
 /** WhatsApp's own green — the share target's colour, not a brand or status token. */
 const WHATSAPP_GREEN = "#25D366";
@@ -71,7 +70,9 @@ export function TripSheetScreen({
     }
   }
 
-  const subline = [h.vehicleNo ?? (h.isHand ? "Hand" : "No vehicle"), driverFirstName(h.driverName) ?? "No driver", h.timeLabel ?? "—"].join(" · ");
+  // "{Driver full name} · {vehicle} · {time}" — driver first (2026-10-10), the trip SNAPSHOT.
+  const driverName = smartTitleCase(h.driverName);
+  const subline = [driverName || "No driver", h.vehicleNo ?? (h.isHand ? "Hand" : "No vehicle"), h.timeLabel ?? "—"].join(" · ");
 
   return (
     <RoleLayoutClient role={role} userName={userName} userInitials={userInitials} navItems={navItems} hideBar>
@@ -95,6 +96,7 @@ export function TripSheetScreen({
                 <p className="truncate text-[11.5px] font-medium text-ink-500 tabular-nums">{subline}</p>
               </div>
             </div>
+            {!h.isHand && <CallButton phone={h.driverPhone} name={driverName || null} />}
           </div>
         </div>
 
@@ -111,6 +113,11 @@ export function TripSheetScreen({
                     <span className="w-5 h-5 shrink-0 rounded-full bg-[#eef1f5] text-[#667085] text-[11px] font-bold flex items-center justify-center tabular-nums">
                       {s.no}
                     </span>
+                    {/* SITE — the effective delivery point is a site (loader isSite,
+                        isSiteDelivery). Phone only; the A4 sheet does not show it. */}
+                    {s.isSite && (
+                      <Building2 size={15} className="shrink-0 text-[#98a2b3]" aria-label="Site" role="img" />
+                    )}
                     <span className="min-w-0 truncate text-[14.5px] font-bold text-[#1d2939]">{smartTitleCase(s.name)}</span>
                     <span className="ml-auto shrink-0 pl-2 text-[12px] font-medium text-[#98a2b3]">{smartTitleCase(s.area) || "—"}</span>
                   </div>

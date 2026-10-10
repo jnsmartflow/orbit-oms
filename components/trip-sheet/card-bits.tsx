@@ -4,6 +4,7 @@
 // Display only.
 
 import type { ReactNode } from "react";
+import { Phone } from "lucide-react";
 import { CARD_SHADOW_V2, FamilyChip } from "@/components/picking/card-atoms";
 
 export function fmtNum(n: number | null): string {
@@ -11,11 +12,15 @@ export function fmtNum(n: number | null): string {
   return n.toLocaleString("en-IN", { maximumFractionDigits: 2 });
 }
 
-/** The Picking card shell: white, 16px radius, hairline border, the v2 shadow. */
-export function CardShell({ children, muted = false }: { children: ReactNode; muted?: boolean }) {
+/**
+ * The Picking card shell: white, 16px radius, hairline border, the v2 shadow.
+ * `roomy` (the trip LIST card, 2026-10-10): no margin of its own — its wrapper
+ * carries the 12px gap, so the stretched card link covers exactly the card.
+ */
+export function CardShell({ children, muted = false, roomy = false }: { children: ReactNode; muted?: boolean; roomy?: boolean }) {
   return (
     <div
-      className={`bg-white border border-gray-200 rounded-[16px] overflow-hidden mb-2.5 ${muted ? "opacity-60" : ""}`}
+      className={`bg-white border border-gray-200 rounded-[16px] overflow-hidden ${roomy ? "" : "mb-2.5"} ${muted ? "opacity-60" : ""}`}
       style={{ boxShadow: CARD_SHADOW_V2 }}
     >
       {children}
@@ -23,10 +28,26 @@ export function CardShell({ children, muted = false }: { children: ReactNode; mu
   );
 }
 
-/** The shelf: divider + grey band + one row of pills, an optional right slot. */
-export function CardShelf({ pills, muted = false, right }: { pills: string[]; muted?: boolean; right?: ReactNode }) {
+/**
+ * The shelf: divider + grey band + one row of pills, an optional right slot.
+ * `roomy` (trip list): 18px sides and 12px below the divider, to match the
+ * card's 18px padding.
+ */
+export function CardShelf({
+  pills,
+  muted = false,
+  right,
+  roomy = false,
+}: {
+  pills: string[];
+  muted?: boolean;
+  right?: ReactNode;
+  roomy?: boolean;
+}) {
   return (
-    <div className="border-t border-[#eef1f4] bg-[#f6f8fa] px-[14px] py-[9px] flex items-center gap-1.5">
+    <div
+      className={`border-t border-[#eef1f4] bg-[#f6f8fa] flex items-center gap-1.5 ${roomy ? "px-[18px] py-3" : "px-[14px] py-[9px]"}`}
+    >
       <div className="flex flex-1 min-w-0 flex-wrap gap-1.5">
         {pills.map((p, i) => (
           <FamilyChip key={`${i}-${p}`} label={p} muted={muted} />
@@ -52,5 +73,33 @@ export function HandChip() {
     <span className="shrink-0 rounded-full border border-data-brown/30 px-[9px] py-[2px] text-[11px] font-bold text-data-brown">
       Hand
     </span>
+  );
+}
+
+/** A dial-able form of a stored phone: digits and a leading +, nothing else. */
+export function telHref(phone: string): string {
+  return `tel:${phone.replace(/[^\d+]/g, "")}`;
+}
+
+/**
+ * TAP-TO-CALL the driver (2026-10-10): a 40px light-green disc with a green
+ * phone, inside a 44px touch target (UI §59 touch size). Success tokens — a
+ * call is a positive action, not a commit, so never brand. Renders NOTHING
+ * without a phone. It stops the tap from reaching anything behind it, so a
+ * card's own link never opens from it.
+ */
+export function CallButton({ phone, name }: { phone: string | null; name: string | null }) {
+  if (!phone) return null;
+  return (
+    <a
+      href={telHref(phone)}
+      onClick={(e) => e.stopPropagation()}
+      aria-label={name ? `Call ${name}` : "Call driver"}
+      className="relative z-[2] flex h-11 w-11 shrink-0 items-center justify-center"
+    >
+      <span className="flex h-10 w-10 items-center justify-center rounded-full bg-ok-bg text-ok active:opacity-70">
+        <Phone size={18} strokeWidth={2.2} />
+      </span>
+    </a>
   );
 }

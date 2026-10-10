@@ -31,7 +31,7 @@ import { getTripsForDate, parseTripDate, type TripSummary } from "@/lib/trips/qu
 import { effectiveCustomerId } from "@/lib/trips/drop-key";
 import { tripMixLabel } from "@/lib/floor/scope";
 import { salesOfficerByOrder } from "@/lib/floor/queries";
-import { billQuantities, loadBillToByObd, loadSnapshots } from "@/lib/reports/bill-facts";
+import { billQuantities, isSiteDelivery, loadBillToByObd, loadSnapshots } from "@/lib/reports/bill-facts";
 import { isGiftBill, loadKg, loadLitres } from "@/lib/orders/gift";
 import type {
   TripSheet,
@@ -187,17 +187,25 @@ async function loadSheetCore(tripIds: number[]): Promise<Map<number, SheetCore>>
   const snapByOrder = await loadSnapshots(orderIds);
   const billToByObd = await loadBillToByObd(uniqueOrders.map((o) => o.obdNumber));
 
-  // 7. The effective delivery points' codes — for shipToChanged.
+  // 7. The effective delivery points: code (shipToChanged) and type (isSite).
   const pointIds = Array.from(
     new Set(uniqueOrders.map((o) => effectiveCustomerId(o)).filter((id): id is number => id !== null)),
   );
   const points = pointIds.length
     ? await prisma.delivery_point_master.findMany({
         where: { id: { in: pointIds } },
-        select: { id: true, customerCode: true },
+        select: {
+          id: true,
+          customerCode: true,
+          customerType: { select: { name: true } },
+          premisesType: { select: { name: true } },
+        },
       })
     : [];
   const codeByPointId = new Map(points.map((p) => [p.id, p.customerCode]));
+  // The point's own type, customerType then premisesType — the order the Trip
+  // Detail report reads them in (trip-detail-data.ts) before isSiteDelivery.
+  const typeByPointId = new Map(points.map((p) => [p.id, p.customerType?.name ?? p.premisesType?.name ?? null]));
 
   // 8. Pick assignments: the typed article count (v27.58), the picker, the checker.
   const assignments = orderIds.length
@@ -259,14 +267,25 @@ async function loadSheetCore(tripIds: number[]): Promise<Map<number, SheetCore>>
       directLoaded,
     };
     const tripStops = stopsByTrip.get(drop.tripId) ?? new Map<number, TripSheetStop>();
+    // Is the EFFECTIVE point a site? isSiteDelivery on the point the truck goes
+    // to (the redirect when there is one): same party as the bill-to → no; the
+    // point's own type decides; untyped → the bill's project SMU decides.
+    const site = isSiteDelivery({
+      billToCode,
+      sapShipToCode: deliveryCode,
+      shipToType: eid !== null ? (typeByPointId.get(eid) ?? null) : null,
+      smu: o.smu,
+    });
     const stop = tripStops.get(drop.id) ?? {
       no: 0,
       dropId: drop.id,
       dropSeq: drop.dropSeq,
       name: drop.customerName,
       area: blank(drop.areaName),
+      isSite: false,
       bills: [],
     };
+    if (site) stop.isSite = true;
     stop.bills.push(bill);
     tripStops.set(drop.id, stop);
     stopsByTrip.set(drop.tripId, tripStops);
@@ -335,6 +354,8 @@ export async function listRowsFor(summaries: TripSummary[]): Promise<TripSheetLi
       deliveryTypes: t.deliveryTypes,
       vehicleNo: vehicleNoFor(t),
       driverFirstName: driver ? driver.split(/\s+/)[0] : null,
+      driverName: driver,
+      driverPhone: blank(t.driverPhone),
       timeLabel: timeLabelFor(t),
       areaLabel: t.areaLabel,
       stops: c?.totals.stops ?? 0,

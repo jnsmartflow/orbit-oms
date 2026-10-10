@@ -26,7 +26,7 @@ import { smartTitleCase } from "@/lib/mail-orders/utils";
 import { tripInScope } from "@/lib/floor/scope";
 import { TRIP_SHEET_TABS, parseTripSheetTab, scopeOfTab, type TripSheetTab } from "@/lib/trip-sheet/tabs";
 import type { TripSheetListRow, TripSheetMatchField, TripSheetSearchHit } from "@/lib/trip-sheet/types";
-import { CardShell, CardShelf, HandChip, ReadyChip, fmtNum } from "./card-bits";
+import { CallButton, CardShell, CardShelf, HandChip, ReadyChip, fmtNum } from "./card-bits";
 
 const MATCH_LABEL: Record<TripSheetMatchField, string> = {
   trip: "trip",
@@ -359,23 +359,43 @@ function Spinner() {
   );
 }
 
+/**
+ * One trip, DRIVER FIRST (2026-10-10). Rows, 8px apart, inside 18px padding:
+ *   1  trip no (small mono, grey)                         time
+ *   2  DRIVER FULL NAME (19px bold, wraps)                 [call]
+ *   3  vehicle (mono, grey) · area label (+N muted)
+ *   4  SO names (unchanged)
+ *   shelf: stops · bills · kg · Ready/Picking
+ *
+ * ⚠ THE CARD LINK IS A STRETCHED OVERLAY, NOT A WRAPPER. The call button is an
+ * <a href="tel:">, and an <a> inside an <a> is invalid HTML that browsers
+ * repair unpredictably. So the card is a plain box, the trip link covers it
+ * (absolute, z-1), and the call button sits ABOVE the link (z-2) — a tap on it
+ * never reaches the link at all. No fixed heights: the card grows with a long
+ * name or many SOs.
+ */
 function TripCard({ row, href, matched }: { row: TripSheetListRow; href: string; matched?: string }) {
   // areaLabel is "Pandesara +5" — the "+N" is greyed, as the Floor rail does.
   const m = row.areaLabel ? /^(.*?)( \+\d+)?$/.exec(row.areaLabel) : null;
-  const driver = smartTitleCase(row.driverFirstName) || "No driver";
+  const driver = smartTitleCase(row.driverName);
   return (
-    <Link href={href} className="block active:opacity-70">
-      <CardShell muted={row.isHand}>
-        <div className="px-4 pt-3.5 pb-3">
-          <div className="font-mono text-[12px] text-[#98a0aa]">{row.tripNumber}</div>
-          <div className="mt-1 flex items-baseline justify-between gap-3">
-            <span className="truncate font-mono text-[21px] font-bold leading-tight text-[#1d2939]">
-              {row.vehicleNo ?? (row.isHand ? "Hand" : "No vehicle")}
-            </span>
-            <span className="shrink-0 text-[16px] font-semibold tabular-nums text-[#475467]">{row.timeLabel ?? "—"}</span>
+    <div className="relative mb-3">
+      <CardShell muted={row.isHand} roomy>
+        <div className="flex flex-col gap-2 px-[18px] pt-[18px] pb-[14px]">
+          <div className="flex items-baseline justify-between gap-3">
+            <span className="font-mono text-[12px] text-[#98a0aa]">{row.tripNumber}</span>
+            <span className="shrink-0 text-[15px] font-semibold tabular-nums text-[#475467]">{row.timeLabel ?? "—"}</span>
           </div>
-          <div className="mt-1 truncate text-[13.5px] font-medium text-[#667085]">
-            {driver}
+          <div className="flex items-center justify-between gap-3">
+            <span
+              className={`min-w-0 break-words text-[19px] font-bold leading-snug ${driver ? "text-[#1d2939]" : "text-[#98a2b3]"}`}
+            >
+              {driver || "No driver"}
+            </span>
+            {!row.isHand && <CallButton phone={row.driverPhone} name={driver || null} />}
+          </div>
+          <div className="truncate text-[13.5px] font-medium text-[#667085]">
+            <span className="font-mono">{row.vehicleNo ?? (row.isHand ? "Hand" : "No vehicle")}</span>
             {m && (
               <>
                 <span className="text-[#c3c9d0]">{" · "}</span>
@@ -385,14 +405,15 @@ function TripCard({ row, href, matched }: { row: TripSheetListRow; href: string;
             )}
           </div>
           {row.soNames.length > 0 && (
-            <div className="mt-2 flex items-start gap-1.5 text-[13px] leading-snug text-[#475467]">
+            <div className="flex items-start gap-1.5 text-[13px] leading-snug text-[#475467]">
               <UserRound size={15} className="mt-[2px] shrink-0 text-brand-600" />
               <span className="min-w-0 break-words">{row.soNames.map((n) => smartTitleCase(n)).join(", ")}</span>
             </div>
           )}
-          {matched && <div className="mt-1.5 truncate text-[12px] text-[#98a2b3]">{matched}</div>}
+          {matched && <div className="truncate text-[12px] text-[#98a2b3]">{matched}</div>}
         </div>
         <CardShelf
+          roomy
           muted={row.isHand}
           pills={[
             `${row.stops} ${row.stops === 1 ? "stop" : "stops"}`,
@@ -402,6 +423,11 @@ function TripCard({ row, href, matched }: { row: TripSheetListRow; href: string;
           right={row.isHand ? <HandChip /> : <ReadyChip ready={row.isReady} />}
         />
       </CardShell>
-    </Link>
+      <Link
+        href={href}
+        aria-label={`Open trip ${row.tripNumber}`}
+        className="absolute inset-0 z-[1] rounded-[16px] active:bg-black/[0.04]"
+      />
+    </div>
   );
 }
