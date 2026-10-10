@@ -11,7 +11,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { ChevronLeft, Loader2 } from "lucide-react";
+import { CheckCircle2, ChevronLeft, Loader2, PackageCheck, UserRound } from "lucide-react";
 import { toast } from "sonner";
 import { RoleLayoutClient } from "@/components/shared/role-layout-client";
 import type { RoleSidebarRole } from "@/components/shared/role-sidebar";
@@ -26,14 +26,15 @@ const WHATSAPP_GREEN = "#25D366";
 
 export function TripSheetScreen({
   sheet,
-  backDate,
+  backHref,
   role,
   userName,
   userInitials,
   navItems,
 }: {
   sheet: TripSheet;
-  backDate: string;
+  /** The list this screen came from — date and tab kept. */
+  backHref: string;
   role: RoleSidebarRole;
   userName: string;
   userInitials: string;
@@ -71,7 +72,7 @@ export function TripSheetScreen({
             style={{ paddingTop: "max(env(safe-area-inset-top, 0px), 11px)", paddingBottom: "10px" }}
           >
             <Link
-              href={`/trip-sheets?date=${backDate}`}
+              href={backHref}
               aria-label="Back to trip sheets"
               className="w-10 h-10 min-w-[44px] min-h-[44px] rounded-full bg-white border border-ink-100 flex items-center justify-center text-ink-600 active:bg-ink-50 shrink-0"
             >
@@ -159,6 +160,29 @@ function BillCard({ bill }: { bill: TripSheetBill }) {
             <span className="truncate text-[12.5px] text-[#667085]">Bill of {smartTitleCase(bill.billToName)}</span>
           </div>
         )}
+        {/* PHONE ONLY (2026-10-10) — never on the A4 sheet or in the caption. */}
+        {bill.soName && (
+          <div className="mt-1.5 flex min-w-0 items-center gap-1.5 text-[12.5px] text-[#475467]">
+            <UserRound size={14} className="shrink-0 text-brand-600" />
+            <span className="truncate">SO: {smartTitleCase(bill.soName)}</span>
+          </div>
+        )}
+        <div className="mt-1 flex min-w-0 items-center gap-1.5 text-[12.5px] text-[#475467]">
+          <PackageCheck size={14} className="shrink-0 text-[#98a2b3]" />
+          <span className="truncate">
+            {bill.directLoaded ? "Direct loading" : <>Picked: {bill.pickerName ? smartTitleCase(bill.pickerName) : "—"}</>}
+            <span className="text-[#c3c9d0]">{" · "}</span>
+            Checked:{" "}
+            {bill.checkerName ? (
+              <span className="inline-flex items-center gap-1">
+                <CheckCircle2 size={13} className="text-ok" />
+                {smartTitleCase(bill.checkerName)}
+              </span>
+            ) : (
+              <span className="text-[#98a2b3]">—</span>
+            )}
+          </span>
+        </div>
       </div>
       <CardShelf
         pills={[

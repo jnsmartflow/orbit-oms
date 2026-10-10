@@ -948,6 +948,32 @@ export async function getTripsForDate(
     // earliest, so it now sits at the BOTTOM — its date chip still says so.
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
   })) as TripRow[];
+  return summariesForTrips(trips);
+}
+
+/**
+ * Summaries for an explicit set of trips, ANY dates (2026-10-10, the Trip
+ * Sheets search — lib/trip-sheet). NOT a desk: no desk rule applies, so it
+ * answers for exactly the ids asked, cancelled included (the caller filters).
+ * The SAME builder as getTripsForDate (`summariesForTrips`), so a summary here
+ * cannot differ from the rail's. Order: newest created first, as the feed.
+ */
+export async function getTripSummariesByIds(ids: number[]): Promise<TripSummary[]> {
+  if (ids.length === 0) return [];
+  const trips = (await prisma.trips.findMany({
+    where: { id: { in: Array.from(new Set(ids)) } },
+    select: TRIP_SELECT,
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+  })) as TripRow[];
+  return summariesForTrips(trips);
+}
+
+/**
+ * The one summary builder behind getTripsForDate and getTripSummariesByIds —
+ * a fixed batch of reads for any number of trips. Extracted unchanged from
+ * getTripsForDate (2026-10-10).
+ */
+async function summariesForTrips(trips: TripRow[]): Promise<TripSummary[]> {
   if (trips.length === 0) return [];
 
   // `areaName` and `dropSeq` ride this same read for the derived area label —

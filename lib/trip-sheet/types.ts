@@ -66,6 +66,17 @@ export interface TripSheetBill {
   shipToChanged: boolean;
   /** SAP's bill-to name (import_raw_summary), or null when the import has none. */
   billToName: string | null;
+
+  // ── PHONE ONLY (2026-10-10). Never printed on the A4 sheet, never in the caption. ──
+  /** Sales Officer — Floor's own rule, salesOfficerByOrder (lib/floor/queries.ts). */
+  soName: string | null;
+  /** pick_assignments.picker_id → users.name. Null on a Direct Loaded bill (no picker). */
+  pickerName: string | null;
+  /** Who checked it: pick_assignments.checked_by_id → users.name, or the Direct Loading
+   *  supervisor (orders.directLoadedById). Null = not checked yet. */
+  checkerName: string | null;
+  /** Sent to pick_checked with no picker (Schema v27.52). */
+  directLoaded: boolean;
 }
 
 export interface TripSheetStop {
@@ -98,12 +109,24 @@ export interface TripSheet {
   totals: TripSheetTotals;
   /** Unique stop areas in printed order — the caption's last line. */
   captionAreas: string[];
+  /** Unique SO names over the shown bills, in printed order — phone only. */
+  soNames: string[];
 }
 
 /** One row of the phone list (/trip-sheets). Same numbers as the trip's sheet. */
 export interface TripSheetListRow {
   id: number;
   tripNumber: string;
+  /** YYYY-MM-DD — search groups its results by it. */
+  tripDate: string;
+  /** The type the trip was NUMBERED under — what the tabs read (lib/floor/scope.ts tripInScope). */
+  deliveryTypeName: string | null;
+  /** Its stored type ∪ its bills' types — the mix label. Kept for tripInScope's shape. */
+  deliveryTypes: string[];
+  /** Gifts excluded; unknown kg adds nothing (sheet totals rule). */
+  kg: number;
+  /** Unique SO names over the trip's shown bills (phone only). */
+  soNames: string[];
   vehicleNo: string | null;
   driverFirstName: string | null;
   timeLabel: string | null;
@@ -115,4 +138,12 @@ export interface TripSheetListRow {
   isReady: boolean;
   isHand: boolean;
   typeLabel: string;
+}
+
+/** Which field a search hit came from — shown as "matched: {label} {value}". */
+export type TripSheetMatchField = "trip" | "vehicle" | "driver" | "stop" | "dealer" | "so" | "invoice" | "obd";
+
+/** One search hit: the trip's list row plus what matched. */
+export interface TripSheetSearchHit extends TripSheetListRow {
+  match: { field: TripSheetMatchField; value: string };
 }

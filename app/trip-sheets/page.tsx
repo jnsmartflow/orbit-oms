@@ -6,6 +6,7 @@ import { RoleSidebarProvider } from "@/components/shared/role-sidebar-provider";
 import { canViewTripSheets } from "@/lib/trip-sheet/access";
 import { getTripSheetShellProps } from "@/lib/trip-sheet/shell-context";
 import { TripSheetsList } from "@/components/trip-sheet/trip-sheets-list";
+import { parseTripSheetTab } from "@/lib/trip-sheet/tabs";
 
 export const dynamic = "force-dynamic";
 
@@ -22,7 +23,7 @@ export const viewport: Viewport = { themeColor: "#F5F3FF" };
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
-export default async function TripSheetsPage({ searchParams }: { searchParams: { date?: string } }) {
+export default async function TripSheetsPage({ searchParams }: { searchParams: { date?: string; type?: string } }) {
   const session = await auth();
   if (!session?.user) redirect("/login");
   const roles = session.user.roles ?? [session.user.role];
@@ -33,7 +34,7 @@ export default async function TripSheetsPage({ searchParams }: { searchParams: {
 
   return (
     <RoleSidebarProvider>
-      <TripSheetsList initialDate={date} {...shell} />
+      <TripSheetsList initialDate={date} initialTab={parseTripSheetTab(searchParams.type)} {...shell} />
     </RoleSidebarProvider>
   );
 }
