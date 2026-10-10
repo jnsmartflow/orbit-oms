@@ -63,6 +63,7 @@ import { HoldTab } from "./hold-tab";
 import { CancelledTab } from "./cancelled-tab";
 import { DetailPanel, type DetailActions } from "./detail-panel";
 import { OffFloorDialog, type OffFloorFormBill, type CiReasonOption } from "./off-floor-dialog";
+import { AddInvoicesDialog } from "./add-invoices-dialog";
 import { offFloorRefusal } from "@/lib/floor/off-floor";
 import { SearchBox, SearchHits } from "./search-box";
 import { FilterSheet } from "./filter-sheet";
@@ -377,8 +378,11 @@ export function FloorPage({
   canViewChallan = false,
   canEditChallan = false,
   isAdminChallan = false,
+  canAddInvoices = false,
 }: {
   canEdit?: boolean;
+  /** `floor_add_invoices` canEdit (2026-10-10) — draws Add invoices (bar ··· More, panel). */
+  canAddInvoices?: boolean;
   /** `challan_orders` canView / canEdit (2026-10-07) — the Challan orders tab. */
   canViewChallan?: boolean;
   canEditChallan?: boolean;
@@ -2159,6 +2163,88 @@ export function FloorPage({
     return (data?.floor.rows ?? []).find((r) => r.orderId === detail.orderId)?.hasDuplicateSo ?? false;
   }, [detail, data]);
 
+  // ── ADD INVOICES (2026-10-10, Phase 2 RECORD ONLY) ─────────────────────────
+  //
+  // One OBD that SAP billed as several invoices: the modal records the rest
+  // (add-invoices-dialog.tsx → /api/floor/orders/[orderId]/invoices). Two
+  // openers — the bar's ··· More with exactly ONE OBD ticked, and the detail
+  // panel's Invoices section. Nothing here touches trips, hold, picking or CI.
+  const [addInv, setAddInv] = useState<{ orderId: number; obdNumber: string; obdKg: number | null } | null>(null);
+  // Bumped by the ONE Esc listener below; the modal decides (close / Discard?).
+  const [addInvEsc, setAddInvEsc] = useState(0);
+  const addInvBusyRef = useRef(false);
+  const setAddInvBusy = useCallback((b: boolean) => {
+    addInvBusyRef.current = b;
+  }, []);
+  // The detail panel's Invoices section re-reads when this moves.
+  const [invoicesRefreshKey, setInvoicesRefreshKey] = useState(0);
+  const openAddInvoices = useCallback(
+    (orderId: number, obdNumber: string) => {
+      setMoreOpen(false);
+      const row = (data?.floor.rows ?? []).find((r) => r.orderId === orderId);
+      setAddInv({ orderId, obdNumber, obdKg: row?.weightKg ?? null });
+    },
+    [data],
+  );
+  const undoInvoices = useCallback(
+    async (orderId: number, obdNumber: string) => {
+      try {
+        const res = await fetch(`/api/floor/orders/${orderId}/invoices`, { method: "DELETE" });
+        const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+        if (!res.ok || body.ok !== true) toast.error(`Undo failed — ${body.error ?? `HTTP ${res.status}`}`);
+        else toast.success(`${obdNumber} is back to its SAP invoice only`);
+      } catch {
+        toast.error("Undo failed — check your connection.");
+      }
+      setInvoicesRefreshKey((k) => k + 1);
+      await load();
+    },
+    [load],
+  );
+  // The ··· More item's state for the ONE ticked OBD: Add vs Edit, and the
+  // route's blockedReason (grey with the reason). Read when the menu opens —
+  // only for a tick holder, only for a single OBD.
+  const singleAddInvRow = canAddInvoices && selectedRows.length === 1 && selectedRedeliveryIds.length === 0 ? selectedRows[0] : null;
+  const [addInvCheck, setAddInvCheck] = useState<{ orderId: number; blockedReason: string | null; split: boolean } | null>(null);
+  useEffect(() => {
+    if (!moreOpen || singleAddInvRow === null) return;
+    const id = singleAddInvRow.orderId;
+    let cancelled = false;
+    setAddInvCheck(null);
+    void (async () => {
+      try {
+        const res = await fetch(`/api/floor/orders/${id}/invoices`, { cache: "no-store" });
+        const body = (await res.json().catch(() => ({}))) as { blockedReason?: string | null; split?: boolean; error?: string };
+        if (cancelled) return;
+        setAddInvCheck({
+          orderId: id,
+          blockedReason: res.ok ? body.blockedReason ?? null : body.error ?? `HTTP ${res.status}`,
+          split: body.split === true,
+        });
+      } catch {
+        if (!cancelled) setAddInvCheck({ orderId: id, blockedReason: "Could not check this bill — try again", split: false });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // The row object changes on every render; its id is the trigger.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [moreOpen, singleAddInvRow?.orderId]);
+  const addInvMenuItem = (() => {
+    if (singleAddInvRow === null) return null;
+    const check = addInvCheck?.orderId === singleAddInvRow.orderId ? addInvCheck : null;
+    const split = check ? check.split : (singleAddInvRow.addedInvoiceNos ?? []).length > 0;
+    const label = split ? "Edit invoices" : "Add invoices";
+    if (check === null) return { label, hint: "Checking…", disabled: true };
+    if (check.blockedReason !== null) return { label, hint: check.blockedReason, disabled: true };
+    return {
+      label,
+      hint: split ? "Change or undo the recorded invoices" : "SAP billed this OBD as several invoices — record the rest",
+      disabled: false,
+    };
+  })();
+
   // ── The Cancel / Raise CI form (2026-09-22, off-floor-dialog.tsx) ─────────
   //
   // One form, three openers — the Floor bar, the Hold bar and the detail panel.
@@ -2365,6 +2451,13 @@ export function FloorPage({
         closeRedeliveryDialog();
         return;
       }
+      // ADD INVOICES (2026-10-10) — above the panel it can open from; also before
+      // the field guard, since the modal opens with focus in a number box. The
+      // modal decides what Esc means (close, or "Discard?"); refused mid-request.
+      if (addInv !== null) {
+        if (!addInvBusyRef.current) setAddInvEsc((n) => n + 1);
+        return;
+      }
       // A DispatchSlotPicker popover is open (its portalled root carries this
       // marker only while open) — leave it to outside-click, as today.
       if (document.querySelector('[data-slot-popover="open"]')) return;
@@ -2394,7 +2487,7 @@ export function FloorPage({
     }
     window.addEventListener("keydown", onEsc);
     return () => window.removeEventListener("keydown", onEsc);
-  }, [offFloorOpen, closeOffFloor, detailOpen, moreOpen, holdMoreOpen, openRouteCard, selection, closeDetail, clearSelection, addingToTripId, stopAddingTo, redeliveryInfoId, redeliveryTripId, closeRedeliveryInfo, closeRedeliveryDialog]);
+  }, [offFloorOpen, closeOffFloor, detailOpen, moreOpen, holdMoreOpen, openRouteCard, selection, closeDetail, clearSelection, addingToTripId, stopAddingTo, redeliveryInfoId, redeliveryTripId, closeRedeliveryInfo, closeRedeliveryDialog, addInv]);
 
   // Reconcile the floor SELECTION against fresh data WITHOUT moving the visible
   // board (design §13 rules 2 + 3): drop the tick on any selected row that
@@ -3691,6 +3784,10 @@ export function FloorPage({
                     menuOpen={moreOpen}
                     onMenuOpenChange={setMoreOpen}
                     onHold={() => void bulkHold(selectedRows)}
+                    addInvoices={addInvMenuItem}
+                    onAddInvoices={() => {
+                      if (singleAddInvRow) openAddInvoices(singleAddInvRow.orderId, singleAddInvRow.obdNumber);
+                    }}
                     onOffFloor={() =>
                       // One tick per OBD in the form, all pre-ticked — an invoice
                       // pair's members arrive as two lines and either can be
@@ -3775,6 +3872,11 @@ export function FloorPage({
           withBillingCiNumber={detailCiNumber}
           isHand={detailIsHand}
           canEdit={canEdit}
+          // Add invoices (2026-10-10) — the Items tab's Invoices section.
+          canAddInvoices={canAddInvoices}
+          obdKg={(data?.floor.rows ?? []).find((r) => r.orderId === detail.orderId)?.weightKg ?? null}
+          invoicesRefreshKey={invoicesRefreshKey}
+          onEditInvoices={openAddInvoices}
           list={detailList}
           windows={dispatchWindows}
           pickers={data?.pickers ?? []}
@@ -3807,6 +3909,35 @@ export function FloorPage({
           redelivery={tripRedeliveryById.get(redeliveryInfoId) as TripRedeliveryRow}
           tripNumber={tripDetail?.tripNumber ?? ""}
           onClose={closeRedeliveryInfo}
+        />
+      )}
+
+      {/* ADD INVOICES (2026-10-10) — above the panel, which can open it. */}
+      {addInv && (
+        <AddInvoicesDialog
+          orderId={addInv.orderId}
+          obdNumber={addInv.obdNumber}
+          obdKg={addInv.obdKg}
+          escSignal={addInvEsc}
+          onBusyChange={setAddInvBusy}
+          onClose={() => setAddInv(null)}
+          onSaved={(n) => {
+            const { orderId, obdNumber } = addInv;
+            setAddInv(null);
+            setInvoicesRefreshKey((k) => k + 1);
+            toast.success(`${obdNumber} now has ${n} invoices`, {
+              duration: 8_000,
+              action: { label: "Undo", onClick: () => void undoInvoices(orderId, obdNumber) },
+            });
+            void load();
+          }}
+          onUndone={() => {
+            const { obdNumber } = addInv;
+            setAddInv(null);
+            setInvoicesRefreshKey((k) => k + 1);
+            toast.success(`${obdNumber} is back to its SAP invoice only`);
+            void load();
+          }}
         />
       )}
 

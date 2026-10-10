@@ -1555,7 +1555,7 @@ export function FloorTable({
             // pair chip under it: "1 at tint" on a block, or the missing
             // member(s) on a split row — "2 on hold", "2 at tint"…
             <td className={`${TD} align-middle`} rowSpan={merged ? pair.size : undefined}>
-              <InvoiceLines invoiceNo={row.invoiceNo} invoiceDate={row.invoiceDate} />
+              <InvoiceLines invoiceNo={row.invoiceNo} invoiceDate={row.invoiceDate} addedInvoiceNos={row.addedInvoiceNos} />
               {pair?.chip && (
                 <div className="mt-0.5 overflow-hidden text-ellipsis">
                   <PairPlaceChip chip={pair.chip} />

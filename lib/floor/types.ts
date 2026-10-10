@@ -383,6 +383,14 @@ export interface FloorBoardRow extends PickingQueueRow {
    * Tint Manager Base feed) — that feed never reads it.
    */
   invoicePartners: InvoicePartner[];
+  /**
+   * ADD INVOICES (2026-10-10, Schema v27.63) — the invoice numbers typed by
+   * hand for THIS OBD (order_invoices seq 2..n, in seq order). [] = unsplit.
+   * `invoiceNo` above stays SAP's (seq 1). The table shows "+n" beside it.
+   * Phase 2 is record-only: the row is still ONE row per OBD.
+   * ⚠ [] also when the caller skipped the lookup (`skipInvoicePartners`).
+   */
+  addedInvoiceNos: string[];
   // ⚠ `totalArticle` was added here on 2026-08-11 for the By-picker card and
   // REMOVED the same day, superseded: the card now shows a typed breakdown
   // ("18 D · 14 C") built from `articleTag` via formatArticleBreakdown()

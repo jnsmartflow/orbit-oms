@@ -15,6 +15,9 @@
 //   either         → ··· More → Hold (bulk, 8 s Undo — floor-page.tsx bulkHold)
 //                              · Cancel / Raise CI… (off-floor-dialog.tsx;
 //                                grey inside a trip — remove from trip first)
+//                              · Add invoices / Edit invoices (2026-10-10) —
+//                                exactly ONE OBD ticked + the floor_add_invoices
+//                                tick; floor-page decides (`addInvoices` prop)
 //
 // 🔴 IT RENDERS INSIDE THE BILLS COLUMN (2026-09-22). floor-page builds it and
 // TripDesk places it in its `relative` bills column, so it never runs under the
@@ -30,7 +33,7 @@
 // workflowStage. A dialog on an action repeated all afternoon is a tax, not a
 // safety net. Hold has no confirm either: its toast carries an Undo.
 
-import { Pause, X } from "lucide-react";
+import { FileText, Pause, X } from "lucide-react";
 import { FloorActionBar, MoreMenu, BarDivider, BAR_PRIMARY, type BarFigure } from "./floor-action-bar";
 
 export function FloorBottomBar({
@@ -54,6 +57,8 @@ export function FloorBottomBar({
   onOffFloor,
   redeliveryCount = 0,
   countLabel = null,
+  addInvoices = null,
+  onAddInvoices,
 }: {
   count: number;
   /** Already formatted by the caller through formatLitres. */
@@ -122,6 +127,15 @@ export function FloorBottomBar({
    * "N selected". Not used beside a ticked re-delivery.
    */
   countLabel?: string | null;
+  /**
+   * ADD INVOICES (2026-10-10, Phase 2 record-only). null = the item is not
+   * drawn: floor-page passes it only with the floor_add_invoices tick AND
+   * exactly ONE OBD ticked (no re-delivery; a ticked invoice pair is two OBDs,
+   * so it hides). `disabled` + `hint` carry the route's blockedReason (e.g.
+   * "Wait for the SAP invoice …") — grey with the reason, never hidden for it.
+   */
+  addInvoices?: { label: string; hint: string; disabled: boolean } | null;
+  onAddInvoices?: () => void;
 }) {
   // 🔴 INSIDE A TRIP THE FORM IS OFFERED GREY, NOT HIDDEN (owner, 2026-09-22):
   // every bill there would be refused ("On trip … — remove it from the trip
@@ -204,6 +218,18 @@ export function FloorBottomBar({
             icon: <Pause size={15} strokeWidth={2.2} />,
             onSelect: onHold,
           },
+          ...(addInvoices !== null && onAddInvoices
+            ? [
+                {
+                  key: "add-invoices",
+                  label: addInvoices.label,
+                  hint: addInvoices.hint,
+                  icon: <FileText size={15} strokeWidth={2.2} />,
+                  disabled: addInvoices.disabled,
+                  onSelect: onAddInvoices,
+                },
+              ]
+            : []),
           {
             key: "off-floor",
             label: "Cancel / Raise CI…",

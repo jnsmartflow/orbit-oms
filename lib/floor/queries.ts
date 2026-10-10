@@ -529,6 +529,29 @@ export async function billToByObd(obdNumbers: string[]): Promise<Map<string, str
 }
 
 /**
+ * ADD INVOICES (2026-10-10, Schema v27.63): orderId → the invoice numbers typed
+ * by hand for that OBD (order_invoices seq 2..n, in seq order). An unsplit OBD
+ * is absent (its seq-1 row is SAP's, already on the row as invoiceNo).
+ * ONE findMany keyed `orderId IN (…)`, skipped when the list is empty. SELECT-only.
+ */
+export async function getAddedInvoiceNos(orderIds: number[]): Promise<Map<number, string[]>> {
+  const map = new Map<number, string[]>();
+  if (orderIds.length === 0) return map;
+  const rows = await prisma.order_invoices.findMany({
+    where: { orderId: { in: orderIds }, seq: { gt: 1 } },
+    orderBy: [{ orderId: "asc" }, { seq: "asc" }],
+    select: { orderId: true, invoiceNo: true },
+  });
+  for (const r of rows) {
+    if (r.invoiceNo === null) continue;
+    const list = map.get(r.orderId) ?? [];
+    list.push(r.invoiceNo);
+    map.set(r.orderId, list);
+  }
+  return map;
+}
+
+/**
  * EVERY bill on each of these invoices, with its place NOW (2026-10-08) —
  * lib/floor/invoice-pairs.ts. THE ONE READ for invoice partners, shared by the
  * full board (getFloorBoard) and the live feed's by-id patch (lib/floor/rows.ts),
@@ -1143,6 +1166,18 @@ export async function getFloorBoard(
     ? new Map<string, InvoicePartner[]>()
     : await getInvoicePartnerMap(orders.map((o) => o.invoiceNo), hide);
 
+  // ── Add invoices (2026-10-10, Schema v27.63) ─────────────────────────────
+  // The numbers typed by hand for each row's OBD — same post-fetch contract:
+  // ONE read keyed `orderId IN (…)` (the (orderId, seq) unique leads with
+  // orderId), NO predicate term, SELECT-only. Keyed on the row's OWN order, so
+  // an `onlyIds` patch (lib/floor/rows.ts) gets exactly what a full load does,
+  // and the live feed's order_invoices trigger (parent "orderId") is what makes
+  // the feed fetch that patch. Skipped with the partners for the Tint Manager
+  // Base feed, which never reads it.
+  const addedInvoiceMap = opts.skipInvoicePartners
+    ? new Map<number, string[]>()
+    : await getAddedInvoiceNos(orders.map((o) => o.id));
+
   // TINT vs BASE — same post-fetch contract as the line above: batched once for
   // the page, and NO predicate touched, so board and marker stay on the one
   // shared `floorLiveBaseWhere`. Costs nothing on a board with no
@@ -1370,6 +1405,8 @@ export async function getFloorBoard(
       invoiceNo: order.invoiceNo ?? null,
       // The other bills on this invoice — map lookup only; the read ran once above.
       invoicePartners: partnersOf(partnerMap, order.invoiceNo, order.id),
+      // Add invoices — map lookup only; the read ran once above.
+      addedInvoiceNos: addedInvoiceMap.get(order.id) ?? [],
       // SEARCH ONLY — never displayed (owner decision 2026-09-29; FloorBoardRow).
       soNumber: order.soNumber ?? null,
       // Whose bill it is — map lookup only; the reads ran once above.

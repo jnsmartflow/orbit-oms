@@ -30,6 +30,7 @@ import { SlotPickerButton } from "@/components/floor/slot-picker-button";
 import { ShipToEditor } from "@/components/floor/ship-to-editor";
 import { TINT_ROOM_REFUSAL } from "@/lib/floor/off-floor";
 import { DetailItems } from "./detail-items";
+import { DetailInvoices } from "./detail-invoices";
 import { DetailDetails } from "./detail-details";
 import { DetailActivity } from "./detail-activity";
 import { ON_HOLD_PILL_CLS } from "./status-pill";
@@ -161,6 +162,10 @@ export function DetailPanel({
   withBillingCiNumber = null,
   isHand = false,
   canEdit = false,
+  canAddInvoices = false,
+  obdKg = null,
+  invoicesRefreshKey = 0,
+  onEditInvoices,
   list,
   windows,
   pickers,
@@ -199,6 +204,18 @@ export function DetailPanel({
    * Gates the Hand toggle — HIDDEN without it, never disabled (UI §10).
    */
   canEdit?: boolean;
+  /**
+   * ADD INVOICES (2026-10-10): `floor_add_invoices` canEdit, resolved on the
+   * server like canEdit. Draws Add / Edit in the Items tab's Invoices section —
+   * hidden without it, and on a history panel (UI §10). The route re-checks.
+   */
+  canAddInvoices?: boolean;
+  /** The OBD's header kg, off the loaded board row — the ~kg share. */
+  obdKg?: number | null;
+  /** Bumped by floor-page after an Add invoices save / undo. */
+  invoicesRefreshKey?: number;
+  /** Opens floor-page's Add invoices modal on this bill. */
+  onEditInvoices?: (orderId: number, obdNumber: string) => void;
   list: number[];
   windows: DispatchWindow[];
   pickers: FloorPicker[];
@@ -341,6 +358,10 @@ export function DetailPanel({
             withBillingCiNumber={withBillingCiNumber}
             isHand={isHand}
             canEdit={canEdit}
+            canAddInvoices={canAddInvoices && onEditInvoices !== undefined}
+            obdKg={obdKg}
+            invoicesRefreshKey={invoicesRefreshKey + (changeSignal ?? 0)}
+            onEditInvoices={onEditInvoices}
             tab={tab}
             setTab={setTab}
             windows={windows}
@@ -396,6 +417,10 @@ function PanelBody({
   withBillingCiNumber,
   isHand,
   canEdit,
+  canAddInvoices,
+  obdKg,
+  invoicesRefreshKey,
+  onEditInvoices,
   tab,
   setTab,
   windows,
@@ -417,6 +442,10 @@ function PanelBody({
   withBillingCiNumber: string | null;
   isHand: boolean;
   canEdit: boolean;
+  canAddInvoices: boolean;
+  obdKg: number | null;
+  invoicesRefreshKey: number;
+  onEditInvoices?: (orderId: number, obdNumber: string) => void;
   tab: Tab;
   setTab: (t: Tab) => void;
   windows: DispatchWindow[];
@@ -819,7 +848,20 @@ function PanelBody({
 
       {/* ── Body (scrolls) ──────────────────────────────────────────────────── */}
       <div className="min-h-0 flex-1 overflow-y-auto">
-        {tab === "items" && <DetailItems lines={d.lines} totalLitres={d.totalLitres} />}
+        {tab === "items" && (
+          <>
+            {/* Add invoices (2026-10-10) — SAP's number, or every invoice of a
+                split OBD with its lines. Edit only on a live (not history) panel. */}
+            <DetailInvoices
+              orderId={d.orderId}
+              obdKg={obdKg}
+              canAddInvoices={canAddInvoices && !readOnly}
+              refreshKey={invoicesRefreshKey}
+              onEdit={() => onEditInvoices?.(d.orderId, d.obdNumber)}
+            />
+            <DetailItems lines={d.lines} totalLitres={d.totalLitres} />
+          </>
+        )}
         {tab === "details" && <DetailDetails d={d} />}
         {tab === "activity" && <DetailActivity d={d} />}
       </div>

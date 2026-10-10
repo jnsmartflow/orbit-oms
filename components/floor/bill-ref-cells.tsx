@@ -61,12 +61,35 @@ export function ObdDateLine({
  * yet, and a dash would read as "we looked and found nothing". The two lines are
  * independent — patch-headers fills the two fields with separate fill-if-null tests.
  */
-export function InvoiceLines({ invoiceNo, invoiceDate }: { invoiceNo: string | null; invoiceDate: string | null }) {
+//
+// `addedInvoiceNos` (2026-10-10, Add invoices): the numbers typed by hand for a
+// split OBD. When there are any, a "+n" chip follows SAP's number and the cell's
+// hover lists them all. Only Floor's table passes it; every other caller (Hold,
+// the Tint Manager tables) renders exactly as before.
+export function InvoiceLines({
+  invoiceNo,
+  invoiceDate,
+  addedInvoiceNos,
+}: {
+  invoiceNo: string | null;
+  invoiceDate: string | null;
+  addedInvoiceNos?: string[];
+}) {
+  const added = addedInvoiceNos ?? [];
+  const all = invoiceNo ? [invoiceNo, ...added] : added;
   return (
     <>
       {invoiceNo && (
-        <span className="font-mono text-[11.5px] font-medium text-[#111827]">
+        <span
+          className="font-mono text-[11.5px] font-medium text-[#111827]"
+          title={added.length > 0 ? `${all.length} invoices: ${all.join(", ")}` : undefined}
+        >
           {invoiceNo}
+          {added.length > 0 && (
+            <span className="ml-1 rounded-[4px] bg-ink-100 px-1 py-px font-sans text-[10px] font-semibold text-ink-700">
+              +{added.length}
+            </span>
+          )}
         </span>
       )}
       {invoiceDate && (
