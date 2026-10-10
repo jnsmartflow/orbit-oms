@@ -55,7 +55,9 @@ import { FloorTable, shipMarkers, type FloorTableVariant } from "./floor-table";
 import { DivisionBand, ShipToBlockHeader } from "./ship-to-blocks";
 import { billedToOf, buildDivisionBands } from "@/lib/floor/division-blocks";
 import { DIRECT_SEGMENT, NEEDS_CHECK_SEGMENT } from "./progress-bar";
-import { Truck } from "lucide-react";
+import { Mail, Truck } from "lucide-react";
+import { fmtDateTime } from "./bill-ref-cells";
+import { formatDateIST } from "@/lib/floor/format";
 import { keepPairsAdjacent, sortFloorRows } from "@/lib/floor/sort";
 import type { FloorDeskKey } from "@/lib/floor/selection";
 import type { FloorBoardRow, FloorRouteClub, FloorScope } from "@/lib/floor/types";
@@ -1098,6 +1100,73 @@ function AllTypeCard({
   );
 }
 
+/** The tiny uppercase key over a value — the detail panel's Cell label look. */
+const MISSING_KEY = "text-[9.5px] font-semibold uppercase tracking-[0.05em] text-ink-400";
+
+/**
+ * One Missing customer row (2026-10-10, design:
+ * docs/mockups/floor-trips/missing-customer-rows.html, `rowG`). Its own auto
+ * height — NOT `ALL_ROW`, whose fixed 64px keeps the three type cards' rows
+ * aligned. Ship-to + kg, then "Bill to", then two documents side by side: OBD
+ * (number, then its date + time — the Floor table's clock and ✉ mark, as
+ * ObdDateLine draws them) and Invoice (number, then its date). No invoice →
+ * that column is blank, never a dash (InvoiceLines' rule). Layout only: every
+ * field was already on the board row.
+ */
+function MissingCustomerRow({ row: r, onOpen }: { row: FloorBoardRow; onOpen: () => void }) {
+  const billTo = r.billToName?.trim() || null;
+  const obdIso = r.obdDateTime instanceof Date ? r.obdDateTime.toISOString() : r.obdDateTime;
+  return (
+    <button type="button" className="block w-full cursor-pointer px-4 py-3 text-left hover:bg-ink-25" onClick={onOpen}>
+      <span className="flex items-baseline justify-between gap-2">
+        <span className="min-w-0 truncate text-[13px] font-semibold text-ink-900">{r.dealerName}</span>
+        <span className="shrink-0 text-[13px] font-semibold tabular-nums text-ink-900">
+          {kgText([r])}
+          <small className="ml-0.5 text-[11.5px] font-normal text-ink-400">kg</small>
+        </span>
+      </span>
+      {/* "Fix area" (customer on file, area gives no type) keeps its tag here,
+          at the right of the bill-to line; "Customer missing" is the card's
+          own title, so rows no longer repeat it. */}
+      {(billTo || r.dealerInMaster) && (
+        <span className="mt-0.5 flex items-baseline gap-2">
+          <span className="min-w-0 truncate text-[11.5px] text-ink-400">
+            {billTo && (
+              <>
+                Bill to <b className="font-semibold text-ink-600">{billTo}</b>
+              </>
+            )}
+          </span>
+          {r.dealerInMaster && <span className="ml-auto shrink-0 text-[11px] font-semibold text-warn-text">Fix area</span>}
+        </span>
+      )}
+      <span className="mt-2 grid grid-cols-2 gap-x-3 border-t border-dashed border-ink-100 pt-2">
+        <span className="block min-w-0">
+          <span className={`block ${MISSING_KEY}`}>OBD</span>
+          <span className="mt-0.5 block truncate text-[12px] font-semibold tabular-nums text-ink-900">{r.obdNumber}</span>
+          <span className="mt-[5px] flex items-center gap-1 whitespace-nowrap text-[11px] tabular-nums text-ink-400">
+            {fmtDateTime(obdIso)}
+            {r.isEmailTime && (
+              <span title="Email time" className="inline-flex shrink-0">
+                <Mail size={9.5} />
+              </span>
+            )}
+          </span>
+        </span>
+        <span className="block min-w-0">
+          <span className={`block ${MISSING_KEY}`}>Invoice</span>
+          {r.invoiceNo && (
+            <span className="mt-0.5 block truncate text-[12px] font-semibold tabular-nums text-ink-900">{r.invoiceNo}</span>
+          )}
+          {r.invoiceDate && (
+            <span className="mt-[5px] block truncate text-[11px] tabular-nums text-ink-400">{formatDateIST(r.invoiceDate)}</span>
+          )}
+        </span>
+      </span>
+    </button>
+  );
+}
+
 /**
  * MISSING CUSTOMER — every pool bill with no delivery type. Its customer is
  * not in delivery_point_master ("Customer missing", `dealerInMaster` false),
@@ -1148,26 +1217,7 @@ function MissingCustomerCard({ rows, onOpenDetail }: { rows: FloorBoardRow[]; on
       </div>
       <div className="flex flex-1 flex-col py-1.5 [&>*+*]:shadow-[inset_0_1px_0_#f3f4f7]">
         {sort(rows).map((r) => (
-          <button
-            key={r.orderId}
-            type="button"
-            className={`${ALL_ROW} cursor-pointer hover:bg-[#fafafc]`}
-            onClick={() => onOpenDetail(r.orderId)}
-          >
-            <span className="flex w-full items-baseline gap-2 whitespace-nowrap">
-              <span className="min-w-0 truncate text-[13px] font-semibold text-[#1a1a22]">{r.dealerName}</span>
-              <span className="ml-auto shrink-0 text-[11px] font-semibold text-[#b45309]">
-                {r.dealerInMaster ? "Fix area" : "Customer missing"}
-              </span>
-            </span>
-            <span className="mt-1 flex w-full items-baseline gap-2 whitespace-nowrap text-[12px] tabular-nums text-[#96969f]">
-              <span>{r.shipToCode}</span>
-              <span className="ml-auto text-[13px] font-semibold text-[#1a1a22]">
-                {kgText([r])}
-                <small className="ml-0.5 text-[11.5px] font-normal text-[#96969f]">kg</small>
-              </span>
-            </span>
-          </button>
+          <MissingCustomerRow key={r.orderId} row={r} onOpen={() => onOpenDetail(r.orderId)} />
         ))}
       </div>
     </section>
