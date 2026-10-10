@@ -1,7 +1,6 @@
 -- ═══════════════════════════════════════════════════════════════════════════
 -- Trip Sheets — page-key grants (user_page_access, page key 'trip_sheet')
--- RUN STATUS: NOT RUN. Written 2026-10-10. The writes below are COMMENTED OUT —
--- run the preview first, read it, then uncomment and run the writes by hand.
+-- RUN STATUS: RUN 2026-10-10 by Smart Flow — sections 2a, 2b, 3 executed; verify returned 40 rows · 14 view · 0 edit · 0 without a row. Do not re-run.
 -- ═══════════════════════════════════════════════════════════════════════════
 -- What: canView = true, canEdit = false on 'trip_sheet' (lib/permissions.ts) for
 -- ACTIVE users who are any of:

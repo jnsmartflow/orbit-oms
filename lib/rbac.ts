@@ -41,7 +41,12 @@ export const ROLE_REDIRECTS: Record<string, string> = {
   billing_operator: "/mail-orders",
   ops_admin: "/admin/attendance",
   operation_manager: "/tint/manager",
-  logistics: "/trips",
+  // Repointed 2026-10-10 from "/trips" (the NTS Trip Report mirror) to the
+  // Orbit Trip Sheets list. Gate checked live first: every ACTIVE user whose
+  // PRIMARY role is logistics holds trip_sheet canView (sql/2026-10-10-trip-
+  // sheet-grants.sql). /trips itself, its menu entry and the trip_report key
+  // are untouched — a logistics user with that tick still reaches it.
+  logistics: "/trip-sheets",
 };
 
 // ── Guards ─────────────────────────────────────────────────────────────────────
