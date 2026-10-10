@@ -1,6 +1,7 @@
 -- sql/2026-10-10-v27.64-so-live-triggers.sql — LIVE FEED: the three sales-officer tables (Schema v27.64)
 --
--- RUN STATUS: NOT RUN. Do not mint CORE until Smart Flow has run it and the verify reads 9 rows.
+-- RUN on live 2026-10-10 · verify 9/9 (all AFTER · STATEMENT · enabled O, on live_changes_config_ins/upd/del).
+--   Minted as Schema v27.64 in docs/CLAUDE_CORE.md v139.
 --
 -- WHY
 --   CORE §13: every table a screen reads needs a live_changes trigger. Floor (and, through the shared
