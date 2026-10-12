@@ -21,7 +21,8 @@
 //   3. CANCEL       — any other cancelled bill.
 //      → 1–3 win EVEN IF the bill is still on a trip: the goods did not go.
 //   4. FREIGHT      — on an ACTIVE freight trip (bill row removedAt null).
-//   5. FLOOR        — on a Floor trip (orders.tripDropId → trip_drops → trips,
+//   5. FLOOR        — on a Floor trip (the bill's stop by the v27.66 derived rule —
+//                     its invoice rows, obdStopIds → trip_drops → trips,
 //                     trip not cancelled). Hand and courier trips are ordinary.
 //   6. anything else has no dispatch date and is not in the report.
 //   A manual /ci CI on a delivered (not cancelled) bill keeps its trip row; only
@@ -44,6 +45,7 @@ import { parseCancelNote } from "@/lib/floor/off-floor";
 import { CANCEL_REASON_LABELS } from "@/lib/picking/cancel-reasons";
 import type { PickDeleteKind } from "@/lib/billing/pick-delete-types";
 import { parseReportDate } from "@/lib/reports/trip-detail-data";
+import { obdStopIds, onStopsWhere } from "@/lib/order-invoices/trip-read";
 import { hhmmss } from "@/lib/reports/trip-detail-old-workbook";
 import {
   billQuantities,
@@ -130,7 +132,6 @@ function istDayTime(d: Date): { day: Date; time: string } {
 const ORDER_SELECT = {
   id: true,
   obdNumber: true,
-  tripDropId: true,
   customerId: true,
   shipToOverrideCustomerId: true,
   shipToCustomerId: true,
@@ -238,7 +239,7 @@ export async function getFreightReportRows(params: FreightReportParams): Promise
   // ── 4. The bills ─────────────────────────────────────────────────────────
   const floorOrders = drops.length
     ? await prisma.orders.findMany({
-        where: { tripDropId: { in: drops.map((d) => d.id) }, isRemoved: false },
+        where: { ...onStopsWhere(drops.map((d) => d.id)), isRemoved: false },
         select: ORDER_SELECT,
       })
     : [];
@@ -257,6 +258,9 @@ export async function getFreightReportRows(params: FreightReportParams): Promise
   const orders = [...floorOrders, ...otherOrders];
   if (orders.length === 0) return [];
   const allIds = orders.map((o) => o.id);
+  // Each bill's stop through its invoice rows (v27.66 derived rule) — never
+  // orders."tripDropId". One read.
+  const stopByOrder = await obdStopIds(allIds);
 
   // A Floor-trip bill that is ALSO on an active freight trip (of any date) is a
   // FREIGHT bill — its row, if any, is the freight trip's.
@@ -406,7 +410,8 @@ export async function getFreightReportRows(params: FreightReportParams): Promise
       stopKey = computeDropKey(o);
     } else {
       // ── Kind 5: FLOOR ─────────────────────────────────────────────────────
-      const drop = o.tripDropId !== null ? dropById.get(o.tripDropId) : undefined;
+      const stop = stopByOrder.get(o.id) ?? null;
+      const drop = stop !== null ? dropById.get(stop) : undefined;
       const t = drop ? floorTripById.get(drop.tripId) : undefined;
       if (!drop || !t || onActiveFreight.has(o.id)) continue;
       kind = "floor";

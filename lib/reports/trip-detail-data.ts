@@ -13,6 +13,7 @@
 // (trip-detail-workbook.ts) takes its row type with `import type`.
 
 import { prisma } from "@/lib/prisma";
+import { onStopsWhere, placeOnTrips, stopRowsSelect } from "@/lib/order-invoices/trip-read";
 import {
   STAGE_LADDER,
   SUPPORT_DONE_OUTPUT,
@@ -211,16 +212,19 @@ export async function getTripDetailRows(params: TripDetailParams): Promise<TripD
   // `NULL <> 'hold'` is NULL, so Prisma's `not` silently drops every bill whose
   // dispatchStatus is NULL — most of them. Removed bills keep their tripDropId
   // (CLAUDE_FLOOR_TRIPS.md §7), so `isRemoved: false` is what keeps them out.
-  const orders = await prisma.orders.findMany({
+  // Through the INVOICE ROWS (v27.66, lib/order-invoices/trip-read.ts): each
+  // OBD once per trip, on its lowest-seq row's stop there. Totals per OBD.
+  const dropIds = drops.map((d) => d.id);
+  const found = await prisma.orders.findMany({
     where: {
-      tripDropId: { in: drops.map((d) => d.id) },
+      ...onStopsWhere(dropIds),
       isRemoved: false,
       OR: [{ dispatchStatus: null }, { dispatchStatus: { not: "hold" } }],
     },
     select: {
       id: true,
       obdNumber: true,
-      tripDropId: true,
+      invoices: stopRowsSelect(dropIds),
       customerId: true,
       shipToOverrideCustomerId: true,
       shipToCustomerId: true,
@@ -238,6 +242,7 @@ export async function getTripDetailRows(params: TripDetailParams): Promise<TripD
       materialType: true,
     },
   });
+  const orders = placeOnTrips(found, new Map(drops.map((d) => [d.id, d.tripId])));
   if (orders.length === 0) return [];
 
   // ── 4. Quantities (the import's per-OBD snapshot) ────────────────────────

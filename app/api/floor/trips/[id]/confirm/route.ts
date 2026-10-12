@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { checkAnyPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
+import { onStopsWhere } from "@/lib/order-invoices/trip-read";
 import { logTripReleased } from "@/lib/trips/activity";
 
 export const dynamic = "force-dynamic";
@@ -104,7 +105,8 @@ export async function POST(
   const billCount =
     drops.length > 0
       ? await prisma.orders.count({
-          where: { tripDropId: { in: drops.map((d) => d.id) }, isRemoved: false },
+          // Through the invoice rows (v27.66) — each OBD counted once.
+          where: { ...onStopsWhere(drops.map((d) => d.id)), isRemoved: false },
         })
       : 0;
 

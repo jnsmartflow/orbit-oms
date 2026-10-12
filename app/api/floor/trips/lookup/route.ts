@@ -6,6 +6,7 @@ import { parseBillLookupTerm, findBillsByNumber } from "@/lib/trips/find-bill";
 import { tripsOnDeskWhere, TRIP_CANCELLED } from "@/lib/trips/live-trips";
 import { parseTripDate } from "@/lib/trips/queries";
 import { getTodayIST } from "@/lib/dates";
+import { deriveObdTripDropId } from "@/lib/order-invoices/trip-read";
 
 export const dynamic = "force-dynamic";
 
@@ -31,7 +32,8 @@ export const dynamic = "force-dynamic";
  * as a `1`) all look up `I536229654` — the same three forms lib/floor/search.ts
  * accepts on the client.
  *
- * Follows orders.tripDropId → trip_drops.tripId → trips. Cancelled trips are
+ * Follows the bill's invoice rows (v27.66: the lowest-seq row on a stop —
+ * deriveObdTripDropId, lib/order-invoices/trip-read.ts) → trip_drops.tripId → trips. Cancelled trips are
  * skipped (cancel detaches its bills, so one should not appear anyway).
  *
  * `onLiveDesk` — is the trip on TODAY's desk right now? Decided by
@@ -65,8 +67,13 @@ export async function GET(req: Request): Promise<NextResponse> {
     term,
     {
       obdNumber: true,
-      tripDrop: {
-        select: { trip: { select: { id: true, tripNumber: true, tripDate: true, status: true } } },
+      invoices: {
+        where: { tripDropId: { not: null } },
+        select: {
+          seq: true,
+          tripDropId: true,
+          tripDrop: { select: { trip: { select: { id: true, tripNumber: true, tripDate: true, status: true } } } },
+        },
       },
     },
     { onTripOnly: true },
@@ -78,7 +85,8 @@ export async function GET(req: Request): Promise<NextResponse> {
     { tripId: number; tripNumber: string; tripDate: string; status: string; obdNumbers: string[] }
   >();
   for (const o of orders) {
-    const t = o.tripDrop?.trip;
+    const stop = deriveObdTripDropId(o.invoices);
+    const t = o.invoices.find((r) => r.tripDropId === stop)?.tripDrop?.trip;
     if (!t || t.status === TRIP_CANCELLED) continue;
     const entry = byTrip.get(t.id) ?? {
       tripId: t.id,

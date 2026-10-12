@@ -18,7 +18,9 @@
 //   Delivery type: the trip's OWN type (trips.deliveryTypeId).
 //
 // ── WHICH BILLS COUNT ON A TRIP ──────────────────────────────────────────────
-//   orders.tripDropId → trip_drops.tripId, not isRemoved, not cancelled.
+//   the bill's invoice rows (v27.66, lib/order-invoices/trip-read.ts — each OBD
+//   once per trip, on its lowest-seq row's stop) → trip_drops.tripId, not
+//   isRemoved, not cancelled.
 //   HELD bills COUNT — they are on the truck plan (owner).
 //
 // ── REMARKS — the name of every CHANGED ship-to (owner, 2026-10-09) ─────────
@@ -33,6 +35,7 @@
 //   still uses the area rule; such a bill falls back to its site / bill-to area.
 
 import { prisma } from "@/lib/prisma";
+import { onStopsWhere, placeOnTrips, stopRowsSelect } from "@/lib/order-invoices/trip-read";
 import { isGiftBill, loadKg, loadLitres } from "@/lib/orders/gift";
 import { effectiveCustomerId } from "@/lib/trips/drop-key";
 import { TRIP_CANCELLED } from "@/lib/trips/live-trips";
@@ -139,28 +142,32 @@ export async function getNtsTripsRows(params: NtsTripsParams): Promise<NtsTripRo
     select: { id: true, tripId: true },
   });
   const tripIdByDrop = new Map(drops.map((d) => [d.id, d.tripId]));
+  const dropIds = drops.map((d) => d.id);
   const orders = drops.length
-    ? await prisma.orders.findMany({
-        where: {
-          tripDropId: { in: drops.map((d) => d.id) },
-          isRemoved: false,
-          workflowStage: { not: STAGE_CANCELLED },
-        },
-        select: {
-          id: true,
-          obdNumber: true,
-          soNumber: true,
-          tripDropId: true,
-          customerId: true,
-          shipToOverride: true,
-          shipToOverrideCustomerId: true,
-          shipToCustomerId: true,
-          smu: true,
-          grossWeight: true,
-          volume: true,
-          materialType: true,
-        },
-      })
+    ? placeOnTrips(
+        await prisma.orders.findMany({
+          where: {
+            ...onStopsWhere(dropIds),
+            isRemoved: false,
+            workflowStage: { not: STAGE_CANCELLED },
+          },
+          select: {
+            id: true,
+            obdNumber: true,
+            soNumber: true,
+            invoices: stopRowsSelect(dropIds),
+            customerId: true,
+            shipToOverride: true,
+            shipToOverrideCustomerId: true,
+            shipToCustomerId: true,
+            smu: true,
+            grossWeight: true,
+            volume: true,
+            materialType: true,
+          },
+        }),
+        tripIdByDrop,
+      )
     : [];
 
   // ── 3. The per-bill facts (shared with the other trip reports) ───────────

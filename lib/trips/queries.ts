@@ -38,6 +38,7 @@ import { getAttemptHistories, redeliveryReasonLabel, type AttemptHistoryEntry } 
 import { getFloorBoard } from "@/lib/floor/queries";
 import type { FloorBoardRow } from "@/lib/floor/types";
 import { isGiftBill, loadKg, loadLitres } from "@/lib/orders/gift";
+import { onStopsWhere, placeOnTrips, stopRowsSelect } from "@/lib/order-invoices/trip-read";
 // 🔴 THE ROUTE/AREA RANKING LIVES IN ONE PLACE (2026-09-16) — a pure module the
 // CLIENT can import too, so the rail card-s label and the pool-s add hint cannot
 // drift apart. PLACEHOLDER_ROUTE_IDS moved there with it.
@@ -395,7 +396,9 @@ interface TripBillRow {
  * delivery type.
  *
  * FIVE batched reads, each keyed on an `IN` list:
- *   1. orders by `tripDropId IN (…)`
+ *   1. orders with an INVOICE ROW on one of the stops (v27.66 — through
+ *      order_invoices."tripDropId", lib/order-invoices/trip-read.ts), each OBD
+ *      once PER TRIP, placed on its lowest-seq row's stop on that trip
  *   2. import_obd_query_summary by `orderId IN (…)` — the litres
  *   3. delivery_point_master by `id IN (…)` — the effective dealer's area
  *   4. area_master by `id IN (…)` — the area's delivery type
@@ -420,14 +423,19 @@ interface TripBillRow {
  * the stop it was on, and clearing the pointer here would be a WRITE in a
  * read-only module.
  */
-async function loadTripBills(dropIds: number[]): Promise<TripBillRow[]> {
-  if (dropIds.length === 0) return [];
+async function loadTripBills(drops: ReadonlyArray<{ id: number; tripId: number }>): Promise<TripBillRow[]> {
+  if (drops.length === 0) return [];
+  const dropIds = drops.map((d) => d.id);
 
-  const orders = await prisma.orders.findMany({
-    where: { tripDropId: { in: dropIds }, isRemoved: false },
+  // 🔴 THROUGH THE INVOICE ROWS (v27.66, Phase 3 readers A). Each OBD comes back
+  // once per trip it touches, on the stop of its lowest-seq row there. TOTALS
+  // STAY PER OBD for now — a bill brings its whole OBD's litres / kg; Phase 5
+  // makes them per invoice row.
+  const found = await prisma.orders.findMany({
+    where: { ...onStopsWhere(dropIds), isRemoved: false },
     select: {
       id: true,
-      tripDropId: true,
+      invoices: stopRowsSelect(dropIds),
       workflowStage: true,
       dispatchStatus: true,
       // SAP GIFTS — see TripBillRow.isGift. One more column, same read.
@@ -438,6 +446,7 @@ async function loadTripBills(dropIds: number[]): Promise<TripBillRow[]> {
     },
     orderBy: { id: "asc" },
   });
+  const orders = placeOnTrips(found, new Map(drops.map((d) => [d.id, d.tripId])));
   if (orders.length === 0) return [];
 
   // ── The delivery type of each bill (2026-09-18) ──────────────────────────
@@ -983,7 +992,7 @@ async function summariesForTrips(trips: TripRow[]): Promise<TripSummary[]> {
     select: { id: true, tripId: true, areaName: true, routeName: true, dropSeq: true },
   });
 
-  const bills = await loadTripBills(drops.map((d) => d.id));
+  const bills = await loadTripBills(drops);
   const labels = await loadTripLabels(trips);
   // Re-deliveries (2026-10-03): ONE batched read for the whole feed — the count
   // per trip, and which stops hold one (a re-delivery-only stop still names the
@@ -1142,7 +1151,7 @@ export async function getTripDetail(tripId: number): Promise<TripDetail | null> 
     },
   });
 
-  const bills = await loadTripBills(drops.map((d) => d.id));
+  const bills = await loadTripBills(drops.map((d) => ({ id: d.id, tripId })));
   const labels = await loadTripLabels([trip]);
   // Two more statements, on a fetch that runs when a planner opens ONE trip.
   // See TripDetail.activity — deliberately absent from the board feed.

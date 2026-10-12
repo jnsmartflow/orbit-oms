@@ -27,6 +27,7 @@ import { prisma } from "@/lib/prisma";
 import { getHideExclusion } from "@/lib/hide/visibility";
 import { NOT_CHALLAN_LINKED } from "@/lib/workflow-stages";
 import { isOrbNumber } from "@/lib/challan-orders/orb-number";
+import { ON_ANY_TRIP_WHERE } from "@/lib/order-invoices/trip-read";
 
 /** A typed term, normalised: the upper-cased whole number, plus the invoice forms to try. */
 export interface BillLookupTerm {
@@ -58,8 +59,9 @@ export function parseBillLookupTerm(raw: string): BillLookupTerm | null {
 
 /**
  * The WHERE for a term: not removed, hide rules applied, whole-number match on
- * OBD / SO / invoice. `onTripOnly` adds `tripDropId IS NOT NULL` (the trip
- * lookup); leave it off to find bills on no trip as well.
+ * OBD / SO / invoice. `onTripOnly` adds "an invoice row is on a stop" (the
+ * trip lookup; through order_invoices since v27.66, lib/order-invoices/
+ * trip-read.ts); leave it off to find bills on no trip as well.
  */
 export async function billLookupWhere(
   term: BillLookupTerm,
@@ -75,7 +77,7 @@ export async function billLookupWhere(
         // search box, the trip lookup or the re-delivery search — typing its SO
         // would otherwise surface a bill that is on no board. NOT NULL column.
         ...NOT_CHALLAN_LINKED,
-        ...(opts.onTripOnly ? { tripDropId: { not: null } } : {}),
+        ...(opts.onTripOnly ? ON_ANY_TRIP_WHERE : {}),
         OR: [
           { obdNumber: term.q },
           { soNumber: term.q },

@@ -30,6 +30,7 @@ import { deleteTripDropIfEmpty, findOrCreateTripDrop } from "@/lib/trips/drop";
 import { logTripRedeliveryAdded, logTripRedeliveryRemoved, type RedeliveryLogItem } from "@/lib/trips/activity";
 import { dealerDisplayName } from "@/lib/orders/dealer-name";
 import { linkRowForOrder } from "@/lib/order-invoices/links";
+import { obdStopIds } from "@/lib/order-invoices/trip-read";
 
 // ── Vocabulary — lives in lib/trips/redelivery-reasons.ts (pure, client-safe) ──
 import { isRedeliveryReason, redeliveryReasonLabel, type RedeliveryReason } from "@/lib/trips/redelivery-reasons";
@@ -102,7 +103,8 @@ function sortHistory(entries: AttemptHistoryEntry[]): AttemptHistoryEntry[] {
 }
 
 /**
- * Every Orbit attempt for each bill — its own trip (through tripDropId) plus
+ * Every Orbit attempt for each bill — its own trip (through its invoice rows
+ * since v27.66: the stop of the lowest-seq row on a trip, obdStopIds) plus
  * every trip_redeliveries row for it — on NON-CANCELLED trips only, ordered by
  * tripDate then createdAt. Batched: four reads for any number of bills.
  */
@@ -111,10 +113,8 @@ export async function getAttemptHistories(orderIds: number[]): Promise<Map<numbe
   const out = new Map<number, AttemptHistoryEntry[]>(ids.map((id) => [id, []]));
   if (ids.length === 0) return out;
 
-  const orders = await prisma.orders.findMany({
-    where: { id: { in: ids } },
-    select: { id: true, tripDropId: true },
-  });
+  const stopByOrder = await obdStopIds(ids);
+  const orders = ids.map((id) => ({ id, tripDropId: stopByOrder.get(id) ?? null }));
   const dropIds = Array.from(new Set(orders.map((o) => o.tripDropId).filter((d): d is number => d !== null)));
   const drops = dropIds.length
     ? await prisma.trip_drops.findMany({ where: { id: { in: dropIds } }, select: { id: true, tripId: true } })
@@ -238,8 +238,12 @@ export function judgeBillForTrip(
   return { ...base, verdict: "ok", message: null };
 }
 
-/** The bill's own trip id (through its stop), batched. */
-async function ownTripIds(orders: Array<{ id: number; tripDropId: number | null }>): Promise<Map<number, number>> {
+/** The bill's own trip id (through its stop), batched. The stop is read off
+ *  the invoice rows (v27.66, obdStopIds — lowest-seq row on a trip), never off
+ *  orders."tripDropId". */
+async function ownTripIds(bills: Array<{ id: number }>): Promise<Map<number, number>> {
+  const stopByOrder = await obdStopIds(bills.map((b) => b.id));
+  const orders = bills.map((b) => ({ id: b.id, tripDropId: stopByOrder.get(b.id) ?? null }));
   const dropIds = Array.from(new Set(orders.map((o) => o.tripDropId).filter((d): d is number => d !== null)));
   const drops = dropIds.length
     ? await prisma.trip_drops.findMany({ where: { id: { in: dropIds } }, select: { id: true, tripId: true } })
@@ -297,7 +301,6 @@ export async function searchForRedelivery(tripId: number, raw: string): Promise<
     invoiceNo: true,
     isRemoved: true,
     workflowStage: true,
-    tripDropId: true,
     shipToCustomerName: true,
     customer: { select: { customerName: true, area: { select: { name: true } } } },
     shipToOverrideCustomer: { select: { customerName: true, area: { select: { name: true } } } },
@@ -395,7 +398,6 @@ export async function addRedeliveries(
           invoiceNo: true,
           isRemoved: true,
           workflowStage: true,
-          tripDropId: true,
           customerId: true,
           shipToOverrideCustomerId: true,
           shipToCustomerId: true,

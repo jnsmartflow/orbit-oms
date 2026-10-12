@@ -33,6 +33,7 @@ import { tripMixLabel } from "@/lib/floor/scope";
 import { salesOfficerByOrder } from "@/lib/floor/queries";
 import { billQuantities, isSiteDelivery, loadBillToByObd, loadSnapshots } from "@/lib/reports/bill-facts";
 import { isGiftBill, loadKg, loadLitres } from "@/lib/orders/gift";
+import { onStopsWhere, placeOnTrips, stopRowsSelect } from "@/lib/order-invoices/trip-read";
 import type {
   TripSheet,
   TripSheetBill,
@@ -50,7 +51,6 @@ const BILL_SELECT = {
   id: true,
   obdNumber: true,
   invoiceNo: true,
-  tripDropId: true,
   dispatchStatus: true,
   materialType: true,
   grossWeight: true,
@@ -69,7 +69,6 @@ type BillRow = {
   id: number;
   obdNumber: string;
   invoiceNo: string | null;
-  tripDropId: number | null;
   dispatchStatus: string | null;
   materialType: string | null;
   grossWeight: number | null;
@@ -147,12 +146,18 @@ async function loadSheetCore(tripIds: number[]): Promise<Map<number, SheetCore>>
   });
   const dropById = new Map(drops.map((d) => [d.id, d]));
 
-  // 2. The trips' own bills — removed out here, held out below.
-  const own: BillRow[] = drops.length
-    ? await prisma.orders.findMany({
-        where: { tripDropId: { in: drops.map((d) => d.id) }, isRemoved: false },
-        select: BILL_SELECT,
-      })
+  // 2. The trips' own bills — removed out here, held out below. THROUGH THE
+  // INVOICE ROWS (v27.66, lib/order-invoices/trip-read.ts): each OBD once per
+  // trip, on the stop of its lowest-seq row there. Totals stay per OBD.
+  const dropIds = drops.map((d) => d.id);
+  const own: Array<BillRow & { tripDropId: number }> = drops.length
+    ? placeOnTrips(
+        await prisma.orders.findMany({
+          where: { ...onStopsWhere(dropIds), isRemoved: false },
+          select: { ...BILL_SELECT, invoices: stopRowsSelect(dropIds) },
+        }),
+        new Map(drops.map((d) => [d.id, d.tripId])),
+      )
     : [];
 
   // 3–4. Re-deliveries carried on these trucks (Schema v27.53). The bill's own
@@ -172,7 +177,7 @@ async function loadSheetCore(tripIds: number[]): Promise<Map<number, SheetCore>>
   // Every bill that can appear, keyed to the stop it rides on THIS trip.
   const placed: Array<{ order: BillRow; dropId: number; redel: boolean }> = [];
   for (const o of own) {
-    if (o.dispatchStatus === HOLD || o.tripDropId === null) continue;
+    if (o.dispatchStatus === HOLD) continue;
     placed.push({ order: o, dropId: o.tripDropId, redel: false });
   }
   for (const r of redelRows) {

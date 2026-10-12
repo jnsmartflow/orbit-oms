@@ -36,6 +36,7 @@
 // Sequential awaits, never prisma.$transaction (CORE §3).
 
 import { prisma } from "../prisma";
+import { deriveObdTripDropId } from "./trip-read";
 
 /** One invoice row's trip link, as the rules need it. */
 export interface TripLinkRow {
@@ -44,18 +45,8 @@ export interface TripLinkRow {
   tripDropId: number | null;
 }
 
-/**
- * The v27.66 derived rule: orders."tripDropId" = the tripDropId of the
- * LOWEST-seq row that has one; null when no row is on a trip.
- */
-export function deriveObdTripDropId(rows: Pick<TripLinkRow, "seq" | "tripDropId">[]): number | null {
-  let best: { seq: number; tripDropId: number } | null = null;
-  for (const r of rows) {
-    if (r.tripDropId === null) continue;
-    if (best === null || r.seq < best.seq) best = { seq: r.seq, tripDropId: r.tripDropId };
-  }
-  return best?.tripDropId ?? null;
-}
+// The derived rule's one home is trip-read.ts; re-exported for callers here.
+export { deriveObdTripDropId };
 
 export interface WholeObdTripMove {
   /** Rows not already on the target — the one updateMany. */

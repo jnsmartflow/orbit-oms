@@ -19,6 +19,7 @@ import { loadBillToByObd } from "@/lib/reports/bill-facts";
 import { displaySoName } from "@/lib/mail-orders/utils";
 import { blank, listRowsFor, vehicleNoFor } from "./load";
 import type { TripSheetMatchField, TripSheetSearchHit } from "./types";
+import { onStopsWhere, placeOnTrips, stopRowsSelect } from "@/lib/order-invoices/trip-read";
 
 export const SEARCH_MIN_CHARS = 2;
 export const SEARCH_WINDOW_DAYS = 14;
@@ -56,24 +57,30 @@ export async function searchTripSheets(q: string): Promise<TripSheetSearchHit[]>
     select: { id: true, tripId: true, customerName: true },
   });
   const tripIdByDrop = new Map(drops.map((d) => [d.id, d.tripId]));
+  // Through the INVOICE ROWS (v27.66, lib/order-invoices/trip-read.ts): each
+  // OBD once per trip it touches, on its lowest-seq row's stop there.
+  const dropIds = drops.map((d) => d.id);
   const orders = drops.length
-    ? await prisma.orders.findMany({
-        where: {
-          tripDropId: { in: drops.map((d) => d.id) },
-          isRemoved: false,
-          OR: [{ dispatchStatus: null }, { dispatchStatus: { not: "hold" } }],
-        },
-        select: {
-          id: true,
-          tripDropId: true,
-          obdNumber: true,
-          invoiceNo: true,
-          smu: true,
-          soNumber: true,
-          customerId: true,
-          shipToOverrideCustomerId: true,
-        },
-      })
+    ? placeOnTrips(
+        await prisma.orders.findMany({
+          where: {
+            ...onStopsWhere(dropIds),
+            isRemoved: false,
+            OR: [{ dispatchStatus: null }, { dispatchStatus: { not: "hold" } }],
+          },
+          select: {
+            id: true,
+            invoices: stopRowsSelect(dropIds),
+            obdNumber: true,
+            invoiceNo: true,
+            smu: true,
+            soNumber: true,
+            customerId: true,
+            shipToOverrideCustomerId: true,
+          },
+        }),
+        tripIdByDrop,
+      )
     : [];
 
   // 4. Billed dealer. 5–6. SO names (Floor's rule, at most two reads).
