@@ -5,36 +5,45 @@
 // 🔴 SAVE AND UNDO EDIT IN PLACE, BY SEQ. Until v27.66 a save deleted every
 // 'manual' row and re-created it. Since v27.66 three tables point at an
 // order_invoices row ON DELETE RESTRICT (trip_bill_copies, trip_redeliveries,
-// ci_returns "orderInvoiceId"), and a row now carries its own trip / hold /
+// ci_returns "orderInvoiceId"), and a row carries its own trip / hold /
 // dispatched state — so a row KEEPS ITS ID across edits: the row at seq k is
 // updated to the k-th invoice, only rows past the new count are deleted, and
 // only rows whose lines actually change get their lines replaced. Do not revert
 // to delete + re-create.
 //
-// 🔴 A ROW THAT CARRIES STATE IS LOCKED. It cannot be deleted, re-numbered or
-// have its lines (items or tins) changed while it is on a trip, held,
-// dispatched, or referenced by a copy, a re-delivery or a CI — that state was
-// recorded against THIS paper with THESE items. Its invoice date may still be
-// corrected. The refusal names the invoice and why, in plain English.
-//
-// The plan never touches the state columns (tripDropId, isHeld, heldAt,
-// heldById, isDispatched, dispatchedAt, dispatchedById) — save/undo never write
-// them.
+// 🔴 "SPLIT INSIDE THE TRIP" (owner, 2026-10-12). The first v27.66 code refused
+// to split any row on a trip / held / copied — 3,679 of 3,728 splittable bills
+// blocked. The owner's rule, which replaced it (do not revert):
+//   · The OBD's rows must all be in ONE state — the same stop (or all off a
+//     trip) and all held or none. An unsplit OBD always is. Rows that differ
+//     (only a later phase can move one row alone) → edit and undo refused.
+//   · New rows INHERIT seq 1's state: tripDropId, isHeld, heldAt, heldById.
+//     So a first split of a bill on a trip / on hold is allowed and nothing on
+//     the trip or the OBD changes — every row sits on the same stop, and all
+//     rows held ⇔ OBD held, exactly the v27.66 derived rules. Undo merges back
+//     to seq 1, which already carries that shared state.
+//   · Always refused: any row dispatched, or ANY ci_returns row on the OBD
+//     (every status, void included).
+//   · A copy / re-delivery link does NOT block — it stays on the row it points
+//     at (history). But a row such a link points at is never DELETED (the FK is
+//     RESTRICT): a plan that would delete one is refused in plain English.
+// This file plans the ONE write of state columns save ever makes: the inherited
+// state on a CREATED row. A kept row's state is never written; isDispatched /
+// dispatchedAt / dispatchedById never are.
 
 import type { InvoiceLineInput } from "./rules";
 
-/** Everything that locks a row, as the server read it. */
+/** A row's dispatch-unit state (v27.66) and the links that point at it. */
 export interface RowState {
-  /** The trip number of the stop the row is on; null = not on a trip. */
-  tripNumber: string | null;
+  tripDropId: number | null;
   isHeld: boolean;
+  heldAt: Date | null;
+  heldById: number | null;
   isDispatched: boolean;
   /** Trip numbers billing copied this row for. */
   copyTrips: string[];
   /** Trip numbers this row is re-delivered on. */
   redeliveryTrips: string[];
-  /** CI numbers raised against this row (a draft has none: "a draft CI"). */
-  ciNumbers: (string | null)[];
 }
 
 /** One order_invoices row as it stands. */
@@ -47,6 +56,14 @@ export interface CurrentRow extends RowState {
   lines: InvoiceLineInput[];
 }
 
+/** The OBD facts the refusal reads besides its rows. */
+export interface ObdFacts {
+  obdNumber: string;
+  /** EVERY ci_returns row on the OBD, any status, void included. null = a
+   *  draft with no number yet. */
+  ciNumbers: (string | null)[];
+}
+
 /** One row as it should stand after the write. Index 0 is seq 1 (SAP's). */
 export interface TargetRow {
   invoiceNo: string;
@@ -54,13 +71,23 @@ export interface TargetRow {
   lines: InvoiceLineInput[];
 }
 
+/** The state a CREATED row inherits — seq 1's. */
+export interface InheritedState {
+  tripDropId: number | null;
+  isHeld: boolean;
+  heldAt: Date | null;
+  heldById: number | null;
+}
+
 export interface WritePlan {
   /** Manual rows past the new count — deleted (their lines CASCADE). */
   deleteRowIds: number[];
-  /** Existing manual rows whose number or date changes. */
+  /** Existing manual rows whose number or date changes (state untouched). */
   updates: { id: number; seq: number; invoiceNo: string; invoiceDate: Date | null }[];
-  /** New manual rows. */
+  /** New manual rows — each written WITH `inherit`. */
   creates: { seq: number; invoiceNo: string; invoiceDate: Date | null }[];
+  /** seq 1's state, copied onto every created row. */
+  inherit: InheritedState;
   /** Every seq whose lines are replaced — an existing row whose lines change,
    *  and every created row. Its lines are deleted, then written fresh. */
   relineSeqs: number[];
@@ -68,16 +95,22 @@ export interface WritePlan {
 
 export type PlanResult = { ok: true; plan: WritePlan; changed: boolean } | { ok: false; refusals: string[] };
 
-/** The plain-English reasons a row is locked, or [] when it is free. */
-export function rowLockReasons(s: RowState): string[] {
-  const out: string[] = [];
-  if (s.isDispatched) out.push("it has been dispatched");
-  if (s.tripNumber !== null) out.push(`it is on trip ${s.tripNumber}`);
-  if (s.isHeld) out.push("it is on hold");
-  for (const t of s.copyTrips) out.push(`billing copied it for trip ${t}`);
-  for (const t of s.redeliveryTrips) out.push(`it is re-delivered on trip ${t}`);
-  for (const n of s.ciNumbers) out.push(n === null ? "a draft CI is open on it" : `it has CI ${n}`);
-  return out;
+/**
+ * Why the invoices of this OBD cannot be added / edited / undone AT ALL, or
+ * null. The same message is GET's blockedReason (the More menu's hint) and the
+ * save / undo refusal.
+ */
+export function obdStateRefusal(rows: RowState[], obd: ObdFacts): string | null {
+  if (rows.some((r) => r.isDispatched)) return "Already dispatched — invoices can't be changed.";
+  if (obd.ciNumbers.length > 0) {
+    const names = obd.ciNumbers.map((n) => n ?? "draft").join(", ");
+    return `Has a CI (${names}) — invoices can't be changed.`;
+  }
+  const first = rows[0];
+  if (first && rows.some((r) => r.tripDropId !== first.tripDropId || r.isHeld !== first.isHeld)) {
+    return `Invoices of ${obd.obdNumber} are on different trips / holds — move them back together first.`;
+  }
+  return null;
 }
 
 /** The same set of (line, tins), in any order. */
@@ -93,15 +126,18 @@ function sameDay(a: Date | null, b: Date | null): boolean {
   return a.getTime() === b.getTime();
 }
 
-function refusal(row: CurrentRow, what: string, reasons: string[]): string {
-  const name = row.invoiceNo ?? `Invoice ${row.seq}`;
-  return `${name} cannot be ${what} — ${reasons.join(", ")}.`;
+/** The RESTRICT guard: what points at a row, in plain English, or []. */
+function linkReasons(r: RowState): string[] {
+  return [
+    ...r.copyTrips.map((t) => `billing copied it for trip ${t}`),
+    ...r.redeliveryTrips.map((t) => `it is re-delivered on trip ${t}`),
+  ];
 }
 
 /**
  * The diff from `current` to `target`, or every refusal. `current` is the OBD's
- * rows (seq 1 included); `target` is the whole wanted split in seq order —
- * for Undo, `[{ seq 1's number and date, lines: [] }]`.
+ * rows (seq 1 included, seq order); `target` is the whole wanted split in seq
+ * order — for Undo, `[{ seq 1's number, lines: [] }]`.
  *
  * Seq 1 is SAP's row: its number and date are never written here (the route's
  * validateSplit already demands the SAP number at index 0); only its lines move.
@@ -109,10 +145,19 @@ function refusal(row: CurrentRow, what: string, reasons: string[]): string {
  * Re-running a plan on a half-written state reaches the same target, because
  * the plan is always the diff from what the database holds NOW.
  */
-export function planSplitWrite(current: CurrentRow[], target: TargetRow[]): PlanResult {
+export function planSplitWrite(current: CurrentRow[], target: TargetRow[], obd: ObdFacts): PlanResult {
+  const blocked = obdStateRefusal(current, obd);
+  if (blocked !== null) return { ok: false, refusals: [blocked] };
+
+  const seq1 = current.find((r) => r.seq === 1);
+  const inherit: InheritedState = {
+    tripDropId: seq1?.tripDropId ?? null,
+    isHeld: seq1?.isHeld ?? false,
+    heldAt: seq1?.isHeld ? seq1.heldAt : null,
+    heldById: seq1?.isHeld ? seq1.heldById : null,
+  };
   const bySeq = new Map(current.map((r) => [r.seq, r]));
-  const refusals: string[] = [];
-  const plan: WritePlan = { deleteRowIds: [], updates: [], creates: [], relineSeqs: [] };
+  const plan: WritePlan = { deleteRowIds: [], updates: [], creates: [], inherit, relineSeqs: [] };
 
   target.forEach((t, i) => {
     const seq = i + 1;
@@ -122,21 +167,19 @@ export function planSplitWrite(current: CurrentRow[], target: TargetRow[]): Plan
       plan.relineSeqs.push(seq);
       return;
     }
-    const locked = rowLockReasons(row);
-    const renumbered = seq !== 1 && row.invoiceNo !== t.invoiceNo;
-    const relined = !sameLines(row.lines, t.lines);
-    if (locked.length > 0 && renumbered) refusals.push(refusal(row, `changed to ${t.invoiceNo}`, locked));
-    else if (locked.length > 0 && relined) refusals.push(refusal(row, "given different items", locked));
-    if (seq !== 1 && (renumbered || !sameDay(row.invoiceDate, t.invoiceDate))) {
+    if (seq !== 1 && (row.invoiceNo !== t.invoiceNo || !sameDay(row.invoiceDate, t.invoiceDate))) {
       plan.updates.push({ id: row.id, seq, invoiceNo: t.invoiceNo, invoiceDate: t.invoiceDate });
     }
-    if (relined) plan.relineSeqs.push(seq);
+    if (!sameLines(row.lines, t.lines)) plan.relineSeqs.push(seq);
   });
 
+  const refusals: string[] = [];
   for (const row of current) {
     if (row.seq <= target.length) continue;
-    const locked = rowLockReasons(row);
-    if (locked.length > 0) refusals.push(refusal(row, "removed", locked));
+    const links = linkReasons(row);
+    if (links.length > 0) {
+      refusals.push(`${row.invoiceNo ?? `Invoice ${row.seq}`} cannot be removed — ${links.join(", ")}, and that record stays on it.`);
+    }
     plan.deleteRowIds.push(row.id);
   }
 

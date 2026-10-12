@@ -1417,8 +1417,10 @@ model orders {
 // 1,2,5,3,4,6a,8 run by the owner 12 Oct 2026) — THE ROW IS THE DISPATCH UNIT.
 // tripDropId / isHeld / heldAt / heldById / isDispatched / dispatchedAt /
 // dispatchedById, back-filled for UNSPLIT OBDs only (row := OBD). Nothing in the
-// app writes them yet (Phase 3 commit 2 onward), and Add invoices save/undo
-// NEVER writes them. Derived OBD rules: CORE §7 v27.66.
+// app writes them yet (Phase 3 commit 2 onward) EXCEPT Add invoices save, which
+// writes seq 1's tripDropId / isHeld / heldAt / heldById onto every row it
+// CREATES ("split inside the trip", lib/order-invoices/plan.ts). Derived OBD
+// rules: CORE §7 v27.66.
 // 🔴 Three tables now point here ON DELETE RESTRICT (trip_bill_copies,
 // trip_redeliveries, ci_returns "orderInvoiceId"), which is why Add invoices
 // save EDITS IN PLACE since v27.66 (lib/order-invoices/split.ts) — do not

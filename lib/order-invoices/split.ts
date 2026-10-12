@@ -4,19 +4,25 @@
 // Server-only (Prisma). The rules are lib/order-invoices/rules.ts and the
 // save/undo diff is lib/order-invoices/plan.ts (both pure).
 //
-// 🔴 RECORD ONLY. Nothing here writes `orders`, a trip, a hold, picking or CI,
-// and NOTHING here writes a row's v27.66 state columns (tripDropId, isHeld,
-// heldAt, heldById, isDispatched, dispatchedAt, dispatchedById). The one other
-// write is ONE order_status_logs row per save / undo.
+// 🔴 RECORD ONLY. Nothing here writes `orders`, a trip, a hold, picking or CI.
+// The one other write is ONE order_status_logs row per save / undo.
+//
+// 🔴 THE ONE PLACE SAVE WRITES STATE COLUMNS: step 3. A CREATED row (seq 2..n)
+// is written WITH seq 1's tripDropId / isHeld / heldAt / heldById — "split
+// inside the trip" (owner, 2026-10-12). Every row then sits on the same stop
+// and is held iff the OBD is, so orders.tripDropId / orders.dispatchStatus are
+// already right and are NOT written. A kept row's state is never written, and
+// isDispatched / dispatchedAt / dispatchedById never are.
 //
 // 🔴 SAVE AND UNDO EDIT IN PLACE, BY SEQ (v27.66). Save used to delete every
 // 'manual' row and re-create it; since v27.66 copies, re-deliveries and CI
 // point at a row ON DELETE RESTRICT, so rows KEEP THEIR IDS: the row at seq k
 // becomes the k-th invoice, only rows past the new count are deleted, and only
-// rows whose lines change get new lines. A row on a trip, held, dispatched, or
-// referenced by a copy / re-delivery / CI is LOCKED — plan.ts refuses to
-// delete it, re-number it or change its items, naming the invoice. Do not
-// revert to delete + re-create.
+// rows whose lines change get new lines. Do not revert to delete + re-create.
+// The refusals (plan.ts obdStateRefusal — also GET's blockedReason, the More
+// menu's hint): a row dispatched; ANY ci_returns row on the OBD (void
+// included); rows on different stops / holds. A copy or re-delivery does NOT
+// block, but a row one points at is never deleted (RESTRICT guard).
 //
 // 🔴 NO TRANSACTION (CORE §3) — THE WRITE ORDER IS THE SAFETY. Every step is one
 // SQL statement (step 2 is one per changed row), each all-or-nothing on its own:
@@ -38,8 +44,9 @@
 // validateSplit fails on them. Dying after 2 leaves re-numbered rows with their
 // old lines; the route already returned an error, so the person saves again.
 // Lines are written in ONE statement after every row exists, so a half set of
-// lines cannot happen. A locked row is never in steps 1, 2 (number) or 5-6, so
-// no dead attempt can touch it. Two saves racing on one OBD collide on UNIQUE
+// lines cannot happen. A row a copy / re-delivery points at is never in step 1.
+// Rows created in step 3 already carry the inherited state, so a dead attempt
+// never leaves a row off the OBD's stop or hold. Two saves racing on one OBD collide on UNIQUE
 // (orderId, seq) at step 3 — the loser gets an error and re-reads.
 // Undo is the same engine with the target "seq 1 only, no lines": steps 1 and
 // 5 only — manual rows first, then seq 1's lines, as before.
@@ -47,7 +54,10 @@
 // ⚠ NO LIVE REFRESH IS SENT FROM HERE, and orders.updatedAt is NOT touched
 // (owner question, 2026-10-10 — it would wake only the legacy 15 s markers).
 // order_invoices carries live_changes child triggers (v27.65, parent
-// "orderId"), so the database records a row change itself.
+// "orderId"), so the database records a row change itself — and (v27.66) a
+// created row WITH a tripDropId fires trg_live_changes_order_invoices_trip_ins,
+// a 'trip' line for that stop's trip: an open Floor re-reads the trip
+// (floor-page refreshTripsByIds) as well as the bill row. No orders write needed.
 // ⚠ order_invoice_lines has NO trigger (no "orderId" column). Since v27.66 a
 // save that only moves tins between rows writes ONLY lines (steps 5-6) and so
 // records NO live line. Harmless today — the one live-patched read is the
@@ -57,7 +67,7 @@
 
 import { prisma } from "../prisma";
 import { syncSapInvoiceRow } from "./sap-row";
-import { planSplitWrite, type CurrentRow, type TargetRow, type WritePlan } from "./plan";
+import { obdStateRefusal, planSplitWrite, type CurrentRow, type ObdFacts, type TargetRow, type WritePlan } from "./plan";
 import {
   addInvoicesRefusal,
   detectStale,
@@ -126,8 +136,8 @@ async function loadRows(orderId: number) {
   });
 }
 
-/** The rows WITH everything that locks them (plan.ts rowLockReasons) — the
- *  input to save / undo. A void CI still locks: its FK still points here. */
+/** The rows WITH their state and the copy / re-delivery links that point at
+ *  them — the input to save / undo and to GET's blockedReason. */
 async function loadCurrentRows(orderId: number): Promise<CurrentRow[]> {
   const rows = await prisma.order_invoices.findMany({
     where: { orderId },
@@ -138,12 +148,13 @@ async function loadCurrentRows(orderId: number): Promise<CurrentRow[]> {
       invoiceNo: true,
       invoiceDate: true,
       source: true,
+      tripDropId: true,
       isHeld: true,
+      heldAt: true,
+      heldById: true,
       isDispatched: true,
-      tripDrop: { select: { trip: { select: { tripNumber: true } } } },
       billCopies: { select: { trip: { select: { tripNumber: true } } }, orderBy: { id: "asc" } },
       redeliveries: { select: { trip: { select: { tripNumber: true } } }, orderBy: { id: "asc" } },
-      ciReturns: { select: { ciNumber: true, isVoided: true }, orderBy: { id: "asc" } },
       lines: { select: { rawLineItemId: true, qty: true }, orderBy: { rawLineItemId: "asc" } },
     },
   });
@@ -154,17 +165,33 @@ async function loadCurrentRows(orderId: number): Promise<CurrentRow[]> {
     invoiceDate: r.invoiceDate,
     source: r.source,
     lines: r.lines,
-    tripNumber: r.tripDrop?.trip.tripNumber ?? null,
+    tripDropId: r.tripDropId,
     isHeld: r.isHeld,
+    heldAt: r.heldAt,
+    heldById: r.heldById,
     isDispatched: r.isDispatched,
     copyTrips: r.billCopies.map((c) => c.trip.tripNumber),
     redeliveryTrips: r.redeliveries.map((d) => d.trip.tripNumber),
-    ciNumbers: r.ciReturns.map((c) => (c.ciNumber === null ? null : c.isVoided ? `${c.ciNumber} (void)` : c.ciNumber)),
   }));
 }
 
+/** EVERY ci_returns row on the OBD — by orderId, any status, void included
+ *  (owner, 2026-10-12: any CI blocks). A void one is named "(void)". */
+async function loadObdFacts(orderId: number, obdNumber: string): Promise<ObdFacts> {
+  const cis = await prisma.ci_returns.findMany({
+    where: { orderId },
+    orderBy: { id: "asc" },
+    select: { ciNumber: true, isVoided: true },
+  });
+  return {
+    obdNumber,
+    ciNumbers: cis.map((c) => (c.ciNumber === null ? null : c.isVoided ? `${c.ciNumber} (void)` : c.ciNumber)),
+  };
+}
+
 /** Steps 1-6 of the header: carry out a plan. Sequential, one statement each
- *  (step 2: one per re-numbered row). Never touches a row's state columns. */
+ *  (step 2: one per re-numbered row). Writes state ONLY on created rows (step
+ *  3, the inherited seq-1 state); a kept row's state is never touched. */
 async function applyPlan(orderId: number, plan: WritePlan, actorId: number, linesBySeq: Map<number, TargetRow["lines"]>) {
   // 1. Rows past the new count (their lines CASCADE).
   if (plan.deleteRowIds.length > 0) {
@@ -187,6 +214,11 @@ async function applyPlan(orderId: number, plan: WritePlan, actorId: number, line
         invoiceDate: c.invoiceDate,
         source: SOURCE_MANUAL,
         createdById: actorId,
+        // "Split inside the trip": seq 1's stop and hold, never dispatched.
+        tripDropId: plan.inherit.tripDropId,
+        isHeld: plan.inherit.isHeld,
+        heldAt: plan.inherit.heldAt,
+        heldById: plan.inherit.heldById,
       })),
     });
   }
@@ -276,7 +308,11 @@ export async function loadSplitView(orderId: number): Promise<SplitView | null> 
     activeLines,
     split,
     stale: halfWritten || detectStale(activeLines, savedLines),
-    blockedReason: addInvoicesRefusal({ isRemoved: order.isRemoved, workflowStage: order.workflowStage, sapInvoiceNo: sapNo }),
+    // The bill-level refusal first, then the row-state one (plan.ts) — the SAME
+    // message save / undo would return, so the More menu's hint never lies.
+    blockedReason:
+      addInvoicesRefusal({ isRemoved: order.isRemoved, workflowStage: order.workflowStage, sapInvoiceNo: sapNo }) ??
+      obdStateRefusal(await loadCurrentRows(orderId), await loadObdFacts(orderId, order.obdNumber)),
   };
 }
 
@@ -334,7 +370,7 @@ export function saveTargetOf(invoices: SaveInvoiceInput[], defaultDate: Date | n
 
 /** Read-only: the rows with their lock state, as save / undo plan from them.
  *  Exported for read-only checks (a dry run); writes nothing. */
-export { loadCurrentRows };
+export { loadCurrentRows, loadObdFacts };
 
 /** POST — save or edit, IN PLACE by seq. See the header for the write order. */
 export async function saveSplit(
@@ -366,7 +402,7 @@ export async function saveSplit(
   const current = await loadCurrentRows(orderId);
   const wasSplit = current.length > 1;
   const target = saveTargetOf(invoices, seq1.invoiceDate ?? order.invoiceDate);
-  const planned = planSplitWrite(current, target);
+  const planned = planSplitWrite(current, target, await loadObdFacts(orderId, order.obdNumber));
   if (!planned.ok) return { ok: false, status: 409, error: planned.refusals[0], errors: planned.refusals };
   if (!planned.changed) return { ok: true, changed: false };
 
@@ -399,8 +435,9 @@ export async function saveSplit(
 }
 
 /** DELETE — Undo: back to unsplit (seq 1, no lines). The same engine and the
- *  same refusals as save: a locked manual row cannot be removed, and a locked
- *  seq 1 cannot lose its items (going back to "all lines" changes them). */
+ *  same refusals as save. Merges back to seq 1, which already carries the
+ *  rows' shared stop and hold; a manual row a copy / re-delivery points at
+ *  cannot be removed (RESTRICT guard), so undo is refused while one does. */
 export async function undoSplit(orderId: number, actorId: number): Promise<SplitResult> {
   const p = await prepare(orderId);
   if ("error" in p) return p.error!;
@@ -408,7 +445,7 @@ export async function undoSplit(orderId: number, actorId: number): Promise<Split
 
   const current = await loadCurrentRows(orderId);
   const target: TargetRow[] = [{ invoiceNo: seq1.invoiceNo ?? "", invoiceDate: null, lines: [] }];
-  const planned = planSplitWrite(current, target);
+  const planned = planSplitWrite(current, target, await loadObdFacts(orderId, order.obdNumber));
   if (!planned.ok) return { ok: false, status: 409, error: planned.refusals[0], errors: planned.refusals };
   if (!planned.changed) return { ok: true, changed: false };
 

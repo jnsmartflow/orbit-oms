@@ -1,16 +1,35 @@
 // lib/order-invoices/plan.test.ts — npx tsx --test lib/order-invoices/plan.test.ts
 //
-// Add invoices save / undo IN PLACE (Schema v27.66): planSplitWrite,
-// rowLockReasons, sameLines. Pure — no database. The fixture is the live OBD
-// 9109951956 (order 18648) as it stands on 2026-10-12: seq 1 …716 (line 62853,
-// 15 tins, copied for L-261006-05), …713 / …714 / …715 one line each.
+// Add invoices save / undo IN PLACE (Schema v27.66) under the owner's "split
+// inside the trip" rule (2026-10-12): planSplitWrite, obdStateRefusal,
+// sameLines. Pure — no database. The fixture is the live OBD 9109951956
+// (order 18648) as it stands on 2026-10-12: seq 1 …716 (line 62853, 15 tins,
+// copied for L-261006-05), …713 / …714 / …715 one line each, all off a trip.
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { planSplitWrite, rowLockReasons, sameLines, type CurrentRow, type RowState, type TargetRow } from "./plan";
+import {
+  obdStateRefusal,
+  planSplitWrite,
+  sameLines,
+  type CurrentRow,
+  type ObdFacts,
+  type RowState,
+  type TargetRow,
+} from "./plan";
 
-const FREE: RowState = { tripNumber: null, isHeld: false, isDispatched: false, copyTrips: [], redeliveryTrips: [], ciNumbers: [] };
+const FREE: RowState = {
+  tripDropId: null,
+  isHeld: false,
+  heldAt: null,
+  heldById: null,
+  isDispatched: false,
+  copyTrips: [],
+  redeliveryTrips: [],
+};
 const DAY = new Date("2026-10-05T00:00:00.000Z");
+const HELD_AT = new Date("2026-10-06T09:15:00.000Z");
+const OBD: ObdFacts = { obdNumber: "9109951956", ciNumbers: [] };
 
 function row(id: number, seq: number, invoiceNo: string, lines: [number, number][], state: Partial<RowState> = {}): CurrentRow {
   return {
@@ -35,35 +54,22 @@ function live18648(): CurrentRow[] {
   ];
 }
 
+/** Every row in the same state. */
+function allIn(rows: CurrentRow[], state: Partial<RowState>): CurrentRow[] {
+  return rows.map((r) => ({ ...r, ...state }));
+}
+
 function targetOf(rows: CurrentRow[]): TargetRow[] {
   return rows.map((r) => ({ invoiceNo: r.invoiceNo ?? "", invoiceDate: r.seq === 1 ? null : r.invoiceDate, lines: r.lines.map((l) => ({ ...l })) }));
 }
 
-// ── rowLockReasons ───────────────────────────────────────────────────────────
+/** An unsplit OBD → split into two invoices. */
+const FIRST_SPLIT: TargetRow[] = [
+  { invoiceNo: "I536230001", invoiceDate: null, lines: [{ rawLineItemId: 1, qty: 5 }] },
+  { invoiceNo: "I536230002", invoiceDate: DAY, lines: [{ rawLineItemId: 2, qty: 5 }] },
+];
 
-test("lock: a free row has no reasons", () => {
-  assert.deepEqual(rowLockReasons(FREE), []);
-});
-
-test("lock: every kind of state is a reason, in plain English", () => {
-  const r = rowLockReasons({
-    tripNumber: "L-261007-20",
-    isHeld: true,
-    isDispatched: true,
-    copyTrips: ["L-261006-05"],
-    redeliveryTrips: ["L-261007-20"],
-    ciNumbers: ["CI-0012", null],
-  });
-  assert.deepEqual(r, [
-    "it has been dispatched",
-    "it is on trip L-261007-20",
-    "it is on hold",
-    "billing copied it for trip L-261006-05",
-    "it is re-delivered on trip L-261007-20",
-    "it has CI CI-0012",
-    "a draft CI is open on it",
-  ]);
-});
+const UNDO: TargetRow[] = [{ invoiceNo: "I536230716", invoiceDate: null, lines: [] }];
 
 // ── sameLines ────────────────────────────────────────────────────────────────
 
@@ -74,206 +80,209 @@ test("sameLines: order does not matter; tins do", () => {
   assert.equal(sameLines(a, a.slice(0, 1)), false);
 });
 
-// ── planSplitWrite: in place ─────────────────────────────────────────────────
+// ── first split: allowed on a trip / on hold, new rows inherit ───────────────
+
+test("first split of an unsplit OBD on a trip: allowed, the new row inherits the stop", () => {
+  const cur = [row(500, 1, "I536230001", [], { tripDropId: 2478 })];
+  const r = planSplitWrite(cur, FIRST_SPLIT, OBD);
+  assert.ok(r.ok);
+  assert.deepEqual(r.plan.creates, [{ seq: 2, invoiceNo: "I536230002", invoiceDate: DAY }]);
+  assert.deepEqual(r.plan.inherit, { tripDropId: 2478, isHeld: false, heldAt: null, heldById: null });
+  assert.deepEqual(r.plan.relineSeqs, [1, 2]);
+});
+
+test("first split of a held OBD: allowed, the new row inherits the hold, heldAt / heldById copied", () => {
+  const cur = [row(500, 1, "I536230001", [], { isHeld: true, heldAt: HELD_AT, heldById: 29 })];
+  const r = planSplitWrite(cur, FIRST_SPLIT, OBD);
+  assert.ok(r.ok);
+  assert.deepEqual(r.plan.inherit, { tripDropId: null, isHeld: true, heldAt: HELD_AT, heldById: 29 });
+});
+
+test("first split of a back-filled hold (no heldAt): the inherited stamp is null too", () => {
+  const cur = [row(500, 1, "I536230001", [], { isHeld: true, tripDropId: 2478 })];
+  const r = planSplitWrite(cur, FIRST_SPLIT, OBD);
+  assert.ok(r.ok);
+  assert.deepEqual(r.plan.inherit, { tripDropId: 2478, isHeld: true, heldAt: null, heldById: null });
+});
+
+test("first split of a free OBD: nothing to inherit", () => {
+  const r = planSplitWrite([row(500, 1, "I536230001", [])], FIRST_SPLIT, OBD);
+  assert.ok(r.ok);
+  assert.deepEqual(r.plan, {
+    deleteRowIds: [],
+    updates: [],
+    creates: [{ seq: 2, invoiceNo: "I536230002", invoiceDate: DAY }],
+    inherit: { tripDropId: null, isHeld: false, heldAt: null, heldById: null },
+    relineSeqs: [1, 2],
+  });
+});
+
+test("copy-only: a copied seq 1 does not block — its items may change, the copy stays on it", () => {
+  const cur = live18648();
+  const t = targetOf(cur);
+  t[0].lines = [{ rawLineItemId: 62853, qty: 14 }];
+  t[1].lines = [{ rawLineItemId: 62850, qty: 13 }, { rawLineItemId: 62853, qty: 1 }];
+  const r = planSplitWrite(cur, t, OBD);
+  assert.ok(r.ok);
+  assert.deepEqual(r.plan.relineSeqs, [1, 2]);
+  assert.deepEqual(r.plan.deleteRowIds, []);
+});
+
+// ── edit / undo: all rows in one state ──────────────────────────────────────
+
+test("edit when every row is on the same stop and held: allowed; a new row inherits that state", () => {
+  const cur = allIn(live18648(), { tripDropId: 2763, isHeld: true });
+  const t = targetOf(cur);
+  t[3].lines = [{ rawLineItemId: 62852, qty: 6 }];
+  t.push({ invoiceNo: "I536230717", invoiceDate: DAY, lines: [{ rawLineItemId: 62852, qty: 4 }] });
+  const r = planSplitWrite(cur, t, OBD);
+  assert.ok(r.ok);
+  assert.deepEqual(r.plan.creates, [{ seq: 5, invoiceNo: "I536230717", invoiceDate: DAY }]);
+  assert.equal(r.plan.inherit.tripDropId, 2763);
+  assert.equal(r.plan.inherit.isHeld, true);
+  assert.deepEqual(r.plan.relineSeqs, [4, 5]);
+});
+
+test("edit when rows are on different stops: refused, OBD named", () => {
+  const cur = live18648();
+  cur[1] = { ...cur[1], tripDropId: 2763 };
+  const r = planSplitWrite(cur, targetOf(cur), OBD);
+  assert.equal(r.ok, false);
+  if (r.ok) return;
+  assert.deepEqual(r.refusals, ["Invoices of 9109951956 are on different trips / holds — move them back together first."]);
+});
+
+test("undo when some rows are held and some not: refused", () => {
+  const cur = live18648();
+  cur[0] = { ...cur[0], copyTrips: [], isHeld: true };
+  cur[2] = { ...cur[2], isHeld: true };
+  const r = planSplitWrite(cur, UNDO, OBD);
+  assert.equal(r.ok, false);
+  if (r.ok) return;
+  assert.match(r.refusals[0], /are on different trips \/ holds — move them back together first\./);
+});
+
+test("undo of a split all on one stop: merges back to seq 1, which keeps the stop", () => {
+  const cur = allIn(live18648(), { tripDropId: 2763, copyTrips: [] });
+  const r = planSplitWrite(cur, UNDO, OBD);
+  assert.ok(r.ok);
+  assert.deepEqual(r.plan.deleteRowIds, [36798, 36799, 36800]);
+  assert.deepEqual(r.plan.relineSeqs, [1]);
+  assert.deepEqual(r.plan.updates, []);
+});
+
+// ── always refused ───────────────────────────────────────────────────────────
+
+test("any row dispatched: refused (first split, edit and undo)", () => {
+  const msg = "Already dispatched — invoices can't be changed.";
+  const unsplit = [row(500, 1, "I536230001", [], { isDispatched: true })];
+  assert.deepEqual(planSplitWrite(unsplit, FIRST_SPLIT, OBD), { ok: false, refusals: [msg] });
+  const cur = allIn(live18648(), { isDispatched: true });
+  assert.deepEqual(planSplitWrite(cur, targetOf(cur), OBD), { ok: false, refusals: [msg] });
+  assert.deepEqual(planSplitWrite(cur, UNDO, OBD), { ok: false, refusals: [msg] });
+});
+
+test("any CI on the OBD, void and draft included: refused, numbers named", () => {
+  const ci: ObdFacts = { obdNumber: "9109951956", ciNumbers: ["CI-0012 (void)", null] };
+  const r = planSplitWrite([row(500, 1, "I536230001", [])], FIRST_SPLIT, ci);
+  assert.deepEqual(r, { ok: false, refusals: ["Has a CI (CI-0012 (void), draft) — invoices can't be changed."] });
+});
+
+test("dispatched is reported before CI and before different states", () => {
+  const rows: RowState[] = [{ ...FREE, isDispatched: true }, { ...FREE, tripDropId: 9 }];
+  assert.equal(obdStateRefusal(rows, { obdNumber: "1", ciNumbers: ["CI-1"] }), "Already dispatched — invoices can't be changed.");
+  assert.equal(obdStateRefusal([FREE], OBD), null);
+});
+
+// ── the RESTRICT guard ───────────────────────────────────────────────────────
+
+test("deleting a copy-linked row is refused in plain English", () => {
+  const cur = live18648();
+  cur[3] = { ...cur[3], copyTrips: ["L-261006-05"] };
+  const t = targetOf(cur).slice(0, 3);
+  t[2].lines = [{ rawLineItemId: 62851, qty: 12 }, { rawLineItemId: 62852, qty: 10 }];
+  const r = planSplitWrite(cur, t, OBD);
+  assert.deepEqual(r, {
+    ok: false,
+    refusals: ["I536230715 cannot be removed — billing copied it for trip L-261006-05, and that record stays on it."],
+  });
+});
+
+test("undo with a re-delivery on a manual row is refused (it would delete that row)", () => {
+  const cur = live18648();
+  cur[1] = { ...cur[1], redeliveryTrips: ["L-261007-20"] };
+  const r = planSplitWrite(cur, UNDO, OBD);
+  assert.deepEqual(r, {
+    ok: false,
+    refusals: ["I536230713 cannot be removed — it is re-delivered on trip L-261007-20, and that record stays on it."],
+  });
+});
+
+test("a linked row may be re-numbered and re-lined — only its deletion is guarded", () => {
+  const cur = live18648();
+  cur[3] = { ...cur[3], redeliveryTrips: ["L-261007-20"] };
+  const t = targetOf(cur);
+  t[3].invoiceNo = "I536230719";
+  const r = planSplitWrite(cur, t, OBD);
+  assert.ok(r.ok);
+  assert.deepEqual(r.plan.updates, [{ id: 36800, seq: 4, invoiceNo: "I536230719", invoiceDate: DAY }]);
+});
+
+// ── in place, as before ──────────────────────────────────────────────────────
 
 test("same split again: nothing to write", () => {
   const cur = live18648();
-  const r = planSplitWrite(cur, targetOf(cur));
+  const r = planSplitWrite(cur, targetOf(cur), OBD);
   assert.ok(r.ok);
   assert.equal(r.changed, false);
 });
 
-test("rows keep their ids: re-lining two free rows updates no row and deletes none", () => {
+test("rows keep their ids: re-lining two rows updates no row and deletes none", () => {
   const cur = live18648();
   const t = targetOf(cur);
-  // Move 2 tins of line 62851 from …714 to …715.
   t[2].lines = [{ rawLineItemId: 62851, qty: 10 }];
   t[3].lines = [{ rawLineItemId: 62852, qty: 10 }, { rawLineItemId: 62851, qty: 2 }];
-  const r = planSplitWrite(cur, t);
+  const r = planSplitWrite(cur, t, OBD);
   assert.ok(r.ok);
-  assert.deepEqual(r.plan, { deleteRowIds: [], updates: [], creates: [], relineSeqs: [3, 4] });
-});
-
-test("a free row can be re-numbered: one update, same id", () => {
-  const cur = live18648();
-  const t = targetOf(cur);
-  t[3].invoiceNo = "I536230719";
-  const r = planSplitWrite(cur, t);
-  assert.ok(r.ok);
-  assert.deepEqual(r.plan.updates, [{ id: 36800, seq: 4, invoiceNo: "I536230719", invoiceDate: DAY }]);
-  assert.deepEqual(r.plan.relineSeqs, []);
+  assert.deepEqual(r.plan.deleteRowIds, []);
+  assert.deepEqual(r.plan.updates, []);
+  assert.deepEqual(r.plan.creates, []);
+  assert.deepEqual(r.plan.relineSeqs, [3, 4]);
 });
 
 test("fewer invoices: only the rows past the new count are deleted", () => {
   const cur = live18648();
   const t = targetOf(cur).slice(0, 3);
   t[2].lines = [{ rawLineItemId: 62851, qty: 12 }, { rawLineItemId: 62852, qty: 10 }];
-  const r = planSplitWrite(cur, t);
+  const r = planSplitWrite(cur, t, OBD);
   assert.ok(r.ok);
   assert.deepEqual(r.plan.deleteRowIds, [36800]);
   assert.deepEqual(r.plan.relineSeqs, [3]);
-});
-
-test("more invoices: new rows are created at the next seq and lined", () => {
-  const cur = live18648();
-  const t = targetOf(cur);
-  t[3].lines = [{ rawLineItemId: 62852, qty: 6 }];
-  t.push({ invoiceNo: "I536230717", invoiceDate: DAY, lines: [{ rawLineItemId: 62852, qty: 4 }] });
-  const r = planSplitWrite(cur, t);
-  assert.ok(r.ok);
-  assert.deepEqual(r.plan.creates, [{ seq: 5, invoiceNo: "I536230717", invoiceDate: DAY }]);
-  assert.deepEqual(r.plan.relineSeqs, [4, 5]);
-});
-
-test("a locked row may still have its date corrected", () => {
-  const cur = live18648();
-  cur[1] = { ...cur[1], tripNumber: "L-261007-20" };
-  const t = targetOf(cur);
-  const newDay = new Date("2026-10-06T00:00:00.000Z");
-  t[1].invoiceDate = newDay;
-  const r = planSplitWrite(cur, t);
-  assert.ok(r.ok);
-  assert.deepEqual(r.plan.updates, [{ id: 36798, seq: 2, invoiceNo: "I536230713", invoiceDate: newDay }]);
 });
 
 test("seq 1's number and date are never written", () => {
   const cur = live18648();
   const t = targetOf(cur);
   t[0].invoiceDate = new Date("2026-01-01T00:00:00.000Z");
-  const r = planSplitWrite(cur, t);
+  const r = planSplitWrite(cur, t, OBD);
   assert.ok(r.ok);
   assert.equal(r.changed, false);
 });
 
-// ── planSplitWrite: refusals ─────────────────────────────────────────────────
-
-test("refuse: changing a copied seq 1's items names the invoice and the trip", () => {
-  const cur = live18648();
-  const t = targetOf(cur);
-  t[0].lines = [{ rawLineItemId: 62853, qty: 14 }];
-  t[1].lines = [{ rawLineItemId: 62850, qty: 13 }, { rawLineItemId: 62853, qty: 1 }];
-  const r = planSplitWrite(cur, t);
-  assert.equal(r.ok, false);
-  if (r.ok) return;
-  assert.deepEqual(r.refusals, [
-    "I536230716 cannot be given different items — billing copied it for trip L-261006-05.",
-  ]);
-});
-
-test("refuse: deleting a row on a re-delivery", () => {
-  const cur = live18648();
-  cur[3] = { ...cur[3], redeliveryTrips: ["L-261007-20"] };
-  const t = targetOf(cur).slice(0, 3);
-  t[2].lines = [{ rawLineItemId: 62851, qty: 12 }, { rawLineItemId: 62852, qty: 10 }];
-  const r = planSplitWrite(cur, t);
-  assert.equal(r.ok, false);
-  if (r.ok) return;
-  assert.deepEqual(r.refusals, ["I536230715 cannot be removed — it is re-delivered on trip L-261007-20."]);
-});
-
-test("refuse: re-numbering a held row", () => {
-  const cur = live18648();
-  cur[2] = { ...cur[2], isHeld: true };
-  const t = targetOf(cur);
-  t[2].invoiceNo = "I536230718";
-  const r = planSplitWrite(cur, t);
-  assert.equal(r.ok, false);
-  if (r.ok) return;
-  assert.deepEqual(r.refusals, ["I536230714 cannot be changed to I536230718 — it is on hold."]);
-});
-
-test("refuse: every locked row is reported, not just the first", () => {
-  const cur = live18648();
-  cur[1] = { ...cur[1], tripNumber: "L-261007-20" };
-  cur[3] = { ...cur[3], isDispatched: true, ciNumbers: ["CI-0099"] };
-  const t = targetOf(cur).slice(0, 2);
-  t[1].lines = [{ rawLineItemId: 62850, qty: 13 }, { rawLineItemId: 62851, qty: 12 }, { rawLineItemId: 62852, qty: 10 }];
-  const r = planSplitWrite(cur, t);
-  assert.equal(r.ok, false);
-  if (r.ok) return;
-  assert.deepEqual(r.refusals, [
-    "I536230713 cannot be given different items — it is on trip L-261007-20.",
-    "I536230715 cannot be removed — it has been dispatched, it has CI CI-0099.",
-  ]);
-});
-
-test("a locked row that is left alone does not block an edit elsewhere", () => {
-  const cur = live18648();
-  cur[1] = { ...cur[1], tripNumber: "L-261007-20", redeliveryTrips: ["L-261007-20"] };
-  const t = targetOf(cur);
-  t[2].lines = [{ rawLineItemId: 62851, qty: 10 }];
-  t[3].lines = [{ rawLineItemId: 62852, qty: 10 }, { rawLineItemId: 62851, qty: 2 }];
-  const r = planSplitWrite(cur, t);
-  assert.ok(r.ok);
-  assert.deepEqual(r.plan.relineSeqs, [3, 4]);
-});
-
-test("refuse: FIRST split of an unsplit OBD on a trip — seq 1 goes from all lines to some", () => {
-  const cur = [row(500, 1, "I536230001", [], { tripNumber: "L-261012-01" })];
-  const t: TargetRow[] = [
-    { invoiceNo: "I536230001", invoiceDate: null, lines: [{ rawLineItemId: 1, qty: 5 }] },
-    { invoiceNo: "I536230002", invoiceDate: DAY, lines: [{ rawLineItemId: 2, qty: 5 }] },
-  ];
-  const r = planSplitWrite(cur, t);
-  assert.equal(r.ok, false);
-  if (r.ok) return;
-  assert.deepEqual(r.refusals, ["I536230001 cannot be given different items — it is on trip L-261012-01."]);
-});
-
-test("first split of a free unsplit OBD: seq 1 re-lined, one row created", () => {
-  const cur = [row(500, 1, "I536230001", [])];
-  const t: TargetRow[] = [
-    { invoiceNo: "I536230001", invoiceDate: null, lines: [{ rawLineItemId: 1, qty: 5 }] },
-    { invoiceNo: "I536230002", invoiceDate: DAY, lines: [{ rawLineItemId: 2, qty: 5 }] },
-  ];
-  const r = planSplitWrite(cur, t);
-  assert.ok(r.ok);
-  assert.deepEqual(r.plan, { deleteRowIds: [], updates: [], creates: [{ seq: 2, invoiceNo: "I536230002", invoiceDate: DAY }], relineSeqs: [1, 2] });
-});
-
-// ── Undo (target: seq 1 only, no lines) ──────────────────────────────────────
-
-const UNDO: TargetRow[] = [{ invoiceNo: "I536230716", invoiceDate: null, lines: [] }];
-
-test("undo: refused on 18648 today — seq 1 is copied, and undo changes its items", () => {
-  const r = planSplitWrite(live18648(), UNDO);
-  assert.equal(r.ok, false);
-  if (r.ok) return;
-  assert.deepEqual(r.refusals, ["I536230716 cannot be given different items — billing copied it for trip L-261006-05."]);
-});
-
-test("undo: a free split deletes the manual rows and clears seq 1's lines", () => {
-  const cur = live18648();
-  cur[0] = { ...cur[0], copyTrips: [] };
-  const r = planSplitWrite(cur, UNDO);
-  assert.ok(r.ok);
-  assert.deepEqual(r.plan, { deleteRowIds: [36798, 36799, 36800], updates: [], creates: [], relineSeqs: [1] });
-});
-
-test("undo: refused when a manual row is locked", () => {
-  const cur = live18648();
-  cur[0] = { ...cur[0], copyTrips: [] };
-  cur[1] = { ...cur[1], redeliveryTrips: ["L-261007-20"] };
-  const r = planSplitWrite(cur, UNDO);
-  assert.equal(r.ok, false);
-  if (r.ok) return;
-  assert.deepEqual(r.refusals, ["I536230713 cannot be removed — it is re-delivered on trip L-261007-20."]);
-});
-
 test("undo: an unsplit OBD has nothing to undo", () => {
-  const r = planSplitWrite([row(17010, 1, "I536230716", [], { copyTrips: ["L-261006-05"] })], UNDO);
+  const r = planSplitWrite([row(17010, 1, "I536230716", [], { copyTrips: ["L-261006-05"] })], UNDO, OBD);
   assert.ok(r.ok);
   assert.equal(r.changed, false);
 });
 
 test("re-run after a half-failure: rows created but not lined → the plan re-lines only those", () => {
-  // A dead save left …717 created at seq 5 with no lines; seq 4 already re-lined.
   const cur = live18648();
   cur[3] = { ...cur[3], lines: [{ rawLineItemId: 62852, qty: 6 }] };
   cur.push(row(36801, 5, "I536230717", []));
   const t = targetOf(cur);
   t[4].lines = [{ rawLineItemId: 62852, qty: 4 }];
-  const r = planSplitWrite(cur, t);
+  const r = planSplitWrite(cur, t, OBD);
   assert.ok(r.ok);
-  assert.deepEqual(r.plan, { deleteRowIds: [], updates: [], creates: [], relineSeqs: [5] });
+  assert.deepEqual(r.plan.relineSeqs, [5]);
+  assert.deepEqual(r.plan.creates, []);
 });

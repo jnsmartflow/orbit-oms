@@ -15,10 +15,11 @@ export const dynamic = "force-dynamic";
 //   DELETE → Undo: back to unsplit, same engine
 // POST and DELETE need floor canEdit AND floor_add_invoices canEdit.
 //
-// Nothing here writes a trip, a hold, picking or CI. A save or undo that would
-// delete, re-number or re-line an invoice row on a trip, held, dispatched, or
-// referenced by a copy / re-delivery / CI is refused 409 (lib/order-invoices/
-// plan.ts). Rules: lib/order-invoices/rules.ts; reads, writes, write order and
+// Nothing here writes orders, a trip, a hold, picking or CI; a CREATED invoice
+// row inherits seq 1's stop and hold ("split inside the trip"). Refused 409 —
+// and the same text as GET's blockedReason: any row dispatched, any CI on the
+// OBD, rows on different stops / holds, or a delete of a row a copy /
+// re-delivery points at (lib/order-invoices/plan.ts). Rules: lib/order-invoices/rules.ts; reads, writes, write order and
 // the live-refresh decision: lib/order-invoices/split.ts.
 
 type Params = { params: { orderId: string } };
