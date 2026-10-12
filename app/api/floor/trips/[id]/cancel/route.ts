@@ -5,6 +5,7 @@ import { logTripCancelled } from "@/lib/trips/activity";
 import { cancelledTripNumber, isTripNumberCollision } from "@/lib/trips/number";
 import { prisma } from "@/lib/prisma";
 import { DISPATCHED } from "@/lib/workflow-stages";
+import { setOrderTrip } from "@/lib/order-invoices/trip-link";
 
 export const dynamic = "force-dynamic";
 
@@ -230,11 +231,9 @@ export async function POST(
 
   for (const o of orders) {
     try {
-      // ONE orders.update per bill.
-      await prisma.orders.update({
-        where: { id: o.id },
-        data: { tripDropId: null },
-      });
+      // The bill's invoice rows, then ONE orders.update (v27.66 —
+      // lib/order-invoices/trip-link.ts, the only trip-link writer).
+      await setOrderTrip(o.id, null);
       detached.push(o.id);
     } catch (err) {
       failed.push({ orderId: o.id, error: err instanceof Error ? err.message : "Unexpected error" });

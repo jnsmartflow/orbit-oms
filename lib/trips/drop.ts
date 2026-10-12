@@ -20,7 +20,7 @@ import { computeDropKey, dropShipToCode, effectiveCustomerId, type DropKeyInput 
 import { dealerDisplayName } from "@/lib/orders/dealer-name";
 
 /**
- * Delete a stop that now holds nothing — no order and no re-delivery. Returns
+ * Delete a stop that now holds nothing — no order, no invoice row and no re-delivery. Returns
  * true when it deleted. ONE rule for both remove paths (bills and re-deliveries).
  *
  * ⚠ `isRemoved` IS DELIBERATELY NOT FILTERED. A soft-removed bill still carries
@@ -30,10 +30,19 @@ import { dealerDisplayName } from "@/lib/orders/dealer-name";
  *
  * ⚠ RE-DELIVERIES COUNT (2026-10-03). trip_redeliveries.tripDropId is ON DELETE
  * RESTRICT, so deleting a stop under one would fail; it must simply stay.
+ *
+ * ⚠ INVOICE ROWS COUNT (v27.66, 2026-10-12). order_invoices.tripDropId is ON
+ * DELETE SET NULL, so deleting a stop an invoice row still sits on would
+ * silently take that row off its trip. While every move is whole-OBD
+ * (lib/order-invoices/trip-link.ts) the rows sit exactly where their orders do,
+ * so this changes nothing today; from Phase 5 a row can sit on a stop its OBD
+ * does not point at, and then this is the check that keeps the stop.
  */
 export async function deleteTripDropIfEmpty(dropId: number): Promise<boolean> {
   const orders = await prisma.orders.count({ where: { tripDropId: dropId } });
   if (orders > 0) return false;
+  const invoiceRows = await prisma.order_invoices.count({ where: { tripDropId: dropId } });
+  if (invoiceRows > 0) return false;
   const redeliveries = await prisma.trip_redeliveries.count({ where: { tripDropId: dropId } });
   if (redeliveries > 0) return false;
   await prisma.trip_drops.delete({ where: { id: dropId } });

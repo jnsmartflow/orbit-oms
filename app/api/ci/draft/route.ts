@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { checkAnyPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { resolveCiDealer } from "@/lib/ci/derive";
+import { linkRowForOrder } from "@/lib/order-invoices/links";
 import { isCiReturnType } from "@/lib/ci/types";
 
 export const dynamic = "force-dynamic";
@@ -144,11 +145,15 @@ export async function POST(req: Request): Promise<NextResponse> {
 
   // ── ONE write. Nothing partial can be left behind. ─────────────────────────
   // Sequential awaits, never prisma.$transaction (CORE §3).
+  // Which invoice row came back (v27.66, lib/order-invoices/links.ts): seq 1
+  // on an unsplit bill; NULL on a split one until Phase 6 assigns it from lines.
+  const orderInvoiceId = await linkRowForOrder(order.id, "ci");
   const created = await prisma.ci_returns.create({
     data: {
       // 🔴 No ciNumber. It is allocated at submit and nowhere else (spec §5).
       status: "draft",
       orderId: order.id,
+      orderInvoiceId,
       obdNumber: order.obdNumber,
       // Snapshots, all taken from the server's read of the bill.
       // ⚠ invoiceNo is snapshotted but the DETAIL route deliberately prefers the

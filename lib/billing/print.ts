@@ -69,6 +69,7 @@ import { tintPhaseOf } from "@/lib/floor/tint-phase";
 import { CHALLAN_LINKED, DISPATCHED, PICK_ASSIGNED, PICK_CHECKED, PICK_DONE } from "@/lib/workflow-stages";
 import { BILLABLE_BILL_WHERE } from "@/lib/challan-orders/where";
 import { logTripBillingDone, logTripBillsCopied } from "@/lib/trips/activity";
+import { invoiceRowLinks, linkRowFor } from "@/lib/order-invoices/links";
 
 /** `orders.dispatchStatus` for a held bill — the same test lib/trips/queries.ts bucketFor makes. */
 const HOLD = "hold";
@@ -686,10 +687,14 @@ export async function copyTripBills(opts: {
   }
 
   const pressedAt = new Date();
+  // Which invoice row each copy names (v27.66, lib/order-invoices/links.ts):
+  // seq 1 — the whole OBD on an unsplit bill, the SAP invoice on a split one.
+  const invoiceRows = await invoiceRowLinks(bills.map((b) => b.orderId));
   const created = await prisma.trip_bill_copies.createMany({
     data: bills.map((b) => ({
       tripId: trip.id,
       orderId: b.orderId,
+      orderInvoiceId: linkRowFor(invoiceRows.get(b.orderId) ?? { seq1Id: null, split: false }, "copy"),
       obdNumber: b.obdNumber,
       invoiceNo: b.invoiceNo,
       kind: opts.kind,

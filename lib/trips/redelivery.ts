@@ -29,6 +29,7 @@ import { findBillsByNumber, parseBillLookupTerm } from "@/lib/trips/find-bill";
 import { deleteTripDropIfEmpty, findOrCreateTripDrop } from "@/lib/trips/drop";
 import { logTripRedeliveryAdded, logTripRedeliveryRemoved, type RedeliveryLogItem } from "@/lib/trips/activity";
 import { dealerDisplayName } from "@/lib/orders/dealer-name";
+import { linkRowForOrder } from "@/lib/order-invoices/links";
 
 // ── Vocabulary — lives in lib/trips/redelivery-reasons.ts (pure, client-safe) ──
 import { isRedeliveryReason, redeliveryReasonLabel, type RedeliveryReason } from "@/lib/trips/redelivery-reasons";
@@ -434,6 +435,9 @@ export async function addRedeliveries(
       // The stop, by the shared drop-key rule. A lost race on its unique
       // throws into this bill's catch.
       const drop = await findOrCreateTripDrop(tripId, order);
+      // Which invoice row it re-delivers (v27.66, lib/order-invoices/links.ts):
+      // seq 1 — the whole OBD, until Phase 5 re-delivers single invoices.
+      const orderInvoiceId = await linkRowForOrder(orderId, "redelivery");
 
       let row: { id: number };
       try {
@@ -443,6 +447,7 @@ export async function addRedeliveries(
             // Written from the SAME drop row as tripId (landmine: nothing ties them).
             tripDropId: drop.id,
             orderId,
+            orderInvoiceId,
             obdNumber: order.obdNumber,
             invoiceNo: order.invoiceNo ?? null,
             attemptNo: j.attemptNo,

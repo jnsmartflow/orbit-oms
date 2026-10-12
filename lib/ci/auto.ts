@@ -49,6 +49,7 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { allocateCiNumber } from "@/lib/ci/number";
+import { linkRowForOrder } from "@/lib/order-invoices/links";
 import { litresPerTin, resolveCiDealer, returnedLitres } from "@/lib/ci/derive";
 import { applyCiCatalog, resolveCiSkus } from "@/lib/ci/resolve-lines";
 
@@ -326,6 +327,9 @@ async function createAutoCi(
   // atomic and UNIQUE(ciNumber) is the real backstop; on a P2002 we re-allocate
   // ONCE and retry, exactly as the submit route does. No loop, and never
   // prisma.$transaction (CORE §3).
+  // Which invoice row came back (v27.66, lib/order-invoices/links.ts): seq 1
+  // on an unsplit bill; NULL on a split one until Phase 6 assigns it from lines.
+  const orderInvoiceId = await linkRowForOrder(order.id, "ci");
   const MAX_ATTEMPTS = 2;
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
     const identity = await allocateCiNumber(now);
@@ -333,6 +337,7 @@ async function createAutoCi(
       const created = await prisma.ci_returns.create({
         data: {
           orderId: order.id,
+          orderInvoiceId,
           obdNumber: order.obdNumber,
           invoiceNo: order.invoiceNo,
           invoiceDate: order.invoiceDate,

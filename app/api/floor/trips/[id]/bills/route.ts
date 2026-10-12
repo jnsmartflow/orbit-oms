@@ -6,6 +6,7 @@ import { computeDropKey } from "@/lib/trips/drop-key";
 import { deleteTripDropIfEmpty, findOrCreateTripDrop } from "@/lib/trips/drop";
 import { logTripBills } from "@/lib/trips/activity";
 import { CHALLAN_LINKED } from "@/lib/workflow-stages";
+import { setOrderTrip } from "@/lib/order-invoices/trip-link";
 
 export const dynamic = "force-dynamic";
 
@@ -164,11 +165,9 @@ export async function POST(
         }
         const dropId = order.tripDropId;
 
-        // ONE orders.update.
-        await prisma.orders.update({
-          where: { id: orderId },
-          data: { tripDropId: null },
-        });
+        // The bill's invoice rows, then ONE orders.update (v27.66 —
+        // lib/order-invoices/trip-link.ts, the only trip-link writer).
+        await setOrderTrip(orderId, null);
         changed.push(orderId);
         changedObds.push(order.obdNumber);
 
@@ -230,7 +229,7 @@ export async function POST(
       // 🔴 HAND vs TRUCK (2026-09-24, design web-update-2026-09-24-billing-mo-
       // actions.md §4). A bill the dealer collects never joins a truck, and a
       // truck bill never joins a Hand trip. THIS route is the only runtime
-      // writer of tripDropId, so every add path — the rail, the add band,
+      // writer of tripDropId (through lib/order-invoices/trip-link.ts since v27.66), so every add path — the rail, the add band,
       // "+ New trip", load plan "Make trip" — is held to it here, per bill.
       // To move a bill across, clear its Hand mark first.
       const isHandBill = order.handAt !== null;
@@ -250,11 +249,9 @@ export async function POST(
       // reported as this bill's failure, as before.
       const drop = await findOrCreateTripDrop(tripId, order);
 
-      // ONE orders.update per bill — the only write to `orders` on this path.
-      await prisma.orders.update({
-        where: { id: orderId },
-        data: { tripDropId: drop.id },
-      });
+      // Every invoice row of the bill, then ONE orders.update — still the only
+      // write to `orders` on this path (v27.66, lib/order-invoices/trip-link.ts).
+      await setOrderTrip(orderId, drop.id);
       changed.push(orderId);
       changedObds.push(order.obdNumber);
     } catch (err) {
