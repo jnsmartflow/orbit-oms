@@ -344,6 +344,10 @@ model users {
   // order_invoices, NAMED anyway in the CiReturnOrder style: a later per-invoice
   // hold/dispatch actor would be a second FK, and the name costs nothing now.
   orderInvoicesCreated        order_invoices[]         @relation("OrderInvoiceCreatedBy")
+  // v27.66 — the per-invoice hold / dispatch actors: order_invoices now has THREE
+  // FKs to users, so all three relations MUST be named on both sides.
+  orderInvoicesHeld           order_invoices[]         @relation("OrderInvoiceHeldBy")
+  orderInvoicesDispatched     order_invoices[]         @relation("OrderInvoiceDispatchedBy")
 }
 
 // Per-user page permissions — the table the role→user access conversion is
@@ -1404,8 +1408,27 @@ model orders {
 // later "Split load" can make one invoice two rows. "Same number twice on one
 // OBD" is the app's refusal, not the database's.
 //
-// ⚠ NOTHING ON A SCREEN READS THESE YET, so they carry NO live_changes trigger.
-// The trigger goes on with the first screen read (CORE §13, LIVE FEED).
+// LIVE FEED (v27.65 + v27.66): child triggers record entity 'order' (parent
+// "orderId") on any changed row; v27.66 adds trg_live_changes_order_invoices_trip_
+// {ins,upd,del}, which record entity 'trip' for the trip of the stop a row was on
+// before or is on after (CORE §13).
+//
+// ── v27.66 (2026-10-12, sql/2026-10-12-order-invoices-dispatch-unit.sql, PARTS
+// 1,2,5,3,4,6a,8 run by the owner 12 Oct 2026) — THE ROW IS THE DISPATCH UNIT.
+// tripDropId / isHeld / heldAt / heldById / isDispatched / dispatchedAt /
+// dispatchedById, back-filled for UNSPLIT OBDs only (row := OBD). Nothing in the
+// app writes them yet (Phase 3 commit 2 onward), and Add invoices save/undo
+// NEVER writes them. Derived OBD rules: CORE §7 v27.66.
+// 🔴 Three tables now point here ON DELETE RESTRICT (trip_bill_copies,
+// trip_redeliveries, ci_returns "orderInvoiceId"), which is why Add invoices
+// save EDITS IN PLACE since v27.66 (lib/order-invoices/split.ts) — do not
+// revert it to delete + re-create.
+// More LIVE CHECKs (v27.66, pg_get_constraintdef):
+//   chk_order_invoices_hold_shape          CHECK (("isHeld" OR (("heldAt" IS NULL) AND ("heldById" IS NULL))))
+//   chk_order_invoices_dispatch_shape      CHECK (("isDispatched" OR (("dispatchedAt" IS NULL) AND ("dispatchedById" IS NULL))))
+//   chk_order_invoices_held_not_dispatched CHECK ((NOT ("isHeld" AND "isDispatched")))
+// PARTIAL INDEX — not modellable in Prisma, so deliberately NOT an @@index:
+//   order_invoices_held_idx ON order_invoices ("orderId") WHERE "isHeld"
 //
 // LIVE CHECKs — NOT EXPRESSIBLE IN PRISMA, pg_get_constraintdef read back 2026-10-10:
 //   chk_order_invoices_seq_positive   CHECK ((seq >= 1))
@@ -1433,13 +1456,37 @@ model order_invoices {
   createdAt   DateTime  @default(now()) @db.Timestamptz(6)
   updatedAt   DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
 
-  lines order_invoice_lines[]
+  // ── v27.66 — the dispatch unit. Live FKs all ON DELETE SET NULL. ──────────
+  // Mirrors orders.tripDropId on an unsplit OBD; removing a stop returns its
+  // rows to the pool (same rule as orders_tripDropId_fkey).
+  tripDropId     Int?
+  tripDrop       trip_drops? @relation("OrderInvoiceTripDrop", fields: [tripDropId], references: [id], onDelete: SetNull)
+  /// Mirrors orders.dispatchStatus = 'hold' on an unsplit OBD.
+  isHeld         Boolean     @default(false)
+  /// The WALL-CLOCK hold moment — NOT orders.heldAt (= the arrival date). NULL on a back-filled hold.
+  heldAt         DateTime?   @db.Timestamptz(6)
+  heldById       Int?
+  heldBy         users?      @relation("OrderInvoiceHeldBy", fields: [heldById], references: [id], onDelete: SetNull)
+  /// Mirrors orders.workflowStage = 'dispatched' on an unsplit OBD.
+  isDispatched   Boolean     @default(false)
+  /// Back-filled from the latest 'dispatched' status log where one exists.
+  dispatchedAt   DateTime?   @db.Timestamptz(6)
+  dispatchedById Int?
+  dispatchedBy   users?      @relation("OrderInvoiceDispatchedBy", fields: [dispatchedById], references: [id], onDelete: SetNull)
+
+  lines        order_invoice_lines[]
+  // v27.66 per-row keys pointing here, all ON DELETE RESTRICT.
+  billCopies   trip_bill_copies[]
+  redeliveries trip_redeliveries[]
+  ciReturns    ci_returns[]
 
   // The row identity and the back-fill's ON CONFLICT target. Its index also
   // serves every lookup by orderId, so there is deliberately no separate
   // @@index([orderId]) (the ci_return_lines precedent).
   @@unique([orderId, seq])
   @@index([invoiceNo])
+  // v27.66 — "which rows are on this stop". Prisma's default name.
+  @@index([tripDropId])
 }
 
 // Which raw line, how many TINS, sits on which invoice — split OBDs only.
@@ -3499,6 +3546,13 @@ model ci_returns {
 
   lines ci_return_lines[]
 
+  // v27.66 — which invoice row came back. orderId stays the bill identity
+  // (spec §4); this narrows it. Back-filled to seq 1 (every CI was on an
+  // unsplit OBD). Live FK ci_returns_orderInvoiceId_fkey ON DELETE RESTRICT and
+  // ci_returns_orderInvoiceId_idx — both Prisma's default names.
+  orderInvoiceId Int?
+  orderInvoice   order_invoices? @relation(fields: [orderInvoiceId], references: [id], onDelete: Restrict)
+
   // Index names below match the LIVE ones exactly (verified against pg_indexes
   // 2026-09-01) — Prisma's defaults happen to be identical, so no `map:` is
   // needed on any of them. Do not rename a field without checking that again.
@@ -3510,6 +3564,7 @@ model ci_returns {
   // never get an invoice number at all.
   @@index([invoiceNo])
   @@index([obdNumber])
+  @@index([orderInvoiceId])
 }
 
 // One returned line. 12 columns.
@@ -4090,6 +4145,8 @@ model trip_drops {
   // Re-deliveries on this stop (v27.53). ON DELETE RESTRICT on their side: a
   // stop holding a re-delivery cannot be deleted.
   redeliveries trip_redeliveries[] @relation("TripRedeliveryDrop")
+  // Invoice rows on this stop (v27.66). ON DELETE SET NULL on their side.
+  orderInvoices order_invoices[] @relation("OrderInvoiceTripDrop")
 
   // Live names trip_drops_trip_key_key and trip_drops_trip_seq_key. Prisma's
   // defaults would be trip_drops_tripId_dropKey_key and
@@ -4258,11 +4315,19 @@ model trip_redeliveries {
   createdById     Int
   createdBy       users      @relation("TripRedeliveryCreatedBy", fields: [createdById], references: [id])
   updatedAt       DateTime   @default(now()) @updatedAt @db.Timestamptz(6)
+  // v27.66 — which invoice row was re-delivered. NULLABLE until the Phase 5 gate
+  // (PART 7 of sql/2026-10-12-order-invoices-dispatch-unit.sql). Live FK
+  // trip_redeliveries_order_invoice_fkey ON DELETE RESTRICT.
+  orderInvoiceId  Int?
+  orderInvoice    order_invoices? @relation(fields: [orderInvoiceId], references: [id], onDelete: Restrict, map: "trip_redeliveries_order_invoice_fkey")
 
   // Hand-made names, so every one carries an explicit `map:`.
+  // ⚠ The OLD (tripId, orderId) unique stays until the Phase 5 gate (PART 7).
   @@unique([tripId, orderId], map: "trip_redeliveries_trip_order_key")
+  @@unique([tripId, orderInvoiceId], map: "trip_redeliveries_trip_invoice_key")
   @@index([tripDropId], map: "trip_redeliveries_drop_idx")
   @@index([orderId], map: "trip_redeliveries_order_idx")
+  @@index([orderInvoiceId], map: "trip_redeliveries_invoice_idx")
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -4315,10 +4380,18 @@ model trip_bill_copies {
   copiedById Int?
   copiedBy   users?   @relation("TripBillCopyCopiedBy", fields: [copiedById], references: [id], onDelete: NoAction)
   createdAt  DateTime @default(now()) @db.Timestamptz(6)
+  // v27.66 — which invoice row was copied. NULLABLE until the Phase 5 gate
+  // (PART 7 of sql/2026-10-12-order-invoices-dispatch-unit.sql). Live FK
+  // trip_bill_copies_order_invoice_fkey ON DELETE RESTRICT.
+  orderInvoiceId Int?
+  orderInvoice   order_invoices? @relation(fields: [orderInvoiceId], references: [id], onDelete: Restrict, map: "trip_bill_copies_order_invoice_fkey")
 
   // Hand-made names, so every one carries an explicit `map:`.
+  // ⚠ The OLD (tripId, orderId) unique stays until the Phase 5 gate (PART 7).
   @@unique([tripId, orderId], map: "trip_bill_copies_trip_order_key")
+  @@unique([tripId, orderInvoiceId], map: "trip_bill_copies_trip_invoice_key")
   @@index([orderId], map: "trip_bill_copies_order_idx")
+  @@index([orderInvoiceId], map: "trip_bill_copies_invoice_idx")
 }
 
 // ─────────────────────────────────────────────

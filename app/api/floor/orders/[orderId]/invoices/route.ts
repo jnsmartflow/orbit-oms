@@ -11,14 +11,15 @@ export const dynamic = "force-dynamic";
 // one (the seq-1 'sap' row). This records the rest, paper by paper.
 //
 //   GET    → the split as it stands + the OBD's active lines (floor canView)
-//   POST   → save / edit: a FULL replace of the split
-//   DELETE → Undo: back to unsplit
+//   POST   → save / edit, IN PLACE by seq (v27.66 — rows keep their ids)
+//   DELETE → Undo: back to unsplit, same engine
 // POST and DELETE need floor canEdit AND floor_add_invoices canEdit.
 //
-// Trips, hold, picking and CI still act on the WHOLE OBD — nothing here touches
-// them, and being on a trip is allowed. Rules: lib/order-invoices/rules.ts;
-// reads, writes, write order and the live-refresh decision:
-// lib/order-invoices/split.ts.
+// Nothing here writes a trip, a hold, picking or CI. A save or undo that would
+// delete, re-number or re-line an invoice row on a trip, held, dispatched, or
+// referenced by a copy / re-delivery / CI is refused 409 (lib/order-invoices/
+// plan.ts). Rules: lib/order-invoices/rules.ts; reads, writes, write order and
+// the live-refresh decision: lib/order-invoices/split.ts.
 
 type Params = { params: { orderId: string } };
 

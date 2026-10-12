@@ -1,40 +1,63 @@
 // lib/order-invoices/split.ts — ADD INVOICES, the reads and writes behind
-// app/api/floor/orders/[orderId]/invoices (2026-10-10, Phase 2, RECORD ONLY).
-// Server-only (Prisma). The rules are lib/order-invoices/rules.ts (pure).
+// app/api/floor/orders/[orderId]/invoices (2026-10-10, Phase 2; save/undo
+// rewritten to EDIT IN PLACE 2026-10-12, Schema v27.66, Phase 3 commit 1).
+// Server-only (Prisma). The rules are lib/order-invoices/rules.ts and the
+// save/undo diff is lib/order-invoices/plan.ts (both pure).
 //
-// 🔴 RECORD ONLY. Nothing here writes `orders`, a trip, a hold, picking or CI —
-// those still act on the whole OBD. The one other write is ONE
-// order_status_logs row per save / undo.
+// 🔴 RECORD ONLY. Nothing here writes `orders`, a trip, a hold, picking or CI,
+// and NOTHING here writes a row's v27.66 state columns (tripDropId, isHeld,
+// heldAt, heldById, isDispatched, dispatchedAt, dispatchedById). The one other
+// write is ONE order_status_logs row per save / undo.
+//
+// 🔴 SAVE AND UNDO EDIT IN PLACE, BY SEQ (v27.66). Save used to delete every
+// 'manual' row and re-create it; since v27.66 copies, re-deliveries and CI
+// point at a row ON DELETE RESTRICT, so rows KEEP THEIR IDS: the row at seq k
+// becomes the k-th invoice, only rows past the new count are deleted, and only
+// rows whose lines change get new lines. A row on a trip, held, dispatched, or
+// referenced by a copy / re-delivery / CI is LOCKED — plan.ts refuses to
+// delete it, re-number it or change its items, naming the invoice. Do not
+// revert to delete + re-create.
 //
 // 🔴 NO TRANSACTION (CORE §3) — THE WRITE ORDER IS THE SAFETY. Every step is one
-// SQL statement, so each is all-or-nothing on its own:
-//   1. delete seq-1's line rows                  (deleteMany)
-//   2. delete every 'manual' row; lines CASCADE  (deleteMany)
-//   3. create the manual rows seq 2..n           (createMany)
-//   4. read their ids back                       (findMany)
-//   5. create EVERY line row, seq 1 included     (createMany — one statement)
-//   6. re-read and re-validate; log [order-invoices] if it does not add up
-//   7. one order_status_logs row
-// Dying after 1-2 leaves the OBD UNSPLIT (seq 1, no lines) — a valid state,
-// the same as Undo. Dying after 3-4 leaves manual rows with NO lines — never a
-// valid split, so GET reports it `stale` (detectStale: saved lines no longer
-// cover the bill) and validateSplit fails on it. In both cases the route
-// returned an error, and the fix is to press Save again: a save is a FULL
-// REPLACE, so it starts by deleting whatever a dead attempt left. Lines are
-// written in ONE statement after all rows exist, so a half set of lines cannot
-// happen. Two saves racing on one OBD collide on UNIQUE (orderId, seq) at step
-// 3 — the loser gets an error and re-reads.
+// SQL statement (step 2 is one per changed row), each all-or-nothing on its own:
+//   0. read rows + their state; plan (pure); refuse → NOTHING written
+//   1. delete the manual rows past the new count; lines CASCADE  (deleteMany)
+//   2. re-number / re-date kept manual rows                        (update each)
+//   3. create the new manual rows                                  (createMany)
+//   4. read their ids back                                         (findMany)
+//   5. delete the lines of every row being re-lined                (deleteMany)
+//   6. create the lines of every row being re-lined                (createMany — one statement)
+//   7. re-read: re-validate, and every kept row still has its id; log
+//      [order-invoices] if it does not add up
+//   8. one order_status_logs row
+// HALF-FAILURE ANSWER: press Save (or Undo) again. The plan is always the diff
+// from what the database holds NOW, so a re-run finishes whatever a dead
+// attempt left and reaches the same target. In between, the OBD is never
+// silently wrong: dying after 1 leaves lines that no longer cover the bill,
+// after 3-5 leaves rows with no lines — GET reports both `stale`, and
+// validateSplit fails on them. Dying after 2 leaves re-numbered rows with their
+// old lines; the route already returned an error, so the person saves again.
+// Lines are written in ONE statement after every row exists, so a half set of
+// lines cannot happen. A locked row is never in steps 1, 2 (number) or 5-6, so
+// no dead attempt can touch it. Two saves racing on one OBD collide on UNIQUE
+// (orderId, seq) at step 3 — the loser gets an error and re-reads.
+// Undo is the same engine with the target "seq 1 only, no lines": steps 1 and
+// 5 only — manual rows first, then seq 1's lines, as before.
 //
-// ⚠ NO LIVE REFRESH IS SENT, ON PURPOSE (owner question, 2026-10-10). The Floor
-// board refreshes from the live feed; the feed's orders trigger SKIPS an update
-// that only moves "updatedAt" (sql/2026-09-30-live-changes.sql:19-21), so
-// touching orders.updatedAt would wake only the legacy 15 s markers — and nothing
-// on any screen shows order_invoices yet, so there is nothing to refresh. The
-// first screen read (the Phase 3 UI) adds a live_changes child trigger on
-// order_invoices + order_invoice_lines (parent "orderId"), CORE §13.
+// ⚠ NO LIVE REFRESH IS SENT FROM HERE, and orders.updatedAt is NOT touched
+// (owner question, 2026-10-10 — it would wake only the legacy 15 s markers).
+// order_invoices carries live_changes child triggers (v27.65, parent
+// "orderId"), so the database records a row change itself.
+// ⚠ order_invoice_lines has NO trigger (no "orderId" column). Since v27.66 a
+// save that only moves tins between rows writes ONLY lines (steps 5-6) and so
+// records NO live line. Harmless today — the one live-patched read is the
+// board's '+n' chip (invoice NUMBERS, lib/floor/queries.ts getAddedInvoiceNos),
+// which a line-only edit cannot change; the dialog and detail panel read on
+// open. A screen that shows a row's lines live must add its own signal first.
 
 import { prisma } from "../prisma";
 import { syncSapInvoiceRow } from "./sap-row";
+import { planSplitWrite, type CurrentRow, type TargetRow, type WritePlan } from "./plan";
 import {
   addInvoicesRefusal,
   detectStale,
@@ -101,6 +124,94 @@ async function loadRows(orderId: number) {
       lines: { select: { rawLineItemId: true, qty: true }, orderBy: { rawLineItemId: "asc" } },
     },
   });
+}
+
+/** The rows WITH everything that locks them (plan.ts rowLockReasons) — the
+ *  input to save / undo. A void CI still locks: its FK still points here. */
+async function loadCurrentRows(orderId: number): Promise<CurrentRow[]> {
+  const rows = await prisma.order_invoices.findMany({
+    where: { orderId },
+    orderBy: { seq: "asc" },
+    select: {
+      id: true,
+      seq: true,
+      invoiceNo: true,
+      invoiceDate: true,
+      source: true,
+      isHeld: true,
+      isDispatched: true,
+      tripDrop: { select: { trip: { select: { tripNumber: true } } } },
+      billCopies: { select: { trip: { select: { tripNumber: true } } }, orderBy: { id: "asc" } },
+      redeliveries: { select: { trip: { select: { tripNumber: true } } }, orderBy: { id: "asc" } },
+      ciReturns: { select: { ciNumber: true, isVoided: true }, orderBy: { id: "asc" } },
+      lines: { select: { rawLineItemId: true, qty: true }, orderBy: { rawLineItemId: "asc" } },
+    },
+  });
+  return rows.map((r) => ({
+    id: r.id,
+    seq: r.seq,
+    invoiceNo: r.invoiceNo,
+    invoiceDate: r.invoiceDate,
+    source: r.source,
+    lines: r.lines,
+    tripNumber: r.tripDrop?.trip.tripNumber ?? null,
+    isHeld: r.isHeld,
+    isDispatched: r.isDispatched,
+    copyTrips: r.billCopies.map((c) => c.trip.tripNumber),
+    redeliveryTrips: r.redeliveries.map((d) => d.trip.tripNumber),
+    ciNumbers: r.ciReturns.map((c) => (c.ciNumber === null ? null : c.isVoided ? `${c.ciNumber} (void)` : c.ciNumber)),
+  }));
+}
+
+/** Steps 1-6 of the header: carry out a plan. Sequential, one statement each
+ *  (step 2: one per re-numbered row). Never touches a row's state columns. */
+async function applyPlan(orderId: number, plan: WritePlan, actorId: number, linesBySeq: Map<number, TargetRow["lines"]>) {
+  // 1. Rows past the new count (their lines CASCADE).
+  if (plan.deleteRowIds.length > 0) {
+    await prisma.order_invoices.deleteMany({ where: { id: { in: plan.deleteRowIds }, source: SOURCE_MANUAL } });
+  }
+  // 2. Kept manual rows: new number / date, same id.
+  for (const u of plan.updates) {
+    await prisma.order_invoices.update({
+      where: { id: u.id },
+      data: { invoiceNo: u.invoiceNo, invoiceDate: u.invoiceDate },
+    });
+  }
+  // 3-4. New manual rows, then their ids.
+  if (plan.creates.length > 0) {
+    await prisma.order_invoices.createMany({
+      data: plan.creates.map((c) => ({
+        orderId,
+        seq: c.seq,
+        invoiceNo: c.invoiceNo,
+        invoiceDate: c.invoiceDate,
+        source: SOURCE_MANUAL,
+        createdById: actorId,
+      })),
+    });
+  }
+  if (plan.relineSeqs.length === 0) return;
+  const after = await prisma.order_invoices.findMany({
+    where: { orderId, seq: { in: plan.relineSeqs } },
+    select: { id: true, seq: true },
+  });
+  const idBySeq = new Map(after.map((r) => [r.seq, r.id]));
+  const relineIds = plan.relineSeqs.map((seq) => idBySeq.get(seq)).filter((id): id is number => id !== undefined);
+  // 5. Old lines of every re-lined row, in ONE statement.
+  await prisma.order_invoice_lines.deleteMany({ where: { orderInvoiceId: { in: relineIds } } });
+  // 6. Their new lines, in ONE statement (none for Undo's seq 1).
+  const data = plan.relineSeqs.flatMap((seq) => {
+    const id = idBySeq.get(seq);
+    if (id === undefined) return [];
+    return (linesBySeq.get(seq) ?? []).map((l) => ({ orderInvoiceId: id, rawLineItemId: l.rawLineItemId, qty: l.qty }));
+  });
+  if (data.length > 0) await prisma.order_invoice_lines.createMany({ data });
+}
+
+/** Step 7's id check: every row the plan kept still has the id it had. */
+function keptIdsIntact(before: CurrentRow[], after: { id: number; seq: number }[], deleted: number[]): boolean {
+  const afterById = new Map(after.map((r) => [r.id, r.seq]));
+  return before.every((r) => deleted.includes(r.id) || afterById.get(r.id) === r.seq);
 }
 
 /** The OBD's ACTIVE raw lines — the same set the detail panel shows
@@ -211,7 +322,21 @@ async function prepare(orderId: number) {
   return { order, rows, seq1, sapNo: sapNo as string };
 }
 
-/** POST — save or edit: a FULL replace of the split. See the header for the order. */
+/** The save's TARGET: invoice k → seq k. A typed row with no date takes seq 1's
+ *  (or the order's) date; seq 1's own number and date are never written. */
+export function saveTargetOf(invoices: SaveInvoiceInput[], defaultDate: Date | null): TargetRow[] {
+  return invoices.map((inv, i) => ({
+    invoiceNo: inv.invoiceNo,
+    invoiceDate: i === 0 ? null : inv.invoiceDate ?? defaultDate,
+    lines: inv.lines,
+  }));
+}
+
+/** Read-only: the rows with their lock state, as save / undo plan from them.
+ *  Exported for read-only checks (a dry run); writes nothing. */
+export { loadCurrentRows };
+
+/** POST — save or edit, IN PLACE by seq. See the header for the write order. */
 export async function saveSplit(
   orderId: number,
   invoices: SaveInvoiceInput[],
@@ -220,7 +345,7 @@ export async function saveSplit(
 ): Promise<SplitResult> {
   const p = await prepare(orderId);
   if ("error" in p) return p.error!;
-  const { order, rows, seq1, sapNo } = p;
+  const { order, seq1, sapNo } = p;
 
   const activeLines = await loadActiveLines(order.obdNumber);
   const errors = validateSplit(activeLines, invoices, sapNo);
@@ -237,42 +362,29 @@ export async function saveSplit(
     };
   }
 
-  const wasSplit = rows.length > 1;
-  const defaultDate = seq1.invoiceDate ?? order.invoiceDate;
+  // 0. Plan from what the database holds NOW, state included. A refusal writes nothing.
+  const current = await loadCurrentRows(orderId);
+  const wasSplit = current.length > 1;
+  const target = saveTargetOf(invoices, seq1.invoiceDate ?? order.invoiceDate);
+  const planned = planSplitWrite(current, target);
+  if (!planned.ok) return { ok: false, status: 409, error: planned.refusals[0], errors: planned.refusals };
+  if (!planned.changed) return { ok: true, changed: false };
 
-  // 1-2. Clear whatever is there (a dead attempt's leftovers included).
-  await prisma.order_invoice_lines.deleteMany({ where: { orderInvoiceId: seq1.id } });
-  await prisma.order_invoices.deleteMany({ where: { orderId, source: SOURCE_MANUAL } });
-  // 3-4. The typed rows, seq 2..n.
-  await prisma.order_invoices.createMany({
-    data: typed.map((inv, i) => ({
-      orderId,
-      seq: i + 2,
-      invoiceNo: inv.invoiceNo,
-      invoiceDate: inv.invoiceDate ?? defaultDate,
-      source: SOURCE_MANUAL,
-      createdById: actorId,
-    })),
-  });
-  const after = await loadRows(orderId);
-  const idBySeq = new Map(after.map((r) => [r.seq, r.id]));
-  // 5. Every line row in ONE statement.
-  await prisma.order_invoice_lines.createMany({
-    data: invoices.flatMap((inv, i) =>
-      inv.lines.map((l) => ({ orderInvoiceId: idBySeq.get(i + 1)!, rawLineItemId: l.rawLineItemId, qty: l.qty })),
-    ),
-  });
+  // 1-6.
+  const linesBySeq = new Map(target.map((t, i) => [i + 1, t.lines]));
+  await applyPlan(orderId, planned.plan, actorId, linesBySeq);
 
-  // 6. Re-read and prove it.
+  // 7. Re-read and prove it: the split re-validates and no kept row lost its id.
   const saved = await loadRows(orderId);
   const savedAsInput: SplitInvoiceInput[] = saved.map((r) => ({ invoiceNo: r.invoiceNo ?? "", lines: r.lines }));
   const recheck = validateSplit(activeLines, savedAsInput, sapNo);
-  if (recheck.length > 0 || saved.length !== invoices.length) {
-    console.error(`[order-invoices] order ${orderId} saved split does not re-validate`, recheck);
+  const idsOk = keptIdsIntact(current, saved, planned.plan.deleteRowIds);
+  if (recheck.length > 0 || saved.length !== invoices.length || !idsOk) {
+    console.error(`[order-invoices] order ${orderId} saved split does not re-validate`, { recheck, idsOk });
     return { ok: false, status: 500, error: "The invoices did not save completely — please press Save again", errors: recheck };
   }
 
-  // 7. One status log row.
+  // 8. One status log row.
   const numbers = saved.map((r) => r.invoiceNo).join(", ");
   await prisma.order_status_logs.create({
     data: {
@@ -286,23 +398,28 @@ export async function saveSplit(
   return { ok: true, changed: true };
 }
 
-/** DELETE — Undo: back to unsplit (seq 1, no lines). Same refusals as save. */
+/** DELETE — Undo: back to unsplit (seq 1, no lines). The same engine and the
+ *  same refusals as save: a locked manual row cannot be removed, and a locked
+ *  seq 1 cannot lose its items (going back to "all lines" changes them). */
 export async function undoSplit(orderId: number, actorId: number): Promise<SplitResult> {
   const p = await prepare(orderId);
   if ("error" in p) return p.error!;
-  const { order, rows, seq1 } = p;
+  const { order, seq1 } = p;
 
-  const seq1HasLines = seq1.lines.length > 0;
-  if (rows.length === 1 && !seq1HasLines) return { ok: true, changed: false };
+  const current = await loadCurrentRows(orderId);
+  const target: TargetRow[] = [{ invoiceNo: seq1.invoiceNo ?? "", invoiceDate: null, lines: [] }];
+  const planned = planSplitWrite(current, target);
+  if (!planned.ok) return { ok: false, status: 409, error: planned.refusals[0], errors: planned.refusals };
+  if (!planned.changed) return { ok: true, changed: false };
 
-  const removed = rows.filter((r) => r.source === SOURCE_MANUAL).map((r) => r.invoiceNo);
-  // Manual rows first (their lines cascade), then seq 1's lines. Dying between
-  // the two leaves seq 1 alone WITH lines — reported stale; Undo again repairs.
-  await prisma.order_invoices.deleteMany({ where: { orderId, source: SOURCE_MANUAL } });
-  await prisma.order_invoice_lines.deleteMany({ where: { orderInvoiceId: seq1.id } });
+  const removed = current.filter((r) => r.source === SOURCE_MANUAL).map((r) => r.invoiceNo);
+  // Steps 1 and 5 only: manual rows first (their lines cascade), then seq 1's
+  // lines. Dying between the two leaves seq 1 alone WITH lines — reported
+  // stale; Undo again repairs.
+  await applyPlan(orderId, planned.plan, actorId, new Map());
 
   const after = await loadRows(orderId);
-  if (after.length !== 1 || after[0].seq !== SAP_SEQ || after[0].lines.length > 0) {
+  if (after.length !== 1 || after[0].seq !== SAP_SEQ || after[0].id !== seq1.id || after[0].lines.length > 0) {
     console.error(`[order-invoices] order ${orderId} undo did not leave exactly seq 1 with no lines`);
     return { ok: false, status: 500, error: "Undo did not finish — please press Undo again" };
   }

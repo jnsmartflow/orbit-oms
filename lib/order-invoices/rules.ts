@@ -191,8 +191,10 @@ export interface AddInvoicesBill {
 }
 
 /**
- * Why invoices cannot be added / edited / undone on this bill, or null.
- * Being on a trip is ALLOWED — Phase 2 records only.
+ * Why invoices cannot be added / edited / undone on this bill, or null — the
+ * WHOLE-BILL refusal. Being on a trip is not refused HERE; since v27.66 the
+ * per-ROW locks (on a trip, held, dispatched, copied, re-delivered, CI) are
+ * lib/order-invoices/plan.ts, which refuses only the rows a save would change.
  */
 export function addInvoicesRefusal(bill: AddInvoicesBill): string | null {
   if (bill.isRemoved) return "This bill has been removed";
