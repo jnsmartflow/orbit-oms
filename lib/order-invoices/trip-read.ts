@@ -56,6 +56,23 @@ export function onStopsWhere(dropIds: number[]): Prisma.ordersWhereInput {
 /** orders WHERE term: any invoice row of the OBD sits on any stop. */
 export const ON_ANY_TRIP_WHERE: Prisma.ordersWhereInput = { invoices: { some: { tripDropId: { not: null } } } };
 
+/** orders WHERE term: any invoice row of the OBD sits on a trip matching `trip`. */
+export function onTripsWhere(trip: Prisma.tripsWhereInput): Prisma.ordersWhereInput {
+  return { invoices: { some: { tripDrop: { trip } } } };
+}
+
+/** orders WHERE term: any invoice row of the OBD sits on one of these trips. */
+export function onTripIdsWhere(tripIds: number[]): Prisma.ordersWhereInput {
+  return { invoices: { some: { tripDrop: { tripId: { in: tripIds } } } } };
+}
+
+/**
+ * orders WHERE term: any invoice row of the OBD sits on a SHOWN trip — the
+ * picking gate's "visible" (lib/picking/visibility-gate.ts), mirrored by the
+ * Floor row's isAwaitingShow.
+ */
+export const ON_SHOWN_TRIP_WHERE: Prisma.ordersWhereInput = onTripsWhere({ shownAt: { not: null } });
+
 /** The `invoices` select for placeOnTrips — only rows on these stops (or on
  *  any stop when omitted), seq and stop. */
 export function stopRowsSelect(dropIds?: number[]) {

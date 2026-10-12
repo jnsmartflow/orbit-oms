@@ -23,6 +23,7 @@
 // Read-only; sequential awaits (CORE §3).
 
 import { prisma } from "@/lib/prisma";
+import { onTripIdsWhere } from "@/lib/order-invoices/trip-read";
 import { getISTDayRange } from "@/lib/dates";
 import { buildPickingWhere, getPickingQueue, type PickingBillSkus } from "@/lib/picking/queue";
 import { getPickDeletedToday } from "@/lib/picking/pick-deleted";
@@ -94,12 +95,13 @@ export function parsePickingSyncBody(raw: unknown): PickingSyncBody | string {
 }
 
 export async function syncPicking(body: PickingSyncBody): Promise<PickingSyncResult> {
-  // 1. Trips → their bills (trip_drops, via orders."tripDropId").
+  // 1. Trips → their bills: any INVOICE ROW on one of the trips (v27.66 — the
+  //    picking gate's own "any row" rule, lib/order-invoices/trip-read.ts).
   const tripBills =
     body.tripIds.length > 0
       ? (
           await prisma.orders.findMany({
-            where: { tripDrop: { tripId: { in: body.tripIds } } },
+            where: onTripIdsWhere(body.tripIds),
             select: { id: true },
           })
         ).map((o) => o.id)

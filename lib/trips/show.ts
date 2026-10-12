@@ -26,14 +26,18 @@
 import { prisma } from "@/lib/prisma";
 import { WAITING_FOR_PICKER } from "@/lib/picking/visibility-gate";
 import { logTripShown, logTripTakenBack } from "@/lib/trips/activity";
+import { onStopsWhere } from "@/lib/order-invoices/trip-read";
 
-/** Waiting bills on one trip — what the supervisor sees once it is shown. */
+/** Waiting bills on one trip — what the supervisor sees once it is shown.
+ *  Through the INVOICE ROWS (v27.66): a bill with any row on this trip's stops,
+ *  counted once — the same "any row" rule as the picking gate
+ *  (lib/picking/visibility-gate.ts waitingBranchWhere). */
 async function countTripBills(tripId: number): Promise<{ waiting: number; total: number }> {
   const drops = await prisma.trip_drops.findMany({ where: { tripId }, select: { id: true } });
   if (drops.length === 0) return { waiting: 0, total: 0 };
   const dropIds = drops.map((d) => d.id);
-  const waiting = await prisma.orders.count({ where: { ...WAITING_FOR_PICKER, tripDropId: { in: dropIds } } });
-  const total = await prisma.orders.count({ where: { isRemoved: false, tripDropId: { in: dropIds } } });
+  const waiting = await prisma.orders.count({ where: { ...WAITING_FOR_PICKER, ...onStopsWhere(dropIds) } });
+  const total = await prisma.orders.count({ where: { isRemoved: false, ...onStopsWhere(dropIds) } });
   return { waiting, total };
 }
 

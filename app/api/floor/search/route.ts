@@ -64,6 +64,9 @@ export async function GET(req: Request): Promise<NextResponse> {
     shipToCustomerName: true,
     customer: { select: { customerName: true } },
     shipToOverrideCustomer: { select: { customerName: true } },
+    // "Which trip is this bill on" — the DERIVED stop (lowest-seq invoice row),
+    // which orders."tripDropId" holds exactly while lib/order-invoices/
+    // trip-link.ts is the only writer (v27.66 readers B). Kept on orders.
     tripDrop: {
       select: { trip: { select: { id: true, tripNumber: true, tripDate: true, status: true } } },
     },

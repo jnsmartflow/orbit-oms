@@ -19,6 +19,7 @@
 // are ids to ask about. Sequential awaits (CORE §3).
 
 import { prisma } from "@/lib/prisma";
+import { onTripsWhere } from "@/lib/order-invoices/trip-read";
 import { getISTDayRange } from "@/lib/dates";
 import { countBillingPending, getPrintCount } from "@/lib/billing/marker-counts";
 import { getTelephonicMarker } from "@/lib/billing/telephonic";
@@ -117,7 +118,8 @@ export async function classifyBillingSync(body: SyncBody, arms: SyncArms): Promi
           await prisma.orders.findMany({
             where: {
               id: { in: orderIds },
-              tripDrop: { trip: { sentToBillingAt: { not: null }, status: { not: "cancelled" } } },
+              // Any invoice row on a sent trip (v27.66 readers B, trip-read.ts).
+              ...onTripsWhere({ sentToBillingAt: { not: null }, status: { not: "cancelled" } }),
             },
             select: { id: true },
             take: 1,

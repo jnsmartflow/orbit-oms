@@ -91,6 +91,9 @@ export async function getFloorRowsByIds(ids: number[]): Promise<FloorRowsResult>
   // whatever tab (or none) each is on now. No isRemoved / hide filter: a bill
   // that LEFT Floor (removed, hidden, dispatched) still names its invoice here,
   // which is how its partner's row learns it has gone.
+  // tripDropId here = "which stop is this bill on": the DERIVED stop, stored
+  // exactly in orders."tripDropId" by lib/order-invoices/trip-link.ts, the only
+  // writer (v27.66 readers B) — the same read the board's label makes.
   const facts = await prisma.orders.findMany({
     where: { id: { in: unique } },
     select: { id: true, soNumber: true, tripDropId: true, invoiceNo: true },

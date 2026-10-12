@@ -117,6 +117,11 @@ export function tripsOnDeskWhere(deskDate: Date, todayDate: Date): Prisma.tripsW
   return {
     OR: [
       { tripDate: deskDate },
+      // ⚠ Bills reached through orders."tripDropId" (v27.66 readers B), ON
+      // PURPOSE: this predicate is inside the Floor marker
+      // (getFloorLiveMarkerWhere → floorTripBillsWhere), which Phase 3 does not
+      // change. Exact today — trip-link.ts writes the derived stop and every
+      // move is whole-OBD. Phase 4 rewrites the board and marker on the rows.
       { tripDate: { lt: deskDate }, drops: { some: { orders: { some: BILL_NOT_DONE } } } },
     ],
   };

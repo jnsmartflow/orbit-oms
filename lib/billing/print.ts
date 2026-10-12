@@ -70,6 +70,7 @@ import { CHALLAN_LINKED, DISPATCHED, PICK_ASSIGNED, PICK_CHECKED, PICK_DONE } fr
 import { BILLABLE_BILL_WHERE } from "@/lib/challan-orders/where";
 import { logTripBillingDone, logTripBillsCopied } from "@/lib/trips/activity";
 import { invoiceRowLinks, linkRowFor } from "@/lib/order-invoices/links";
+import { onStopsWhere, placeOnTrips, stopRowsSelect } from "@/lib/order-invoices/trip-read";
 
 /** `orders.dispatchStatus` for a held bill — the same test lib/trips/queries.ts bucketFor makes. */
 const HOLD = "hold";
@@ -234,30 +235,38 @@ export async function loadPrintTrips(tripIds: number[]): Promise<PrintTrip[]> {
   });
   const dropById = new Map(drops.map((d) => [d.id, d]));
 
+  // THROUGH THE INVOICE ROWS (v27.66 readers B, lib/order-invoices/trip-read.ts):
+  // a bill is on a trip when any of its invoice rows sits on one of the trip's
+  // stops; it comes back ONCE per trip, on its lowest-seq row's stop there.
+  // Counts, litres and copies stay PER OBD until Phase 5.
+  const dropIds = drops.map((d) => d.id);
   const orders = drops.length
-    ? await prisma.orders.findMany({
-        // Rule 6: challan orders and linked bills never enter the Print view —
-        // every count, state and copy set below is built from this list alone.
-        where: { tripDropId: { in: drops.map((d) => d.id) }, isRemoved: false, ...BILLABLE_BILL_WHERE },
-        select: {
-          id: true,
-          tripDropId: true,
-          obdNumber: true,
-          invoiceNo: true,
-          dispatchStatus: true,
-          workflowStage: true,
-          orderType: true,
-          smu: true,
-          directLoadedAt: true,
-          shipToCustomerName: true,
-          materialType: true,
-          shipToOverrideCustomer: { select: { customerName: true } },
-          pickAssignment: { select: { assignedAt: true, pickedAt: true, checkedAt: true } },
-        },
-        orderBy: { id: "asc" },
-      })
+    ? placeOnTrips(
+        await prisma.orders.findMany({
+          // Rule 6: challan orders and linked bills never enter the Print view —
+          // every count, state and copy set below is built from this list alone.
+          where: { ...onStopsWhere(dropIds), isRemoved: false, ...BILLABLE_BILL_WHERE },
+          select: {
+            id: true,
+            invoices: stopRowsSelect(dropIds),
+            obdNumber: true,
+            invoiceNo: true,
+            dispatchStatus: true,
+            workflowStage: true,
+            orderType: true,
+            smu: true,
+            directLoadedAt: true,
+            shipToCustomerName: true,
+            materialType: true,
+            shipToOverrideCustomer: { select: { customerName: true } },
+            pickAssignment: { select: { assignedAt: true, pickedAt: true, checkedAt: true } },
+          },
+          orderBy: { id: "asc" },
+        }),
+        new Map(drops.map((d) => [d.id, d.tripId])),
+      )
     : [];
-  const orderIds = orders.map((o) => o.id);
+  const orderIds = Array.from(new Set(orders.map((o) => o.id)));
 
   const snapshots = orderIds.length
     ? await prisma.import_obd_query_summary.findMany({
@@ -333,9 +342,11 @@ export async function loadPrintTrips(tripIds: number[]): Promise<PrintTrip[]> {
   // only for those trips, so a normal load runs no extra query.
   const emptyTripIds = trips.filter((t) => !ordersByTripId.has(t.id)).map((t) => t.id);
   const emptyDropIds = drops.filter((d) => emptyTripIds.includes(d.tripId)).map((d) => d.id);
+  // Through the invoice rows too (v27.66) — every order, ORB orders included,
+  // has its seq-1 row (Model A).
   const challanDropRows = emptyDropIds.length
-    ? await prisma.orders.findMany({
-        where: { tripDropId: { in: emptyDropIds }, isRemoved: false, isChallanOrder: true },
+    ? await prisma.order_invoices.findMany({
+        where: { tripDropId: { in: emptyDropIds }, order: { isRemoved: false, isChallanOrder: true } },
         select: { tripDropId: true },
       })
     : [];
@@ -460,6 +471,10 @@ export async function loadPrintTrips(tripIds: number[]): Promise<PrintTrip[]> {
  * whose live bills are ALL ORB orders is dropped (loadPrintTrips' challanOnly).
  * Both columns are NOT NULL, so `= false` / `<>` need no null arm (CORE §13);
  * the existing `IS DISTINCT FROM` hold arm is untouched.
+ *
+ * Bills are reached THROUGH THE INVOICE ROWS (v27.66 readers B): trip_drops →
+ * order_invoices."tripDropId" → orders. Inside EXISTS, a bill with several rows
+ * on the trip cannot count twice.
  */
 export async function getPrintWorkTripIds(): Promise<number[]> {
   const rows = await prisma.$queryRaw<{ id: number }[]>`
@@ -474,7 +489,8 @@ export async function getPrintWorkTripIds(): Promise<number[]> {
            AND EXISTS (
              SELECT 1
                FROM trip_drops d
-               JOIN orders o ON o."tripDropId" = d.id
+               JOIN order_invoices oi ON oi."tripDropId" = d.id
+               JOIN orders o ON o.id = oi."orderId"
               WHERE d."tripId" = t.id
                 AND o."isRemoved" = false
                 AND o."dispatchStatus" IS DISTINCT FROM ${HOLD}
@@ -488,10 +504,10 @@ export async function getPrintWorkTripIds(): Promise<number[]> {
        )
        AND NOT (
          EXISTS (
-           SELECT 1 FROM trip_drops d JOIN orders o ON o."tripDropId" = d.id
+           SELECT 1 FROM trip_drops d JOIN order_invoices oi ON oi."tripDropId" = d.id JOIN orders o ON o.id = oi."orderId"
             WHERE d."tripId" = t.id AND o."isRemoved" = false AND o."isChallanOrder" = true)
          AND NOT EXISTS (
-           SELECT 1 FROM trip_drops d JOIN orders o ON o."tripDropId" = d.id
+           SELECT 1 FROM trip_drops d JOIN order_invoices oi ON oi."tripDropId" = d.id JOIN orders o ON o.id = oi."orderId"
             WHERE d."tripId" = t.id AND o."isRemoved" = false
               AND o."isChallanOrder" = false AND o."workflowStage" <> ${CHALLAN_LINKED})
        )`;
@@ -537,6 +553,9 @@ export function byNewestDone(a: PrintTrip, b: PrintTrip): number {
  *     this a bill turning to Review would not refresh the tab (2026-10-05).
  *   - trip_bill_copies.createdAt — another desk's copy (the trips stamp moves
  *     with it too; this arm is belt and braces). A tiny table.
+ *
+ * "Sent trips' bills" are reached THROUGH THE INVOICE ROWS (v27.66 readers B).
+ * A MAX cannot be inflated by a bill with several rows on a trip.
  */
 export async function getPrintMarkerLatest(): Promise<string | null> {
   const rows = await prisma.$queryRaw<{ latest: Date | null }[]>`
@@ -547,13 +566,14 @@ export async function getPrintMarkerLatest(): Promise<string | null> {
         WHERE t."sentToBillingAt" IS NOT NULL),
       (SELECT MAX(o."updatedAt")
          FROM orders o
-         JOIN trip_drops d ON d.id = o."tripDropId"
+         JOIN order_invoices oi ON oi."orderId" = o.id
+         JOIN trip_drops d ON d.id = oi."tripDropId"
          JOIN trips t ON t.id = d."tripId"
         WHERE t."sentToBillingAt" IS NOT NULL),
       (SELECT MAX(GREATEST(f."recordedAt", f."createdAt"))
          FROM pick_findings f
-         JOIN orders o ON o.id = f."orderId"
-         JOIN trip_drops d ON d.id = o."tripDropId"
+         JOIN order_invoices oi ON oi."orderId" = f."orderId"
+         JOIN trip_drops d ON d.id = oi."tripDropId"
          JOIN trips t ON t.id = d."tripId"
         WHERE t."sentToBillingAt" IS NOT NULL),
       (SELECT MAX(c."createdAt") FROM trip_bill_copies c)

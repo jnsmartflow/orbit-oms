@@ -15,6 +15,7 @@
 // Sequential awaits; never prisma.$transaction (CORE §3).
 
 import { prisma } from "@/lib/prisma";
+import { onTripsWhere } from "@/lib/order-invoices/trip-read";
 import { getFloorBoard } from "@/lib/floor/queries";
 import { snapshotCards } from "@/lib/trips/load-plan-check";
 import type { V2Plan } from "@/lib/trips/load-plan-v2";
@@ -66,7 +67,8 @@ export async function upcountryDayBillIds(): Promise<number[]> {
   const onTrips = await prisma.orders.findMany({
     where: {
       isRemoved: false,
-      tripDrop: { trip: { tripDate: istToday().date, status: { not: "cancelled" }, deliveryType: { name: "Upcountry" } } },
+      // Any invoice row on one of today's Upcountry trips (v27.66 readers B).
+      ...onTripsWhere({ tripDate: istToday().date, status: { not: "cancelled" }, deliveryType: { name: "Upcountry" } }),
     },
     select: { id: true },
   });

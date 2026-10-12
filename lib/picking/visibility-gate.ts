@@ -1,6 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { SUPPORT_DONE_OUTPUT } from "@/lib/workflow-stages";
+import { ON_SHOWN_TRIP_WHERE } from "@/lib/order-invoices/trip-read";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // The floor visibility gate ("desk control") — read-only helpers.
@@ -86,13 +87,21 @@ export const WAITING_FOR_PICKER: Prisma.ordersWhereInput = {
  * The Assign tab's WAITING branch, as `buildPickingWhere` ORs it in.
  *
  *   gate OFF → every waiting bill. Byte-identical to the board before the gate.
- *   gate ON  → a waiting bill on a trip that has been SHOWN. Nothing else — a
- *              bill on no trip is hidden (owner, 2026-09-21).
+ *   gate ON  → a waiting bill with ANY invoice row on a trip that has been
+ *              SHOWN (v27.66 — read through order_invoices, because from Phase
+ *              5 the rows of one OBD can sit on different trips). Nothing else
+ *              — a bill on no trip is hidden (owner, 2026-09-21). Picking stays
+ *              per OBD: one row on a shown trip shows the whole bill.
  *
- * `tripDropId: { not: null }` is implied by the relation filter (a null pointer
- * has no trip to test) and is spelled out anyway so the planner can use
- * `orders_tripDropId_idx` — the same reason lib/floor/queries.ts keeps its own
- * redundant copy of the term.
+ * `tripDropId: { not: null }` is implied by the relation filter and is spelled
+ * out anyway so the planner can use `orders_tripDropId_idx` — the same reason
+ * lib/floor/queries.ts keeps its own redundant copy of the term. Reading
+ * orders."tripDropId" for "on ANY trip" is exact: it is non-null ⇔ some invoice
+ * row has a stop, while lib/order-invoices/trip-link.ts is the only writer.
+ *
+ * 🔴 MIRRORED, NOT SHARED: countHeldBackWaiting below (its complement), the
+ * per-trip counts in lib/trips/show.ts and the Floor row's isAwaitingShow
+ * (lib/floor/queries.ts). Change all four or none.
  *
  * ⚠ ONLY THE WAITING BRANCH. The in-progress and checked branches are never
  * gated, in any state of the switch (queue.ts). Do not add this term anywhere
@@ -103,7 +112,7 @@ export function waitingBranchWhere(gateOn: boolean): Prisma.ordersWhereInput {
   return {
     workflowStage: SUPPORT_DONE_OUTPUT,
     tripDropId: { not: null },
-    tripDrop: { trip: { shownAt: { not: null } } },
+    ...ON_SHOWN_TRIP_WHERE,
   };
 }
 
@@ -142,8 +151,9 @@ const NOTHING_HELD: HeldBack = { bills: 0, trucks: 0, unplanned: 0 };
  * Gate OFF → zero with NO QUERY. Nothing is held back when the filter is not
  * running, so a poll costs exactly what it cost before the gate existed.
  *
- * TWO queries, sequential (never $transaction, CORE §3): the trip-held bills are
- * few, so their trip ids are read and counted distinct in memory; the unplanned
+ * TWO queries, sequential (never $transaction, CORE §3): the waiting bills on a
+ * trip are few, so they are read with their invoice rows' trips and both the
+ * "held back" test and the distinct trucks are decided in memory; the unplanned
  * bills can be the whole To plan pool (60 on 2026-09-21), so they are a count()
  * and never fetched. SELECT only — no `orders.update` anywhere near this, or the
  * marker would see a false "changed" (CORE §3).
@@ -153,19 +163,25 @@ export async function countHeldBackWaiting(
   gateOn: boolean,
 ): Promise<HeldBack> {
   if (!gateOn) return NOTHING_HELD;
-  const rows = await prisma.orders.findMany({
-    where: {
-      AND: [
-        boardWhere,
-        {
-          workflowStage: SUPPORT_DONE_OUTPUT,
-          tripDropId: { not: null },
-          tripDrop: { trip: { shownAt: null } },
-        },
-      ],
+  // Every WAITING bill on a trip (a handful), with the trip of each of its
+  // invoice rows; held back = NO row on a shown trip — the exact complement of
+  // waitingBranchWhere's gate-ON term (v27.66, through the rows).
+  //
+  // ⚠ DECIDED IN MEMORY, NOT AS `NOT: ON_SHOWN_TRIP_WHERE` (readers B,
+  // 2026-10-12, EXPLAIN): the SQL form makes Postgres hash EVERY shown trip's
+  // stops (a scan of trip_drops + trips) for one or two bills, losing the
+  // trip_drops_pkey / trips_pkey lookups this count had. Here the relation is
+  // loaded by id for just these bills.
+  const waitingOnTrips = await prisma.orders.findMany({
+    where: { AND: [boardWhere, { workflowStage: SUPPORT_DONE_OUTPUT, tripDropId: { not: null } }] },
+    select: {
+      invoices: {
+        where: { tripDropId: { not: null } },
+        select: { tripDrop: { select: { tripId: true, trip: { select: { shownAt: true } } } } },
+      },
     },
-    select: { tripDrop: { select: { tripId: true } } },
   });
+  const rows = waitingOnTrips.filter((o) => !o.invoices.some((i) => i.tripDrop?.trip.shownAt != null));
   // handAt: null — a Hand bill (the dealer collects) is not "not planned yet":
   // it waits for a Hand trip, not a truck (2026-09-24, design §4).
   const unplanned = await prisma.orders.count({
@@ -173,7 +189,8 @@ export async function countHeldBackWaiting(
       AND: [boardWhere, { workflowStage: SUPPORT_DONE_OUTPUT, tripDropId: null, handAt: null }],
     },
   });
-  const trucks = new Set(rows.map((r) => r.tripDrop?.tripId).filter((id): id is number => id != null));
+  // The trucks: every trip a held-back bill's invoice rows sit on (all unshown).
+  const trucks = new Set(rows.flatMap((r) => r.invoices.map((i) => i.tripDrop?.tripId)).filter((id): id is number => id != null));
   return { bills: rows.length, trucks: trucks.size, unplanned };
 }
 

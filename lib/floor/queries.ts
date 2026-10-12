@@ -64,6 +64,7 @@ import { getColourWorkByOrder } from "@/lib/picking/colour-work-query";
 // prisma, no clock, so importing it here is one-directional and safe — the same
 // argument grouping.ts and release-window.ts carry above.
 import { liveTripsOnDeskWhere } from "@/lib/trips/live-trips";
+import { onTripsWhere } from "@/lib/order-invoices/trip-read";
 import { computeDropKey } from "@/lib/trips/drop-key";
 import { isGiftBill } from "@/lib/orders/gift";
 import { dealerDisplayName } from "@/lib/orders/dealer-name";
@@ -189,6 +190,9 @@ export function floorCarriedPoolWhere(): Prisma.ordersWhereInput {
   return {
     dispatchStatus: "dispatch",
     workflowStage: PICK_CHECKED,
+    // "On NO trip" (v27.66 readers B): orders."tripDropId" is null ⇔ no invoice
+    // row of the OBD has a stop, while lib/order-invoices/trip-link.ts is the
+    // only writer — exact, and plan-safe. Kept on orders on purpose.
     tripDropId: null,
     isRemoved: false,
   };
@@ -297,8 +301,13 @@ export function floorCarriedPoolWhere(): Prisma.ordersWhereInput {
 export function floorHistoryTripBillsWhere(dayDateOnly: Date): Prisma.ordersWhereInput {
   return {
     isRemoved: false,
+    // "On ANY trip" — exact on orders while trip-link.ts is the only writer, and
+    // it is the index term (see above).
     tripDropId: { not: null },
-    tripDrop: { trip: { tripDate: dayDateOnly, status: { not: "cancelled" } } },
+    // "On a trip dated D" — THROUGH THE INVOICE ROWS (v27.66 readers B): from
+    // Phase 5 one OBD's rows can sit on different trips, and orders."tripDropId"
+    // names only the lowest-seq row's. History only — not in the marker.
+    ...onTripsWhere({ tripDate: dayDateOnly, status: { not: "cancelled" } }),
   };
 }
 
@@ -309,6 +318,13 @@ export function floorTripBillsWhere(todayDateOnly: Date): Prisma.ordersWhereInpu
     // Redundant by meaning, load-bearing by plan. Read the header before touching.
     tripDropId: { not: null },
     // The shared rule, never a local spelling of it.
+    //
+    // ⚠ STILL READ THROUGH orders."tripDropId" (v27.66 readers B), ON PURPOSE:
+    // this arm is part of getFloorLiveMarkerWhere, and the Floor marker query is
+    // not changed in Phase 3. It is exact today — trip-link.ts writes the
+    // derived stop (the OBD's lowest-seq row's) into orders."tripDropId" and is
+    // the only writer, and every move is whole-OBD. Phase 4 (one Floor row per
+    // invoice row) rewrites the board and its marker on the rows.
     tripDrop: { trip: liveTripsOnDeskWhere(todayDateOnly) },
   };
 }
@@ -1212,6 +1228,12 @@ export async function getFloorBoard(
   // by filtering board rows would render empty and the progress bar would lie.
   // What these fields are for is the opposite direction: putting a trip TAG on a
   // row that is on screen.
+  //
+  // ⚠ THE LABEL READS orders."tripDropId" (v27.66 readers B), and that is exact:
+  // the question is "which stop is this OBD on", whose answer is the derived
+  // stop (the lowest-seq invoice row's), which lib/order-invoices/trip-link.ts —
+  // the only writer — stores right there. Phase 4 gives each invoice row its
+  // own Floor row and label.
   const tripDropIds = Array.from(
     new Set(orders.map((o) => o.tripDropId).filter((id): id is number => id !== null)),
   );
@@ -1236,6 +1258,24 @@ export async function getFloorBoard(
   // drop id → the trip it belongs to, resolved once for the whole page.
   const tripByDropId = new Map(
     tripDrops.map((d) => [d.id, tripById.get(d.tripId) ?? null]),
+  );
+  // ── SHOWN, THROUGH THE INVOICE ROWS (v27.66 readers B) ─────────────────────
+  // The picking gate shows a waiting bill when ANY of its invoice rows sits on
+  // a shown trip (lib/picking/visibility-gate.ts waitingBranchWhere);
+  // isAwaitingShow below is its mirror, so it reads the same rows. Asked only
+  // for the WAITING bills on a trip — a handful — and skipped when there are none.
+  const waitingOnTripIds = orders
+    .filter((o) => o.workflowStage === SUPPORT_DONE_OUTPUT && o.dispatchStatus === "dispatch" && o.tripDropId !== null)
+    .map((o) => o.id);
+  const onShownTrip = new Set(
+    waitingOnTripIds.length > 0
+      ? (
+          await prisma.order_invoices.findMany({
+            where: { orderId: { in: waitingOnTripIds }, tripDrop: { trip: { shownAt: { not: null } } } },
+            select: { orderId: true },
+          })
+        ).map((r) => r.orderId)
+      : [],
   );
 
   let rows: FloorBoardRow[] = [];
@@ -1457,18 +1497,12 @@ export async function getFloorBoard(
       // lib/picking/visibility-gate.ts — this is its mirror; change both or
       // neither). Since 2026-09-21 a bill on no trip is held back too (owner).
       // The client pairs it with the switch (status-pill.tsx isHeldBack).
-      // A pointer that resolves to no trip reads as NOT awaiting. It cannot
-      // persist — orders.tripDropId is ON DELETE SET NULL — so it is only ever a
-      // read race between the two batched lookups above, and "at desk" about a
-      // trip this read could not find would be a guess.
+      // Since v27.66 (readers B) "shown" is read through the invoice rows —
+      // onShownTrip above, the gate's own "any row on a shown trip" rule.
       isAwaitingShow:
         order.workflowStage === SUPPORT_DONE_OUTPUT &&
         order.dispatchStatus === "dispatch" &&
-        (order.tripDropId === null ||
-          (() => {
-            const trip = tripByDropId.get(order.tripDropId);
-            return trip != null && trip.shownAt === null;
-          })()),
+        !onShownTrip.has(order.id),
     });
   }
 

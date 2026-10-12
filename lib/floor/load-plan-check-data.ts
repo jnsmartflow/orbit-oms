@@ -13,6 +13,7 @@
 // Sequential awaits; never prisma.$transaction (CORE §3).
 
 import { prisma } from "@/lib/prisma";
+import { onStopsWhere, placeOnTrips, stopRowsSelect } from "@/lib/order-invoices/trip-read";
 import { isGiftBill, loadKg } from "@/lib/orders/gift";
 import { loadPlanV2Context } from "@/lib/floor/load-plan-v2-loader";
 import { makePricer, VEHICLE_TYPES, type LoadPlanV2Context, type VehicleType } from "@/lib/trips/load-plan-v2";
@@ -93,6 +94,9 @@ export async function checkCards(dateIso: string, cards: SnapshotCard[], ctx: Lo
         select: { id: true, tripDropId: true, materialType: true, querySnapshot: { select: { totalWeight: true } }, customer: areaSel, shipToOverrideCustomer: areaSel },
       })
     : [];
+  // "Which trip is each snapshot bill on" — the DERIVED stop, which
+  // orders."tripDropId" holds exactly while lib/order-invoices/trip-link.ts is
+  // the only writer (v27.66 readers B). Kept on orders on purpose.
   const dropIds = Array.from(new Set(orders.map((o) => o.tripDropId).filter((d): d is number => d !== null)));
   const drops = dropIds.length
     ? await prisma.trip_drops.findMany({ where: { id: { in: dropIds } }, select: { id: true, tripId: true } })
@@ -130,13 +134,20 @@ export async function checkCards(dateIso: string, cards: SnapshotCard[], ctx: Lo
   const tripDrops = tripIds.length
     ? await prisma.trip_drops.findMany({ where: { tripId: { in: tripIds } }, select: { id: true, tripId: true } })
     : [];
-  const tripOrders = tripDrops.length
-    ? await prisma.orders.findMany({
-        where: { tripDropId: { in: tripDrops.map((d) => d.id) }, isRemoved: false },
-        select: { tripDropId: true, materialType: true, querySnapshot: { select: { totalWeight: true } }, customer: areaSel, shipToOverrideCustomer: areaSel },
-      })
-    : [];
+  // Every bill on those trips THROUGH THE INVOICE ROWS (v27.66 readers B,
+  // trip-read.ts): once per trip, on its lowest-seq row's stop. Kg stays per
+  // OBD until Phase 5.
   const tripOfDrop = new Map(tripDrops.map((d) => [d.id, d.tripId] as const));
+  const tripDropIds = tripDrops.map((d) => d.id);
+  const tripOrders = tripDrops.length
+    ? placeOnTrips(
+        await prisma.orders.findMany({
+          where: { ...onStopsWhere(tripDropIds), isRemoved: false },
+          select: { invoices: stopRowsSelect(tripDropIds), materialType: true, querySnapshot: { select: { totalWeight: true } }, customer: areaSel, shipToOverrideCustomer: areaSel },
+        }),
+        tripOfDrop,
+      )
+    : [];
   const trips = new Map<number, TripFact>();
   dayTrips.forEach((t) => {
     trips.set(t.id, { tripId: t.id, type: actualTypeOf(t.vehicleSize), kg: 0, stops: tripDrops.filter((d) => d.tripId === t.id).length, places: [] });
