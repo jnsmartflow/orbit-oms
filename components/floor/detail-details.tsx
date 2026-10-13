@@ -46,7 +46,21 @@ function Cell({ k, v, sub, mono }: { k: string; v: string | null; sub?: ReactNod
   );
 }
 
-export function DetailDetails({ d }: { d: FloorDetail }) {
+export function DetailDetails({
+  d,
+  invoice,
+  others,
+  onPickInvoice,
+}: {
+  d: FloorDetail;
+  /** ADD INVOICES (Phase 4): the panel is scoped to ONE invoice — its number and
+   *  date replace SAP's in Reference; everything else is the OBD's. Omitted on
+   *  the OBD view (unchanged). */
+  invoice?: { invoiceNo: string | null; invoiceDate: string | null };
+  /** The OBD's OTHER invoices, "716 · 714 · 715" — a click scopes the panel to one. */
+  others?: Array<{ seq: number; invoiceNo: string | null; label: string }>;
+  onPickInvoice?: (seq: number) => void;
+}) {
   return (
     <div>
       <Section title="Parties" />
@@ -84,9 +98,27 @@ export function DetailDetails({ d }: { d: FloorDetail }) {
       <div className="grid grid-cols-2">
         <Cell k="OBD date" v={fmtDateTime(d.obdDateTime)} />
         <Cell k="SO number" v={d.soNumber} mono />
-        <Cell k="Invoice date" v={formatDateIST(d.invoiceDate)} />
-        <Cell k="Invoice number" v={d.invoiceNo} mono />
+        <Cell k="Invoice date" v={formatDateIST(invoice ? invoice.invoiceDate : d.invoiceDate)} />
+        <Cell k="Invoice number" v={invoice ? invoice.invoiceNo : d.invoiceNo} mono />
       </div>
+      {invoice && others && others.length > 0 && (
+        <div className="border-b border-[#f5f5f5] px-5 pb-2.5 pt-2 text-[11.5px] text-[#6b7280]">
+          Other invoices:{" "}
+          {others.map((o, i) => (
+            <span key={o.seq}>
+              {i > 0 && <span className="text-[#d1d5db]"> · </span>}
+              <button
+                type="button"
+                title={o.invoiceNo ?? undefined}
+                onClick={() => onPickInvoice?.(o.seq)}
+                className="font-mono font-semibold text-brand-700 hover:underline"
+              >
+                {o.label}
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
 
       <Section title="Classification" />
       <div className="grid grid-cols-2">

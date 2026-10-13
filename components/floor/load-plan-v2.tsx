@@ -113,7 +113,7 @@ export function LoadPlanV2View({
   anchorIso: string;
   variant: FloorTableVariant;
   onMarkUrgent: (id: number) => void;
-  onOpenDetail: (id: number) => void;
+  onOpenDetail: (id: number, invoiceSeq?: number) => void;
   gateOn: boolean;
   onMakeTrip?: (orderIds: number[], vehicleSize?: VehicleType) => void;
   makeTripBusy?: boolean;
@@ -486,7 +486,7 @@ function PlanPanel({
   anchorIso: string;
   variant: FloorTableVariant;
   onMarkUrgent: (id: number) => void;
-  onOpenDetail: (id: number) => void;
+  onOpenDetail: (id: number, invoiceSeq?: number) => void;
   gateOn: boolean;
   onTogglePin: () => void;
   onMove: (stopId: string, toKey: string) => void;

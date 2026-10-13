@@ -98,7 +98,7 @@ type LeafProps = {
   onToggleRow?: (id: number) => void;
   onToggleAll?: (rows: FloorBoardRow[]) => void;
   onMarkUrgent: (id: number) => void;
-  onOpenDetail: (id: number) => void;
+  onOpenDetail: (id: number, invoiceSeq?: number) => void;
   gateOn: boolean;
 };
 
@@ -213,7 +213,7 @@ export function TripDesk({
   onToggleRow: (id: number) => void;
   onToggleAll: (rows: FloorBoardRow[]) => void;
   onMarkUrgent: (id: number) => void;
-  onOpenDetail: (id: number) => void;
+  onOpenDetail: (id: number, invoiceSeq?: number) => void;
   tripBusyId: number | null;
   /** The page's delivery-type scope. The rail filters trips by it (slice 6). */
   scope: FloorScope;

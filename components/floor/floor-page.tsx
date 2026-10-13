@@ -64,6 +64,8 @@ import { CancelledTab } from "./cancelled-tab";
 import { DetailPanel, type DetailActions } from "./detail-panel";
 import { OffFloorDialog, type OffFloorFormBill, type CiReasonOption } from "./off-floor-dialog";
 import { AddInvoicesDialog } from "./add-invoices-dialog";
+// Add invoices Phase 4 commit 3 — the detail panel scoped to one invoice.
+import { detailWalk, resolveScope, type DetailKey } from "@/lib/floor/detail-scope";
 import { offFloorRefusal } from "@/lib/floor/off-floor";
 import { SearchBox, SearchHits } from "./search-box";
 import { FilterSheet } from "./filter-sheet";
@@ -2083,7 +2085,10 @@ export function FloorPage({
   // ── Detail panel (design §10) — open state + single-bill action handlers ──
   // Additive wiring only: the panel is mounted at the end; every write REUSES an
   // existing route through reportWrite (no swallowed response, no new route).
-  const [detail, setDetail] = useState<{ orderId: number; source: FloorDetailSource } | null>(null);
+  // `invoiceSeq` (Add invoices Phase 4 commit 3): the invoice of a split OBD the
+  // panel was opened on, from its Floor row; null = the OBD view. RESOLVED before
+  // use (detailScopeSeq below) — a vanished invoice falls back to the OBD view.
+  const [detail, setDetail] = useState<{ orderId: number; source: FloorDetailSource; invoiceSeq: number | null } | null>(null);
   // Opening (or paging to) a bill the last search did NOT name ends the amber
   // search mark (2026-10-06) — the planner has moved on to another bill.
   const dropLitUnless = useCallback(
@@ -2091,26 +2096,33 @@ export function FloorPage({
     [],
   );
   const openDetail = useCallback(
-    (orderId: number, src: FloorDetailSource) => {
-      setDetail({ orderId, source: src });
+    (orderId: number, src: FloorDetailSource, invoiceSeq: number | null = null) => {
+      setDetail({ orderId, source: src, invoiceSeq });
       dropLitUnless(orderId);
     },
     [dropLitUnless],
   );
   const closeDetail = useCallback(() => setDetail(null), []);
   const navigateDetail = useCallback(
-    (orderId: number) => {
-      setDetail((d) => (d ? { ...d, orderId } : d));
-      dropLitUnless(orderId);
+    (key: DetailKey) => {
+      setDetail((d) => (d ? { ...d, orderId: key.orderId, invoiceSeq: key.invoiceSeq } : d));
+      dropLitUnless(key.orderId);
     },
     [dropLitUnless],
   );
+  // "Other invoices: 716 · 714 · 715" — the same bill, another invoice.
+  const scopeDetailInvoice = useCallback((seq: number) => {
+    setDetail((d) => (d ? { ...d, invoiceSeq: seq } : d));
+  }, []);
 
   // The list Prev/Next walks — whichever source the panel was opened from
   // (design §10.5). Rebuilt on every board reload so it tracks the live order.
   // Prev/Next walks the VISIBLE (searched/filtered) list of the source surface,
   // except the rail which is never filtered (design §6.1).
-  const detailList = useMemo<number[]>(() => {
+  // ⚠ KEYS, NOT ORDER IDS (Add invoices Phase 4 commit 3): on the Floor source a
+  // split OBD walks one key per invoice, board order (detailWalk); every other
+  // source walks the OBD view, one key per bill.
+  const detailList = useMemo<DetailKey[]>(() => {
     if (!detail) return [];
     switch (detail.source) {
       // ⚠ NO "rail" CASE SINCE 2026-09-13. The decision rail stopped rendering on
@@ -2127,24 +2139,43 @@ export function FloorPage({
         // A Cancel & CI search result opens read-only (2026-10-06) — its pager
         // walks the search rows, never the board.
         if (cancelSearch?.rows.some((r) => r.orderId === detail.orderId)) {
-          return cancelSearch.rows.map((r) => r.orderId);
+          return detailWalk(cancelSearch.rows, false);
         }
-        return (filteredFloor?.rows ?? []).map((r) => r.orderId);
+        // History shows a split OBD as a whole (per-invoice there is Phase 6).
+        return detailWalk(filteredFloor?.rows ?? [], false);
       case "floor":
         // Every row the desk lists, upcoming included (2026-09-10 b). The pager
         // must not be stricter than a tap: an upcoming row is openable from the
-        // list, so Prev/Next has to be able to reach it and leave it.
-        return (filteredFloor?.rows ?? []).map((r) => r.orderId);
+        // list, so Prev/Next has to be able to reach it and leave it. A split
+        // OBD: its invoices, 716 → 713 → 714 → 715, then the next bill.
+        return detailWalk(filteredFloor?.rows ?? []);
       case "hold":
-        return (filteredHold ?? []).map((r) => r.orderId);
+        return detailWalk(filteredHold ?? [], false);
       case "cancelled":
-        return (filteredCancelled ?? []).map((r) => r.orderId);
+        return detailWalk(filteredCancelled ?? [], false);
       // "rail" — no list. Its feed and its only opener are gone (above); the
       // pager simply has nothing to walk, which is the honest answer.
       default:
         return [];
     }
   }, [detail, filteredFloor, filteredHold, filteredCancelled, cancelSearch]);
+
+  // ── The panel's invoice scope (Add invoices Phase 4 commit 3) ─────────────
+  // Off the LOADED rows, like hasDuplicateSo below. Scoped only on the Floor
+  // source and only while the invoice still exists (resolveScope) — an undo or
+  // an edit that removes it drops the panel back to the OBD view.
+  const detailBoardRow = detail ? (data?.floor.rows ?? []).find((r) => r.orderId === detail.orderId) ?? null : null;
+  const detailScopeSeq = detail
+    ? resolveScope({ orderId: detail.orderId, invoiceSeq: detail.invoiceSeq }, detailBoardRow?.invoiceRows, detail.source === "floor").invoiceSeq
+    : null;
+  const detailInvoiceCount = !detail
+    ? 1
+    : detail.source === "hold"
+      ? (holdRows ?? []).find((r) => r.orderId === detail.orderId)?.invoiceCount ?? 1
+      : detail.source === "cancelled"
+        ? ((cancelledRows ?? []).find((r) => r.orderId === detail.orderId) ??
+            cancelSearch?.rows.find((r) => r.orderId === detail.orderId))?.invoiceCount ?? 1
+        : Math.max(1, detailBoardRow?.invoiceRows.length ?? 1);
 
   // Duplicate-SO flag for the OPEN bill, taken from the row that is ALREADY
   // loaded — no second fetch and no new field on /api/floor/order/[orderId],
@@ -3825,7 +3856,8 @@ export function FloorPage({
               // screen already uses for the live/history split (the sync
               // pauses key off it), so the panel can never disagree with the
               // desk about which day it is showing.
-              onOpenDetail={(id) => openDetail(id, isLive ? "floor" : "history")}
+              // A split OBD's row hands its invoice seq — the panel opens on it.
+              onOpenDetail={(id, invoiceSeq) => openDetail(id, isLive ? "floor" : "history", invoiceSeq ?? null)}
             />
           ) : null}
         </div>
@@ -3889,11 +3921,15 @@ export function FloorPage({
           withBillingCiNumber={detailCiNumber}
           isHand={detailIsHand}
           canEdit={canEdit}
-          // Add invoices (2026-10-10) — the Items tab's Invoices section.
+          // Add invoices (2026-10-10) — Add / Edit invoices in the panel's ··· menu.
           canAddInvoices={canAddInvoices}
-          obdKg={(data?.floor.rows ?? []).find((r) => r.orderId === detail.orderId)?.weightKg ?? null}
           invoicesRefreshKey={invoicesRefreshKey}
           onEditInvoices={openAddInvoices}
+          // Phase 4 commit 3 — scoped to one invoice of a split OBD (resolved).
+          invoiceSeq={detailScopeSeq}
+          invoiceRows={detailBoardRow?.invoiceRows ?? []}
+          invoiceCount={detailInvoiceCount}
+          onScopeInvoice={scopeDetailInvoice}
           list={detailList}
           windows={dispatchWindows}
           pickers={data?.pickers ?? []}

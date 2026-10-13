@@ -503,7 +503,9 @@ export function FloorTable({
   onToggleRow?: (id: number) => void;
   onToggleAll?: (rows: FloorBoardRow[]) => void;
   onMarkUrgent?: (id: number) => void;
-  onOpenDetail?: (id: number) => void;
+  /** A split OBD's row also hands its invoice seq (Add invoices Phase 4) — the
+   *  panel opens scoped to that invoice. */
+  onOpenDetail?: (id: number, invoiceSeq?: number) => void;
   /**
    * RE-DELIVERY rows (2026-10-03, row.redelivery set by trip-desk.tsx). Their
    * tick goes HERE with the trip_redeliveries id — never onToggleRow with the
@@ -1298,7 +1300,7 @@ export function FloorTable({
             <button
               type="button"
               title={rd ? "Re-delivery details" : "Open details"}
-              onClick={() => (rd ? onOpenRedelivery?.(rd.id) : onOpenDetail?.(row.orderId))}
+              onClick={() => (rd ? onOpenRedelivery?.(rd.id) : onOpenDetail?.(row.orderId, inv?.seq))}
               className="inline-flex h-[23px] w-[23px] items-center justify-center rounded-[5px] border border-gray-200 bg-white text-gray-400 hover:border-gray-300 hover:text-gray-600"
             >
               <MoreHorizontal size={12} />
@@ -1354,7 +1356,7 @@ export function FloorTable({
             <button
               type="button"
               title="Open details"
-              onClick={() => onOpenDetail?.(row.orderId)}
+              onClick={() => onOpenDetail?.(row.orderId, inv?.seq)}
               className="inline-flex h-[23px] w-[23px] items-center justify-center rounded-[5px] border border-gray-200 bg-white text-gray-400 hover:border-gray-300 hover:text-gray-600"
             >
               <MoreHorizontal size={12} />
@@ -1487,7 +1489,7 @@ export function FloorTable({
               onClick={(e) => {
                 e.stopPropagation();
                 if (rd) onOpenRedelivery?.(rd.id);
-                else onOpenDetail?.(row.orderId);
+                else onOpenDetail?.(row.orderId, inv?.seq);
               }}
               className="cursor-pointer font-mono text-[11.5px] font-medium text-[#111827] hover:underline"
             >

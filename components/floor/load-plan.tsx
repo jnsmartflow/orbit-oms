@@ -78,7 +78,7 @@ export function LoadPlanView({
   anchorIso: string;
   variant: FloorTableVariant;
   onMarkUrgent: (id: number) => void;
-  onOpenDetail: (id: number) => void;
+  onOpenDetail: (id: number, invoiceSeq?: number) => void;
   gateOn: boolean;
   /** Runs the New trip flow with these bills. Absent = no button (History). */
   onMakeTrip?: (orderIds: number[]) => void;
@@ -281,7 +281,7 @@ function TruckPanel({
   anchorIso: string;
   variant: FloorTableVariant;
   onMarkUrgent: (id: number) => void;
-  onOpenDetail: (id: number) => void;
+  onOpenDetail: (id: number, invoiceSeq?: number) => void;
   gateOn: boolean;
   onMakeTrip?: (orderIds: number[]) => void;
   makeTripBusy?: boolean;

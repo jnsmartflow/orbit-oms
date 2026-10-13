@@ -4,10 +4,22 @@
 // total appears (design §10.1 cut the kg/litre header strip). Gift lines are
 // OUT OF SCOPE: no gift tag, no gift-excluded total.
 
-import { formatLitres } from "./status-pill";
+import { formatLitres, formatWeightKg } from "./status-pill";
 import type { FloorDetailLine } from "@/lib/floor/types";
 
-export function DetailItems({ lines, totalLitres }: { lines: FloorDetailLine[]; totalLitres: number }) {
+export function DetailItems({
+  lines,
+  totalLitres,
+  kg,
+}: {
+  lines: FloorDetailLine[];
+  totalLitres: number;
+  /** ONE INVOICE's footer kg (Add invoices Phase 4 — the panel scoped to an
+   *  invoice): "~" when shared from the OBD's kg by litres. Omitted on the OBD
+   *  view, whose footer is unchanged. */
+  kg?: { kg: number | null; exact: boolean };
+}) {
+  const kgStr = kg ? formatWeightKg(kg.kg) : null;
   if (lines.length === 0) {
     return <div className="px-5 py-10 text-center text-[11.5px] text-gray-400">No line items on this bill.</div>;
   }
@@ -34,7 +46,16 @@ export function DetailItems({ lines, totalLitres }: { lines: FloorDetailLine[]; 
       ))}
       <div className="flex border-t border-[#f0f0f0] bg-[#fafafa] px-5 py-[11px] text-[12px] font-semibold text-[#374151]">
         <span>{lines.length} lines</span>
-        <span className="ml-auto tabular-nums">{formatLitres(totalLitres)} L</span>
+        <span className="ml-auto tabular-nums">
+          {formatLitres(totalLitres)} L
+          {kgStr !== null && (
+            <span title={kg && !kg.exact ? "Approximate — the OBD's kg shared by litres" : undefined}>
+              {" · "}
+              {kg && !kg.exact ? "~" : ""}
+              {kgStr} kg
+            </span>
+          )}
+        </span>
       </div>
     </div>
   );

@@ -30,16 +30,23 @@ import { SlotPickerButton } from "@/components/floor/slot-picker-button";
 import { ShipToEditor } from "@/components/floor/ship-to-editor";
 import { TINT_ROOM_REFUSAL } from "@/lib/floor/off-floor";
 import { DetailItems } from "./detail-items";
-import { DetailInvoices } from "./detail-invoices";
+// The Items tab's old "Invoices" section (detail-invoices.tsx, c7fef916) is no
+// longer mounted since Add invoices Phase 4 commit 3: a split OBD's panel opens
+// SCOPED to one invoice, and Add / Edit invoices moved into the ··· menu. The
+// file is kept (CORE §3 — never delete a file).
 import { DetailDetails } from "./detail-details";
 import { DetailActivity } from "./detail-activity";
+import { InvoiceCountChip, InvoicePartChip } from "./bill-ref-cells";
+import { activityForInvoice, otherInvoices, scopeItems, walkIndex, type DetailKey } from "@/lib/floor/detail-scope";
+import type { FloorInvoiceRow } from "@/lib/floor/invoice-rows";
+import type { SplitView } from "@/lib/order-invoices/split";
 import { ON_HOLD_PILL_CLS } from "./status-pill";
 import {
   DuplicateSoTag,
   DUP_SO_SOFT_BAR,
   DUP_SO_SOFT_SURFACE,
 } from "@/components/shared/duplicate-so-tag";
-import type { FloorDetail, FloorDetailSource, FloorPicker } from "@/lib/floor/types";
+import type { FloorDetail, FloorDetailLine, FloorDetailSource, FloorPicker } from "@/lib/floor/types";
 
 // The slot-chip / Release launcher is components/floor/slot-picker-button.tsx
 // since 2026-10-01 (Tint Manager tabs build step 7) — this file's private copy
@@ -163,9 +170,12 @@ export function DetailPanel({
   isHand = false,
   canEdit = false,
   canAddInvoices = false,
-  obdKg = null,
   invoicesRefreshKey = 0,
   onEditInvoices,
+  invoiceSeq = null,
+  invoiceRows = [],
+  invoiceCount = 1,
+  onScopeInvoice,
   list,
   windows,
   pickers,
@@ -206,22 +216,38 @@ export function DetailPanel({
   canEdit?: boolean;
   /**
    * ADD INVOICES (2026-10-10): `floor_add_invoices` canEdit, resolved on the
-   * server like canEdit. Draws Add / Edit in the Items tab's Invoices section —
-   * hidden without it, and on a history panel (UI §10). The route re-checks.
+   * server like canEdit. Draws Add / Edit invoices in the ··· menu (Phase 4
+   * commit 3; was the Items tab's Invoices section) — hidden without it, and on
+   * a history panel (UI §10). The route re-checks.
    */
   canAddInvoices?: boolean;
-  /** The OBD's header kg, off the loaded board row — the ~kg share. */
-  obdKg?: number | null;
   /** Bumped by floor-page after an Add invoices save / undo. */
   invoicesRefreshKey?: number;
   /** Opens floor-page's Add invoices modal on this bill. */
   onEditInvoices?: (orderId: number, obdNumber: string) => void;
-  list: number[];
+  /**
+   * ADD INVOICES Phase 4 commit 3 — THE SCOPE. The invoice (order_invoices seq)
+   * this panel is open on, ALREADY RESOLVED by floor-page (lib/floor/
+   * detail-scope.ts resolveScope): non-null only for a split OBD opened from the
+   * Floor tab, and only while that invoice still exists. null = the OBD view,
+   * exactly as before.
+   */
+  invoiceSeq?: number | null;
+  /** The OBD's invoices off the loaded board row (FloorBoardRow.invoiceRows) —
+   *  number, date, litres, kg + exact flag, stale. [] when unsplit. */
+  invoiceRows?: FloorInvoiceRow[];
+  /** How many invoices the OBD carries — the OBD view's "n invoices" (On hold,
+   *  Cancel & CI, History; per-invoice there is Phase 6). 1 = unsplit. */
+  invoiceCount?: number;
+  /** "Other invoices: 716 · 714 · 715" — re-scope the panel to another invoice. */
+  onScopeInvoice?: (seq: number) => void;
+  /** Prev / Next — invoice rows in board order (detailWalk). */
+  list: DetailKey[];
   windows: DispatchWindow[];
   pickers: FloorPicker[];
   actions: DetailActions;
   onClose: () => void;
-  onNavigate: (orderId: number) => void;
+  onNavigate: (key: DetailKey) => void;
   /**
    * Live feed (7b) only — undefined with the feed off, and then nothing below
    * runs. Bumped by floor-page each time THIS bill shows up in the change feed.
@@ -292,6 +318,34 @@ export function DetailPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [changeSignal]);
 
+  // ── THE SCOPED INVOICE (Add invoices Phase 4 commit 3) ─────────────────────
+  // `scope` = the board row's invoice entry (number, date, litres, kg, stale);
+  // the Items tab also needs WHICH lines are on it, which only the split view
+  // carries (GET /api/floor/orders/[orderId]/invoices — the Add invoices modal's
+  // own read). Read when scoped, again after a save / undo or a live change.
+  const scope = invoiceSeq !== null ? invoiceRows.find((r) => r.seq === invoiceSeq) ?? null : null;
+  const [splitView, setSplitView] = useState<SplitView | null>(null);
+  const scoped = scope !== null;
+  useEffect(() => {
+    if (!scoped) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch(`/api/floor/orders/${orderId}/invoices`, { cache: "no-store" });
+        const body = (await res.json().catch(() => null)) as SplitView | null;
+        if (!cancelled) setSplitView(res.ok && body && Array.isArray(body.invoices) ? body : null);
+      } catch {
+        if (!cancelled) setSplitView(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [orderId, scoped, invoicesRefreshKey, changeSignal]);
+  useEffect(() => {
+    setSplitView(null);
+  }, [orderId]);
+
   // Reset per-bill UI when the panel walks to another bill.
   useEffect(() => {
     setTab("items");
@@ -320,9 +374,10 @@ export function DetailPanel({
     [busy, fetchDetail],
   );
 
-  const index = list.indexOf(orderId);
-  const prevId = index > 0 ? list[index - 1] : null;
-  const nextId = index >= 0 && index < list.length - 1 ? list[index + 1] : null;
+  // Walks invoice rows in board order (716 → 713 → 714 → 715 → next bill).
+  const index = walkIndex(list, { orderId, invoiceSeq: scope ? scope.seq : null });
+  const prevKey = index > 0 ? list[index - 1] : null;
+  const nextKey = index >= 0 && index < list.length - 1 ? list[index + 1] : null;
 
   return (
     <div className="fixed inset-0 z-[110]">
@@ -359,9 +414,13 @@ export function DetailPanel({
             isHand={isHand}
             canEdit={canEdit}
             canAddInvoices={canAddInvoices && onEditInvoices !== undefined}
-            obdKg={obdKg}
-            invoicesRefreshKey={invoicesRefreshKey + (changeSignal ?? 0)}
             onEditInvoices={onEditInvoices}
+            scope={scope}
+            scopeK={scope ? invoiceRows.indexOf(scope) + 1 : 0}
+            invoiceRows={invoiceRows}
+            invoiceCount={invoiceCount}
+            splitView={splitView}
+            onScopeInvoice={onScopeInvoice}
             tab={tab}
             setTab={setTab}
             windows={windows}
@@ -383,8 +442,8 @@ export function DetailPanel({
         <div className="flex items-center gap-2 border-t border-gray-200 bg-white px-5 py-2.5 text-[11.5px] shadow-[0_-4px_14px_rgba(17,24,39,0.05)]">
           <button
             type="button"
-            disabled={prevId === null}
-            onClick={() => prevId !== null && onNavigate(prevId)}
+            disabled={prevKey === null}
+            onClick={() => prevKey !== null && onNavigate(prevKey)}
             className="rounded-[6px] border border-gray-200 px-3 py-[6px] text-[11.5px] text-gray-500 hover:border-gray-300 hover:text-gray-700 disabled:opacity-40"
           >
             ‹ Previous
@@ -396,8 +455,8 @@ export function DetailPanel({
           )}
           <button
             type="button"
-            disabled={nextId === null}
-            onClick={() => nextId !== null && onNavigate(nextId)}
+            disabled={nextKey === null}
+            onClick={() => nextKey !== null && onNavigate(nextKey)}
             className={`rounded-[6px] border border-gray-200 px-3 py-[6px] text-[11.5px] text-gray-500 hover:border-gray-300 hover:text-gray-700 disabled:opacity-40 ${list.length > 1 ? "" : "ml-auto"}`}
           >
             Next ›
@@ -418,9 +477,13 @@ function PanelBody({
   isHand,
   canEdit,
   canAddInvoices,
-  obdKg,
-  invoicesRefreshKey,
   onEditInvoices,
+  scope,
+  scopeK,
+  invoiceRows,
+  invoiceCount,
+  splitView,
+  onScopeInvoice,
   tab,
   setTab,
   windows,
@@ -443,9 +506,14 @@ function PanelBody({
   isHand: boolean;
   canEdit: boolean;
   canAddInvoices: boolean;
-  obdKg: number | null;
-  invoicesRefreshKey: number;
   onEditInvoices?: (orderId: number, obdNumber: string) => void;
+  /** The invoice the panel is scoped to (null = the OBD view) and its k of n. */
+  scope: FloorInvoiceRow | null;
+  scopeK: number;
+  invoiceRows: FloorInvoiceRow[];
+  invoiceCount: number;
+  splitView: SplitView | null;
+  onScopeInvoice?: (seq: number) => void;
   tab: Tab;
   setTab: (t: Tab) => void;
   windows: DispatchWindow[];
@@ -539,6 +607,26 @@ function PanelBody({
     );
   }
 
+  // ADD / EDIT INVOICES (Add invoices Phase 4 commit 3 — was the Items tab's
+  // Invoices section). The same tick (`floor_add_invoices`) and the same modal
+  // the Floor bar's ··· More opens (floor-page openAddInvoices); the modal shows
+  // the refusals (dispatched, a CI, rows in different states). Floor and On
+  // hold panels only — a cancelled bill is refused, and History never writes.
+  if (canAddInvoices && (source === "floor" || source === "hold") && onEditInvoices) {
+    const isSplit = invoiceCount > 1 || invoiceRows.length > 1;
+    overflow.push({ label: isSplit ? "Edit invoices" : "Add invoices", fn: async () => onEditInvoices(d.orderId, d.obdNumber) });
+  }
+
+  // THE SCOPED INVOICE's Items: only its lines (by raw line id), its tins and
+  // litres; "lines changed in SAP" when the split no longer matches SAP's lines.
+  const scopedInvoice = scope && splitView ? splitView.invoices.find((i) => i.seq === scope.seq) ?? null : null;
+  const scopedItems: { lines: FloorDetailLine[]; missing: number } | null = scopedInvoice
+    ? scopeItems(d.lines, scopedInvoice.lines)
+    : null;
+  const scopedStale = scope !== null && (scope.stale || (scopedItems?.missing ?? 0) > 0);
+  const shownActivity = scope ? activityForInvoice(d.activity, scope.id) : d.activity;
+  const itemsCount = scope ? scopedItems?.lines.length ?? 0 : d.lines.length;
+
   const currentSlotValue =
     d.dispatchTargetDate && d.dispatchWindowId && d.dispatchWindowTime
       ? { date: d.dispatchTargetDate, dispatchWindowId: d.dispatchWindowId, windowTime: d.dispatchWindowTime }
@@ -568,6 +656,17 @@ function PanelBody({
         }
       >
         <div className="flex items-baseline gap-2.5">
+          {scope ? (
+            // SCOPED TO ONE INVOICE: the invoice leads, "k/n" beside it; the OBD
+            // number moves to the line under it.
+            <span className="font-mono text-[19px] font-bold leading-none tracking-[-0.02em] text-gray-900">
+              {scope.invoiceNo}
+              <span className="align-[3px]">
+                <InvoicePartChip k={scopeK} n={invoiceRows.length} />
+              </span>
+            </span>
+          ) : (
+            <>
           <span
             className={"font-mono text-[19px] font-bold leading-none tracking-[-0.02em] " + "text-gray-900"}
           >
@@ -578,6 +677,8 @@ function PanelBody({
           >
             {fmtDateTime(d.obdDateTime)}
           </span>
+            </>
+          )}
           <div className="ml-auto flex items-center gap-2 self-center">
             {/* Slot chip — moved up beside the date; a chip with a pencil so it
                 reads as editable. Opens the reused picker. Deleted the old grey
@@ -621,6 +722,12 @@ function PanelBody({
             </button>
           </div>
         </div>
+        {scope && (
+          <div className="mt-1.5 flex items-baseline gap-2.5">
+            <span className="font-mono text-[12.5px] font-semibold text-gray-700">{d.obdNumber}</span>
+            <span className="text-[11px] tabular-nums text-gray-400">{fmtDateTime(d.obdDateTime)}</span>
+          </div>
+        )}
         <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1">
           <span
             className={"text-[16px] font-bold " + "text-gray-900"}
@@ -663,6 +770,8 @@ function PanelBody({
           <ColourWorkBadge work={d.colourWork} />
           {/* HAND — the dealer collects (2026-09-24), beside TINT / BASE. */}
           {isHand && <HandBadge />}
+          {/* A split OBD seen as a whole (On hold, Cancel & CI, History). */}
+          {!scope && invoiceCount > 1 && <InvoiceCountChip n={invoiceCount} className="" />}
         </div>
       </div>
 
@@ -831,9 +940,9 @@ function PanelBody({
       {/* ── Tabs (fixed) ────────────────────────────────────────────────────── */}
       <div className="flex gap-5 border-b border-gray-200 px-5">
         {([
-          ["items", `Items ${d.lines.length}`],
+          ["items", `Items ${itemsCount}`],
           ["details", "Details"],
-          ["activity", `Activity ${d.activity.length}`],
+          ["activity", `Activity ${shownActivity.length}`],
         ] as Array<[Tab, string]>).map(([key, label]) => (
           <button
             key={key}
@@ -848,22 +957,39 @@ function PanelBody({
 
       {/* ── Body (scrolls) ──────────────────────────────────────────────────── */}
       <div className="min-h-0 flex-1 overflow-y-auto">
-        {tab === "items" && (
-          <>
-            {/* Add invoices (2026-10-10) — SAP's number, or every invoice of a
-                split OBD with its lines. Edit only on a live (not history) panel. */}
-            <DetailInvoices
-              orderId={d.orderId}
-              obdKg={obdKg}
-              canAddInvoices={canAddInvoices && !readOnly}
-              refreshKey={invoicesRefreshKey}
-              onEdit={() => onEditInvoices?.(d.orderId, d.obdNumber)}
-            />
+        {tab === "items" &&
+          (scope === null ? (
             <DetailItems lines={d.lines} totalLitres={d.totalLitres} />
-          </>
-        )}
-        {tab === "details" && <DetailDetails d={d} />}
-        {tab === "activity" && <DetailActivity d={d} />}
+          ) : (
+            <>
+              {scopedStale && (
+                <div className="border-b border-[#f0f0f0] bg-warn-bg px-5 py-2 text-[11.5px] text-warn-text">
+                  Lines changed in SAP — re-check invoices
+                </div>
+              )}
+              {scopedItems === null ? (
+                <div className="px-5 py-10 text-center text-[11.5px] text-gray-400">Loading this invoice…</div>
+              ) : (
+                <DetailItems
+                  lines={scopedItems.lines}
+                  totalLitres={scopedItems.lines.reduce((sum, l) => sum + l.litres, 0)}
+                  kg={{ kg: scope.kg, exact: scope.kgExact }}
+                />
+              )}
+            </>
+          ))}
+        {tab === "details" &&
+          (scope === null ? (
+            <DetailDetails d={d} />
+          ) : (
+            <DetailDetails
+              d={d}
+              invoice={{ invoiceNo: scope.invoiceNo, invoiceDate: scope.invoiceDate }}
+              others={otherInvoices(invoiceRows, scope.seq)}
+              onPickInvoice={onScopeInvoice}
+            />
+          ))}
+        {tab === "activity" && <DetailActivity d={scope ? { ...d, activity: shownActivity } : d} />}
       </div>
     </>
   );

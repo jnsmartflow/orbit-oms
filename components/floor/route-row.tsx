@@ -57,7 +57,7 @@ export function RouteRow({
   onToggleRow?: (id: number) => void;
   onToggleAll?: (rows: FloorBoardRow[]) => void;
   onMarkUrgent?: (id: number) => void;
-  onOpenDetail?: (id: number) => void;
+  onOpenDetail?: (id: number, invoiceSeq?: number) => void;
   /**
    * The picking visibility gate, forwarded UNCHANGED to the table below.
    *

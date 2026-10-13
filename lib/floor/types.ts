@@ -697,6 +697,11 @@ export interface FloorDetailLine {
 // from enrichment (design §10.4 — the engine writes no log).
 export interface FloorActivityEntry {
   at: string | null;     // ISO; null on the synthetic enrichment line (no log ts)
+  /** The ONE invoice this entry is about (order_invoices.id) — a STRUCTURED
+   *  field, never read off the note (Add invoices Phase 4, lib/floor/
+   *  detail-scope.ts activityForInvoice). Absent / null = OBD-wide, shown on
+   *  every invoice. No writer sets it yet. */
+  orderInvoiceId?: number | null;
   note: string | null;
   fromStage: string | null;
   toStage: string | null;
