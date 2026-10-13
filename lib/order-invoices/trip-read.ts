@@ -20,6 +20,8 @@
 // litres / kg / count. Phase 5 makes them per row (an OBD half on this truck
 // brings half its litres) — not here.
 //
+//   · "where is this OBD on THIS trip" (one bill, one trip — the trip actions'
+//     guards, readers C) → obdStopOnTrip: its lowest-seq row's stop on that trip.
 // ⚠ NOT FOR THE FLOOR BOARD. floorTripBillsWhere's `tripDropId: { not: null }`
 // term is load-bearing for the query plan (CLAUDE_FLOOR.md landmine), and the
 // picking gate reads orders."tripDropId" — both move in commit B, not through
@@ -113,6 +115,21 @@ export function placeOnTrips<T extends { invoices: StopRow[] }>(
     });
   }
   return out;
+}
+
+/**
+ * Where ONE OBD sits on ONE trip: the stop (id + dropKey) of its LOWEST-seq
+ * invoice row on that trip, or null when no row of it is on the trip. One read,
+ * keyed on order_invoices_orderId_seq_key. The trip actions' "is it on THIS
+ * trip" (readers C, POST /api/floor/trips/[id]/bills).
+ */
+export async function obdStopOnTrip(orderId: number, tripId: number): Promise<{ id: number; dropKey: string } | null> {
+  const row = await prisma.order_invoices.findFirst({
+    where: { orderId, tripDrop: { tripId } },
+    orderBy: { seq: "asc" },
+    select: { tripDrop: { select: { id: true, dropKey: true } } },
+  });
+  return row?.tripDrop ?? null;
 }
 
 /** ONE read: each OBD's stop by the derived rule (null = on no trip). */

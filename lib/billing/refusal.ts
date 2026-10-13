@@ -81,6 +81,9 @@ const REFUSED_IN_TINT_ROOM: ReadonlySet<BillingAction> = new Set<BillingAction>(
  * cancelled / dispatched refusals, which Floor's ship-to never had.
  */
 export function onTripRefusal(bill: Pick<BillingRefusalBill, "tripDropId" | "tripNumber">): string | null {
+  // "On ANY trip" from orders."tripDropId" — exact while lib/order-invoices/
+  // trip-link.ts is the only writer; tripNumber is the derived stop's trip
+  // (v27.66 readers C: kept on orders on purpose).
   const onTrip = bill.tripDropId !== null && bill.tripDropId !== undefined;
   if (!onTrip) return null;
   return `On trip ${bill.tripNumber ?? "(unknown)"} — remove it from the trip first`;

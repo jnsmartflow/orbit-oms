@@ -84,6 +84,10 @@ export interface OffFloorBill {
 export function offFloorRefusal(bill: OffFloorBill, opts?: { allowTintRoom?: boolean }): string | null {
   if (bill.workflowStage === "cancelled") return "Already cancelled";
   if (bill.workflowStage === "dispatched") return "Already dispatched";
+  // "On ANY trip" reads orders."tripDropId", and the message names the bill's
+  // derived stop's trip — both exact while lib/order-invoices/trip-link.ts is
+  // the only writer (non-null ⇔ some invoice row has a stop; it holds the
+  // lowest-seq row's stop). Kept on orders on purpose (v27.66 readers C).
   if (bill.tripDropId !== null) {
     return `On trip ${bill.tripNumber ?? "(unknown)"} — remove it from the trip first`;
   }

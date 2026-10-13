@@ -79,6 +79,9 @@ type ObdRow = {
  */
 export async function touchedReason(o: ObdRow): Promise<string | null> {
   if (o.workflowStage === "dispatched") return "it has already left the depot";
+  // "On ANY trip" — orders."tripDropId" is exact while lib/order-invoices/
+  // trip-link.ts is the only writer (v27.66 readers C). The CAS guards below
+  // (`tripDropId: null`) ask the same question.
   if (o.tripDropId !== null) return "it is on a truck plan";
   if (o.handAt !== null) return "the dealer is collecting it (Hand)";
   if (!UNTOUCHED_STAGES.includes(o.workflowStage)) {

@@ -152,6 +152,8 @@ function openGroupsCte(): Prisma.Sql {
                SELECT 1 FROM orders o
                 WHERE o.id = ANY (g.ids)
                   AND NOT (o."workflowStage" = ANY (${NOT_DELETABLE_STAGES}::text[]))
+                  -- on NO trip: exact on orders while trip-link.ts is the
+                  -- only writer (v27.66 readers C)
                   AND o."tripDropId" IS NULL
                   AND NOT EXISTS (
                         SELECT 1 FROM ci_returns c

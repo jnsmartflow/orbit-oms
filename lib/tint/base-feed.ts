@@ -32,6 +32,7 @@ import { getISTDayRange } from "@/lib/dates";
 import { getFloorBoard } from "@/lib/floor/queries";
 import type { FloorBoardRow } from "@/lib/floor/types";
 import { TRIP_BILLS_ADDED } from "@/lib/trips/activity";
+import { onTripIdsWhere } from "@/lib/order-invoices/trip-read";
 import { isTintManagerBaseRow, tintManagerBaseWhere } from "@/lib/tint/base-bills";
 
 /**
@@ -70,12 +71,15 @@ export async function baseTripCutoffWhere(date?: string): Promise<Prisma.ordersW
     for (const id of ids) if (typeof id === "number" && Number.isInteger(id)) set.add(id);
     idsByTrip.set(r.tripId, set);
   }
+  // "Not on a trip" reads orders."tripDropId" (exact while lib/order-invoices/
+  // trip-link.ts is the only writer); "on THAT trip" reads the invoice rows
+  // (v27.66 readers C, trip-read.ts onTripIdsWhere).
   return {
     OR: [
       { tripDropId: null },
       ...Array.from(idsByTrip.entries()).map(([tripId, ids]) => ({
         id: { in: Array.from(ids) },
-        tripDrop: { tripId },
+        ...onTripIdsWhere([tripId]),
       })),
     ],
   };

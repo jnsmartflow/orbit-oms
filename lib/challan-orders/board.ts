@@ -225,6 +225,12 @@ export async function loadChallanHistory(args: {
  * created or changes (stage, trip, cancel), when a link row is pasted / unlinked
  * / linked, or when an ORB order's trip changes. `signature` carries the counts so
  * a change that leaves every MAX equal (an unlink back to a prior state) still fires.
+ * The ORB orders' trips are reached THROUGH THE INVOICE ROWS (v27.66 readers C);
+ * a MAX cannot be inflated by an order with several rows on a trip.
+ * 🔴 `o."tripDropId" IS NOT NULL` is redundant by meaning (exact while
+ * lib/order-invoices/trip-link.ts is the only writer) and LOAD-BEARING by plan:
+ * without it Postgres seq-scans orders (2026-10-13 EXPLAIN); with it,
+ * orders_tripDropId_idx — 2.7 ms against 5.0 ms on the old join.
  *
  * `count` is the NOT BILLED number — the Billing / Floor / Place Order pills show
  * it (work outstanding, the tab-bar rule), read off this same poll (onResult).
@@ -252,8 +258,9 @@ export async function getChallanMarker(): Promise<{ count: number; latest: strin
       (SELECT max("updatedAt") FROM challan_order_so_links)                                  AS "linkMax",
       (SELECT max(t."updatedAt") FROM trips t
          JOIN trip_drops d ON d."tripId" = t.id
-         JOIN orders o ON o."tripDropId" = d.id
-        WHERE o."isChallanOrder" = true)                                                     AS "tripMax"`;
+         JOIN order_invoices oi ON oi."tripDropId" = d.id
+         JOIN orders o ON o.id = oi."orderId"
+        WHERE o."isChallanOrder" = true AND o."tripDropId" IS NOT NULL)                                                   AS "tripMax"`;
   const stamps = [r.orderMax, r.linkMax, r.tripMax].filter((d): d is Date => d !== null).map((d) => d.getTime());
   return {
     count: r.notBilled,

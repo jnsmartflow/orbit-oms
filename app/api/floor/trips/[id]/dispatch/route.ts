@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { markBillsDispatched } from "@/lib/floor/dispatch";
 import { logTripDispatched } from "@/lib/trips/activity";
 import { DISPATCHED } from "@/lib/workflow-stages";
+import { onStopsWhere } from "@/lib/order-invoices/trip-read";
 
 export const dynamic = "force-dynamic";
 
@@ -113,7 +114,9 @@ export async function POST(
   }
 
   // The trip's bills, via its drops. TWO batched reads keyed on an IN list —
-  // never an include chain (lib/picking/queue.ts:537-554).
+  // never an include chain (lib/picking/queue.ts:537-554). Since v27.66
+  // (readers C) a bill is on the trip when ANY of its invoice rows sits on one
+  // of the stops (lib/order-invoices/trip-read.ts onStopsWhere) — each OBD once.
   const drops = await prisma.trip_drops.findMany({
     where: { tripId },
     select: { id: true },
@@ -121,7 +124,7 @@ export async function POST(
   const orders =
     drops.length > 0
       ? await prisma.orders.findMany({
-          where: { tripDropId: { in: drops.map((d) => d.id) }, isRemoved: false },
+          where: { ...onStopsWhere(drops.map((d) => d.id)), isRemoved: false },
           // `obdNumber` rides along for the ACTIVITY LOG — the bills that move
           // are named by the number on the paper, not by an internal id.
           select: { id: true, obdNumber: true },
@@ -152,7 +155,7 @@ export async function POST(
   if (disp.dispatched.length > 0) {
     const outstanding = await prisma.orders.count({
       where: {
-        tripDropId: { in: drops.map((d) => d.id) },
+        ...onStopsWhere(drops.map((d) => d.id)),
         isRemoved: false,
         workflowStage: { not: DISPATCHED },
         // A held bill is settled for this purpose — see the header.

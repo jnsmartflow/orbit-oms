@@ -7,6 +7,7 @@ import { deleteTripDropIfEmpty, findOrCreateTripDrop } from "@/lib/trips/drop";
 import { logTripBills } from "@/lib/trips/activity";
 import { CHALLAN_LINKED } from "@/lib/workflow-stages";
 import { setOrderTrip } from "@/lib/order-invoices/trip-link";
+import { obdStopOnTrip } from "@/lib/order-invoices/trip-read";
 
 export const dynamic = "force-dynamic";
 
@@ -152,18 +153,16 @@ export async function POST(
         // updatedAt and fire a false "changed" on every board). Every floor
         // caller already sends only bills on the URL's trip (floor-page.tsx
         // undoAdd and removeSelectionFromTrips), so they never meet this.
-        const currentDrop =
-          order.tripDropId !== null
-            ? await prisma.trip_drops.findUnique({
-                where: { id: order.tripDropId },
-                select: { tripId: true },
-              })
-            : null;
-        if (order.tripDropId === null || currentDrop === null || currentDrop.tripId !== tripId) {
+        //
+        // "On THIS trip" is read THROUGH THE INVOICE ROWS (v27.66 readers C,
+        // lib/order-invoices/trip-read.ts): the stop of the bill's lowest-seq
+        // row on this trip. The write below is unchanged (trip-link.ts).
+        const here = await obdStopOnTrip(orderId, tripId);
+        if (here === null) {
           failed.push({ orderId, error: "Not on this trip" });
           continue;
         }
-        const dropId = order.tripDropId;
+        const dropId = here.id;
 
         // The bill's invoice rows, then ONE orders.update (v27.66 —
         // lib/order-invoices/trip-link.ts, the only trip-link writer).
@@ -201,27 +200,35 @@ export async function POST(
 
       const dropKey = computeDropKey(order);
 
+      // "On ANY trip" reads orders."tripDropId" — exact while trip-link.ts is
+      // the only writer (non-null ⇔ some invoice row has a stop; v27.66 readers C).
       if (order.tripDropId !== null) {
         // Already on a stop. If it is the right stop on THIS trip, skip with no
         // write. If it is anywhere else, refuse rather than silently moving it:
         // a bill on two loads is the kind of thing nobody notices until a van is
         // short, and "move" is a different action the caller should ask for.
-        const current = await prisma.trip_drops.findUnique({
-          where: { id: order.tripDropId },
-          // The trip NUMBER rides this same read (2026-09-18): the refusal is
-          // read by a planner, and an internal id is nothing he can act on.
-          select: { id: true, tripId: true, dropKey: true, trip: { select: { tripNumber: true } } },
-        });
-        if (current && current.tripId === tripId && current.dropKey === dropKey) {
-          skipped.push(orderId);
+        //
+        // "On THIS trip, at which stop" is read THROUGH THE INVOICE ROWS
+        // (readers C): the lowest-seq row's stop on this trip.
+        const here = await obdStopOnTrip(orderId, tripId);
+        if (here !== null) {
+          if (here.dropKey === dropKey) skipped.push(orderId);
+          else failed.push({ orderId, error: "Already attached to a different stop on this trip." });
           continue;
         }
+        // On another trip: name it. "Which stop is this bill on" = the derived
+        // stop orders."tripDropId" holds (trip-link.ts, the only writer).
+        // The trip NUMBER rides this same read (2026-09-18): the refusal is
+        // read by a planner, and an internal id is nothing he can act on.
+        const current = await prisma.trip_drops.findUnique({
+          where: { id: order.tripDropId },
+          select: { trip: { select: { tripNumber: true } } },
+        });
         failed.push({
           orderId,
-          error:
-            current && current.tripId !== tripId
-              ? `Already on ${current.trip.tripNumber} — remove it from that trip first.`
-              : "Already attached to a different stop on this trip.",
+          error: current
+            ? `Already on ${current.trip.tripNumber} — remove it from that trip first.`
+            : "Already attached to a different stop on this trip.",
         });
         continue;
       }

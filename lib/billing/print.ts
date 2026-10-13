@@ -70,7 +70,7 @@ import { CHALLAN_LINKED, DISPATCHED, PICK_ASSIGNED, PICK_CHECKED, PICK_DONE } fr
 import { BILLABLE_BILL_WHERE } from "@/lib/challan-orders/where";
 import { logTripBillingDone, logTripBillsCopied } from "@/lib/trips/activity";
 import { invoiceRowLinks, linkRowFor } from "@/lib/order-invoices/links";
-import { onStopsWhere, placeOnTrips, stopRowsSelect } from "@/lib/order-invoices/trip-read";
+import { onStopsWhere, onTripsWhere, placeOnTrips, stopRowsSelect } from "@/lib/order-invoices/trip-read";
 
 /** `orders.dispatchStatus` for a held bill — the same test lib/trips/queries.ts bucketFor makes. */
 const HOLD = "hold";
@@ -832,13 +832,15 @@ export async function markTripBillingDone(opts: { tripId: number; actorId: numbe
   return { ok: true, changed: true, tripNumber: trip.tripNumber, billingDoneAt: stamp.toISOString() };
 }
 
-/** Is this bill on this trip, and is the trip on the Print tab (sent, not cancelled)? */
+/** Is this bill on this trip, and is the trip on the Print tab (sent, not cancelled)?
+ *  "On this trip" = any of its invoice rows on one of the trip's stops (v27.66
+ *  readers C, lib/order-invoices/trip-read.ts onTripsWhere). */
 export async function isBillOnSentTrip(orderId: number, tripId: number): Promise<boolean> {
   const hit = await prisma.orders.findFirst({
     where: {
       id: orderId,
       isRemoved: false,
-      tripDrop: { tripId, trip: { sentToBillingAt: { not: null }, status: { not: "cancelled" } } },
+      ...onTripsWhere({ id: tripId, sentToBillingAt: { not: null }, status: { not: "cancelled" } }),
     },
     select: { id: true },
   });
