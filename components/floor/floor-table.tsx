@@ -811,14 +811,13 @@ export function FloorTable({
   // per OBD: selection, sort, live-merge and search key on the OBD, so a tick on
   // any invoice row ticks them all (Phase 4 — per-invoice actions are Phase 5/6).
   //
-  // 🔴 THE CELL-COUNT LANDMINE ABOVE `widths`, AGAIN, SPENT ON ONE CELL ONLY:
-  // row 1 draws the OBD cell with rowSpan = n; rows 2..n leave out EXACTLY that
-  // one cell. Every other cell is drawn on every row — Article tag and Article
-  // render EMPTY on rows 2..n (an OBD fact, shown once), never absent. Per arm,
-  // row 1 → rows 2..n:
-  //   ship-to block            10 → 9   (OBD spanned; no tick column)
-  //   interactive + Invoice    12 → 11  (OBD spanned; each row keeps its ☐)
-  //   read-only + Invoice      11 → 10  (OBD spanned — History, load plan)
+  // THE OBD CELL REPEATS ON EVERY INVOICE ROW (owner, 2026-10-13, after looking
+  // on localhost — it was rowspan'd across the block in e8942595). Every row of
+  // the block draws EVERY cell, so the cell-count landmine above `widths` is
+  // not touched: row 1 = rows 2..n = the arm's count (ship-to block 10,
+  // interactive + Invoice 12, read-only + Invoice 11). Each row's OBD cell says
+  // "n invoices"; Article tag and Article render EMPTY on rows 2..n (an OBD fact,
+  // shown once), never absent.
   //   Operator / no Invoice    NOT EXPANDED — one row, "n invoices" on the OBD
   //                            date line (no cell to show which invoice is which)
   // Never across the upcoming divider: an OBD sits in ONE list, so its block does.
@@ -1013,7 +1012,7 @@ export function FloorTable({
   function renderRow(row: FloorBoardRow, pair: PairRender | null, draw: InvoiceDrawRow<FloorBoardRow> | null = null) {
     const st = rowStatus(row);
     // ONE ROW PER INVOICE — `inv` = the invoice this <tr> shows (a split OBD's
-    // block); `splitRest` = rows 2..n, which leave out the rowspan'd OBD cell.
+    // block); `splitRest` = rows 2..n, whose Article tag / Article are blank.
     const inv = draw !== null && draw.n > 1 ? draw.invoice : null;
     const split = inv !== null;
     const splitRest = split && !draw!.first;
@@ -1471,17 +1470,13 @@ export function FloorTable({
             rendered, so THIS is the first cell and the bar lands here
             instead. `interactive` is the same flag that drives `widths`
             above, so the two can never disagree about which cell is first. */}
-        {!splitRest && (
         <td
-          // No tick column → the pair bar is this cell's collapsed left border.
-          // On a split block this cell spans every invoice row (rowSpan = n), so
-          // its border IS the block's one unbroken bar, and its bottom edge is
-          // the block's (TD, not the dashed TDR).
-          className={`${split ? TD : TDR}${tickColumn ? "" : pairBarBorderCls(barKind)}`}
+          // No tick column → the pair bar is this cell's collapsed left border —
+          // on a split block, every row's, joined into one unbroken line.
+          className={`${TDR}${tickColumn ? "" : pairBarBorderCls(barKind)}`}
           style={asStyle(
             tickColumn ? (merged ? dupShadow : null) : blockSelected && !pair && !split ? null : dupShadow,
           )}
-          rowSpan={split ? draw!.n : undefined}
         >
           {shipToBlock ? (
             // The DETAIL PANEL opens from the number on the block table (the
@@ -1572,9 +1567,9 @@ export function FloorTable({
                     rides here, e.g. "1 on Floor". A merged block's "N at tint"
                     is not repeated per row here — its amber bar says it. */}
                 {!invCell && !merged && pair?.chip && <PairPlaceChip chip={pair.chip} />}
-                {/* A split OBD: "n invoices" under the number — on its block's
-                    one OBD cell, or on the single row of a layout that does not
-                    expand (no Invoice cell: Tinting). */}
+                {/* A split OBD: "n invoices" under the number — on EVERY row of its
+                    block, or on the single row of a layout that does not expand
+                    (no Invoice cell: Tinting). */}
                 {(split || (!invCell && (row.invoiceRows?.length ?? 0) > 1)) && (
                   <InvoiceCountChip n={row.invoiceRows.length} className="ml-1.5" />
                 )}
@@ -1589,7 +1584,6 @@ export function FloorTable({
             </div>
           )}
         </td>
-        )}
         {/* INVOICE — SAP's own invoiceNo + invoiceDate, shaped like the
             OBD cell it now sits beside: mono number on line 1, muted 10px
             date underneath. Adjacent to OBD on purpose (owner call
