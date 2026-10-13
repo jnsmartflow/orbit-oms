@@ -1,8 +1,11 @@
 -- sql/2026-10-13-order-invoice-lines-live.sql — LIVE FEED: order_invoice_lines (Add invoices, Phase 4)
 --
--- PROPOSED Schema v27.67 (next after CORE's header, v27.66). ⛔ NOT RUN — a draft for the
--- owner (Smart Flow, Supabase SQL Editor). No table, column or constraint changes:
--- 3 new functions + 3 triggers on order_invoice_lines.
+-- Schema v27.67. ✅ RUN by owner 13 Oct 2026, 6/6 verify (Supabase SQL Editor; pre-check
+-- 0 rows, then the whole file in one paste). Live: functions live_changes_order_invoice_lines_
+-- ins / _upd / _del present; triggers trg_live_changes_order_invoice_lines_ins / _upd / _del,
+-- each AFTER · STATEMENT · its matching function · enabled O. Minted as Schema v27.67 in
+-- docs/CLAUDE_CORE.md v143 (chain + §13 trigger list). No table, column or constraint
+-- changes: 3 new functions + 3 triggers on order_invoice_lines.
 --
 -- WHY
 --   Phase 4 commit 1 ("invoice rows on board payload") puts each split OBD's invoice
