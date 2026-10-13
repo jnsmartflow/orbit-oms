@@ -20,6 +20,14 @@
 // Indexes (pg_indexes, read 2026-09-29): orders_obdNumber_key,
 // orders_invoiceNo_idx and idx_orders_sonumber — all three columns are indexed.
 //
+// ANY INVOICE OF THE OBD (Add invoices Phase 4 commit 1, 2026-10-13). A split
+// OBD's typed invoices (order_invoices seq 2..n) find it too: the invoice forms
+// are looked up in order_invoices FIRST (order_invoices_invoiceNo_idx), and the
+// matching order ids join the match as `id IN (…)` — never an
+// `invoices: { some }` term, which would sit a semi-join inside the OR and
+// cost the index plan the three equality arms share. The match per OBD (the
+// lowest seq that matched) is what a caller hands on as "open invoice k".
+//
 // SELECT-only. Sequential awaits, never prisma.$transaction (CORE §3).
 
 import type { Prisma } from "@prisma/client";
@@ -57,17 +65,47 @@ export function parseBillLookupTerm(raw: string): BillLookupTerm | null {
   return { q, invoiceTerms };
 }
 
+/** Which invoice of an OBD a term named — the lowest seq that matched. */
+export interface InvoiceRowMatch {
+  seq: number;
+  invoiceNo: string;
+}
+
+/**
+ * orderId → the invoice row the term's invoice forms name (any seq). ONE read
+ * on order_invoices_invoiceNo_idx; none when the term has no invoice form (an
+ * OBD / SO / ORB number). Seq 1 mirrors orders.invoiceNo, so a SAP number
+ * answers seq 1 here as well.
+ */
+export async function invoiceRowMatches(term: BillLookupTerm): Promise<Map<number, InvoiceRowMatch>> {
+  const map = new Map<number, InvoiceRowMatch>();
+  if (term.invoiceTerms.length === 0) return map;
+  const rows = await prisma.order_invoices.findMany({
+    where: { invoiceNo: { in: term.invoiceTerms } },
+    orderBy: [{ orderId: "asc" }, { seq: "asc" }],
+    select: { orderId: true, seq: true, invoiceNo: true },
+  });
+  for (const r of rows) {
+    if (r.invoiceNo !== null && !map.has(r.orderId)) map.set(r.orderId, { seq: r.seq, invoiceNo: r.invoiceNo });
+  }
+  return map;
+}
+
 /**
  * The WHERE for a term: not removed, hide rules applied, whole-number match on
  * OBD / SO / invoice. `onTripOnly` adds "an invoice row is on a stop" (the
  * trip lookup; through order_invoices since v27.66, lib/order-invoices/
  * trip-read.ts); leave it off to find bills on no trip as well.
+ *
+ * `invoiceMatches` — invoiceRowMatches(term), when the caller already read it
+ * (to report the matched invoice); read here otherwise.
  */
 export async function billLookupWhere(
   term: BillLookupTerm,
-  opts: { onTripOnly?: boolean } = {},
+  opts: { onTripOnly?: boolean; invoiceMatches?: Map<number, InvoiceRowMatch> } = {},
 ): Promise<Prisma.ordersWhereInput> {
   const hide = await getHideExclusion();
+  const matched = Array.from((opts.invoiceMatches ?? (await invoiceRowMatches(term))).keys());
   return {
     AND: [
       {
@@ -82,6 +120,8 @@ export async function billLookupWhere(
           { obdNumber: term.q },
           { soNumber: term.q },
           ...term.invoiceTerms.map((t) => ({ invoiceNo: t })),
+          // Any invoice of the OBD, typed ones included (looked up above).
+          ...(matched.length > 0 ? [{ id: { in: matched } }] : []),
         ],
       },
       hide,
@@ -99,7 +139,7 @@ export const BILL_LOOKUP_MAX = 50;
 export async function findBillsByNumber<S extends Prisma.ordersSelect>(
   term: BillLookupTerm,
   select: S,
-  opts: { onTripOnly?: boolean } = {},
+  opts: { onTripOnly?: boolean; invoiceMatches?: Map<number, InvoiceRowMatch> } = {},
 ): Promise<Prisma.ordersGetPayload<{ select: S }>[]> {
   const where = await billLookupWhere(term, opts);
   return (await prisma.orders.findMany({

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { checkAnyPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
-import { parseBillLookupTerm, findBillsByNumber } from "@/lib/trips/find-bill";
+import { parseBillLookupTerm, findBillsByNumber, invoiceRowMatches } from "@/lib/trips/find-bill";
 import { tripsOnDeskWhere, TRIP_CANCELLED } from "@/lib/trips/live-trips";
 import { parseTripDate } from "@/lib/trips/queries";
 import { getTodayIST } from "@/lib/dates";
@@ -62,10 +62,14 @@ export async function GET(req: Request): Promise<NextResponse> {
     return NextResponse.json({ error: "q must be one full OBD, SO or invoice number" }, { status: 400 });
   }
   const q = term.q;
+  // Any invoice of the OBD, typed ones included (Add invoices Phase 4) — each
+  // matched OBD says which invoice the number named.
+  const invoiceMatches = await invoiceRowMatches(term);
 
   const orders = await findBillsByNumber(
     term,
     {
+      id: true,
       obdNumber: true,
       invoices: {
         where: { tripDropId: { not: null } },
@@ -76,13 +80,21 @@ export async function GET(req: Request): Promise<NextResponse> {
         },
       },
     },
-    { onTripOnly: true },
+    { onTripOnly: true, invoiceMatches },
   );
 
   // One entry per trip, its matched OBDs listed.
   const byTrip = new Map<
     number,
-    { tripId: number; tripNumber: string; tripDate: string; status: string; obdNumbers: string[] }
+    {
+      tripId: number;
+      tripNumber: string;
+      tripDate: string;
+      status: string;
+      obdNumbers: string[];
+      /** Per matched OBD (same order as obdNumbers): the invoice seq the number named, null = OBD / SO. */
+      matchedInvoiceSeqs: Array<number | null>;
+    }
   >();
   for (const o of orders) {
     const stop = deriveObdTripDropId(o.invoices);
@@ -94,8 +106,10 @@ export async function GET(req: Request): Promise<NextResponse> {
       tripDate: t.tripDate.toISOString().slice(0, 10),
       status: t.status,
       obdNumbers: [],
+      matchedInvoiceSeqs: [],
     };
     entry.obdNumbers.push(o.obdNumber);
+    entry.matchedInvoiceSeqs.push(invoiceMatches.get(o.id)?.seq ?? null);
     byTrip.set(t.id, entry);
   }
 
@@ -107,6 +121,7 @@ export async function GET(req: Request): Promise<NextResponse> {
     status: string;
     obdNumber: string;
     obdNumbers: string[];
+    matchedInvoiceSeqs: Array<number | null>;
     onLiveDesk: boolean;
   }> = [];
   for (const entry of Array.from(byTrip.values())) {

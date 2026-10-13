@@ -12,6 +12,9 @@
 //                 · an OBD on the FULL number or its last 3+ digits (unchanged);
 //                 · an INVOICE or SO on the FULL number or its last 5+ digits.
 //               Fewer than 5 digits never match an invoice or an SO.
+//   "Invoice" = ANY invoice of the bill (2026-10-13, Add invoices Phase 4):
+//   SAP's `invoiceNo` and, on a split OBD's board row, every `invoiceRows`
+//   number — so 30713 finds 9109951956 by its typed invoice I536230713.
 // Runs on Enter (the box, not this file, enforces that) — live filtering would
 // make the list jump mid-paste and "2" would match forty bills before "237" is
 // finished.
@@ -49,6 +52,9 @@ export interface Searchable {
   route: string | null;
   /** SAP's invoice number — `I` + 9 digits on every live row (lib/ci/queries.ts). */
   invoiceNo: string | null;
+  /** A split OBD's invoices (board rows only, Add invoices Phase 4) — each
+   *  number is matched like `invoiceNo`. Hold / Cancelled rows do not carry it. */
+  invoiceRows?: ReadonlyArray<{ invoiceNo: string | null }>;
   /** SEARCH ONLY — never displayed (owner decision 2026-09-29). */
   soNumber: string | null;
   /** False ⇒ the dealer is not in master; matched by the word "unmatched". */
@@ -98,14 +104,33 @@ function tokenMatchesRow(token: string, row: Searchable): boolean {
   return (
     tokenMatchesObd(token, row.obdNumber) ||
     tokenMatchesInvoice(token, row.invoiceNo) ||
+    (row.invoiceRows ?? []).some((r) => tokenMatchesInvoice(token, r.invoiceNo)) ||
     tokenMatchesSo(token, row.soNumber)
   );
+}
+
+/**
+ * Which of a split OBD's invoices a search names — the seq of the first
+ * `invoiceRows` entry a token (numbers) or the text matches; null when none
+ * does (or the row is not split). For commit 3's "open the invoice it found".
+ */
+export function matchedInvoiceSeqOf(
+  row: { invoiceRows?: ReadonlyArray<{ seq: number; invoiceNo: string | null }> },
+  parsed: ParsedSearch,
+): number | null {
+  const rows = row.invoiceRows ?? [];
+  if (parsed.mode === "numbers") {
+    return rows.find((r) => parsed.tokens.some((t) => tokenMatchesInvoice(t, r.invoiceNo)))?.seq ?? null;
+  }
+  if (parsed.mode === "text") return rows.find((r) => (r.invoiceNo ?? "").toLowerCase().includes(parsed.text))?.seq ?? null;
+  return null;
 }
 
 function matchesText(row: Searchable, text: string): boolean {
   return (
     row.obdNumber.toLowerCase().includes(text) ||
     (row.invoiceNo ?? "").toLowerCase().includes(text) ||
+    (row.invoiceRows ?? []).some((r) => (r.invoiceNo ?? "").toLowerCase().includes(text)) ||
     (row.soNumber ?? "").toLowerCase().includes(text) ||
     row.dealerName.toLowerCase().includes(text) ||
     (row.route ?? "").toLowerCase().includes(text) ||

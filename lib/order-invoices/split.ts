@@ -60,10 +60,11 @@
 // (floor-page refreshTripsByIds) as well as the bill row. No orders write needed.
 // ⚠ order_invoice_lines has NO trigger (no "orderId" column). Since v27.66 a
 // save that only moves tins between rows writes ONLY lines (steps 5-6) and so
-// records NO live line. Harmless today — the one live-patched read is the
-// board's '+n' chip (invoice NUMBERS, lib/floor/queries.ts getAddedInvoiceNos),
-// which a line-only edit cannot change; the dialog and detail panel read on
-// open. A screen that shows a row's lines live must add its own signal first.
+// records NO live line. Since Phase 4 commit 1 the board row carries each
+// invoice's tins / litres / kg (lib/floor/queries.ts getBoardInvoiceRows), so
+// a line-only edit DOES change a live read: sql/2026-10-13-order-invoice-lines-
+// live.sql (proposed v27.67) adds the join-based trigger. Until it is run, other
+// open Floors see a tins-only move at their next full reload.
 
 import { prisma } from "../prisma";
 import { syncSapInvoiceRow } from "./sap-row";

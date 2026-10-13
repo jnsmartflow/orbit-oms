@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { checkAnyPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
-import { parseBillLookupTerm, findBillsByNumber } from "@/lib/trips/find-bill";
+import { parseBillLookupTerm, findBillsByNumber, invoiceRowMatches } from "@/lib/trips/find-bill";
 import { tripsOnDeskWhere, TRIP_CANCELLED } from "@/lib/trips/live-trips";
 import { parseTripDate } from "@/lib/trips/queries";
 import { getFloorCancelled } from "@/lib/floor/queries";
@@ -52,6 +52,10 @@ export async function GET(req: Request): Promise<NextResponse> {
     return NextResponse.json({ error: "q must be one full OBD, SO or invoice number" }, { status: 400 });
   }
 
+  // Any invoice of the OBD, typed ones included (Add invoices Phase 4) — read
+  // once here so each hit can say WHICH invoice the number named.
+  const invoiceMatches = await invoiceRowMatches(term);
+
   // No `onTripOnly` — every bill the number names, on a trip or not.
   const bills = await findBillsByNumber(term, {
     id: true,
@@ -70,7 +74,7 @@ export async function GET(req: Request): Promise<NextResponse> {
     tripDrop: {
       select: { trip: { select: { id: true, tripNumber: true, tripDate: true, status: true } } },
     },
-  });
+  }, { invoiceMatches });
   if (bills.length === 0) return NextResponse.json({ q: term.q, hits: [] });
 
   const ids = bills.map((b) => b.id);
@@ -124,6 +128,7 @@ export async function GET(req: Request): Promise<NextResponse> {
       orderId: b.id,
       obdNumber: b.obdNumber,
       invoiceNo: b.invoiceNo,
+      matchedInvoiceSeq: invoiceMatches.get(b.id)?.seq ?? null,
       soNumber: b.soNumber,
       dealer: dealerDisplayName(
         b.shipToOverrideCustomer?.customerName ?? b.customer?.customerName,

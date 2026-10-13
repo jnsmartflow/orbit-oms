@@ -100,6 +100,7 @@ import { resolveSoNames } from "@/lib/sales-officer/resolve";
 import { divisionOf } from "./division-blocks";
 // One invoice, several OBDs (2026-10-08) — pure, no prisma.
 import { buildPartnerMap, partnersOf, type InvoicePartner } from "./invoice-pairs";
+import { addedInvoiceNosOf, buildInvoiceRows, type FloorInvoiceRow } from "./invoice-rows";
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
@@ -545,24 +546,65 @@ export async function billToByObd(obdNumbers: string[]): Promise<Map<string, str
 }
 
 /**
- * ADD INVOICES (2026-10-10, Schema v27.63): orderId → the invoice numbers typed
- * by hand for that OBD (order_invoices seq 2..n, in seq order). An unsplit OBD
- * is absent (its seq-1 row is SAP's, already on the row as invoiceNo).
- * ONE findMany keyed `orderId IN (…)`, skipped when the list is empty. SELECT-only.
+ * ONE FLOOR ROW PER INVOICE — the DATA (Add invoices Phase 4 commit 1,
+ * 2026-10-13; replaced getAddedInvoiceNos, Phase 2's "+n" read). orderId → the
+ * OBD's invoice rows (lib/floor/invoice-rows.ts FloorInvoiceRow: number, date,
+ * tins, litres, kg + exact flag, stale), for SPLIT OBDs only — an unsplit OBD is
+ * absent and its board row carries [].
+ *
+ * THE extra read is ONE findMany keyed `orderId IN (board ids)` AND seq > 1
+ * (order_invoices_orderId_seq_key, index-only) — the same read the "+n" chip
+ * made. Only when it finds a split OBD do two more follow, both keyed on those
+ * few OBDs: their rows with lines, and their ACTIVE raw lines (litres, line kg).
+ * No predicate term anywhere — floorBoardWhere and getFloorLiveMarkerWhere are
+ * untouched (FLOOR §3/§5/§10). SELECT-only.
+ *
+ * `kgByOrder` = each OBD's header kg (the board row's own weightKg source).
  */
-export async function getAddedInvoiceNos(orderIds: number[]): Promise<Map<number, string[]>> {
-  const map = new Map<number, string[]>();
-  if (orderIds.length === 0) return map;
-  const rows = await prisma.order_invoices.findMany({
-    where: { orderId: { in: orderIds }, seq: { gt: 1 } },
-    orderBy: [{ orderId: "asc" }, { seq: "asc" }],
-    select: { orderId: true, invoiceNo: true },
+export async function getBoardInvoiceRows(
+  orders: Array<{ id: number; obdNumber: string }>,
+  kgByOrder: ReadonlyMap<number, number | null>,
+): Promise<Map<number, FloorInvoiceRow[]>> {
+  const map = new Map<number, FloorInvoiceRow[]>();
+  if (orders.length === 0) return map;
+  const typed = await prisma.order_invoices.findMany({
+    where: { orderId: { in: orders.map((o) => o.id) }, seq: { gt: 1 } },
+    select: { orderId: true },
+    distinct: ["orderId"],
   });
-  for (const r of rows) {
-    if (r.invoiceNo === null) continue;
-    const list = map.get(r.orderId) ?? [];
-    list.push(r.invoiceNo);
-    map.set(r.orderId, list);
+  if (typed.length === 0) return map;
+
+  const splitIds = typed.map((t) => t.orderId);
+  const rows = await prisma.order_invoices.findMany({
+    where: { orderId: { in: splitIds } },
+    orderBy: [{ orderId: "asc" }, { seq: "asc" }],
+    select: {
+      id: true,
+      orderId: true,
+      seq: true,
+      invoiceNo: true,
+      invoiceDate: true,
+      lines: { select: { rawLineItemId: true, qty: true } },
+    },
+  });
+  const obdById = new Map(orders.map((o) => [o.id, o.obdNumber]));
+  const obds = splitIds.map((id) => obdById.get(id)).filter((n): n is string => n !== undefined);
+  // ACTIVE lines only — a removed line is the "stale" case, as loadSplitView reads it.
+  const lines = await prisma.import_raw_line_items.findMany({
+    where: { obdNumber: { in: obds }, lineStatus: "active" },
+    select: { id: true, obdNumber: true, lineId: true, skuCodeRaw: true, unitQty: true, volumeLine: true, totalWeight: true },
+  });
+  for (const id of splitIds) {
+    const obd = obdById.get(id);
+    const built = buildInvoiceRows({
+      rows: rows.filter((r) => r.orderId === id),
+      activeLines: lines
+        .filter((l) => l.obdNumber === obd)
+        .map((l) => ({ rawLineItemId: l.id, lineId: l.lineId, skuCodeRaw: l.skuCodeRaw, unitQty: l.unitQty, volumeLine: l.volumeLine, totalWeight: l.totalWeight })),
+      obdKg: kgByOrder.get(id) ?? null,
+      // Rule 2 (unit kg per SKU) has no trustworthy source yet — see invoice-rows.ts.
+    });
+    if (built.length > 0) map.set(id, built);
   }
   return map;
 }
@@ -1182,17 +1224,21 @@ export async function getFloorBoard(
     ? new Map<string, InvoicePartner[]>()
     : await getInvoicePartnerMap(orders.map((o) => o.invoiceNo), hide);
 
-  // ── Add invoices (2026-10-10, Schema v27.63) ─────────────────────────────
-  // The numbers typed by hand for each row's OBD — same post-fetch contract:
-  // ONE read keyed `orderId IN (…)` (the (orderId, seq) unique leads with
-  // orderId), NO predicate term, SELECT-only. Keyed on the row's OWN order, so
-  // an `onlyIds` patch (lib/floor/rows.ts) gets exactly what a full load does,
-  // and the live feed's order_invoices trigger (parent "orderId") is what makes
-  // the feed fetch that patch. Skipped with the partners for the Tint Manager
-  // Base feed, which never reads it.
-  const addedInvoiceMap = opts.skipInvoicePartners
-    ? new Map<number, string[]>()
-    : await getAddedInvoiceNos(orders.map((o) => o.id));
+  // ── Add invoices: the invoice rows (Phase 4 commit 1, 2026-10-13) ─────────
+  // A split OBD's invoices (number, date, tins, litres, kg) — same post-fetch
+  // contract: ONE read keyed `orderId IN (…)` (the (orderId, seq) unique leads
+  // with orderId), two more only for the split OBDs it finds, NO predicate term,
+  // SELECT-only. Keyed on the row's OWN order, so an `onlyIds` patch
+  // (lib/floor/rows.ts) gets exactly what a full load does; the live feed's
+  // order_invoices / order_invoice_lines triggers (parent "orderId") are what
+  // make the feed fetch that patch. Skipped with the partners for the Tint
+  // Manager Base feed, which never reads it.
+  const invoiceRowMap = opts.skipInvoicePartners
+    ? new Map<number, FloorInvoiceRow[]>()
+    : await getBoardInvoiceRows(
+        orders,
+        new Map(orders.map((o) => [o.id, o.querySnapshot?.totalWeight ?? null])),
+      );
 
   // TINT vs BASE — same post-fetch contract as the line above: batched once for
   // the page, and NO predicate touched, so board and marker stay on the one
@@ -1445,8 +1491,10 @@ export async function getFloorBoard(
       invoiceNo: order.invoiceNo ?? null,
       // The other bills on this invoice — map lookup only; the read ran once above.
       invoicePartners: partnersOf(partnerMap, order.invoiceNo, order.id),
-      // Add invoices — map lookup only; the read ran once above.
-      addedInvoiceNos: addedInvoiceMap.get(order.id) ?? [],
+      // Add invoices — map lookup only; the read ran once above. The "+n" chip
+      // reads addedInvoiceNos until commit 2 draws one row per invoice.
+      invoiceRows: invoiceRowMap.get(order.id) ?? [],
+      addedInvoiceNos: addedInvoiceNosOf(invoiceRowMap.get(order.id) ?? []),
       // SEARCH ONLY — never displayed (owner decision 2026-09-29; FloorBoardRow).
       soNumber: order.soNumber ?? null,
       // Whose bill it is — map lookup only; the reads ran once above.

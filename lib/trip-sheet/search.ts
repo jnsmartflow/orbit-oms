@@ -108,6 +108,17 @@ export async function searchTripSheets(q: string): Promise<TripSheetSearchHit[]>
     consider(tripOf(o), "so", raw ? displaySoName(raw) : null);
   }
   for (const o of orders) consider(tripOf(o), "invoice", o.invoiceNo);
+  // Every TYPED invoice too (Add invoices Phase 4, 2026-10-13): a split OBD's
+  // seq 2..n rows on this window's stops, each on its OWN row's stop — the
+  // trip that invoice rides. ONE read (order_invoices_tripDropId_idx), only
+  // for the bills found above. Held bills stay out with their OBD.
+  const typedRows = orders.length
+    ? await prisma.order_invoices.findMany({
+        where: { orderId: { in: Array.from(new Set(orders.map((o) => o.id))) }, seq: { gt: 1 }, tripDropId: { in: dropIds } },
+        select: { tripDropId: true, invoiceNo: true },
+      })
+    : [];
+  for (const r of typedRows) consider(r.tripDropId !== null ? tripIdByDrop.get(r.tripDropId) : undefined, "invoice", r.invoiceNo);
   for (const o of orders) consider(tripOf(o), "obd", o.obdNumber);
   if (hit.size === 0) return [];
 

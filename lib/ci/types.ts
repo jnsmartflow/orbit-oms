@@ -81,6 +81,10 @@ export interface CiSearchHit {
   lineCount: number;
   /** Σ (volumeLine) over active lines. The card's "212 L". */
   totalLitres: number;
+  /** Which invoice of the OBD the query named (order_invoices seq — 1 = SAP's,
+   *  2..n typed by hand, Add invoices Phase 4); null when it named the OBD or
+   *  no invoice row. The CI is still raised for the whole OBD. */
+  matchedInvoiceSeq: number | null;
 }
 
 export interface CiSearchResult {

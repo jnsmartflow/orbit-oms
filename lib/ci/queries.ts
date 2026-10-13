@@ -144,16 +144,34 @@ export async function searchCiBills(rawQuery: string): Promise<CiSearchResult> {
   // absent, so those searches stay pure equality and keep using the index.
   const suffix = LAST_FOUR_DIGITS.test(query);
 
+  // ANY INVOICE OF THE OBD (Add invoices Phase 4, 2026-10-13) — a split OBD's
+  // typed invoices (order_invoices seq 2..n) find it too. Looked up FIRST, then
+  // joined to the match as `id IN (…)` (never an `invoices: { some }` term
+  // inside the OR). A full number is equality on order_invoices_invoiceNo_idx;
+  // the 4-digit suffix scans order_invoices (~18k rows, ~2 ms — the same class
+  // as the orders suffix arm below). The lowest matching seq per OBD is kept.
+  const invoiceHits = await prisma.order_invoices.findMany({
+    where: suffix ? { invoiceNo: { endsWith: query } } : { invoiceNo: query },
+    orderBy: [{ orderId: "asc" }, { seq: "asc" }],
+    select: { orderId: true, seq: true },
+  });
+  const seqByOrder = new Map<number, number>();
+  for (const h of invoiceHits) if (!seqByOrder.has(h.orderId)) seqByOrder.set(h.orderId, h.seq);
+  const invoiceOrderIds = Array.from(seqByOrder.keys());
+
   const orders = await prisma.orders.findMany({
     where: {
       isRemoved: false,
       // ⚠ orderDateTime, not invoiceDate — see the header. 44% of live orders
       // have no invoiceDate, and they are the recent ones.
       orderDateTime: { gte: windowStart },
-      OR: suffix
-        ? // 🔴 INVOICE ONLY on the suffix arm, deliberately (see the header).
-          [{ invoiceNo: { endsWith: query } }]
-        : [{ invoiceNo: query }, { obdNumber: query }],
+      OR: [
+        ...(suffix
+          ? // 🔴 INVOICE ONLY on the suffix arm, deliberately (see the header).
+            [{ invoiceNo: { endsWith: query } }]
+          : [{ invoiceNo: query }, { obdNumber: query }]),
+        ...(invoiceOrderIds.length > 0 ? [{ id: { in: invoiceOrderIds } }] : []),
+      ],
     },
     select: {
       id: true,
@@ -203,6 +221,7 @@ export async function searchCiBills(rawQuery: string): Promise<CiSearchResult> {
       obdDateTime: (o.orderDateTime ?? o.obdEmailDate)?.toISOString() ?? null,
       lineCount: a.n,
       totalLitres: round3(a.litres),
+      matchedInvoiceSeq: seqByOrder.get(o.id) ?? null,
     };
   });
 

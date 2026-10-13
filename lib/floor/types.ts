@@ -7,6 +7,7 @@ import type { PickingQueueRow, SortRule } from "@/lib/picking/types";
 import type { ColourWork } from "@/lib/picking/colour-work";
 import type { HeldSinceSource, HoldSourceLabel } from "./hold-log";
 import type { InvoicePartner } from "./invoice-pairs";
+import type { FloorInvoiceRow } from "./invoice-rows";
 
 export type { SortRule };
 
@@ -388,9 +389,20 @@ export interface FloorBoardRow extends PickingQueueRow {
    * hand for THIS OBD (order_invoices seq 2..n, in seq order). [] = unsplit.
    * `invoiceNo` above stays SAP's (seq 1). The table shows "+n" beside it.
    * Phase 2 is record-only: the row is still ONE row per OBD.
+   * Since Phase 4 commit 1 it is DERIVED from `invoiceRows` (addedInvoiceNosOf);
+   * commit 2 replaces the "+n" chip with one drawn row per invoice.
    * ⚠ [] also when the caller skipped the lookup (`skipInvoicePartners`).
    */
   addedInvoiceNos: string[];
+  /**
+   * ONE FLOOR ROW PER INVOICE (Phase 4, 2026-10-13) — a SPLIT OBD's invoices,
+   * seq order: number, date, tins, litres, kg (+ exact flag), stale
+   * (lib/floor/invoice-rows.ts). [] = unsplit. The DATA stays one row per OBD
+   * (selection, live-merge, sort, search key on the OBD); only the drawing
+   * expands (drawRowsOf). ⚠ [] also when the caller skipped the lookup
+   * (`skipInvoicePartners`, the Tint Manager Base feed).
+   */
+  invoiceRows: FloorInvoiceRow[];
   // ⚠ `totalArticle` was added here on 2026-08-11 for the By-picker card and
   // REMOVED the same day, superseded: the card now shows a typed breakdown
   // ("18 D · 14 C") built from `articleTag` via formatArticleBreakdown()
@@ -625,6 +637,10 @@ export interface FloorSearchHit {
   orderId: number;
   obdNumber: string;
   invoiceNo: string | null;
+  /** Which invoice of the OBD the typed number named (order_invoices seq —
+   *  1 = SAP's, 2..n = typed by hand); null when it named the OBD or SO.
+   *  Add invoices Phase 4: the panel opens that invoice (commit 3). */
+  matchedInvoiceSeq: number | null;
   soNumber: string | null;
   dealer: string;
   workflowStage: string;
