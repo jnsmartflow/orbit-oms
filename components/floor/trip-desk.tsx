@@ -55,6 +55,7 @@ import {
 } from "./status-pill";
 import { rdKey, type FloorDeskSelection } from "@/lib/floor/selection";
 import type { FloorBoardResult, FloorBoardRow, FloorRouteClub, FloorScope } from "@/lib/floor/types";
+import { narrowToPlace } from "@/lib/floor/invoice-rows";
 import type { TripSummary, TripDetail } from "@/lib/trips/queries";
 
 const WD = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -465,8 +466,12 @@ export function TripDesk({
   const upcomingAll = floorTabRows.filter((r) => r.zone === "upcoming");
   // `isPoolRow` restates the tint exclusion `floorTabRows` already applied —
   // harmless here, and it is the one test the search auto-tick shares.
-  const poolRows = dueRows.filter(isPoolRow);
-  const poolUpcoming = upcomingAll.filter(isPoolRow);
+  // NARROWED TO THE POOL (Add invoices Phase 5 commit 1): a split OBD brings
+  // only its invoices on no trip, with their litres / kg (narrowToPlace — the
+  // same row object when it is wholly in To plan, i.e. every row today). The
+  // route cards, load plan and pool totals read these rows.
+  const poolRows = dueRows.filter(isPoolRow).map((r) => narrowToPlace(r, (d) => d === null));
+  const poolUpcoming = upcomingAll.filter(isPoolRow).map((r) => narrowToPlace(r, (d) => d === null));
 
   // ── THE ROUTE CARDS (2026-09-19) ─────────────────────────────────────────
   //
@@ -1003,9 +1008,14 @@ export function TripDesk({
           // the stops are the bottom of the detail panel (design spec).
           <div className="pb-[22px]">
           {drops.map((d, i) => {
+            // NARROWED TO THIS TRIP (Phase 5 commit 1): a split OBD shows only
+            // its invoices on this trip's stops, with their litres / kg — the
+            // same row object when it is wholly on the trip (every row today).
+            const tripDropIdSet = new Set(drops.map((x) => x.id));
             const rows = d.orderIds
               .map((id) => rowById.get(id))
-              .filter((r): r is FloorBoardRow => r !== undefined);
+              .filter((r): r is FloorBoardRow => r !== undefined)
+              .map((r) => narrowToPlace(r, (dropId) => dropId !== null && tripDropIdSet.has(dropId)));
             // RE-DELIVERIES (2026-10-03) — appended AFTER the stop's own bills,
             // each its own bill's FloorTable row (built server-side by the board's
             // row builder) marked `redelivery`, so FloorTable ticks it by `rd:<id>`

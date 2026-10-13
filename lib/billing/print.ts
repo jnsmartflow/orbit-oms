@@ -71,6 +71,8 @@ import { BILLABLE_BILL_WHERE } from "@/lib/challan-orders/where";
 import { logTripBillingDone, logTripBillsCopied } from "@/lib/trips/activity";
 import { invoiceRowLinks, linkRowFor } from "@/lib/order-invoices/links";
 import { onStopsWhere, onTripsWhere, placeOnTrips, stopRowsSelect } from "@/lib/order-invoices/trip-read";
+import { loadSplitInvoiceRows } from "@/lib/order-invoices/invoice-load";
+import { placeLoad } from "@/lib/floor/invoice-rows";
 
 /** `orders.dispatchStatus` for a held bill — the same test lib/trips/queries.ts bucketFor makes. */
 const HOLD = "hold";
@@ -103,6 +105,13 @@ function invoiceOf(invoiceNo: string | null): string | null {
 }
 
 export interface PrintBillRow {
+  /**
+   * A SPLIT OBD (Add invoices, Phase 5 commit 1): the invoices of it that are on
+   * THIS trip, seq order — DATA ONLY until Phase 5 commit 5 (per-invoice copies)
+   * draws them. null = not split. `litres` below is theirs when only some are
+   * on the trip (lib/floor/invoice-rows.ts placeLoad), else the OBD's own.
+   */
+  invoices: Array<{ seq: number; invoiceNo: string | null; invoiceDate: string | null }> | null;
   orderId: number;
   obdNumber: string;
   invoiceNo: string | null;
@@ -277,6 +286,24 @@ export async function loadPrintTrips(tripIds: number[]): Promise<PrintTrip[]> {
   const litresByOrderId = new Map<number, number>();
   for (const s of snapshots) if (s.orderId !== null) litresByOrderId.set(s.orderId, s.totalVolume);
 
+  // ── A SPLIT OBD on a trip carries only its invoices on THAT trip (Phase 5
+  // commit 1). lib/order-invoices/invoice-load.ts — one index-only read when no
+  // bill is split. Kg is not read here (Print shows litres), so no header kg.
+  const splitRows = await loadSplitInvoiceRows(orders, new Map());
+  const tripIdByDrop = new Map(drops.map((d) => [d.id, d.tripId] as const));
+  const onTripOf = (o: { id: number; tripId: number }) => {
+    const rows = splitRows.get(o.id);
+    if (!rows) return null;
+    return { rows: rows.filter((r) => r.tripDropId !== null && tripIdByDrop.get(r.tripDropId) === o.tripId), all: rows };
+  };
+  /** The litres a bill brings to ITS trip — the OBD's own unless only some of
+   *  its invoices are on the trip. */
+  const litresOn = (o: { id: number; tripId: number }): number => {
+    const rows = splitRows.get(o.id);
+    const load = rows ? placeLoad(rows, (d) => d !== null && tripIdByDrop.get(d) === o.tripId) : null;
+    return load ? load.litres : litresByOrderId.get(o.id) ?? 0;
+  };
+
   // 🔴 CONFIRMED ONLY — recordedById not null, the Picking tab's own test
   // (app/api/billing/picking/list/route.ts). A picker's unconfirmed report is a
   // claim, not a fact, and never reaches a billing screen (CLAUDE_PICKING §11.5).
@@ -387,7 +414,11 @@ export async function loadPrintTrips(tripIds: number[]): Promise<PrintTrip[]> {
         shipToName: o.shipToOverrideCustomer?.customerName ?? o.shipToCustomerName,
         routeName: drop.routeName,
         dropSeq: drop.dropSeq,
-        litres: litresByOrderId.get(o.id) ?? 0,
+        litres: litresOn(o),
+        invoices: (() => {
+          const on = onTripOf(o);
+          return on ? on.rows.map((r) => ({ seq: r.seq, invoiceNo: r.invoiceNo, invoiceDate: r.invoiceDate })) : null;
+        })(),
         isGift: isGiftBill(o.materialType),
         held,
         state,
@@ -442,7 +473,7 @@ export async function loadPrintTrips(tripIds: number[]): Promise<PrintTrip[]> {
       challanOnly: own.length === 0 && challanTripIds.has(t.id),
       stops: new Set(own.map((o) => o.tripDropId)).size,
       // A GIFT bill adds no litres (lib/orders/gift.ts); `bills` and `stops` above count it.
-      litres: own.reduce((sum, o) => sum + loadLitres(litresByOrderId.get(o.id), isGiftBill(o.materialType)), 0),
+      litres: own.reduce((sum, o) => sum + loadLitres(litresOn(o), isGiftBill(o.materialType)), 0),
       held: own.length - eligible,
       eligible,
       invoiced: eligibleRows.filter((r) => r.invoiceNo !== null).length,

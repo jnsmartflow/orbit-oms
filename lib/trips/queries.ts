@@ -39,6 +39,8 @@ import { getFloorBoard } from "@/lib/floor/queries";
 import type { FloorBoardRow } from "@/lib/floor/types";
 import { isGiftBill, loadKg, loadLitres } from "@/lib/orders/gift";
 import { onStopsWhere, placeOnTrips, stopRowsSelect } from "@/lib/order-invoices/trip-read";
+import { loadSplitInvoiceRows } from "@/lib/order-invoices/invoice-load";
+import { placeLoad } from "@/lib/floor/invoice-rows";
 // 🔴 THE ROUTE/AREA RANKING LIVES IN ONE PLACE (2026-09-16) — a pure module the
 // CLIENT can import too, so the rail card-s label and the pool-s add hint cannot
 // drift apart. PLACEHOLDER_ROUTE_IDS moved there with it.
@@ -99,6 +101,12 @@ export interface TripDropSummary {
   orderIds: number[];
   bills: number;
   litres: number;
+  /**
+   * SPLIT OBDs on this stop (Add invoices, Phase 5 commit 1): order id → how many
+   * of its invoices are on the stop. {} when none is split. Counts stay per OBD;
+   * this is the "n invoices" a later screen shows beside the bill.
+   */
+  invoiceCounts: Record<number, number>;
   /**
    * RE-DELIVERIES on this stop (2026-10-03, Schema v27.53) — bills that came
    * back on an earlier truck, planned again here. NOT in `orderIds` or `bills`:
@@ -389,6 +397,14 @@ interface TripBillRow {
    */
   deliveryTypeId: number | null;
   deliveryTypeName: string | null;
+  /**
+   * A SPLIT OBD (Add invoices, Phase 5 commit 1): how many of its invoices are
+   * on THIS stop. null = not split. Counts stay per OBD (owner, 2026-10-13);
+   * this is the "n invoices" a later screen shows beside the bill. When only
+   * some invoices are on the trip, `litres` / `weightKg` above are theirs
+   * (lib/floor/invoice-rows.ts placeLoad) — otherwise the OBD's own.
+   */
+  invoiceCount: number | null;
 }
 
 /**
@@ -435,6 +451,8 @@ async function loadTripBills(drops: ReadonlyArray<{ id: number; tripId: number }
     where: { ...onStopsWhere(dropIds), isRemoved: false },
     select: {
       id: true,
+      // For the split-invoice read (Phase 5 commit 1) — one more column.
+      obdNumber: true,
       invoices: stopRowsSelect(dropIds),
       workflowStage: true,
       dispatchStatus: true,
@@ -503,8 +521,17 @@ async function loadTripBills(drops: ReadonlyArray<{ id: number; tripId: number }
     if (s.orderId !== null) litresByOrderId.set(s.orderId, s.totalVolume);
   }
 
+  // ── A SPLIT OBD carries only the invoices on THIS trip (Phase 5 commit 1) ──
+  // lib/order-invoices/invoice-load.ts — one index-only read when no bill here
+  // is split (every trip today), three more when one is. An OBD wholly on the
+  // trip keeps its own litres / kg (placeLoad → null).
+  const splitRows = await loadSplitInvoiceRows(orders, weightByOrderId);
+  const tripOfDrop = new Map(drops.map((d) => [d.id, d.tripId] as const));
+
   return orders.map((o) => {
     const deliveryTypeId = typeIdOf(o);
+    const rows = splitRows.get(o.id);
+    const load = rows ? placeLoad(rows, (d) => d !== null && tripOfDrop.get(d) === o.tripId) : null;
     return {
       id: o.id,
       tripDropId: o.tripDropId,
@@ -513,9 +540,10 @@ async function loadTripBills(drops: ReadonlyArray<{ id: number; tripId: number }
       isGift: isGiftBill(o.materialType),
       // A bill with no snapshot row contributes 0, never null — the same choice
       // lib/floor/queries.ts makes for `volumeLitres` on its own rows.
-      litres: litresByOrderId.get(o.id) ?? 0,
+      litres: load ? load.litres : litresByOrderId.get(o.id) ?? 0,
       // NULL, not 0, when there is no snapshot — the summary counts it as unknown.
-      weightKg: weightByOrderId.get(o.id) ?? null,
+      weightKg: load ? load.kg : weightByOrderId.get(o.id) ?? null,
+      invoiceCount: rows ? (load ? load.invoices : rows.length) : null,
       deliveryTypeId,
       deliveryTypeName: deliveryTypeId !== null ? (typeNameById.get(deliveryTypeId) ?? null) : null,
     };
@@ -1193,6 +1221,7 @@ export async function getTripDetail(tripId: number): Promise<TripDetail | null> 
       note: d.note,
       orderIds: own.map((b) => b.id),
       bills: own.length,
+      invoiceCounts: Object.fromEntries(own.filter((b) => b.invoiceCount !== null).map((b) => [b.id, b.invoiceCount as number])),
       // `bills` above counts a gift; the litres leave it out (lib/orders/gift.ts).
       // Re-deliveries add their litres (owner, 2026-10-05) — never their count.
       litres: own.reduce((sum, b) => sum + loadLitres(b.litres, b.isGift), 0) + redeliveryLitres(redel),

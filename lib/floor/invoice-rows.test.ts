@@ -6,7 +6,7 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { addedInvoiceNosOf, buildInvoiceRows, drawRows, drawRowsOf, type InvoiceLineFacts, type InvoiceRowSource } from "./invoice-rows";
+import { addedInvoiceNosOf, buildInvoiceRows, drawRows, drawRowsOf, narrowToPlace, placeLoad, type InvoiceLineFacts, type InvoiceRowSource } from "./invoice-rows";
 
 const LINES: InvoiceLineFacts[] = [
   { rawLineItemId: 62850, lineId: 1, skuCodeRaw: "5880380", unitQty: 13, volumeLine: 260, totalWeight: null },
@@ -110,4 +110,48 @@ test("draw rows: split → one per invoice, key inv:<id>, k of n; unsplit and re
     drawRows([{ orderId: 1, invoiceRows: [] }, { orderId: 18648, invoiceRows }, { orderId: 2 }]).map((d) => d.key),
     ["1", "inv:17010", "inv:17011", "inv:17012", "inv:17013", "2"],
   );
+});
+
+// ── Phase 5 commit 1: the load of the invoices in one place ──────────────────
+const LEARNED = new Map([["5880380", 27.41], ["5963121", 27.111], ["9296830", 27.03]]);
+const STOP = 2763;
+const ON_STOP = ROWS.map((r) => ({ ...r, tripDropId: r.seq === 2 || r.seq === 4 ? STOP : null, tripNumber: r.seq === 2 || r.seq === 4 ? "L-261007-20" : null }));
+
+test("rows carry their own stop and trip", () => {
+  const out = buildInvoiceRows({ rows: ON_STOP, activeLines: LINES, obdKg: 1357, unitKgBySku: LEARNED });
+  assert.deepEqual(out.map((r) => [r.seq, r.tripDropId, r.tripNumber, r.tripStatus]), [
+    [1, null, null, null],
+    [2, STOP, "L-261007-20", null],
+    [3, null, null, null],
+    [4, STOP, "L-261007-20", null],
+  ]);
+});
+
+test("placeLoad: 713 + 715 on one stop → 460 L, 356.33 + 270.30 kg, exact, 2 invoices, 23 tins", () => {
+  const rows = buildInvoiceRows({ rows: ON_STOP, activeLines: LINES, obdKg: 1357, unitKgBySku: LEARNED });
+  const on = placeLoad(rows, (d) => d === STOP)!;
+  assert.equal(on.litres, 460);
+  assert.ok(Math.abs((on.kg ?? 0) - (356.33 + 270.3)) < 1e-9);
+  assert.deepEqual([on.kgExact, on.invoices, on.tins], [true, 2, 23]);
+  const off = placeLoad(rows, (d) => d === null)!;
+  assert.deepEqual([off.litres, off.invoices, off.tins], [540, 2, 27]);
+});
+
+test("placeLoad: null (use the OBD's own totals) when unsplit or WHOLLY in the place; unknown kg stays unknown", () => {
+  const rows = buildInvoiceRows({ rows: ROWS, activeLines: LINES, obdKg: 1357 });
+  assert.equal(placeLoad(rows, (d) => d === null), null);
+  assert.equal(placeLoad(rows.slice(0, 1), (d) => d === null), null);
+  const noKg = buildInvoiceRows({ rows: ON_STOP, activeLines: LINES, obdKg: null });
+  assert.equal(placeLoad(noKg, (d) => d === STOP)!.kg, null);
+  assert.deepEqual(placeLoad(noKg, (d) => d === 1), { litres: 0, kg: 0, kgExact: true, tins: 0, invoices: 0 });
+});
+
+test("narrowToPlace: the same object when wholly in the place; else only its invoices, with their litres / kg", () => {
+  const whole = { orderId: 18648, volumeLitres: 1000, weightKg: 1357, invoiceRows: buildInvoiceRows({ rows: ROWS, activeLines: LINES, obdKg: 1357 }) };
+  assert.equal(narrowToPlace(whole, (d) => d === null), whole);
+  const split = { ...whole, invoiceRows: buildInvoiceRows({ rows: ON_STOP, activeLines: LINES, obdKg: 1357, unitKgBySku: LEARNED }) };
+  const pool = narrowToPlace(split, (d) => d === null);
+  assert.deepEqual(pool.invoiceRows.map((r) => r.seq), [1, 3]);
+  assert.equal(pool.volumeLitres, 540);
+  assert.ok(Math.abs((pool.weightKg ?? 0) - (405.45 + 325.332)) < 1e-9);
 });

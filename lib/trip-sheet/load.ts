@@ -34,6 +34,8 @@ import { salesOfficerByOrder } from "@/lib/floor/queries";
 import { billQuantities, isSiteDelivery, loadBillToByObd, loadSnapshots } from "@/lib/reports/bill-facts";
 import { isGiftBill, loadKg, loadLitres } from "@/lib/orders/gift";
 import { onStopsWhere, placeOnTrips, stopRowsSelect } from "@/lib/order-invoices/trip-read";
+import { loadSplitInvoiceRows } from "@/lib/order-invoices/invoice-load";
+import { placeLoad } from "@/lib/floor/invoice-rows";
 import type {
   TripSheet,
   TripSheetBill,
@@ -190,6 +192,14 @@ async function loadSheetCore(tripIds: number[]): Promise<Map<number, SheetCore>>
 
   // 5. Quantities (bill-facts). 6. Bill-to (bill-facts).
   const snapByOrder = await loadSnapshots(orderIds);
+  // A SPLIT OBD carries only its invoices on THIS trip (Phase 5 commit 1) —
+  // lib/order-invoices/invoice-load.ts; one index-only read when none is split.
+  // Its OWN rows only: a re-delivery is still the whole OBD until Phase 5
+  // commit 5 keys re-deliveries per invoice.
+  const splitRows = await loadSplitInvoiceRows(
+    own,
+    new Map(own.map((o) => [o.id, snapByOrder.get(o.id)?.totalWeight ?? null] as const)),
+  );
   const billToByObd = await loadBillToByObd(uniqueOrders.map((o) => o.obdNumber));
 
   // 7. The effective delivery points: code (shipToChanged) and type (isSite).
@@ -244,7 +254,10 @@ async function loadSheetCore(tripIds: number[]): Promise<Map<number, SheetCore>>
     const drop = dropById.get(p.dropId);
     if (!drop) continue;
     const o = p.order;
-    const q = billQuantities(snapByOrder.get(o.id), o);
+    const whole = billQuantities(snapByOrder.get(o.id), o);
+    const rows = p.redel ? undefined : splitRows.get(o.id);
+    const load = rows ? placeLoad(rows, (d) => d !== null && dropById.get(d)?.tripId === drop.tripId) : null;
+    const q = load ? { ...whole, litres: load.litres, kg: load.kg } : whole;
     const a = assignmentByOrder.get(o.id);
     const typed = a?.articleCount ?? null;
     const billTo = billToByObd.get(o.obdNumber);

@@ -16,6 +16,8 @@
 import { prisma } from "@/lib/prisma";
 import { computeDropKey } from "@/lib/trips/drop-key";
 import { isGiftBill, loadKg } from "@/lib/orders/gift";
+import { loadSplitInvoiceRows } from "@/lib/order-invoices/invoice-load";
+import { placeLoad } from "@/lib/floor/invoice-rows";
 import { loadPlanV2Context } from "@/lib/floor/load-plan-v2-loader";
 import { planLoadsV2, VEHICLE_TYPES, type AvailableVehicle, type V2Bill, type V2Plan, type VehicleType } from "@/lib/trips/load-plan-v2";
 
@@ -62,6 +64,7 @@ export async function runLoadPlanV2(req: LoadPlanV2Request): Promise<LoadPlanV2R
           where: { id: { in: req.orderIds }, isRemoved: false, handAt: null, ...(req.includeOnTrips ? {} : { tripDropId: null }) },
           select: {
             id: true,
+            obdNumber: true,
             customerId: true,
             shipToOverrideCustomerId: true,
             shipToCustomerId: true,
@@ -73,6 +76,12 @@ export async function runLoadPlanV2(req: LoadPlanV2Request): Promise<LoadPlanV2R
           },
         });
 
+  // A SPLIT OBD plans only its invoices on NO trip (Phase 5 commit 1) — the
+  // ones still to load. Wholly in To plan (or not split) → its own kg.
+  const splitRows = await loadSplitInvoiceRows(
+    orders,
+    new Map(orders.map((o) => [o.id, o.querySnapshot?.totalWeight ?? null] as const)),
+  );
   const todayMs = istTodayDateOnly().getTime();
   const bills: V2Bill[] = [];
   for (const o of orders) {
@@ -83,7 +92,14 @@ export async function runLoadPlanV2(req: LoadPlanV2Request): Promise<LoadPlanV2R
     bills.push({
       orderId: o.id,
       // A GIFT packs as 0 kg and keeps its stop (lib/orders/gift.ts).
-      weightKg: loadKg(o.querySnapshot?.totalWeight, isGiftBill(o.materialType)),
+      weightKg: loadKg(
+        (() => {
+          const rows = splitRows.get(o.id);
+          const load = rows ? placeLoad(rows, (d) => d === null) : null;
+          return load ? load.kg : o.querySnapshot?.totalWeight;
+        })(),
+        isGiftBill(o.materialType),
+      ),
       stopKey: computeDropKey(o),
       areaId: dealer.areaId,
       routeId: dealer.area.primaryRouteId,

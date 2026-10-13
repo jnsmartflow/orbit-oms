@@ -14,6 +14,8 @@
 
 import { prisma } from "@/lib/prisma";
 import { onStopsWhere, placeOnTrips, stopRowsSelect } from "@/lib/order-invoices/trip-read";
+import { loadSplitInvoiceRows } from "@/lib/order-invoices/invoice-load";
+import { placeLoad } from "@/lib/floor/invoice-rows";
 import { isGiftBill, loadKg } from "@/lib/orders/gift";
 import { loadPlanV2Context } from "@/lib/floor/load-plan-v2-loader";
 import { makePricer, VEHICLE_TYPES, type LoadPlanV2Context, type VehicleType } from "@/lib/trips/load-plan-v2";
@@ -143,11 +145,16 @@ export async function checkCards(dateIso: string, cards: SnapshotCard[], ctx: Lo
     ? placeOnTrips(
         await prisma.orders.findMany({
           where: { ...onStopsWhere(tripDropIds), isRemoved: false },
-          select: { invoices: stopRowsSelect(tripDropIds), materialType: true, querySnapshot: { select: { totalWeight: true } }, customer: areaSel, shipToOverrideCustomer: areaSel },
+          select: { id: true, obdNumber: true, invoices: stopRowsSelect(tripDropIds), materialType: true, querySnapshot: { select: { totalWeight: true } }, customer: areaSel, shipToOverrideCustomer: areaSel },
         }),
         tripOfDrop,
       )
     : [];
+  // A SPLIT OBD brings only its invoices on THAT trip (Phase 5 commit 1).
+  const splitRows = await loadSplitInvoiceRows(
+    tripOrders,
+    new Map(tripOrders.map((o) => [o.id, o.querySnapshot?.totalWeight ?? null] as const)),
+  );
   const trips = new Map<number, TripFact>();
   dayTrips.forEach((t) => {
     trips.set(t.id, { tripId: t.id, type: actualTypeOf(t.vehicleSize), kg: 0, stops: tripDrops.filter((d) => d.tripId === t.id).length, places: [] });
@@ -157,7 +164,9 @@ export async function checkCards(dateIso: string, cards: SnapshotCard[], ctx: Lo
     if (!t) return;
     const area = (o.shipToOverrideCustomer ?? o.customer)?.area ?? null;
     // A GIFT adds 0 kg; the trip's stop count (trip_drops) is untouched.
-    const kg = loadKg(o.querySnapshot?.totalWeight, isGiftBill(o.materialType)) ?? 0;
+    const rows = splitRows.get(o.id);
+    const load = rows ? placeLoad(rows, (d) => d !== null && tripOfDrop.get(d) === o.tripId) : null;
+    const kg = loadKg(load ? load.kg : o.querySnapshot?.totalWeight, isGiftBill(o.materialType)) ?? 0;
     t.kg += kg;
     t.places.push({ areaId: area?.id ?? null, areaName: area?.name.trim() ?? "Area not set", kg });
   });

@@ -100,8 +100,8 @@ import { resolveSoNames } from "@/lib/sales-officer/resolve";
 import { divisionOf } from "./division-blocks";
 // One invoice, several OBDs (2026-10-08) — pure, no prisma.
 import { buildPartnerMap, partnersOf, type InvoicePartner } from "./invoice-pairs";
-import { addedInvoiceNosOf, buildInvoiceRows, type FloorInvoiceRow } from "./invoice-rows";
-import { learnedKgPerUnit } from "@/lib/order-invoices/kg-per-unit";
+import { addedInvoiceNosOf, type FloorInvoiceRow } from "./invoice-rows";
+import { loadSplitInvoiceRows } from "@/lib/order-invoices/invoice-load";
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
@@ -568,51 +568,10 @@ export async function getBoardInvoiceRows(
   orders: Array<{ id: number; obdNumber: string }>,
   kgByOrder: ReadonlyMap<number, number | null>,
 ): Promise<Map<number, FloorInvoiceRow[]>> {
-  const map = new Map<number, FloorInvoiceRow[]>();
-  if (orders.length === 0) return map;
-  const typed = await prisma.order_invoices.findMany({
-    where: { orderId: { in: orders.map((o) => o.id) }, seq: { gt: 1 } },
-    select: { orderId: true },
-    distinct: ["orderId"],
-  });
-  if (typed.length === 0) return map;
-
-  const splitIds = typed.map((t) => t.orderId);
-  const rows = await prisma.order_invoices.findMany({
-    where: { orderId: { in: splitIds } },
-    orderBy: [{ orderId: "asc" }, { seq: "asc" }],
-    select: {
-      id: true,
-      orderId: true,
-      seq: true,
-      invoiceNo: true,
-      invoiceDate: true,
-      lines: { select: { rawLineItemId: true, qty: true } },
-    },
-  });
-  const obdById = new Map(orders.map((o) => [o.id, o.obdNumber]));
-  const obds = splitIds.map((id) => obdById.get(id)).filter((n): n is string => n !== undefined);
-  // ACTIVE lines only — a removed line is the "stale" case, as loadSplitView reads it.
-  const lines = await prisma.import_raw_line_items.findMany({
-    where: { obdNumber: { in: obds }, lineStatus: "active" },
-    select: { id: true, obdNumber: true, lineId: true, skuCodeRaw: true, unitQty: true, volumeLine: true, totalWeight: true },
-  });
-  // Kg rule 2's source — SAP's kg per tin learned from every line that carried
-  // it (median per SKU). Only these OBDs' SKUs; skipped when they have none.
-  const unitKgBySku = await learnedKgPerUnit(lines.map((l) => l.skuCodeRaw));
-  for (const id of splitIds) {
-    const obd = obdById.get(id);
-    const built = buildInvoiceRows({
-      rows: rows.filter((r) => r.orderId === id),
-      activeLines: lines
-        .filter((l) => l.obdNumber === obd)
-        .map((l) => ({ rawLineItemId: l.id, lineId: l.lineId, skuCodeRaw: l.skuCodeRaw, unitQty: l.unitQty, volumeLine: l.volumeLine, totalWeight: l.totalWeight })),
-      obdKg: kgByOrder.get(id) ?? null,
-      unitKgBySku,
-    });
-    if (built.length > 0) map.set(id, built);
-  }
-  return map;
+  // Phase 5 commit 1 (2026-10-13): the read moved to lib/order-invoices/
+  // invoice-load.ts so the board and every trip total share it; each row now
+  // also carries its own trip stop.
+  return loadSplitInvoiceRows(orders, kgByOrder);
 }
 
 /**

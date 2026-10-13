@@ -43,6 +43,12 @@ export interface FloorInvoiceRow {
   /** The OBD's saved split no longer matches SAP's lines (or is half-written) —
    *  "Lines changed in SAP — re-check invoices". Same on every row of the OBD. */
   stale: boolean;
+  /** THIS invoice's own trip stop (order_invoices."tripDropId", Phase 5) — null
+   *  = on no trip. Today every row of an OBD shares one; from Phase 5 they can
+   *  differ. tripNumber / tripStatus are that stop's trip. */
+  tripDropId: number | null;
+  tripNumber: string | null;
+  tripStatus: string | null;
 }
 
 /** One order_invoices row with its lines, as the board's read returns it. */
@@ -52,6 +58,10 @@ export interface InvoiceRowSource {
   invoiceNo: string | null;
   invoiceDate: Date | string | null;
   lines: { rawLineItemId: number; qty: number }[];
+  /** The row's own trip stop and that stop's trip (Phase 5). Omitted = none. */
+  tripDropId?: number | null;
+  tripNumber?: string | null;
+  tripStatus?: string | null;
 }
 
 /** One ACTIVE raw line of the OBD (import_raw_line_items, lineStatus 'active'). */
@@ -99,7 +109,20 @@ export function buildInvoiceRows(input: {
       return s + (line ? lineLitres(line.volumeLine, line.unitQty, l.qty) : 0);
     }, 0);
     const { kg, kgExact } = invoiceKg(r.lines, activeById, input.unitKgBySku, input.obdKg, litres, obdLitres);
-    return { id: r.id, seq: r.seq, invoiceNo: r.invoiceNo, invoiceDate: iso(r.invoiceDate), tins, litres, kg, kgExact, stale };
+    return {
+      id: r.id,
+      seq: r.seq,
+      invoiceNo: r.invoiceNo,
+      invoiceDate: iso(r.invoiceDate),
+      tins,
+      litres,
+      kg,
+      kgExact,
+      stale,
+      tripDropId: r.tripDropId ?? null,
+      tripNumber: r.tripNumber ?? null,
+      tripStatus: r.tripStatus ?? null,
+    };
   });
 }
 
@@ -125,6 +148,77 @@ export function invoiceKg(
   }
   // 3. The header kg shared by litres — approximate.
   return { kg: kgShare(obdKg, litres, obdLitres), kgExact: false };
+}
+
+// ── THE LOAD IN ONE PLACE (Phase 5 commit 1, 2026-10-13) ─────────────────────
+//
+// From Phase 5 one OBD's invoices can sit in different places — some on a trip
+// stop, the rest in To plan, or on two trips. A stop, a trip, a Print list, a
+// trip sheet or a load plan then carries ONLY the invoices that are in it:
+// litres from their lines, kg by the rule above, tins summed.
+//
+// 🔴 AN OBD WHOLLY IN ONE PLACE KEEPS ITS OWN TOTALS. placeLoad returns null —
+// "use the OBD's header litres / kg, exactly as before" — when the OBD is not
+// split, or when every one of its invoices is in that place. Only an OBD split
+// ACROSS places is summed from its invoice rows. So nothing moves until an
+// invoice really moves on its own (Phase 5 commit 2), and a header that differs
+// from its lines by a rounding (18648: 1,357 kg header, 1,357.41 by lines) is
+// never swapped in silently. Counts stay per OBD (owner, 2026-10-13); `invoices`
+// is how many of the OBD's invoices are in the place.
+
+/** What the invoices of one OBD that sit in one place add up to. */
+export interface PlaceLoad {
+  litres: number;
+  /** null = unknown (some invoice in the place has no kg). */
+  kg: number | null;
+  /** Every invoice in the place had an exact kg (rule 1 or 2). */
+  kgExact: boolean;
+  tins: number;
+  /** How many of the OBD's invoices are in the place. */
+  invoices: number;
+}
+
+type PlaceRow = Pick<FloorInvoiceRow, "tripDropId" | "litres" | "kg" | "kgExact" | "tins">;
+
+/**
+ * The load of the invoices that are in a place — `inPlace(tripDropId)` says
+ * whether an invoice on that stop (null = on no trip) is in it. null = use the
+ * OBD's own totals (not split, or wholly in the place); see above.
+ */
+export function placeLoad(invoiceRows: readonly PlaceRow[], inPlace: (tripDropId: number | null) => boolean): PlaceLoad | null {
+  if (invoiceRows.length < 2) return null;
+  const here = invoiceRows.filter((r) => inPlace(r.tripDropId));
+  if (here.length === invoiceRows.length) return null;
+  let kg: number | null = 0;
+  for (const r of here) kg = kg === null || r.kg === null ? null : kg + r.kg;
+  return {
+    litres: here.reduce((s, r) => s + r.litres, 0),
+    kg,
+    kgExact: here.every((r) => r.kgExact),
+    tins: here.reduce((s, r) => s + r.tins, 0),
+    invoices: here.length,
+  };
+}
+
+/**
+ * A board row NARROWED to one place: only the invoices in it, and the row's
+ * litres / kg replaced by theirs (placeLoad). The same row object when the OBD
+ * is wholly in the place — so every list of rows that is already right stays
+ * byte-identical. Drawn rows keep the OBD's own k/n (drawRowsOf numbers within
+ * the narrowed list; Phase 5 commit 3 carries the OBD-wide k).
+ */
+export function narrowToPlace<T extends { invoiceRows: FloorInvoiceRow[]; volumeLitres: number | null; weightKg: number | null }>(
+  row: T,
+  inPlace: (tripDropId: number | null) => boolean,
+): T {
+  const load = placeLoad(row.invoiceRows ?? [], inPlace);
+  if (load === null) return row;
+  return {
+    ...row,
+    invoiceRows: row.invoiceRows.filter((r) => inPlace(r.tripDropId)),
+    volumeLitres: load.litres,
+    weightKg: load.kg,
+  };
 }
 
 /** The typed invoice numbers (seq 2..n) — what the "+n" chip shows until commit 2. */
