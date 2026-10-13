@@ -622,3 +622,95 @@ export interface PickDeletedCard {
   /** ISO. */
   decidedAt: string;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ASSIGN TAB › TRIPS VIEW — the trips feed (slice 1, 2026-10-13).
+// Built by getPickingTrips() (lib/picking/trips-view.ts), served by
+// GET /api/picking/trips. Read-only. Design: docs/mockups/picking/
+// assign-trips-view.html; plan: docs/prompts/drafts/
+// code-discovery-2026-10-13-assign-trips-view.md.
+//
+// 🔴 NO TRIP FIELD ON PickingQueueRow. FloorBoardRow extends that row
+// (lib/floor/types.ts) and owns its own trip fields; the phone joins a trip's
+// `members` to its queue rows by `orderId` instead.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Every non-removed bill on ONE trip, by state — counted on the SERVER over the
+ * whole trip, never off the board's rows (the board never holds dispatched,
+ * held or tint bills, nor bills checked before today — discovery F).
+ *
+ * The same buckets as the Floor rail's bar (`TripBillCounts`, lib/trips/
+ * queries.ts `bucketFor`) with two of them split, so the two screens agree:
+ *   waiting + lockedUpcoming = Floor's `waiting`
+ *   tinting + other          = Floor's `other`
+ * The rest are one-to-one (picking = withPicker, needsCheck = picked).
+ */
+export interface PickingTripCounts {
+  /** `pending_picking`, zone DUE (dispatch date ≤ today, none, or early-released). */
+  waiting: number;
+  /** `pending_picking`, zone UPCOMING — Zone 2, locked on the board. */
+  lockedUpcoming: number;
+  /** In the tint room: `pending_tint_assignment`, `tint_assigned`, `tinting_in_progress`. */
+  tinting: number;
+  /** `pick_assigned`. */
+  picking: number;
+  /** `pick_done`. */
+  needsCheck: number;
+  /** `pick_checked` or `dispatched` — done, whenever it was checked. */
+  checked: number;
+  /** `dispatchStatus = 'hold'`, at ANY stage — a hold outranks the stage. Out of the ring. */
+  held: number;
+  /** Anything else (`pending_support`, `cancelled`, …) — here so the counts add up to `total`. */
+  other: number;
+  total: number;
+}
+
+/** One trip as the supervisor's Trips view reads it. */
+export interface PickingTrip {
+  id: number;
+  tripNumber: string;
+  /** YYYY-MM-DD. Earlier than today on a carried-over trip. */
+  tripDate: string;
+  /** L | U | I | C — the trip's STORED type (the tile colour), never a bill's. */
+  typeCode: string;
+  /** The delivery type the trip was numbered under ("Local"). */
+  deliveryTypeName: string | null;
+  /** The trip's dispatch window (`dispatch_slot_master.windowTime`). Display only. */
+  cutoff: string | null;
+  /** That window's `sortOrder` — what the list is sorted on. Null when no window. */
+  cutoffSortOrder: number | null;
+  /** "Adajan +2" — lib/trips/route-label.ts, the rule the Floor rail prints. Null = no route. */
+  routeLabel: string | null;
+  /** Every route the trip runs, most stops first (same ranking as the label). */
+  routes: string[];
+  /** Stops on the trip (`trip_drops` rows) — the Floor rail's figure. */
+  stops: number;
+  /** `vehicle_master.vehicleNo`, else the typed `adhocVehicleNo`, else null. */
+  vehiclePlate: string | null;
+  /** The trip's SNAPSHOT driver fields — never read through the vehicle. */
+  driverName: string | null;
+  driverPhone: string | null;
+  isHand: boolean;
+  /** When the desk showed the trip to the floor. Meaningful only while `gateOn`. */
+  shownAt: string | null;
+  counts: PickingTripCounts;
+  /** Every non-removed bill on the trip, ANY stage, in stop order. Join on `orderId`. */
+  members: Array<{ orderId: number; dropSeq: number }>;
+}
+
+export interface PickingTripsResult {
+  /** Today in IST, YYYY-MM-DD — the desk the trips are on. */
+  date: string;
+  /** The pick visibility gate (isPickGateOn). ON → only SHOWN trips are listed. */
+  gateOn: boolean;
+  /** Sorted by cutoff `sortOrder` (no window last), then trip number. */
+  trips: PickingTrip[];
+  /**
+   * WAITING bills on NO trip — a count only, no list (owner, 2026-10-13).
+   * gate ON → the queue's own `heldBackUnplanned` figure (Hand bills excluded,
+   * same helper), and `notPlannedYet` is true: none of them is on the board.
+   * gate OFF → every waiting bill on no trip; they are all on the Bills view.
+   */
+  notOnTrip: { bills: number; notPlannedYet: boolean };
+}
