@@ -63,6 +63,16 @@ test("kg rule 2: a unit weight for every line's SKU → exact; one missing → r
   assert.equal(out[3].kgExact, false); // 9296830 has no unit weight
 });
 
+test("kg rule 2 with SAP's learned kg per tin (live medians, 2026-10-13): 18648's invoices are EXACT and add up", () => {
+  const learned = new Map([["5880380", 27.41], ["5963121", 27.111], ["9296830", 27.03]]);
+  const out = buildInvoiceRows({ rows: ROWS, activeLines: LINES, obdKg: 1357, unitKgBySku: learned });
+  const kg = out.map((r) => Math.round((r.kg ?? 0) * 1000) / 1000);
+  assert.deepEqual(kg, [405.45, 356.33, 325.332, 270.3]);
+  assert.ok(out.every((r) => r.kgExact));
+  // SAP's header 1,357 kg is the line sum cut to a whole number (1,357.412).
+  assert.equal(Math.trunc(out.reduce((s, r) => s + (r.kg ?? 0), 0)), 1357);
+});
+
 test("kg rule 3 with no header kg → null", () => {
   const out = buildInvoiceRows({ rows: ROWS, activeLines: LINES, obdKg: null });
   assert.ok(out.every((r) => r.kg === null && !r.kgExact));

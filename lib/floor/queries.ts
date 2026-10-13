@@ -101,6 +101,7 @@ import { divisionOf } from "./division-blocks";
 // One invoice, several OBDs (2026-10-08) — pure, no prisma.
 import { buildPartnerMap, partnersOf, type InvoicePartner } from "./invoice-pairs";
 import { addedInvoiceNosOf, buildInvoiceRows, type FloorInvoiceRow } from "./invoice-rows";
+import { learnedKgPerUnit } from "@/lib/order-invoices/kg-per-unit";
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
@@ -555,7 +556,9 @@ export async function billToByObd(obdNumbers: string[]): Promise<Map<string, str
  * THE extra read is ONE findMany keyed `orderId IN (board ids)` AND seq > 1
  * (order_invoices_orderId_seq_key, index-only) — the same read the "+n" chip
  * made. Only when it finds a split OBD do two more follow, both keyed on those
- * few OBDs: their rows with lines, and their ACTIVE raw lines (litres, line kg).
+ * few OBDs: their rows with lines, and their ACTIVE raw lines (litres, line kg),
+ * then SAP's learned kg per tin for those lines' SKUs (kg rule 2,
+ * lib/order-invoices/kg-per-unit.ts).
  * No predicate term anywhere — floorBoardWhere and getFloorLiveMarkerWhere are
  * untouched (FLOOR §3/§5/§10). SELECT-only.
  *
@@ -594,6 +597,9 @@ export async function getBoardInvoiceRows(
     where: { obdNumber: { in: obds }, lineStatus: "active" },
     select: { id: true, obdNumber: true, lineId: true, skuCodeRaw: true, unitQty: true, volumeLine: true, totalWeight: true },
   });
+  // Kg rule 2's source — SAP's kg per tin learned from every line that carried
+  // it (median per SKU). Only these OBDs' SKUs; skipped when they have none.
+  const unitKgBySku = await learnedKgPerUnit(lines.map((l) => l.skuCodeRaw));
   for (const id of splitIds) {
     const obd = obdById.get(id);
     const built = buildInvoiceRows({
@@ -602,7 +608,7 @@ export async function getBoardInvoiceRows(
         .filter((l) => l.obdNumber === obd)
         .map((l) => ({ rawLineItemId: l.id, lineId: l.lineId, skuCodeRaw: l.skuCodeRaw, unitQty: l.unitQty, volumeLine: l.volumeLine, totalWeight: l.totalWeight })),
       obdKg: kgByOrder.get(id) ?? null,
-      // Rule 2 (unit kg per SKU) has no trustworthy source yet — see invoice-rows.ts.
+      unitKgBySku,
     });
     if (built.length > 0) map.set(id, built);
   }

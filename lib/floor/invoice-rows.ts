@@ -12,11 +12,14 @@
 // KG PER INVOICE — owner rule (2026-10-13), first that applies:
 //   1. every line on the invoice has SAP line kg (import_raw_line_items.
 //      "totalWeight" > 0) → Σ line kg × tins / line tins. EXACT.
-//   2. a unit weight is known for every line's SKU → Σ tins × unit kg. EXACT.
-//      ⚠ The server passes NO unit weights today: the one live column,
-//      sku_master."grossWeightPerUnit" (old catalog, not in schema.prisma),
-//      holds pack LITRES, not kg — measured 2026-10-13, tins × it lands within
-//      2% of the header kg on 175 of 3,100 OBDs. Wire a real source in here.
+//   2. SAP's kg per tin is known for every line's SKU → Σ tins × kg per tin.
+//      EXACT. The source is LEARNED from SAP's own line kg — the median of
+//      "totalWeight" / "unitQty" per SKU over every line that carried it
+//      (lib/order-invoices/kg-per-unit.ts; measured 2026-10-13: 98.1% of recent
+//      auto-imported lines covered, 97.8% of auto-imported OBDs within 2% or
+//      < 1 kg of SAP's header kg). ⚠ NOT sku_master."grossWeightPerUnit" (old
+//      catalog, not in schema.prisma): it holds pack LITRES, not kg — tins × it
+//      lands within 2% of the header kg on 175 of 3,100 OBDs.
 //   3. the OBD's header kg shared by litres (lib/order-invoices/entry.ts
 //      kgShare) — APPROXIMATE ("~"); null when there is no kg to share.
 
