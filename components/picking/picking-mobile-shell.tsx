@@ -6,7 +6,7 @@ import { RoleLayoutClient } from "@/components/shared/role-layout-client";
 import type { RoleSidebarRole } from "@/components/shared/role-sidebar";
 import type { WorkflowTab } from "@/components/shared/workflow-tab-bar";
 import type { NavItemConfig } from "@/lib/permissions";
-import type { PickDeletedCard, PickingQueueRow } from "@/lib/picking/types";
+import type { PickDeletedCard, PickingQueueRow, PickingTripsResult } from "@/lib/picking/types";
 import type { PickingQueueResult } from "@/lib/picking/queue";
 // The tint room's wire shape. A TYPE-only import — the module it comes from is
 // server-side (prisma), and this file is a client component; `import type` is
@@ -115,6 +115,19 @@ interface PickingBoardContextValue {
   goToTinting: () => void;
   /** Bumped by `goToTinting`. The board scrolls when it changes. */
   tintJumpNonce: number;
+  /**
+   * The Assign tab's Trips view feed (GET /api/picking/trips, 2026-10-13).
+   * null until the first fetch lands. Its OWN state, never merged into `data`:
+   * no tab badge, no row and no held-back figure reads it.
+   *
+   * 🔴 FETCHED ONLY WHILE THE TRIPS VIEW IS ON SCREEN (`setTripsActive`). The
+   * Bills view — the board as it has always been — costs not one extra request.
+   */
+  trips: PickingTripsResult | null;
+  /** The last trips fetch failed and nothing good is on screen. */
+  tripsFailed: boolean;
+  /** The board reports whether the Trips view is showing; turning on fetches at once. */
+  setTripsActive: (active: boolean) => void;
 }
 
 const PickingBoardContext = createContext<PickingBoardContextValue | null>(null);
@@ -569,6 +582,34 @@ function SupervisorPickingShell({
   const [tintWork, setTintWork] = useState<TintWorkloadResult | null>(null);
   const [tintJumpNonce, setTintJumpNonce] = useState(0);
 
+  // ── The Trips view feed (2026-10-13) ──────────────────────────────────────
+  // Read-only, silent on failure (keeps the last good list), and a NO-OP while
+  // the Trips view is not showing — `tripsActiveRef` is the gate, so every
+  // refetch hook below can call it unconditionally. Turning the view on fetches
+  // at once; turning it off simply stops the refreshes.
+  const [trips, setTrips] = useState<PickingTripsResult | null>(null);
+  const [tripsFailed, setTripsFailed] = useState(false);
+  const tripsActiveRef = useRef(false);
+  const refetchTrips = useCallback(async () => {
+    if (!tripsActiveRef.current) return;
+    try {
+      const res = await fetch("/api/picking/trips", { cache: "no-store" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setTrips((await res.json()) as PickingTripsResult);
+      setTripsFailed(false);
+    } catch {
+      setTripsFailed(true);
+    }
+  }, []);
+  const setTripsActive = useCallback(
+    (active: boolean) => {
+      const was = tripsActiveRef.current;
+      tripsActiveRef.current = active;
+      if (active && !was) void refetchTrips();
+    },
+    [refetchTrips],
+  );
+
   // scope=openPending (2026-07-20 date-zones redesign) — pending and
   // in-progress bills across ALL dates, plus today's checked band. Replaces
   // the previous `?date=<today>` call, which fenced the WHOLE board to one
@@ -638,11 +679,20 @@ function SupervisorPickingShell({
   // `ids` (LIVE FEED 4b, 2026-09-30): the bills the write acted on. ON the feed they are re-read by
   // one POST /api/picking/sync and patched in (no full rebuild, no marker to resync); if that fails
   // it falls through to the full refetch below. OFF the feed `ids` is ignored — unchanged.
+  //
+  // TRIPS (2026-10-13): every path through here also refreshes the Trips view
+  // feed — own writes (assign / undo / approve / cancel / release / direct
+  // load), the legacy marker's onChange, a full flush and IST midnight all come
+  // through this one function. refetchTrips is a no-op unless the Trips view is
+  // showing, so the Bills view's cost is unchanged.
   const refetchQueue = useCallback(async (opts?: { fromMarker?: boolean; ids?: number[] }) => {
     if (opts?.ids && opts.ids.length > 0 && liveRef.current) {
       // `own` = true: the supervisor's own write applies at once, exactly as the full refetch it
       // replaces always did (the detail / sheet it came from is closing in the same tick).
-      if (await syncIdsRef.current(opts.ids, true)) return;
+      if (await syncIdsRef.current(opts.ids, true)) {
+        void refetchTrips();
+        return;
+      }
     }
     try {
       const json = await fetchQueue();
@@ -651,7 +701,8 @@ function SupervisorPickingShell({
     } catch {
       // silent — keep last good data, retry on the next trigger
     }
-  }, [fetchQueue]);
+    void refetchTrips();
+  }, [fetchQueue, refetchTrips]);
 
   // Live sync (2026-07-22) — poll the cheap marker every 15s; on a real change,
   // do the ONE full refetch (refetchQueue above). scope MUST match fetchQueue's
@@ -832,7 +883,13 @@ function SupervisorPickingShell({
         });
         if (res) {
           if (pausedRef.current) ctl.requeue(work.orderIds, work.tripIds);
-          else applySync(res);
+          else {
+            applySync(res);
+            // Trips view: a stage move, a trip edit or a new waiting bill all
+            // change the trip rings. Applied (never while paused), and a no-op
+            // unless the Trips view is showing.
+            void refetchTrips();
+          }
         }
       }
       failuresRef.current = 0;
@@ -849,7 +906,7 @@ function SupervisorPickingShell({
       flushingRef.current = false;
     }
     if (applied) setTimeout(() => flushRef.current(), 0);
-  }, [feed.controller, postSync, tintShownIds, applySync, refetchQueue, refetchTint]);
+  }, [feed.controller, postSync, tintShownIds, applySync, refetchQueue, refetchTint, refetchTrips]);
   flushRef.current = () => {
     void flush();
   };
@@ -895,7 +952,10 @@ function SupervisorPickingShell({
   useOrbitPushMessages(live, (m) => {
     if (!pageVisible()) return; // the glance on return covers it
     liveLog("picking", `push ${m.tag} → sync ${m.orderId}`);
-    void syncIds([m.orderId]);
+    void syncIds([m.orderId]).then(() => {
+      // Held while a sheet / the detail is up, like the row itself.
+      if (!pausedRef.current) void refetchTrips();
+    });
   });
 
   // The Assign strip's "View ›" — switch tab here, then let the board scroll.
@@ -951,9 +1011,10 @@ function SupervisorPickingShell({
       data, loading, error, activeTab, refetchQueue, detailOpen, setDetailOpen, setOverlayBusy,
       tintWork, goToTinting, tintJumpNonce,
       live, reportDetailId, detailChanged: detailChanged !== null, reloadDetail, detailReloadNonce,
+      trips, tripsFailed, setTripsActive,
     }),
     [data, loading, error, activeTab, refetchQueue, detailOpen, tintWork, goToTinting, tintJumpNonce,
-      live, reportDetailId, detailChanged, reloadDetail, detailReloadNonce],
+      live, reportDetailId, detailChanged, reloadDetail, detailReloadNonce, trips, tripsFailed, setTripsActive],
   );
 
   return (

@@ -100,7 +100,10 @@ import { GiftBadge } from "@/components/floor/gift-badge";
 import { ChallanBadge } from "@/components/shared/challan-badge";
 import { HandBadge } from "@/components/shared/hand-badge";
 import { loadLitres } from "@/lib/orders/gift";
-import type { PickingDetailLine, PickingLineFinding, PickingQueueRow } from "@/lib/picking/types";
+import type { PickingDetailLine, PickingLineFinding, PickingQueueRow, PickingTrip } from "@/lib/picking/types";
+// Assign tab › Trips view (2026-10-13) — the trip row, ring and header. The
+// BILLS inside a trip are this file's own PickingCard, never a copy.
+import { NotOnTripCard, TripBandHeading, TripHeader, TripRow, tripCentre, tripTypeLabel } from "./assign-trips";
 // The tint room's wire shapes. TYPE-only — the module is server-side (prisma),
 // and `import type` is erased, so nothing follows it into the browser bundle.
 import type { TintWorkloadBill, TintWorkloadOperator } from "@/lib/picking/tint-workload";
@@ -217,7 +220,33 @@ type DetailListKey =
   // This is NOT the "optional field on every variant" shape the note above
   // warns against — it sits on the ONE variant where a scope exists, and both
   // of its values mean something.
-  | { kind: "stillPicking"; pickerId: number | null };
+  | { kind: "stillPicking"; pickerId: number | null }
+  // ⚠ ONE BAND OF ONE TRIP (2026-10-13, the Assign tab's Trips view). The data
+  // rides on the key, the stillPicking precedent: swiping pages only within
+  // this trip's bills in this band, never the whole tab behind it. The band's
+  // list is re-derived live every render (activeDetailList), so a bill that
+  // leaves the band makes the pager inert rather than jumping.
+  | { kind: "trip"; tripId: number; band: TripBand };
+
+// The trip screen's four bands, in render order.
+type TripBand = "waiting" | "picking" | "needsCheck" | "checked";
+
+// Assign tab view — today's flat Bills list or the Trips view (2026-10-13).
+// Plain useState, nothing persisted (owner). Narrowed, never cast (§5.1).
+type AssignView = "bills" | "trips";
+const ASSIGN_VIEW_KEYS: readonly AssignView[] = ["bills", "trips"];
+function isAssignView(key: string): key is AssignView {
+  return (ASSIGN_VIEW_KEYS as readonly string[]).includes(key);
+}
+
+// The Trips view's type pills filter TRIPS by their stored typeCode (owner:
+// Local = L, UPC = U; IGT and Cross trips appear under All only — Floor's
+// tripInScope rule). Its own state, never the bill filter's (a mixed trip would
+// lose cards if the bill filter leaked in).
+function tripMatchesType(trip: PickingTrip, t: TypeFilter): boolean {
+  if (t === "All") return true;
+  return trip.typeCode === (t === "Local" ? "L" : "U");
+}
 
 // The swipe/slide tuning constants that used to sit here (edge exclusion,
 // deadzone, axis-lock ratio, commit threshold, drag-follow, slide duration)
@@ -449,9 +478,17 @@ function PickingCard({
   onLockTap,
   onUndoDirect,
   undoDirectBusy = false,
+  stopNumber = null,
 }: {
   row: PickingQueueRow;
   variant: PickingCardVariant;
+  /**
+   * "Stop N" — the bill's stop on its trip (2026-10-13). Passed ONLY by the
+   * Assign tab's Trips view, as a GREY neutral tag in the caption run (never
+   * violet — CLAUDE_UI §59.9 / §62 "no brand on the card"). Optional and
+   * defaulted null, so every existing call site renders byte-identical DOM.
+   */
+  stopNumber?: number | null;
   /**
    * Direct Loading undo (2026-10-03) — passed ONLY by the Done tab's Checked
    * band. Renders as the "Undo" link in the ink footer of a row with
@@ -820,6 +857,19 @@ function PickingCard({
               {/* HAND — the dealer collects (2026-09-24): the goods go to the counter,
                   not a truck. Same shared pill Floor draws. */}
               {row.isHand && <HandBadge label="✋ Hand — to counter" />}
+              {/* STOP N — Trips view only (stopNumber is null everywhere else,
+                  so nothing renders and no gap is spent). shrink-0 so the
+                  date-time truncates first. */}
+              {stopNumber !== null && (
+                <span
+                  className={
+                    "shrink-0 text-[10.5px] font-semibold px-1.5 py-px rounded-[6px] whitespace-nowrap " +
+                    (dup ? DUP_SO_BADGE_CLASS : "bg-gray-100 text-gray-600")
+                  }
+                >
+                  Stop {stopNumber}
+                </span>
+              )}
               {/* The SMU as a BARE NUMBER — Done tab's checked band only.
                   ⚠ SmuBadge is NOT used here and NOT changed; its pill still
                   renders on every other card's where-row. Same 74/77 gate via
@@ -1362,10 +1412,15 @@ function LockGlyph({ className }: { className: string }): React.JSX.Element {
 // shared, so setting one tab's type filter can never silently change the
 // other tab's results (constraint: no behaviour change to Assign).
 function TypeFilterPills({
-  value, onChange,
+  value, onChange, counts,
 }: {
   value: TypeFilter;
   onChange: (t: TypeFilter) => void;
+  /**
+   * Optional per-pill counts (2026-10-13, the Trips view's "Local 9"). Omitted
+   * by every other caller, which then renders byte-identical DOM.
+   */
+  counts?: Record<TypeFilter, number>;
 }): React.JSX.Element {
   return (
     <div className="flex items-center gap-1.5">
@@ -1382,6 +1437,11 @@ function TypeFilterPills({
           }
         >
           {t === "Upcountry" ? "UPC" : t}
+          {counts !== undefined && (
+            <span className={"ml-1 font-medium tabular-nums " + (value === t ? "text-gray-300" : "text-gray-400")}>
+              {counts[t]}
+            </span>
+          )}
         </button>
       ))}
     </div>
@@ -1506,6 +1566,7 @@ export function PickingBoardMobile(): React.JSX.Element {
     data, loading, error, activeTab, refetchQueue, detailOpen, setDetailOpen, setOverlayBusy,
     tintWork, goToTinting, tintJumpNonce,
     live, reportDetailId, detailChanged, reloadDetail, detailReloadNonce,
+    trips, tripsFailed, setTripsActive,
   } = usePickingBoard();
   // Direction-A header (avatar/grid/search) reaches the shared Menu/You
   // sheets + the signed-in user's initials via the Stage-1 provider —
@@ -1518,6 +1579,35 @@ export function PickingBoardMobile(): React.JSX.Element {
   const [activeRoute, setActiveRoute] = useState<string | null>(null); // null = "All routes"
   const [routeSheetOpen, setRouteSheetOpen] = useState(false);
   const [selected, setSelected] = useState<Set<number>>(new Set());
+
+  // ── Assign tab › Trips view (2026-10-13, slices 2–4) ─────────────────────
+  // The view only GROUPS bills: every card, tap, detail and action below is the
+  // Bills view's own code path. Bills is the default and stays byte-identical.
+  const [assignView, setAssignView] = useState<AssignView>("bills");
+  // Its own type pills (trips by stored typeCode) — never `activeType`.
+  const [tripTypeFilter, setTripTypeFilter] = useState<TypeFilter>("All");
+  // The opened trip, or null for the list. Opening PUSHES ONE history entry
+  // (openTrip) and the single popstate authority below closes it, so hardware
+  // back / iOS swipe go detail → trip screen → list and never leave /picking.
+  const [openTripId, setOpenTripId] = useState<number | null>(null);
+  // The board's one scroll region (a ref adds nothing to the DOM) and the trip
+  // list's position when a trip was opened.
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const listScrollTopRef = useRef(0);
+  const inTripsView = activeTab === "assign" && assignView === "trips";
+  const tripScreenOpen = inTripsView && openTripId !== null;
+  // The shell fetches the trips feed only while this view is on screen.
+  useEffect(() => {
+    setTripsActive(inTripsView);
+  }, [inTripsView, setTripsActive]);
+  useEffect(() => () => setTripsActive(false), [setTripsActive]);
+  // Leaving the Assign tab with a trip open pops ITS history entry, so the
+  // depth stays true (one entry per open level) and coming back lands on the
+  // trip list. Keyed on activeTab only — never on data — so a background
+  // refresh can never close the screen under a thumb.
+  useEffect(() => {
+    if (activeTab !== "assign" && navStateRef.current.tripOpen) window.history.back();
+  }, [activeTab]);
 
   // ── Picking tab VIEW toggle (2026-08-22) ─────────────────────────────────
   // Replaces the "All pickers" dropdown that stood here. Filtering a flat bill
@@ -1832,6 +1922,11 @@ export function PickingBoardMobile(): React.JSX.Element {
     findingOpen: false,
     cancelOpen: false,
     countOpen: false,
+    // Trips view (2026-10-13): the trip screen is a history-tracked level BELOW
+    // the detail; the release sheet can float over it (lock tap on a locked
+    // band card) and closes first, like the picker sheet.
+    tripOpen: false,
+    releaseOpen: false,
   });
   // The popstate listener registers ONCE, so it must not close over a
   // `recorder` object rebuilt on every render.
@@ -1843,9 +1938,9 @@ export function PickingBoardMobile(): React.JSX.Element {
   // real page transition. Only openDetail() calls this; goNext/goPrev swap
   // detailOrderId WITHOUT pushing, so paging through several bills still
   // costs exactly one history entry for the whole detail "session".
-  function pushScreen(): void {
+  function pushScreen(screen: "detail" | "trip" = "detail"): void {
     if (typeof window === "undefined") return;
-    window.history.pushState({ pickingScreen: "detail" }, "");
+    window.history.pushState({ pickingScreen: screen }, "");
     depthRef.current += 1;
   }
 
@@ -1961,6 +2056,77 @@ export function PickingBoardMobile(): React.JSX.Element {
   const checkedRows: PickingQueueRow[] = useMemo(
     () => (data ? data.rows.filter((r) => r.isChecked) : []),
     [data],
+  );
+
+  // ── Trips view data (2026-10-13) ──────────────────────────────────────────
+  // trip id → (orderId → dropSeq), from the feed's `members`. The phone joins a
+  // trip to ITS OWN queue rows by orderId (no trip field on PickingQueueRow —
+  // FloorBoardRow extends it and owns its own).
+  const tripMembers = useMemo(() => {
+    const map = new Map<number, Map<number, number>>();
+    for (const t of trips?.trips ?? []) map.set(t.id, new Map(t.members.map((m) => [m.orderId, m.dropSeq] as const)));
+    return map;
+  }, [trips]);
+  // One trip's bills in one band, off the SAME pools the tabs render (the §7
+  // stage-boolean rule lives in those pools) and in their spine order. NOT
+  // narrowed by the Bills view's type / route / search — a trip is the scope.
+  // "waiting" = due then upcoming, exactly as the Bills view's pager walks it.
+  const tripBand = useCallback(
+    (tripId: number, band: TripBand): PickingQueueRow[] => {
+      const members = tripMembers.get(tripId);
+      if (members === undefined) return [];
+      const on = (r: PickingQueueRow) => members.has(r.orderId);
+      switch (band) {
+        case "waiting":
+          return [
+            ...waitingRows.filter((r) => on(r) && r.zone === "due"),
+            ...waitingRows.filter((r) => on(r) && r.zone === "upcoming"),
+          ];
+        case "picking": return assignedRows.filter(on);
+        case "needsCheck": return doneRows.filter(on);
+        // Newest-checked first, the Done tab's own display order (doneSortAt).
+        case "checked": return checkedRows.filter(on).sort((a, b) => doneSortAt(b) - doneSortAt(a));
+      }
+    },
+    [tripMembers, waitingRows, assignedRows, doneRows, checkedRows],
+  );
+  // Per trip: due waiting bills still to assign — the ring's centre. The same
+  // rows the Bills view lets him select, so the two views never disagree.
+  const leftByTrip = useMemo(() => {
+    const map = new Map<number, number>();
+    tripMembers.forEach((members, tripId) => {
+      map.set(tripId, waitingRows.filter((r) => r.zone === "due" && members.has(r.orderId)).length);
+    });
+    return map;
+  }, [tripMembers, waitingRows]);
+  // The list: feed order (cutoff, then trip no.), filtered by the trip pills,
+  // with every ✓ trip (nothing left, nothing locked, nothing tinting) sunk to
+  // the bottom — a stable partition, so order inside each half is the feed's.
+  const visibleTrips: PickingTrip[] = useMemo(() => {
+    const list = (trips?.trips ?? []).filter((t) => tripMatchesType(t, tripTypeFilter));
+    const isDone = (t: PickingTrip) => tripCentre(leftByTrip.get(t.id) ?? 0, t.counts).kind === "done";
+    return [...list.filter((t) => !isDone(t)), ...list.filter(isDone)];
+  }, [trips, tripTypeFilter, leftByTrip]);
+  const tripTypeCounts: Record<TypeFilter, number> = useMemo(() => {
+    const all = trips?.trips ?? [];
+    return {
+      All: all.length,
+      Local: all.filter((t) => tripMatchesType(t, "Local")).length,
+      Upcountry: all.filter((t) => tripMatchesType(t, "Upcountry")).length,
+    };
+  }, [trips]);
+  // The opened trip, re-resolved live off the feed — undefined once it leaves
+  // the desk, and the screen then SAYS so instead of closing (never move the
+  // ground under a thumb).
+  const openTripData: PickingTrip | undefined = useMemo(
+    () => (openTripId === null ? undefined : trips?.trips.find((t) => t.id === openTripId)),
+    [trips, openTripId],
+  );
+  // The open trip's due waiting rows — what "Select all" and the floating bar
+  // act on while the trip screen is up.
+  const tripWaitingDue: PickingQueueRow[] = useMemo(
+    () => (openTripId === null ? [] : tripBand(openTripId, "waiting").filter((r) => r.zone === "due")),
+    [openTripId, tripBand],
   );
 
   // Route counts — one bill each, narrowed by the active Type pill.
@@ -2378,7 +2544,12 @@ export function PickingBoardMobile(): React.JSX.Element {
   // toggleSelect is already unreachable for it — this is the second,
   // independent guard, and the one that would still hold if the card markup
   // were ever changed. Derived from filteredWaitingDue, NOT filteredWaiting.
-  const selectedRows = filteredWaitingDue.filter((r) => selected.has(r.orderId));
+  //
+  // TRIP SCREEN (2026-10-13): the chokepoint narrows to THAT TRIP's due rows
+  // instead, so a route filter left over from the Bills view can never drop a
+  // selection from the bar or the POST, and a bill outside the trip can never
+  // ride along. Every other screen takes the original expression, unchanged.
+  const selectedRows = (tripScreenOpen ? tripWaitingDue : filteredWaitingDue).filter((r) => selected.has(r.orderId));
   // Gift bills stay in the selected COUNT; their litres are left out.
   const selectedLitres = selectedRows.reduce((sum, r) => sum + loadLitres(r.volumeLitres, r.isGift), 0);
   const pickerSheetSubtitle =
@@ -2445,6 +2616,28 @@ export function PickingBoardMobile(): React.JSX.Element {
     setCountTarget(null);
   }
 
+  // ── Trip screen open / close (2026-10-13) ─────────────────────────────────
+  // openTrip pushes ONE entry; closeTrip is the REAL close, run only from the
+  // popstate handler (the header ‹ calls history.back()), exactly the
+  // openDetail / closeDetail pair one level down. Selection is scoped to ONE
+  // trip, so it is cleared on the way in and the way out.
+  // The list's scroll position is kept and restored, so Back lands where he was;
+  // the trip screen itself always opens at its header.
+  function openTrip(tripId: number): void {
+    listScrollTopRef.current = scrollRef.current?.scrollTop ?? 0;
+    setSelected(new Set());
+    setOpenTripId(tripId);
+    navStateRef.current = { ...navStateRef.current, tripOpen: true };
+    pushScreen("trip");
+    scrollRef.current?.scrollTo(0, 0);
+  }
+  function closeTrip(): void {
+    setOpenTripId(null);
+    setSelected(new Set());
+    const top = listScrollTopRef.current;
+    window.requestAnimationFrame(() => scrollRef.current?.scrollTo(0, top));
+  }
+
   // Live-resolved list for the open detail's prev/next paging — re-picked
   // every render from `detailListKey`, off the SAME already-memoized arrays
   // the board itself renders, so a post-Undo refetch is reflected
@@ -2470,8 +2663,10 @@ export function PickingBoardMobile(): React.JSX.Element {
           ? filteredStillPicking
           : filteredStillPicking.filter((r) => r.pickerId === detailListKey.pickerId);
       case "checked": return filteredChecked;
+      // This trip, this band — never the tab behind it (2026-10-13).
+      case "trip": return tripBand(detailListKey.tripId, detailListKey.band);
     }
-  }, [detailListKey, filteredWaiting, filteredNeedsCheck, filteredStillPicking, filteredChecked]);
+  }, [detailListKey, filteredWaiting, filteredNeedsCheck, filteredStillPicking, filteredChecked, tripBand]);
 
   // ── Swipe/slide paging — the SHARED hook (./use-bill-pager.ts) ───────────
   // Build A's gesture gate + Build B's Option-1 slide animation moved there
@@ -2506,8 +2701,10 @@ export function PickingBoardMobile(): React.JSX.Element {
       findingOpen: recorder.target !== null,
       cancelOpen: cancelTarget !== null,
       countOpen: countTarget !== null,
+      tripOpen: openTripId !== null,
+      releaseOpen: releaseTarget !== null,
     };
-  }, [detailOpen, pickerSheetOpen, recorder.target, cancelTarget, countTarget]);
+  }, [detailOpen, pickerSheetOpen, recorder.target, cancelTarget, countTarget, openTripId, releaseTarget]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -2559,6 +2756,27 @@ export function PickingBoardMobile(): React.JSX.Element {
       }
       if (navStateRef.current.detailOpen) {
         closeDetail();
+        return;
+      }
+      // ── TRIP SCREEN (2026-10-13) — the level under the detail ─────────────
+      // Reached only once no detail is open (the branches above own that). A
+      // sheet floating over the trip SCREEN itself (the floating-bar picker
+      // sheet, or the release sheet from a locked card) closes FIRST and
+      // re-pushes, so the trip entry survives for the next back — the same
+      // close-and-re-push the detail's nested overlays get.
+      if (navStateRef.current.tripOpen && navStateRef.current.pickerSheetOpen) {
+        setPickerSheetOpen(false);
+        pushScreen("trip");
+        return;
+      }
+      if (navStateRef.current.tripOpen && navStateRef.current.releaseOpen) {
+        setReleaseTarget(null);
+        pushScreen("trip");
+        return;
+      }
+      if (navStateRef.current.tripOpen) {
+        closeTrip();
+        return;
       }
       // Nothing tracked open (depth already 0) — let the pop fall through:
       // the browser's real previous entry, whatever that is.
@@ -3182,6 +3400,223 @@ export function PickingBoardMobile(): React.JSX.Element {
     </button>
   );
 
+  // ── The Bills | Trips switch (2026-10-13) ─────────────────────────────────
+  // A segmented control — NAVIGATION (which shape am I looking at), so ink on
+  // grey, never violet (CLAUDE_UI.md §59.9). Switching clears the selection: the
+  // Trips view scopes selection to one trip, and a bill ticked in Bills must not
+  // ride into a trip's floating bar. Narrowed, never cast.
+  const assignViewSwitch = (
+    <div className="flex rounded-[10px] bg-gray-100 p-[3px] mb-2.5" role="tablist" aria-label="Assign view">
+      {ASSIGN_VIEW_KEYS.map((key) => (
+        <button
+          key={key}
+          type="button"
+          role="tab"
+          aria-selected={assignView === key}
+          onClick={() => {
+            if (!isAssignView(key) || key === assignView) return;
+            setAssignView(key);
+            setSelected(new Set());
+          }}
+          className={
+            "flex-1 text-center text-[12.5px] py-1.5 rounded-[8px] " +
+            (assignView === key
+              ? "bg-white text-gray-900 font-semibold shadow-[0_1px_2px_rgba(0,0,0,0.08)]"
+              : "text-gray-500 font-medium")
+          }
+        >
+          {key === "bills" ? "Bills" : "Trips"}
+        </button>
+      ))}
+    </div>
+  );
+
+  // ── The trip LIST (mockup ②) ──────────────────────────────────────────────
+  const notOnTrip = trips?.notOnTrip ?? null;
+  const tripList: React.ReactNode =
+    trips === null ? (
+      <p className="text-[13px] text-gray-400 text-center py-16">
+        {tripsFailed ? "Couldn't load trips." : <>Loading trips&hellip;</>}
+      </p>
+    ) : (
+      <>
+        {visibleTrips.length === 0 && (
+          <p className="text-[13px] text-gray-400 text-center py-16">
+            {trips.trips.length > 0
+              ? "No trips of this type."
+              : trips.gateOn
+                ? "No trips shown to floor yet"
+                : "No trips on the desk yet"}
+          </p>
+        )}
+        {visibleTrips.map((t) => (
+          <TripRow key={t.id} trip={t} left={leftByTrip.get(t.id) ?? 0} onOpen={() => openTrip(t.id)} />
+        ))}
+        {/* A COUNT only (owner). Under All only — the no-trip bills are every
+            type, so a Local / UPC pill would mislabel them. Hidden at 0. */}
+        {tripTypeFilter === "All" && notOnTrip !== null && notOnTrip.bills > 0 && (
+          <NotOnTripCard
+            bills={notOnTrip.bills}
+            notPlannedYet={notOnTrip.notPlannedYet}
+            onOpenBills={() => {
+              setAssignView("bills");
+              setSelected(new Set());
+            }}
+          />
+        )}
+      </>
+    );
+
+  // ── The opened trip (mockup ③) ─────────────────────────────────────────────
+  // 🔴 EVERY CARD IS THE TAB'S OWN CARD, WIRED EXACTLY AS ON ITS HOME TAB —
+  // same variant, same handlers, same detail. The only additions are
+  // `stopNumber` and the "trip" pager key (which pages this band of this trip).
+  const tripScreen: React.ReactNode = (() => {
+    if (openTripId === null) return null;
+    const header = <TripHeader trip={openTripData ?? null} onBack={() => window.history.back()} />;
+    if (openTripData === undefined) return header;
+    const id = openTripData.id;
+    const stopOf = (orderId: number) => tripMembers.get(id)?.get(orderId) ?? null;
+    const waiting = tripBand(id, "waiting");
+    const due = waiting.filter((r) => r.zone === "due");
+    const upcoming = waiting.filter((r) => r.zone === "upcoming");
+    const picking = tripBand(id, "picking");
+    const needsCheck = tripBand(id, "needsCheck");
+    const checked = tripBand(id, "checked");
+    // Bills the server counts as checked that the board does not carry
+    // (checked before today, or dispatched) — no card, one quiet line.
+    const checkedEarlier = Math.max(0, openTripData.counts.checked - checked.length);
+    const allDueSelected = due.length > 0 && due.every((r) => selected.has(r.orderId));
+    let first = true;
+    const isFirst = () => {
+      const f = first;
+      first = false;
+      return f;
+    };
+    return (
+      <>
+        {header}
+        {waiting.length > 0 && (
+          <>
+            <TripBandHeading
+              tone="waiting"
+              label="To assign"
+              count={waiting.length}
+              first={isFirst()}
+              action={
+                due.length > 0 ? (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setSelected((prev) => {
+                        const next = new Set(prev);
+                        // DUE rows only — a locked bill is never selectable.
+                        for (const r of due) {
+                          if (allDueSelected) next.delete(r.orderId);
+                          else next.add(r.orderId);
+                        }
+                        return next;
+                      })
+                    }
+                    className="-my-2 py-2 pl-2 text-[12.5px] font-semibold normal-case tracking-normal text-brand-700"
+                  >
+                    {allDueSelected ? "Clear" : "Select all"}
+                  </button>
+                ) : null
+              }
+            />
+            {due.map((row) => (
+              <PickingCard
+                key={row.orderId}
+                row={row}
+                variant="assign"
+                stopNumber={stopOf(row.orderId)}
+                selected={selected.has(row.orderId)}
+                onOpen={() => openDetail(row.orderId, { kind: "trip", tripId: id, band: "waiting" })}
+                onToggleSelect={() => toggleSelect(row.orderId)}
+              />
+            ))}
+            {/* Zone 2 inside the trip — the Bills view's own divider, verbatim. */}
+            {upcoming.length > 0 && (
+              <>
+                <div className="flex items-center gap-1.5 text-[11.5px] font-semibold uppercase tracking-wider text-gray-400 mt-[22px] mb-2 px-[2px] pt-[14px] border-t border-gray-200">
+                  <LockGlyph className="w-[13px] h-[13px]" />
+                  Upcoming<span className="tabular-nums ml-1.5">{upcoming.length}</span>
+                </div>
+                {upcoming.map((row) => (
+                  <PickingCard
+                    key={row.orderId}
+                    row={row}
+                    variant="assignLocked"
+                    stopNumber={stopOf(row.orderId)}
+                    onOpen={() => openDetail(row.orderId, { kind: "trip", tripId: id, band: "waiting" })}
+                    onLockTap={() => setReleaseTarget(row)}
+                  />
+                ))}
+              </>
+            )}
+          </>
+        )}
+        {picking.length > 0 && (
+          <>
+            <TripBandHeading tone="picking" label="Picking" count={picking.length} first={isFirst()} />
+            {picking.map((row) => (
+              <PickingCard
+                key={row.orderId}
+                row={row}
+                variant="picking"
+                nowTick={nowTick}
+                stopNumber={stopOf(row.orderId)}
+                onOpen={() => openDetail(row.orderId, { kind: "trip", tripId: id, band: "picking" })}
+              />
+            ))}
+          </>
+        )}
+        {needsCheck.length > 0 && (
+          <>
+            <TripBandHeading tone="needsCheck" label="Needs check" count={needsCheck.length} first={isFirst()} />
+            {needsCheck.map((row) => (
+              <PickingCard
+                key={row.orderId}
+                row={row}
+                variant="doneCheck"
+                nowTick={nowTick}
+                stopNumber={stopOf(row.orderId)}
+                onOpen={() => openDetail(row.orderId, { kind: "trip", tripId: id, band: "needsCheck" })}
+              />
+            ))}
+          </>
+        )}
+        {(checked.length > 0 || checkedEarlier > 0) && (
+          <>
+            <TripBandHeading tone="done" label="Done" count={checked.length + checkedEarlier} first={isFirst()} />
+            {checked.map((row) => (
+              <PickingCard
+                key={row.orderId}
+                row={row}
+                variant="doneChecked"
+                nowTick={nowTick}
+                captionSmu
+                stopNumber={stopOf(row.orderId)}
+                onOpen={() => openDetail(row.orderId, { kind: "trip", tripId: id, band: "checked" })}
+                onUndoDirect={row.directLoadedAt != null ? () => void handleUndoDirect(row) : undefined}
+                undoDirectBusy={undoingDirectIds.has(row.orderId)}
+              />
+            ))}
+            {checkedEarlier > 0 && (
+              <p className="text-[12px] text-gray-400 px-[2px] mt-1">
+                +<span className="tabular-nums">{checkedEarlier}</span> checked earlier
+              </p>
+            )}
+          </>
+        )}
+        {waiting.length + picking.length + needsCheck.length + checked.length + checkedEarlier === 0 && (
+          <p className="text-[13px] text-gray-400 text-center py-10">No bills on the board for this trip right now.</p>
+        )}
+      </>
+    );
+  })();
+
   return (
     <div className="fixed inset-0 flex flex-col overflow-hidden bg-[#f9fafb]">
       {/* Live feed 4b: the open bill changed elsewhere — offer the reload, never swap under the hand. */}
@@ -3211,6 +3646,9 @@ export function PickingBoardMobile(): React.JSX.Element {
         onMenuClick={openMenu}
         searchActive={searching}
         onSearchToggle={() => setSearching((v) => !v)}
+        // Trips view: no search (a trip is the scope; the design has none).
+        // true everywhere else — the prop's own default, so the DOM is unchanged.
+        showSearch={!inTripsView}
       />
 
       {/* Scrollable content area — flex-1, ONLY this scrolls. Reserves 76px
@@ -3219,14 +3657,14 @@ export function PickingBoardMobile(): React.JSX.Element {
           height either way, see workflow-tab-bar.tsx's own height-rule
           comment), since this root no longer benefits from
           RoleLayoutClient's own pb-[76px]. */}
-      <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain pb-[76px]">
+      <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto overscroll-contain pb-[76px]">
 
       {/* Filter row (swaps for search when active) — shared by both tabs.
           Assign: type pills + route dropdown + lane strip. Check: the SAME
           type pills (own state) + picker dropdown + check summary strip
           (FIX 3/4) — mirrors Assign's row exactly, pills left/dropdown right. */}
       <div className="bg-white border-b border-gray-200 px-4 pt-2.5">
-        {searching ? (
+        {searching && !inTripsView ? (
           <div className="flex items-center gap-2 pb-2.5">
             <div className="flex-1 flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-[10px] px-3 py-2.5">
               <Search size={16} className="text-gray-400 shrink-0" />
@@ -3270,6 +3708,20 @@ export function PickingBoardMobile(): React.JSX.Element {
               Cancel
             </button>
           </div>
+        ) : activeTab === "assign" && tripScreenOpen ? (
+          // The opened trip carries its own header below; no filters there —
+          // the same hide-at-level-2 the Picking tab does for one picker.
+          null
+        ) : activeTab === "assign" && inTripsView ? (
+          // ── TRIPS VIEW filter row: the type pills (TRIPS by stored typeCode,
+          // with counts) and the switch. No route dropdown, no summary line, no
+          // tinting strip (owner).
+          <>
+            <div className="flex items-center justify-between gap-2 pb-2.5">
+              <TypeFilterPills value={tripTypeFilter} onChange={setTripTypeFilter} counts={tripTypeCounts} />
+            </div>
+            {assignViewSwitch}
+          </>
         ) : activeTab === "assign" ? (
           <>
             <div className="flex items-center justify-between gap-2 pb-2.5">
@@ -3290,6 +3742,8 @@ export function PickingBoardMobile(): React.JSX.Element {
                 <ChevronDown size={13} className="shrink-0" />
               </button>
             </div>
+            {/* Bills | Trips (2026-10-13) — the ONLY addition to this view. */}
+            {assignViewSwitch}
 
             {/* 🔴 NEUTRAL, NOT brand-50, AND THE REASON IS A HEX COLLISION.
                 brand-50 is #F5F3FF, which is the exact ground the module
@@ -3522,7 +3976,9 @@ export function PickingBoardMobile(): React.JSX.Element {
             part only when it is above 0, joined with " · ". Rendered when EITHER
             part is: with nothing shown and everything still in To plan, this
             band is the only thing telling him why his list is empty. */}
-        {((data?.heldBack ?? 0) > 0 || (data?.heldBackUnplanned ?? 0) > 0) && (
+        {/* Trips view: kept on the trip LIST (it explains a short list), hidden
+            inside one trip, which has its own header. */}
+        {!tripScreenOpen && ((data?.heldBack ?? 0) > 0 || (data?.heldBackUnplanned ?? 0) > 0) && (
           <div className="mb-2.5 flex flex-wrap items-center gap-1.5 rounded-[7px] border border-[#fde68a] bg-[#fffbeb] px-3 py-2 text-[12.5px] text-[#92400e]">
             {data!.heldBackTrucks > 0 && (
               <>
@@ -3542,6 +3998,11 @@ export function PickingBoardMobile(): React.JSX.Element {
           </div>
         )}
 
+        {/* ── TRIPS VIEW (2026-10-13) ── the list, or one opened trip. */}
+        {inTripsView && (tripScreenOpen ? tripScreen : tripList)}
+
+        {/* ── BILLS VIEW — today's list, unchanged (a fragment adds no DOM). */}
+        {!inTripsView && (<>
         {loading && <p className="text-[13px] text-gray-400 text-center py-16">Loading queue&hellip;</p>}
 
         {!loading && error && (
@@ -3683,6 +4144,7 @@ export function PickingBoardMobile(): React.JSX.Element {
             </>
           )
         )}
+        </>)}
       </div>
       )}
 
@@ -4463,6 +4925,24 @@ export function PickingBoardMobile(): React.JSX.Element {
               )}
               {detailRow !== null && <BillSymbols row={detailRow} />}
             </div>
+            {/* THE TRIP LINE (2026-10-13) — "L-261013-03 · Local · Stop 2", ONLY
+                when this bill was opened from a trip (the pager key says so).
+                Same 11.5px grey as the subtitle above; on a duplicate-SO band it
+                takes that band's muted white. Every other open renders nothing. */}
+            {detailRow !== null && detailListKey.kind === "trip" && (() => {
+              const t = trips?.trips.find((x) => x.id === detailListKey.tripId);
+              if (t === undefined) return null;
+              const stop = tripMembers.get(t.id)?.get(detailRow.orderId);
+              return (
+                <div
+                  className={"text-[11.5px] truncate mt-[1px] " + (detailRow.hasDuplicateSo ? "" : "text-ink-500")}
+                  style={detailRow.hasDuplicateSo ? { color: DUP_SO_MUTED } : undefined}
+                >
+                  {t.tripNumber} · {tripTypeLabel(t.typeCode)}
+                  {stop !== undefined ? ` · Stop ${stop}` : ""}
+                </div>
+              );
+            })()}
           </div>
           {/* Icons — the pair this face has always had, at their new size.
               Glyphs 17 → 22px, each in a 44px tap target, and gap-0 so the two
