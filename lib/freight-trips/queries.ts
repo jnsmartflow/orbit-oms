@@ -10,7 +10,7 @@
 // isRemoved bills are dropped at read time and never counted.
 
 import { prisma } from "@/lib/prisma";
-import { getFloorHold } from "@/lib/floor/queries";
+import { getFloorHold, getInvoiceCounts } from "@/lib/floor/queries";
 import { computeDropKey } from "@/lib/trips/drop-key";
 import { formatRouteLabel, rankRouteName } from "@/lib/trips/route-label";
 import { dealerDisplayName } from "@/lib/orders/dealer-name";
@@ -252,6 +252,8 @@ async function plainRows(orderIds: number[]): Promise<Map<number, FloorHoldRow>>
       querySnapshot: { select: { articleTag: true, totalVolume: true, totalWeight: true } },
     },
   });
+  // Add invoices Phase 4 — the shared Hold table says "n invoices" on a split OBD.
+  const invoiceCounts = await getInvoiceCounts(orders.map((o) => o.id));
   for (const o of orders) {
     const dealer = o.shipToOverrideCustomer ?? o.customer;
     const w = o.querySnapshot?.totalWeight ?? null;
@@ -287,6 +289,7 @@ async function plainRows(orderIds: number[]): Promise<Map<number, FloorHoldRow>>
       heldFrom: "Unknown",
       heldById: null,
       heldByName: null,
+      invoiceCount: invoiceCounts.get(o.id) ?? 1,
     });
   }
   return out;

@@ -616,6 +616,25 @@ export async function getBoardInvoiceRows(
 }
 
 /**
+ * How many SAP invoices each OBD carries — order_invoices rows; 1 (absent from
+ * the map) = unsplit. For the On hold and Cancel & CI tabs, where a split OBD
+ * stays ONE row and says "n invoices" (Add invoices Phase 4). ONE groupBy keyed
+ * `orderId IN (…)` AND seq > 1 (order_invoices_orderId_seq_key), skipped when
+ * the list is empty. SELECT-only.
+ */
+export async function getInvoiceCounts(orderIds: number[]): Promise<Map<number, number>> {
+  const map = new Map<number, number>();
+  if (orderIds.length === 0) return map;
+  const groups = await prisma.order_invoices.groupBy({
+    by: ["orderId"],
+    where: { orderId: { in: orderIds }, seq: { gt: 1 } },
+    _count: { _all: true },
+  });
+  for (const g of groups) map.set(g.orderId, g._count._all + 1);
+  return map;
+}
+
+/**
  * EVERY bill on each of these invoices, with its place NOW (2026-10-08) —
  * lib/floor/invoice-pairs.ts. THE ONE READ for invoice partners, shared by the
  * full board (getFloorBoard) and the live feed's by-id patch (lib/floor/rows.ts),
@@ -1748,6 +1767,9 @@ export async function getFloorHold(
     orders.map((o) => ({ orderId: o.id, smu: o.smu, orderType: o.orderType })),
   );
 
+  // Add invoices Phase 4 — "n invoices" on a split OBD's one row.
+  const invoiceCounts = await getInvoiceCounts(orders.map((o) => o.id));
+
   const rows: FloorHoldRow[] = [];
   for (const order of orders) {
     const dealer = order.shipToOverrideCustomer ?? order.customer;
@@ -1820,6 +1842,7 @@ export async function getFloorHold(
       heldFrom,
       heldById: holdLog?.changedById ?? null,
       heldByName,
+      invoiceCount: invoiceCounts.get(order.id) ?? 1,
     });
   }
 
@@ -1984,6 +2007,8 @@ export async function getFloorCancelled(
     orders.map((o) => ({ orderId: o.id, smu: o.smu, orderType: o.orderType })),
   );
   const billTo = await billToByObd(orders.map((o) => o.obdNumber));
+  // Add invoices Phase 4 — "n invoices" on a split OBD's one row.
+  const invoiceCounts = await getInvoiceCounts(orders.map((o) => o.id));
 
   const rows: FloorCancelledRow[] = [];
   for (const order of orders) {
@@ -2029,6 +2054,7 @@ export async function getFloorCancelled(
       // Search-only (2026-09-29) — never displayed.
       soNumber: order.soNumber ?? null,
       dealerInMaster: dealer != null,
+      invoiceCount: invoiceCounts.get(order.id) ?? 1,
     };
 
     if (ci !== null) {

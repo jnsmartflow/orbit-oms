@@ -45,7 +45,9 @@ import { formatArticleTag } from "@/lib/floor/format";
 // (2026-10-02) so the Tint Manager renders Floor's markup, not a copy. Output
 // here is byte-identical. formatDateIST (the shared date-only formatter the
 // panel's "Invoice date" reads) is used inside InvoiceLines.
-import { InvoiceLines, ObdDateLine, fmtDateTime } from "./bill-ref-cells";
+import { InvoiceCountChip, InvoiceLines, ObdDateLine, fmtDateTime } from "./bill-ref-cells";
+// ONE FLOOR ROW PER INVOICE (Add invoices Phase 4 commit 2) — the draw rule.
+import { drawRowsOf, type InvoiceDrawRow } from "@/lib/floor/invoice-rows";
 // TINT / BASE -- one owner for the word, shared with both picking boards. The
 // pinks it paints are copied FROM this module's neighbour status-pill.tsx.
 import { ColourWorkBadge } from "@/components/picking/card-atoms";
@@ -801,6 +803,34 @@ export function FloorTable({
   // The Invoice cell is drawn (the third slot is Invoice, not Operator).
   const invCell = hasExtra && !operatorByOrderId;
 
+  // ── ONE ROW PER INVOICE (Add invoices Phase 4 commit 2, 2026-10-13, owner) ──
+  // A SPLIT OBD (row.invoiceRows: 2+ order_invoices rows) draws as ONE ROW PER
+  // INVOICE, seq order (lib/floor/invoice-rows.ts drawRowsOf), in a <tbody> of
+  // its own — hover and the selected wash on the tbody, a faint dashed divider
+  // between its rows, the normal one under the last. The DATA is still one row
+  // per OBD: selection, sort, live-merge and search key on the OBD, so a tick on
+  // any invoice row ticks them all (Phase 4 — per-invoice actions are Phase 5/6).
+  //
+  // 🔴 THE CELL-COUNT LANDMINE ABOVE `widths`, AGAIN, SPENT ON ONE CELL ONLY:
+  // row 1 draws the OBD cell with rowSpan = n; rows 2..n leave out EXACTLY that
+  // one cell. Every other cell is drawn on every row — Article tag and Article
+  // render EMPTY on rows 2..n (an OBD fact, shown once), never absent. Per arm,
+  // row 1 → rows 2..n:
+  //   ship-to block            10 → 9   (OBD spanned; no tick column)
+  //   interactive + Invoice    12 → 11  (OBD spanned; each row keeps its ☐)
+  //   read-only + Invoice      11 → 10  (OBD spanned — History, load plan)
+  //   Operator / no Invoice    NOT EXPANDED — one row, "n invoices" on the OBD
+  //                            date line (no cell to show which invoice is which)
+  // Never across the upcoming divider: an OBD sits in ONE list, so its block does.
+  // A re-delivery row never expands (its row is the bill's FIRST trip — the same
+  // reason keepPairsAdjacent skips it); it says "n invoices" in its Invoice cell.
+  // A split OBD is never merged as an invoice pair (pair-cells.tsx).
+  const splitDraws = (row: FloorBoardRow): InvoiceDrawRow<FloorBoardRow>[] | null => {
+    if (!invCell || row.redelivery) return null;
+    const draws = drawRowsOf(row);
+    return draws.length > 1 ? draws : null;
+  };
+
   return (
     <table className="w-full table-fixed border-collapse">
       <colgroup>
@@ -946,6 +976,19 @@ export function FloorTable({
           </tbody>,
         );
         i += p.size;
+      } else if (splitDraws(list[i]) !== null) {
+        // ONE ROW PER INVOICE — its own <tbody>, like a merged pair. Selected =
+        // the OBD is ticked (selection stays per OBD in Phase 4).
+        flush();
+        const row = list[i];
+        const draws = splitDraws(row)!;
+        const blockOn = interactive && !selectionLocked && !!selection && selection.has(deskKeyOf(row));
+        out.push(
+          <tbody key={`${keyBase}-obd-${row.orderId}`} className={blockOn ? "bg-brand-50" : "hover:bg-[#fafafa]"}>
+            {draws.map((d) => renderRow(row, p ?? null, d))}
+          </tbody>,
+        );
+        i++;
       } else {
         plain.push(renderRow(list[i], p ?? null));
         i++;
@@ -967,8 +1010,13 @@ export function FloorTable({
    * so this reads top-down as "the table, then the row" rather than burying the
    * 200-line row body between the colgroup and the tbody.
    */
-  function renderRow(row: FloorBoardRow, pair: PairRender | null) {
+  function renderRow(row: FloorBoardRow, pair: PairRender | null, draw: InvoiceDrawRow<FloorBoardRow> | null = null) {
     const st = rowStatus(row);
+    // ONE ROW PER INVOICE — `inv` = the invoice this <tr> shows (a split OBD's
+    // block); `splitRest` = rows 2..n, which leave out the rowspan'd OBD cell.
+    const inv = draw !== null && draw.n > 1 ? draw.invoice : null;
+    const split = inv !== null;
+    const splitRest = split && !draw!.first;
     // INVOICE PAIR (2026-10-08) — see renderList / pair-cells.tsx. `spanned` =
     // a merged block's rows 2..n: the ☐ and Invoice cells above already cover
     // them, so this row leaves both out (the per-arm counts above `pairRows`).
@@ -977,13 +1025,26 @@ export function FloorTable({
     // Every member ticked → the block is SELECTED: violet bar, outranking the
     // pair / amber bar (pair-cells.tsx PairBarKind).
     const pairSelected = merged && interactive && !!selection && pair.memberIds.every((id) => selection.has(id));
-    const barKind: PairBarKind | null = pair ? (pairSelected ? "selected" : pair.bar) : null;
+    // A split block is SELECTED when its OBD is ticked; its bar is the `pair`
+    // token (or the pair's own amber when it is also a split invoice pair).
+    const splitSelected = split && interactive && !selectionLocked && !!selection && selection.has(deskKeyOf(row));
+    const barKind: PairBarKind | null = split
+      ? splitSelected
+        ? "selected"
+        : pair?.bar ?? "ok"
+      : pair
+        ? pairSelected
+          ? "selected"
+          : pair.bar
+        : null;
     // THE LINE BETWEEN ROWS INSIDE A MERGED BLOCK is faint and dashed; the
     // normal divider stays under the block's last row. TDR is TD for this row —
     // every per-row cell below uses it. The rowspan'd ☐ / Invoice cells keep the
     // base classes: their bottom edge IS the block's bottom.
     const TDR =
-      merged && !pair.last ? TD.replace("border-[#f0f0f0]", "border-ink-100 [border-bottom-style:dashed]") : TD;
+      (merged && !pair.last) || (split && !draw!.last)
+        ? TD.replace("border-[#f0f0f0]", "border-ink-100 [border-bottom-style:dashed]")
+        : TD;
     // 🔴 EVERY ROW IN AN INTERACTIVE TABLE IS SELECTABLE (2026-09-10 d).
     //
     // This read `st === "waiting" || st === "withPicker"` and was THE reason a
@@ -1148,7 +1209,10 @@ export function FloorTable({
     })();
 
     // Null when the weight is unknown — see the KG cell and formatWeightKg.
-    const weightStr = formatWeightKg(row.weightKg);
+    // A split row shows ITS invoice's litres and kg; "~" only when that kg is
+    // shared from the OBD's header by litres (kgExact false — invoice-rows.ts).
+    const weightStr = inv ? formatWeightKg(inv.kg) : formatWeightKg(row.weightKg);
+    const weightApprox = inv !== null && !inv.kgExact && weightStr !== null;
 
     let statusCell: ReactNode;
     if (variant === "upcoming") {
@@ -1347,21 +1411,35 @@ export function FloorTable({
     // A merged pair's rows take their hover AND their selected wash from their
     // own <tbody> (renderList), and their selected bar from the pair bar
     // (barKind "selected") — never the per-row selected classes below.
-    const hoverCls = merged ? "" : " hover:bg-[#fafafa]";
+    const hoverCls = merged || split ? "" : " hover:bg-[#fafafa]";
     const rowCls = !shipToBlock
       ? `group${hoverCls}`
-      : blockSelected && !merged
+      : blockSelected && !merged && !split
         ? "group cursor-pointer bg-brand-50 outline-none focus-visible:bg-brand-100 [&>td:first-child]:shadow-[inset_3px_0_0_theme(colors.brand.600)]"
         : blockClickable
           ? `group cursor-pointer outline-none${hoverCls} focus-visible:bg-brand-50`
           : `group${hoverCls}`;
     const stop = (e: React.MouseEvent) => e.stopPropagation();
     return (
-      <tr key={String(selKey)} className={`${rowCls} ${SEARCH_HIT_ROW_CLS}`} data-order-id={row.orderId} {...blockRowProps}>
+      <tr
+        key={draw ? draw.key : String(selKey)}
+        className={`${rowCls} ${SEARCH_HIT_ROW_CLS}`}
+        data-order-id={row.orderId}
+        // The invoice a split row shows — a search for one invoice marks THIS row.
+        data-invoice-seq={inv ? inv.seq : undefined}
+        {...blockRowProps}
+      >
         {tickColumn && !spanned && (
           /* FIRST CELL when the table is selectable — it carries the bar. On a
              merged invoice block it spans every row of the block. */
-          <td className={TD_NARROW} style={asStyle(tickShadow)} rowSpan={merged ? pair.size : undefined}>
+          // A split block's ☐ is per ROW (each row ticks the OBD), so its bar is a
+          // collapsed left BORDER — borders of stacked cells join through the row
+          // dividers, an inset shadow would break at each one (pair-cells.tsx).
+          <td
+            className={`${split && !draw!.last ? TD_NARROW.replace("border-[#f0f0f0]", "border-ink-100 [border-bottom-style:dashed]") : TD_NARROW}${split ? pairBarBorderCls(barKind) : ""}`}
+            style={asStyle(split ? dupShadow : tickShadow)}
+            rowSpan={merged ? pair.size : undefined}
+          >
             {/* Checkbox on Waiting / With-picker rows only (design §7.8).
                 accent-brand-600 stays: it now sits on a pale wash rather
                 than a red fill, and reads the same on every row either
@@ -1380,7 +1458,7 @@ export function FloorTable({
             ) : selectable && (
               <input
                 type="checkbox"
-                aria-label={`Select ${row.obdNumber}`}
+                aria-label={inv ? `Select ${row.obdNumber} (all ${draw!.n} invoices)` : `Select ${row.obdNumber}`}
                 className="h-[13px] w-[13px] cursor-pointer align-middle accent-brand-600"
                 checked={selection?.has(selKey) ?? false}
                 onChange={() => (rd ? onToggleRedelivery?.(rd.id) : onToggleRow?.(row.orderId))}
@@ -1393,12 +1471,17 @@ export function FloorTable({
             rendered, so THIS is the first cell and the bar lands here
             instead. `interactive` is the same flag that drives `widths`
             above, so the two can never disagree about which cell is first. */}
+        {!splitRest && (
         <td
           // No tick column → the pair bar is this cell's collapsed left border.
-          className={`${TDR}${tickColumn ? "" : pairBarBorderCls(barKind)}`}
+          // On a split block this cell spans every invoice row (rowSpan = n), so
+          // its border IS the block's one unbroken bar, and its bottom edge is
+          // the block's (TD, not the dashed TDR).
+          className={`${split ? TD : TDR}${tickColumn ? "" : pairBarBorderCls(barKind)}`}
           style={asStyle(
-            tickColumn ? (merged ? dupShadow : null) : blockSelected && !pair ? null : dupShadow,
+            tickColumn ? (merged ? dupShadow : null) : blockSelected && !pair && !split ? null : dupShadow,
           )}
+          rowSpan={split ? draw!.n : undefined}
         >
           {shipToBlock ? (
             // The DETAIL PANEL opens from the number on the block table (the
@@ -1489,6 +1572,12 @@ export function FloorTable({
                     rides here, e.g. "1 on Floor". A merged block's "N at tint"
                     is not repeated per row here — its amber bar says it. */}
                 {!invCell && !merged && pair?.chip && <PairPlaceChip chip={pair.chip} />}
+                {/* A split OBD: "n invoices" under the number — on its block's
+                    one OBD cell, or on the single row of a layout that does not
+                    expand (no Invoice cell: Tinting). */}
+                {(split || (!invCell && (row.invoiceRows?.length ?? 0) > 1)) && (
+                  <InvoiceCountChip n={row.invoiceRows.length} className="ml-1.5" />
+                )}
               </>
             }
           />
@@ -1500,6 +1589,7 @@ export function FloorTable({
             </div>
           )}
         </td>
+        )}
         {/* INVOICE — SAP's own invoiceNo + invoiceDate, shaped like the
             OBD cell it now sits beside: mono number on line 1, muted 10px
             date underneath. Adjacent to OBD on purpose (owner call
@@ -1555,8 +1645,15 @@ export function FloorTable({
             // pair chip under it: "1 at tint" on a block, or the missing
             // member(s) on a split row — "2 on hold", "2 at tint"…
             <td className={`${TD} align-middle`} rowSpan={merged ? pair.size : undefined}>
-              <InvoiceLines invoiceNo={row.invoiceNo} invoiceDate={row.invoiceDate} addedInvoiceNos={row.addedInvoiceNos} />
-              {pair?.chip && (
+              {inv ? (
+                // ONE invoice of a split OBD — its own number and date, "k/n".
+                <InvoiceLines invoiceNo={inv.invoiceNo} invoiceDate={inv.invoiceDate} part={{ k: draw!.k, n: draw!.n }} />
+              ) : (
+                // A split OBD drawn as one row (a re-delivery row) says "n invoices".
+                <InvoiceLines invoiceNo={row.invoiceNo} invoiceDate={row.invoiceDate} invoiceCount={row.invoiceRows?.length ?? 0} />
+              )}
+              {/* The pair's chip names SAP's invoice — seq 1, the block's first row. */}
+              {pair?.chip && (!split || draw!.first) && (
                 <div className="mt-0.5 overflow-hidden text-ellipsis">
                   <PairPlaceChip chip={pair.chip} />
                 </div>
@@ -1734,19 +1831,27 @@ export function FloorTable({
           className={`${row.isGift ? TDR.replace("text-[#4b5563]", "text-ink-400") : TDR} text-right tabular-nums`}
           title={row.isGift ? "Gift — not counted in L / kg" : undefined}
         >
-          <div>{formatLitres(row.volumeLitres ?? 0)} L</div>
+          <div>{formatLitres(inv ? inv.litres : row.volumeLitres ?? 0)} L</div>
           <div className={`text-[10px] ${row.isGift ? "text-ink-400" : "text-[#9ca3af]"}`}>
             {weightStr !== null ? (
-              `${weightStr} kg`
+              weightApprox ? (
+                <span title="Approximate — the OBD's kg shared by litres">~{weightStr} kg</span>
+              ) : (
+                `${weightStr} kg`
+              )
             ) : (
               <span title="No weight recorded for this bill">&mdash;</span>
             )}
           </div>
         </td>
         <td className={`${TDR} text-[10.5px]`}>
+          {/* An OBD fact — shown on a split block's FIRST row only; rows 2..n
+              draw the cell EMPTY (never absent — the cell count stays). */}
+          {!splitRest && (
           <span className="text-[#6b7280]">
             {row.articleTag ? formatArticleTag(row.articleTag) : "—"}
           </span>
+          )}
         </td>
         {/* ── ARTICLE — the supervisor's article no. (2026-10-06) ─────────────
             pick_assignments.articleCount, entered on Approve. NOT the tag to
@@ -1768,7 +1873,7 @@ export function FloorTable({
               : TDR.replace("text-[#4b5563]", "text-ink-400")
           } text-right tabular-nums`}
         >
-          {st === "done" || st === "dispatched" ? (row.articleCount ?? "—") : null}
+          {!splitRest && (st === "done" || st === "dispatched") ? (row.articleCount ?? "—") : null}
         </td>
         {/* DC (2026-10-09) — per OBD, never row-spanned; same `dcCol` as the
             colgroup and the <th>. TDR keeps a merged block's dashed divider. */}

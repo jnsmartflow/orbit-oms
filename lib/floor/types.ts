@@ -576,6 +576,10 @@ export interface FloorHoldRow extends FloorPartyFields {
    *  is automatic — user 1 on an import note (heldByLabel) OR heldFrom "Auto (mail
    *  order)", logged or not; null ("—") only when nothing is known. */
   heldByName: string | null;
+  /** How many SAP invoices the OBD carries (order_invoices rows; 1 = unsplit).
+   *  Add invoices Phase 4: a split OBD stays ONE row on On hold (per-invoice
+   *  hold is Phase 6) and says "n invoices". */
+  invoiceCount: number;
 }
 
 /** Cancel & CI source chip. auto_bill_only is Billing (mail-order CI mark) or
@@ -619,6 +623,9 @@ export interface FloorCancelledRow extends FloorPartyFields {
   /** Who cancelled / raised it, and when (ISO). */
   byName: string | null;
   at: string | null;
+  /** How many SAP invoices the OBD carries (1 = unsplit) — "n invoices" on the
+   *  ONE row a split OBD keeps here (Add invoices Phase 4). */
+  invoiceCount: number;
 }
 
 // ── Floor search — GET /api/floor/search (2026-10-06, owner) ─────────────────

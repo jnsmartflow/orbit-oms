@@ -62,34 +62,31 @@ export function ObdDateLine({
  * independent — patch-headers fills the two fields with separate fill-if-null tests.
  */
 //
-// `addedInvoiceNos` (2026-10-10, Add invoices): the numbers typed by hand for a
-// split OBD. When there are any, a "+n" chip follows SAP's number and the cell's
-// hover lists them all. Only Floor's table passes it; every other caller (Hold,
-// the Tint Manager tables) renders exactly as before.
+// ADD INVOICES (Phase 4 commit 2, 2026-10-13 — replaced the "+n" chip):
+//   `part`         — this row is ONE invoice of a split OBD drawn as one row per
+//                    invoice (floor-table.tsx): a "k/n" chip after the number.
+//   `invoiceCount` — a split OBD drawn as ONE row anyway (On hold, Cancel & CI,
+//                    a re-delivery row): "n invoices" after SAP's number.
+// Both omitted (every other caller, and every unsplit bill) → exactly as before.
 export function InvoiceLines({
   invoiceNo,
   invoiceDate,
-  addedInvoiceNos,
+  part,
+  invoiceCount,
 }: {
   invoiceNo: string | null;
   invoiceDate: string | null;
-  addedInvoiceNos?: string[];
+  part?: { k: number; n: number };
+  invoiceCount?: number;
 }) {
-  const added = addedInvoiceNos ?? [];
-  const all = invoiceNo ? [invoiceNo, ...added] : added;
+  const many = invoiceCount !== undefined && invoiceCount > 1 ? invoiceCount : null;
   return (
     <>
       {invoiceNo && (
-        <span
-          className="font-mono text-[11.5px] font-medium text-[#111827]"
-          title={added.length > 0 ? `${all.length} invoices: ${all.join(", ")}` : undefined}
-        >
+        <span className="font-mono text-[11.5px] font-medium text-[#111827]">
           {invoiceNo}
-          {added.length > 0 && (
-            <span className="ml-1 rounded-[4px] bg-ink-100 px-1 py-px font-sans text-[10px] font-semibold text-ink-700">
-              +{added.length}
-            </span>
-          )}
+          {part && <InvoicePartChip k={part.k} n={part.n} />}
+          {many !== null && <InvoiceCountChip n={many} />}
         </span>
       )}
       {invoiceDate && (
@@ -98,5 +95,30 @@ export function InvoiceLines({
         </div>
       )}
     </>
+  );
+}
+
+/** "2/4" — the 2nd of this OBD's 4 invoices (Add invoices Phase 4). Ink, like
+ *  the pair's "k of n"; the slash form keeps the two apart on one row. */
+export function InvoicePartChip({ k, n }: { k: number; n: number }) {
+  return (
+    <span
+      title={`Invoice ${k} of this OBD's ${n}`}
+      className="ml-1 rounded-[4px] bg-ink-100 px-1 py-px font-sans text-[10px] font-semibold tabular-nums text-ink-700"
+    >
+      {k}/{n}
+    </span>
+  );
+}
+
+/** "4 invoices" — a split OBD drawn as one row (Add invoices Phase 4). */
+export function InvoiceCountChip({ n, className = "ml-1" }: { n: number; className?: string }) {
+  return (
+    <span
+      title={`This OBD was billed as ${n} SAP invoices`}
+      className={`${className} rounded-[4px] bg-ink-100 px-1 py-px font-sans text-[10px] font-semibold text-ink-700`}
+    >
+      {n} invoices
+    </span>
   );
 }

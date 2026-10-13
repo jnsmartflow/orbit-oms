@@ -252,6 +252,18 @@ function stageWords(h: FloorSearchHit): string {
  * `staleData` — the board that was on screen when the jump had to leave
  * History; the live check waits until a newer board has replaced it.
  */
+/**
+ * The DOM rows a search hit marks / scrolls to. A split OBD draws one row per
+ * invoice (floor-table.tsx, each with data-invoice-seq), so a hit that named
+ * ONE invoice (matchedInvoiceSeq) lands on that row only; every other row of
+ * the bill — unsplit, Hold, Cancel & CI, a layout that does not expand — has
+ * no data-invoice-seq and is matched as before.
+ */
+function searchRowSelector(orderId: number, seq: number | null): string {
+  const id = `[data-order-id="${orderId}"]`;
+  return seq === null ? id : `${id}[data-invoice-seq="${seq}"], ${id}:not([data-invoice-seq])`;
+}
+
 interface SearchFocus {
   hit: FloorSearchHit;
   phase: "resolve" | "highlight";
@@ -563,6 +575,10 @@ export function FloorPage({
    * this list (openDetail / navigateDetail). Ticking a row leaves it alone.
    */
   const [litIds, setLitIds] = useState<number[]>([]);
+  // Add invoices Phase 4 — which INVOICE of a split OBD the search named
+  // (FloorSearchHit.matchedInvoiceSeq): the mark and the scroll land on that
+  // invoice's row (floor-table data-invoice-seq), not on all n.
+  const [litSeqs, setLitSeqs] = useState<ReadonlyMap<number, number>>(new Map());
   /**
    * A Cancel & CI bill the search found OUTSIDE today's list (2026-10-06): the
    * tab shows these rows, read-only, under a "Search result · {date}" banner
@@ -1812,6 +1828,7 @@ export function FloorPage({
         if (seq !== lookupSeq.current) return;
         const hits = body.hits ?? [];
         setLitIds(hits.map((h) => h.orderId));
+        setLitSeqs(new Map(hits.flatMap((h) => (h.matchedInvoiceSeq !== null ? [[h.orderId, h.matchedInvoiceSeq] as [number, number]] : []))));
         if (hits.length === 0) setLookup({ term, status: "none" });
         else if (hits.length === 1 && navigate) goToHit(hits[0]);
         else setLookup({ term, status: "many", hits });
@@ -2024,7 +2041,7 @@ export function FloorPage({
   useEffect(() => {
     const f = searchFocus;
     if (f === null || f.phase !== "highlight") return;
-    const sel = `[data-order-id="${f.hit.orderId}"]`;
+    const sel = searchRowSelector(f.hit.orderId, f.hit.matchedInvoiceSeq);
     let tries = 0;
     const poll = setInterval(() => {
       tries++;
@@ -2049,7 +2066,7 @@ export function FloorPage({
   // search, a new search, another bill's panel — see `litIds`).
   useEffect(() => {
     if (litIds.length === 0) return;
-    const sel = litIds.map((id) => `[data-order-id="${id}"]`).join(",");
+    const sel = litIds.map((id) => searchRowSelector(id, litSeqs.get(id) ?? null)).join(",");
     const apply = () => {
       document.querySelectorAll<HTMLElement>(sel).forEach((el) => {
         if (el.getAttribute("data-search-hit") !== "on") el.setAttribute("data-search-hit", "on");
@@ -2061,7 +2078,7 @@ export function FloorPage({
       clearInterval(keep);
       document.querySelectorAll<HTMLElement>(sel).forEach((el) => el.removeAttribute("data-search-hit"));
     };
-  }, [litIds]);
+  }, [litIds, litSeqs]);
 
   // ── Detail panel (design §10) — open state + single-bill action handlers ──
   // Additive wiring only: the panel is mounted at the end; every write REUSES an

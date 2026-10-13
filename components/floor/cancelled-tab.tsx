@@ -31,6 +31,7 @@ import { ColourWorkBadge } from "@/components/picking/card-atoms";
 import { HandBadge } from "@/components/shared/hand-badge";
 import { ChallanBadge } from "@/components/shared/challan-badge";
 import { shipMarkers, SEARCH_HIT_ROW_CLS } from "./floor-table";
+import { InvoiceCountChip } from "./bill-ref-cells";
 import { formatLitres, formatWeightKg } from "./status-pill";
 import { FloorActionBar, BAR_PRIMARY, type BarFigure } from "./floor-action-bar";
 import { countArticles } from "@/lib/floor/format";
@@ -269,7 +270,11 @@ export function CancelledTab({
                     </td>
                     <td className={TD}>
                       {row.invoiceNo ? (
-                        <span className="font-mono text-[11.5px] text-[#111827]">{row.invoiceNo}</span>
+                        <span className="font-mono text-[11.5px] text-[#111827]">
+                          {row.invoiceNo}
+                          {/* A split OBD stays ONE row here (Add invoices Phase 4). */}
+                          {row.invoiceCount > 1 && <InvoiceCountChip n={row.invoiceCount} />}
+                        </span>
                       ) : (
                         <span className="text-[#9ca3af]">—</span>
                       )}

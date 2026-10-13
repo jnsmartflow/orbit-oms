@@ -169,16 +169,42 @@ export function toggleAllIds(sel: FloorSelection, rows: IdRow[]): FloorSelection
 // it is said apart rather than counted as one: "1 invoice + 1 not invoiced ·
 // 3 OBDs". Pure; no size is assumed.
 
-type CountRow = { invoiceNo: string | null; invoicePartners?: readonly unknown[] };
+type CountRow = {
+  invoiceNo: string | null;
+  invoicePartners?: readonly unknown[];
+  /** A split OBD's invoices (Add invoices Phase 4) — 2+ entries when split. */
+  invoiceRows?: ReadonlyArray<{ invoiceNo: string | null }>;
+};
 
+const isSplitRow = (r: CountRow) => (r.invoiceRows?.length ?? 0) > 1;
+
+// ── ADD INVOICES (Phase 4 commit 2, 2026-10-13, owner) ──────────────────────
+// When the selection holds a SPLIT OBD (one drawn row per invoice), the bar
+// counts OBDs FIRST — "1 OBD · 4 invoices", "3 OBDs · 6 invoices" — because a
+// tick in Phase 4 selects the whole OBD. Invoices = distinct numbers: every
+// invoice of a split OBD, SAP's of any other bill; a bill with none is said
+// apart ("+ 1 not invoiced"). Without a split OBD, the pair label above, unchanged.
 export function selectionCountLabel(rows: readonly CountRow[]): string | null {
+  const n = rows.length;
+  const obds = `${n} OBD${n === 1 ? "" : "s"}`;
+  if (rows.some(isSplitRow)) {
+    const numbers = new Set<string>();
+    let notInvoiced = 0;
+    for (const r of rows) {
+      if (isSplitRow(r)) {
+        for (const i of r.invoiceRows ?? []) if (i.invoiceNo !== null) numbers.add(i.invoiceNo);
+      } else if (r.invoiceNo !== null) numbers.add(r.invoiceNo);
+      else notInvoiced++;
+    }
+    const m = numbers.size;
+    return `${obds} · ${m} invoice${m === 1 ? "" : "s"}` + (notInvoiced > 0 ? ` + ${notInvoiced} not invoiced` : "");
+  }
   if (!rows.some((r) => r.invoiceNo !== null && (r.invoicePartners?.length ?? 0) > 0)) return null;
   const invoices = new Set(rows.filter((r) => r.invoiceNo !== null).map((r) => r.invoiceNo)).size;
   const notInvoiced = rows.filter((r) => r.invoiceNo === null).length;
-  const n = rows.length;
   return (
     `${invoices} invoice${invoices === 1 ? "" : "s"}` +
     (notInvoiced > 0 ? ` + ${notInvoiced} not invoiced` : "") +
-    ` · ${n} OBD${n === 1 ? "" : "s"}`
+    ` · ${obds}`
   );
 }

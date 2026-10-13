@@ -45,3 +45,22 @@ test("label: a split pair half alone still says it is part of an invoice; un-inv
 test("label: a 3-OBD invoice", () => {
   assert.equal(selectionCountLabel([r("I3", 2), r("I3", 2), r("I3", 2)]), "1 invoice · 3 OBDs");
 });
+
+// ── Add invoices Phase 4: a split OBD (one drawn row per invoice) ────────────
+const split = (nos: string[]) => ({ invoiceNo: nos[0], invoiceRows: nos.map((invoiceNo) => ({ invoiceNo })) });
+
+test("label: one split OBD → '1 OBD · 4 invoices'", () => {
+  assert.equal(selectionCountLabel([split(["I716", "I713", "I714", "I715"])]), "1 OBD · 4 invoices");
+});
+
+test("label: a split OBD with plain bills and one not invoiced → OBDs first", () => {
+  assert.equal(selectionCountLabel([split(["I716", "I713"]), r("I2"), r(null)]), "3 OBDs · 3 invoices + 1 not invoiced");
+});
+
+test("label: a split OBD that is also half of a pair → still OBDs first, each number once", () => {
+  assert.equal(selectionCountLabel([{ ...split(["I716", "I713"]), invoicePartners: [{}] }, r("I716", 1)]), "2 OBDs · 2 invoices");
+});
+
+test("label: an UNSPLIT bill's empty invoiceRows changes nothing", () => {
+  assert.equal(selectionCountLabel([{ ...r("I1", 1), invoiceRows: [] }, { ...r("I1", 1), invoiceRows: [] }]), "1 invoice · 2 OBDs");
+});

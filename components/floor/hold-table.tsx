@@ -102,7 +102,7 @@ function Cell({ col, row, now }: { col: HoldColumn; row: FloorHoldRow; now: Date
       return (
         <td className={TD}>
           {row.invoiceNo || row.invoiceDate ? (
-            <InvoiceLines invoiceNo={row.invoiceNo} invoiceDate={row.invoiceDate} />
+            <InvoiceLines invoiceNo={row.invoiceNo} invoiceDate={row.invoiceDate} invoiceCount={row.invoiceCount} />
           ) : (
             DASH
           )}

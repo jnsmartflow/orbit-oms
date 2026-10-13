@@ -171,8 +171,13 @@ export function buildPairRenders(
     while (j < list.length && pairable(list[j]) && list[j].invoiceNo === r.invoiceNo) j++;
     const run = list.slice(i, j);
     const ids = new Set(run.map((x) => x.orderId));
+    // A SPLIT OBD (Add invoices, 2026-10-13) is never merged as a pair: it draws
+    // as one row per invoice (floor-table.tsx), and a merge would rowspan the
+    // tick + Invoice cells across rows that each carry their own invoice. The
+    // pair falls back to the SPLIT display below — "k of n" + place chips.
     const together =
       run.length > 1 &&
+      run.every((x) => (x.invoiceRows?.length ?? 0) < 2) &&
       run.every((x) => x.invoicePartners.length === run.length - 1 && x.invoicePartners.every((p) => ids.has(p.orderId)));
 
     if (together) {
