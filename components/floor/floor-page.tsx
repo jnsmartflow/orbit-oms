@@ -370,7 +370,9 @@ function boardRowToOffFloorBill(r: FloorBoardRow): OffFloorFormBill {
     dealerName: r.dealerName,
     litres: r.volumeLitres,
     invoiceNo: r.invoiceNo,
-    refusal: offFloorRefusal({ workflowStage: stage, tripDropId: r.tripDropId, tripNumber: r.tripNumber }),
+    // invoiceTrips: a split OBD's own invoices and their trips (Phase 5), so
+    // the greyed reason says "2 of 4 invoices on L-02" exactly as the server will.
+    refusal: offFloorRefusal({ workflowStage: stage, tripDropId: r.tripDropId, tripNumber: r.tripNumber, invoiceTrips: r.invoiceRows }),
   };
 }
 

@@ -33,6 +33,7 @@ import {
 import { FLOOR_CLEAR_HOLD_STAGES } from "@/lib/floor/release-stages";
 import { buildDeskCancelNote, type DeskCancelReason } from "@/lib/floor/desk-cancel-reasons";
 import { offFloorRefusal } from "@/lib/floor/off-floor";
+import { INVOICE_TRIPS_SELECT, invoiceTripsOf } from "@/lib/order-invoices/trip-refusal";
 import { findLiveCi, liveCiRefusal } from "@/lib/ci/live-ci";
 import { billingRefusal } from "@/lib/billing/refusal";
 import { stopTintWork } from "@/lib/tint/stop-work";
@@ -65,6 +66,9 @@ export const BILL_ACTION_ORDER_SELECT = {
   // cancel's refusals (offFloorRefusal) — the trip number is for the message.
   tripDropId: true,
   tripDrop: { select: { trip: { select: { tripNumber: true } } } },
+  // …and each invoice row's trip (Phase 5 commit 2): a split OBD partly on a
+  // trip is refused with "2 of 4 invoices on L-02" (lib/order-invoices/trip-refusal.ts).
+  invoices: INVOICE_TRIPS_SELECT,
   // cancel: an ORB order is admin-only and frees its waiting SOs (2026-10-07,
   // Challan orders S5-3 / S5-4 — lib/challan-orders/cancel-guard.ts).
   isChallanOrder: true,
@@ -203,6 +207,7 @@ export async function applyBillAction(
         isRemoved: order.isRemoved,
         tripDropId: order.tripDropId,
         tripNumber: order.tripDrop?.trip.tripNumber ?? null,
+        invoiceTrips: invoiceTripsOf(order.invoices),
       },
       setting ? "set" : "clear",
     );
@@ -229,6 +234,7 @@ export async function applyBillAction(
         workflowStage: order.workflowStage,
         tripDropId: order.tripDropId,
         tripNumber: order.tripDrop?.trip.tripNumber ?? null,
+        invoiceTrips: invoiceTripsOf(order.invoices),
       },
       { allowTintRoom: opts.allowTintRoom === true },
     );

@@ -32,7 +32,7 @@ import { getISTDayRange } from "@/lib/dates";
 import { getFloorBoard } from "@/lib/floor/queries";
 import type { FloorBoardRow } from "@/lib/floor/types";
 import { TRIP_BILLS_ADDED } from "@/lib/trips/activity";
-import { onTripIdsWhere } from "@/lib/order-invoices/trip-read";
+import { HAS_ROW_OFF_TRIP_WHERE, onTripIdsWhere } from "@/lib/order-invoices/trip-read";
 import { isTintManagerBaseRow, tintManagerBaseWhere } from "@/lib/tint/base-bills";
 
 /**
@@ -71,12 +71,13 @@ export async function baseTripCutoffWhere(date?: string): Promise<Prisma.ordersW
     for (const id of ids) if (typeof id === "number" && Number.isInteger(id)) set.add(id);
     idsByTrip.set(r.tripId, set);
   }
-  // "Not on a trip" reads orders."tripDropId" (exact while lib/order-invoices/
-  // trip-link.ts is the only writer); "on THAT trip" reads the invoice rows
+  // "Not on a trip" = HAS AN INVOICE ON NO TRIP (Phase 5 commit 2,
+  // trip-read.ts HAS_ROW_OFF_TRIP_WHERE — its first branch is the old
+  // orders."tripDropId" IS NULL); "on THAT trip" reads the invoice rows
   // (v27.66 readers C, trip-read.ts onTripIdsWhere).
   return {
     OR: [
-      { tripDropId: null },
+      HAS_ROW_OFF_TRIP_WHERE,
       ...Array.from(idsByTrip.entries()).map(([tripId, ids]) => ({
         id: { in: Array.from(ids) },
         ...onTripIdsWhere([tripId]),

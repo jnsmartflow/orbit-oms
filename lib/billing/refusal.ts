@@ -48,6 +48,7 @@
 
 // The tint-room wording is Floor's constant (2026-10-01): one sentence, both desks.
 import { TINT_ROOM_REFUSAL } from "@/lib/floor/off-floor";
+import { onTripMessage, type InvoiceTrip } from "@/lib/order-invoices/trip-refusal";
 
 export const BILLING_ACTIONS = ["hold", "urgent", "slot", "shipTo", "hand", "ci"] as const;
 export type BillingAction = (typeof BILLING_ACTIONS)[number];
@@ -62,6 +63,9 @@ export interface BillingRefusalBill {
   tripDropId?: number | null;
   /** The trip's number when the bill is on one — for the message. */
   tripNumber?: string | null;
+  /** The OBD's invoice rows and their trips (Phase 5 commit 2) — the on-trip
+   *  message then says how many invoices are where. Optional. */
+  invoiceTrips?: readonly InvoiceTrip[];
 }
 
 /** EXACTLY these two. pending_tint_assignment has no operator yet. */
@@ -80,13 +84,12 @@ const REFUSED_IN_TINT_ROOM: ReadonlySet<BillingAction> = new Set<BillingAction>(
  * EXACTLY Billing's wording, on every desk — without also taking on Billing's
  * cancelled / dispatched refusals, which Floor's ship-to never had.
  */
-export function onTripRefusal(bill: Pick<BillingRefusalBill, "tripDropId" | "tripNumber">): string | null {
-  // "On ANY trip" from orders."tripDropId" — exact while lib/order-invoices/
-  // trip-link.ts is the only writer; tripNumber is the derived stop's trip
-  // (v27.66 readers C: kept on orders on purpose).
-  const onTrip = bill.tripDropId !== null && bill.tripDropId !== undefined;
-  if (!onTrip) return null;
-  return `On trip ${bill.tripNumber ?? "(unknown)"} — remove it from the trip first`;
+export function onTripRefusal(bill: Pick<BillingRefusalBill, "tripDropId" | "tripNumber" | "invoiceTrips">): string | null {
+  // ONE sentence for both desks — lib/order-invoices/trip-refusal.ts. With the
+  // OBD's invoice rows a split OBD partly on a trip reads "2 of 4 invoices on
+  // L-02 — remove them from the trip first"; without them (or unsplit) the old
+  // sentence from orders."tripDropId", the derived stop (trip-link.ts).
+  return onTripMessage(bill);
 }
 
 /**

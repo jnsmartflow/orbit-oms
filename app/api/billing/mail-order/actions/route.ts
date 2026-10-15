@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { checkAnyPermission, type PageKey } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { billingRefusal, type BillingAction } from "@/lib/billing/refusal";
+import { INVOICE_TRIPS_SELECT, invoiceTripsOf } from "@/lib/order-invoices/trip-refusal";
 import { markMoOrderCi, unmarkMoOrderCi } from "@/lib/billing/mo-ci-tag";
 import { notifyHandSet } from "@/lib/push/hand";
 import { BILLING_CLEAR_HOLD_NOTE, BILLING_HOLD_NOTE } from "@/lib/floor/hold-log";
@@ -314,6 +315,8 @@ export async function POST(req: Request): Promise<NextResponse> {
         handAt: true,
         tripDropId: true,
         tripDrop: { select: { trip: { select: { tripNumber: true } } } },
+        // Each invoice row's trip — the partly-on-a-trip message (Phase 5 commit 2).
+        invoices: INVOICE_TRIPS_SELECT,
       },
     });
 
@@ -324,6 +327,7 @@ export async function POST(req: Request): Promise<NextResponse> {
           isRemoved: false,
           tripDropId: bill.tripDropId,
           tripNumber: bill.tripDrop?.trip.tripNumber ?? null,
+          invoiceTrips: invoiceTripsOf(bill.invoices),
         };
         const refuse = (a: BillingAction, mode: "set" | "clear"): string | null => billingRefusal(a, refusalBill, mode);
 

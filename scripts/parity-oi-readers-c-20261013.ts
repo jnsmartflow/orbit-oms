@@ -28,6 +28,10 @@
 // trip with the most stops, isBillOnSentTrip, obdStopOnTrip. Fails on a Seq
 // Scan on orders in a new shape that the old shape did not have.
 //
+// --since=Nd (P5-2, 2026-10-15): trips = dated in the last N days plus every
+// live trip (draft / released); the guard sample's "on a trip" half reads the
+// same N days. Omitted = as before (every non-cancelled trip, 10 days).
+//
 // Last line: PARITY OK or PARITY FAILED.
 
 import { PrismaClient, type Prisma } from "@prisma/client";
@@ -40,8 +44,17 @@ logged.$on("query", (e) => captured.push({ query: e.query, params: e.params }));
 (globalThis as unknown as { prisma: PrismaClient }).prisma = logged;
 const prisma = logged;
 
-const mode = process.argv[2] ?? "";
-const file = process.argv[3] ?? "";
+const positional = process.argv.slice(2).filter((a) => !a.startsWith("--"));
+const mode = positional[0] ?? "";
+const file = positional[1] ?? "";
+const sinceArg = process.argv.find((a) => a.startsWith("--since="));
+const SINCE_DAYS = sinceArg ? Number(sinceArg.slice("--since=".length).replace(/d$/, "")) : null;
+if (SINCE_DAYS !== null && !(Number.isInteger(SINCE_DAYS) && SINCE_DAYS > 0)) throw new Error(`bad ${sinceArg}`);
+// --scope=<file> (P5-2): the frozen trip set from scripts/parity-oi-scope-p5-2.ts — wins over --since.
+const scopeArg = process.argv.find((a) => a.startsWith("--scope="));
+const SCOPE_IDS: number[] | null = scopeArg
+  ? (JSON.parse(readFileSync(scopeArg.slice("--scope=".length), "utf8")) as { ids: number[] }).ids
+  : null;
 let failures = 0;
 const fail = (msg: string) => {
   failures += 1;
@@ -114,7 +127,12 @@ interface Dump {
 
   // ════ 1. TRIP ACTIONS — every non-cancelled trip ═══════════════════════════
   const trips = await prisma.trips.findMany({
-    where: { status: { not: "cancelled" } },
+    where:
+      SCOPE_IDS !== null
+        ? { status: { not: "cancelled" }, id: { in: SCOPE_IDS } }
+        : SINCE_DAYS === null
+          ? { status: { not: "cancelled" } }
+          : { status: { not: "cancelled" }, tripDate: { gte: new Date(`${dayMinus(SINCE_DAYS)}T00:00:00Z`) } },
     select: { id: true, tripNumber: true, tripDate: true, status: true, shownAt: true, sentToBillingAt: true },
     orderBy: { id: "asc" },
   });
@@ -170,7 +188,7 @@ interface Dump {
   if (mode === "compare") {
     dump = JSON.parse(readFileSync(file, "utf8")) as Dump;
   } else {
-    const weekTripIds = trips.filter((t) => t.tripDate >= new Date(`${dayMinus(10)}T00:00:00Z`)).map((t) => t.id);
+    const weekTripIds = trips.filter((t) => t.tripDate >= new Date(`${dayMinus(SINCE_DAYS ?? 10)}T00:00:00Z`)).map((t) => t.id);
     const onTrip = await prisma.order_invoices.findMany({
       where: { tripDrop: { tripId: { in: weekTripIds } } },
       select: { orderId: true },

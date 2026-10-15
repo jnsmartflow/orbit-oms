@@ -28,6 +28,7 @@ import {
   isDeskCancelReason,
   type DeskCancelReason,
 } from "@/lib/floor/desk-cancel-reasons";
+import { onTripMessage, type InvoiceTrip } from "@/lib/order-invoices/trip-refusal";
 
 /** The cancel reasons the desks may give, in display order (the desk list). */
 export const FLOOR_CANCEL_REASONS: readonly DeskCancelReason[] = DESK_CANCEL_REASONS;
@@ -56,6 +57,9 @@ export interface OffFloorBill {
   tripDropId: number | null;
   /** The trip's number when the bill is on one — for the message. */
   tripNumber: string | null;
+  /** The OBD's invoice rows and their trips (INVOICE_TRIPS_SELECT / a board
+   *  row's invoiceRows). Optional: omitted = judged from tripDropId alone. */
+  invoiceTrips?: readonly InvoiceTrip[];
 }
 
 /**
@@ -84,13 +88,13 @@ export interface OffFloorBill {
 export function offFloorRefusal(bill: OffFloorBill, opts?: { allowTintRoom?: boolean }): string | null {
   if (bill.workflowStage === "cancelled") return "Already cancelled";
   if (bill.workflowStage === "dispatched") return "Already dispatched";
-  // "On ANY trip" reads orders."tripDropId", and the message names the bill's
-  // derived stop's trip — both exact while lib/order-invoices/trip-link.ts is
-  // the only writer (non-null ⇔ some invoice row has a stop; it holds the
-  // lowest-seq row's stop). Kept on orders on purpose (v27.66 readers C).
-  if (bill.tripDropId !== null) {
-    return `On trip ${bill.tripNumber ?? "(unknown)"} — remove it from the trip first`;
-  }
+  // "On ANY trip", in words (lib/order-invoices/trip-refusal.ts). With the
+  // OBD's invoice rows (`invoiceTrips`, Phase 5 commit 2) a split OBD that is
+  // only PARTLY on a trip says so — "2 of 4 invoices on L-02 — remove them from
+  // the trip first"; an unsplit OBD, or a caller that passes no rows, gets the
+  // old sentence from orders."tripDropId" (the derived stop, trip-link.ts).
+  const onTrip = onTripMessage(bill);
+  if (onTrip !== null) return onTrip;
   if (
     opts?.allowTintRoom !== true &&
     (bill.workflowStage === "tint_assigned" || bill.workflowStage === "tinting_in_progress")

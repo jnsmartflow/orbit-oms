@@ -23,6 +23,12 @@
 // picking queue query with the gate ON, and the held-back count (every query of
 // that read). compare fails on a NEW "Seq Scan on orders" or a LOST index.
 //
+// --since=Nd (P5-2, 2026-10-15): the per-trip code-independent counts cover only
+// trips dated in the last N days plus every live trip (draft / released); the
+// Print week is the last N days. Omitted = as before (all trips, 7 days). P5-2
+// also EXPLAINs the Floor MARKER read (getFloorLiveMarkerWhere → the route's
+// orders.aggregate) and compares its plan exactly like the board's.
+//
 // Last line: PARITY OK or PARITY FAILED.
 
 import { PrismaClient, type Prisma } from "@prisma/client";
@@ -35,8 +41,17 @@ logged.$on("query", (e) => captured.push({ query: e.query, params: e.params }));
 (globalThis as unknown as { prisma: PrismaClient }).prisma = logged;
 const prisma = logged;
 
-const mode = process.argv[2] ?? "";
-const file = process.argv[3] ?? "";
+const positional = process.argv.slice(2).filter((a) => !a.startsWith("--"));
+const mode = positional[0] ?? "";
+const file = positional[1] ?? "";
+const sinceArg = process.argv.find((a) => a.startsWith("--since="));
+const SINCE_DAYS = sinceArg ? Number(sinceArg.slice("--since=".length).replace(/d$/, "")) : null;
+if (SINCE_DAYS !== null && !(Number.isInteger(SINCE_DAYS) && SINCE_DAYS > 0)) throw new Error(`bad ${sinceArg}`);
+// --scope=<file> (P5-2): the frozen trip set from scripts/parity-oi-scope-p5-2.ts — wins over --since.
+const scopeArg = process.argv.find((a) => a.startsWith("--scope="));
+const SCOPE_IDS: number[] | null = scopeArg
+  ? (JSON.parse(readFileSync(scopeArg.slice("--scope=".length), "utf8")) as { ids: number[] }).ids
+  : null;
 let failures = 0;
 const fail = (msg: string) => {
   failures += 1;
@@ -92,7 +107,7 @@ const setEq = (a: Iterable<number | string>, b: Iterable<number | string>) => {
 };
 
 (async () => {
-  const { getFloorBoard } = await import("../lib/floor/queries");
+  const { getFloorBoard, getFloorLiveMarkerWhere } = await import("../lib/floor/queries");
   const { buildPickingWhere } = await import("../lib/picking/queue");
   const { countHeldBackWaiting, WAITING_FOR_PICKER } = await import("../lib/picking/visibility-gate");
   const { loadPrintTrips, getPrintWorkTripIds } = await import("../lib/billing/print");
@@ -124,6 +139,12 @@ const setEq = (a: Iterable<number | string>, b: Iterable<number | string>) => {
     }
   }
 
+  // The Floor MARKER — the route's exact read (app/api/floor/marker/route.ts).
+  captured = [];
+  const markerAgg = await prisma.orders.aggregate({ where: await getFloorLiveMarkerWhere(), _count: true, _max: { updatedAt: true } });
+  await explainCaptured("Floor marker (live where, aggregate)", (c) => /FROM "public"\."orders"/.test(c.query) && /WHERE/.test(c.query));
+  const marker = { count: markerAgg._count, latest: markerAgg._max.updatedAt?.toISOString() ?? null };
+
   const ungated = buildPickingWhere({ scope: "openPending" }).where;
   const gated = buildPickingWhere({ scope: "openPending", gateOn: true }).where;
   captured = [];
@@ -134,7 +155,7 @@ const setEq = (a: Iterable<number | string>, b: Iterable<number | string>) => {
   await explainCaptured("Picking held-back (trip-held bills)", (c) => /^SELECT/.test(c.query) && !/COUNT/i.test(c.query) && !/app_settings/.test(c.query), true);
 
   const weekTrips = await prisma.trips.findMany({
-    where: { tripDate: { gte: new Date(`${dayMinus(7)}T00:00:00Z`) }, status: { not: "cancelled" } },
+    where: { tripDate: { gte: new Date(`${dayMinus(SINCE_DAYS ?? 7)}T00:00:00Z`) }, status: { not: "cancelled" } },
     select: { id: true, tripNumber: true },
   });
   const print = await loadPrintTrips(weekTrips.map((t) => t.id));
@@ -142,7 +163,7 @@ const setEq = (a: Iterable<number | string>, b: Iterable<number | string>) => {
   const workTrips = (await getPrintWorkTripIds()).sort((a, b) => a - b);
   const upcountry = (await upcountryDayBillIds()).sort((a, b) => a - b);
 
-  const dump = { boards, visible, heldBack, printDump, workTrips, upcountry, plans };
+  const dump = { boards, visible, heldBack, printDump, workTrips, upcountry, plans, marker };
   console.log(
     `\nDUMP: live rows ${boards["live " + today].length} · history ${historyDays.map((d) => `${d}=${boards["history " + d].length}`).join(" ")} · ` +
       `picking visible ${visible.length} · held back ${JSON.stringify(heldBack)} · print trips ${print.length} · work trips ${workTrips.length} · upcountry ${upcountry.length}`,
@@ -191,6 +212,7 @@ const setEq = (a: Iterable<number | string>, b: Iterable<number | string>) => {
       if (p.seqScanOrders && !o.seqScanOrders) fail(`${label}: NEW Seq Scan on orders`);
       if (lost.length > 0) fail(`${label}: lost index ${lost}`);
     }
+    console.log(`marker: old ${JSON.stringify(old.marker ?? null)} · new ${JSON.stringify(dump.marker)} (informational — moves with live data)`);
     const u = setEq(old.upcountry, dump.upcountry);
     console.log(`load plan upcountry day bills: old ${old.upcountry.length} · new ${dump.upcountry.length} · ${u.ok ? "same" : "DIFFERENT"}`);
     if (!u.ok) fail(`upcountry only old ${u.onlyA} only new ${u.onlyB}`);
@@ -209,7 +231,13 @@ const setEq = (a: Iterable<number | string>, b: Iterable<number | string>) => {
   if (!vv.ok) fail(`visible only old ${vv.onlyA} only rows ${vv.onlyB}`);
 
   // Per trip: waiting + total (show.ts), and held-back trucks.
-  const drops = await prisma.trip_drops.findMany({ where: { trip: { status: { not: "cancelled" } } }, select: { id: true, tripId: true } });
+  const tripScope: Prisma.tripsWhereInput =
+    SCOPE_IDS !== null
+      ? { status: { not: "cancelled" }, id: { in: SCOPE_IDS } }
+      : SINCE_DAYS === null
+        ? { status: { not: "cancelled" } }
+        : { status: { not: "cancelled" }, tripDate: { gte: new Date(`${dayMinus(SINCE_DAYS)}T00:00:00Z`) } };
+  const drops = await prisma.trip_drops.findMany({ where: { trip: tripScope }, select: { id: true, tripId: true } });
   const tripOf = new Map(drops.map((d) => [d.id, d.tripId]));
   const perTrip = async (useRows: boolean, extra: Prisma.ordersWhereInput) => {
     const m = new Map<number, number>();

@@ -1281,6 +1281,15 @@ model orders {
   // the @@index below needs no `map:`.
   tripDropId Int?
   tripDrop   trip_drops? @relation(fields: [tripDropId], references: [id], onDelete: SetNull)
+  // v27.69 (2026-10-15, sql/2026-10-15-v27.69-orders-partly-on-trip.sql) —
+  // DERIVED, dual-written: true ⇔ the OBD has ≥1 order_invoices row on a stop
+  // AND ≥1 on no stop (only a split OBD can be). Written ONLY by
+  // lib/order-invoices/trip-link.ts setRowsTrip, in the same orders.update as
+  // the derived tripDropId. Lets the Floor board / marker read "per invoice"
+  // without leaving their index plan. Backed by the PARTIAL index
+  // orders_partly_on_trip_idx ON orders (id) WHERE "partlyOnTrip" — partial,
+  // so not expressible as @@index; recorded here only (do NOT db push/pull).
+  partlyOnTrip Boolean @default(false)
 
   // The `loaded` stage's timestamp + actor (2026-09-09) — the SAME modelling
   // call as pickEarlyReleasedAt/ById, pickVisibleAt/ById and invoicedAt/ById

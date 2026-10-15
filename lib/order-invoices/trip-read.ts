@@ -22,10 +22,12 @@
 //
 //   · "where is this OBD on THIS trip" (one bill, one trip — the trip actions'
 //     guards, readers C) → obdStopOnTrip: its lowest-seq row's stop on that trip.
-// ⚠ NOT FOR THE FLOOR BOARD. floorTripBillsWhere's `tripDropId: { not: null }`
-// term is load-bearing for the query plan (CLAUDE_FLOOR.md landmine), and the
-// picking gate reads orders."tripDropId" — both move in commit B, not through
-// this file blindly.
+// ⚠ THE FLOOR BOARD USES THESE WITH ITS INDEX TERMS KEPT (Phase 5 commit 2).
+// floorTripBillsWhere reads onTripsWhere but KEEPS `tripDropId: { not: null }`
+// (load-bearing for the query plan — CLAUDE_FLOOR.md landmine), and arm 3 /
+// the Tint Base cut-off read HAS_ROW_OFF_TRIP_WHERE, whose first branch is the
+// indexable orders."tripDropId" IS NULL. Never swap a board term for a bare
+// relation filter without an EXPLAIN before and after.
 
 import type { Prisma } from "@prisma/client";
 import { prisma } from "../prisma";
@@ -50,6 +52,15 @@ export function deriveObdTripDropId(rows: readonly StopRow[]): number | null {
   return best?.tripDropId ?? null;
 }
 
+/**
+ * THE v27.69 derived flag: orders."partlyOnTrip" — some row of the OBD on a
+ * stop AND some row on none. Only a split OBD can be true; [] → false.
+ * trip-link.ts writes it beside the derived stop, in the same orders.update.
+ */
+export function derivePartlyOnTrip<R extends { tripDropId: number | null }>(rows: readonly R[]): boolean {
+  return rows.some((r) => r.tripDropId !== null) && rows.some((r) => r.tripDropId === null);
+}
+
 /** orders WHERE term: any invoice row of the OBD sits on one of these stops. */
 export function onStopsWhere(dropIds: number[]): Prisma.ordersWhereInput {
   return { invoices: { some: { tripDropId: { in: dropIds } } } };
@@ -57,6 +68,24 @@ export function onStopsWhere(dropIds: number[]): Prisma.ordersWhereInput {
 
 /** orders WHERE term: any invoice row of the OBD sits on any stop. */
 export const ON_ANY_TRIP_WHERE: Prisma.ordersWhereInput = { invoices: { some: { tripDropId: { not: null } } } };
+
+/**
+ * orders WHERE term: the OBD HAS AN INVOICE ON NO TRIP (Phase 5 commit 2) —
+ * what "in To plan / on no trip" means once one invoice can ride while another
+ * waits.
+ *
+ * 🔴 READ FROM orders, NEVER FROM THE ROWS (v27.69). orders."tripDropId" IS
+ * NULL ⇔ no row is on a stop; orders."partlyOnTrip" ⇔ some row on a stop and
+ * some on none — both derived and written ONLY by lib/order-invoices/
+ * trip-link.ts. Together: "some row is on no stop", with no order_invoices
+ * read at all. The rows-based form (`invoices: { some: { tripDropId: null } }`)
+ * was measured 2026-10-15 at 60 ms vs 34 ms on the Floor marker, with a new
+ * Seq Scan on order_invoices — the reason the flag exists. Do not "simplify"
+ * this back to a relation filter.
+ */
+export const HAS_ROW_OFF_TRIP_WHERE: Prisma.ordersWhereInput = {
+  OR: [{ tripDropId: null }, { partlyOnTrip: true }],
+};
 
 /** orders WHERE term: any invoice row of the OBD sits on a trip matching `trip`. */
 export function onTripsWhere(trip: Prisma.tripsWhereInput): Prisma.ordersWhereInput {

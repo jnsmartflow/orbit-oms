@@ -64,7 +64,7 @@ import { getColourWorkByOrder } from "@/lib/picking/colour-work-query";
 // prisma, no clock, so importing it here is one-directional and safe — the same
 // argument grouping.ts and release-window.ts carry above.
 import { liveTripsOnDeskWhere } from "@/lib/trips/live-trips";
-import { onTripsWhere } from "@/lib/order-invoices/trip-read";
+import { HAS_ROW_OFF_TRIP_WHERE, onTripsWhere } from "@/lib/order-invoices/trip-read";
 import { computeDropKey } from "@/lib/trips/drop-key";
 import { isGiftBill } from "@/lib/orders/gift";
 import { dealerDisplayName } from "@/lib/orders/dealer-name";
@@ -171,7 +171,10 @@ export function floorUnslottedWhere(): Prisma.ordersWhereInput {
  * finished" — 2,604 rows against a board showing 44 on 2026-09-10
  * (code-discovery-2026-09-10-noslot-backlog.md §A). With it, the arm is exactly
  * the not-on-a-truck pile, which is small and self-emptying: a bill leaves the
- * moment it gets a trip sticker.
+ * moment it gets a trip sticker. (Since Phase 5 commit 2 the term is
+ * HAS_ROW_OFF_TRIP_WHERE — "an invoice on no trip" = `tripDropId: null` OR the
+ * v27.69 orders."partlyOnTrip" flag; its first branch is still
+ * this `tripDropId: null`, see the arm body.)
  *
  * 🔴 `dispatchStatus: 'dispatch'` IS PINNED, NOT LOOSENED. That term is the
  * difference between 44 rows and 2,604 and it stays exactly as the other two
@@ -192,11 +195,16 @@ export function floorCarriedPoolWhere(): Prisma.ordersWhereInput {
   return {
     dispatchStatus: "dispatch",
     workflowStage: PICK_CHECKED,
-    // "On NO trip" (v27.66 readers B): orders."tripDropId" is null ⇔ no invoice
-    // row of the OBD has a stop, while lib/order-invoices/trip-link.ts is the
-    // only writer — exact, and plan-safe. Kept on orders on purpose.
-    tripDropId: null,
     isRemoved: false,
+    // "HAS AN INVOICE ON NO TRIP" (Phase 5 commit 2, 2026-10-15) — was
+    // `tripDropId: null` ("the whole OBD is on no trip"). From Phase 5 one
+    // invoice of a split OBD can ride while the others still need a truck;
+    // those must stay in the pool. The term is `tripDropId IS NULL OR
+    // "partlyOnTrip"` (v27.69) — both columns on orders, both derived and
+    // written only by lib/order-invoices/trip-link.ts; no order_invoices read,
+    // the plan stays the old one. Still bounded: an OBD leaves the moment its
+    // LAST invoice gets a trip sticker.
+    ...HAS_ROW_OFF_TRIP_WHERE,
   };
 }
 
@@ -321,13 +329,24 @@ export function floorTripBillsWhere(todayDateOnly: Date): Prisma.ordersWhereInpu
     tripDropId: { not: null },
     // The shared rule, never a local spelling of it.
     //
-    // ⚠ STILL READ THROUGH orders."tripDropId" (v27.66 readers B), ON PURPOSE:
-    // this arm is part of getFloorLiveMarkerWhere, and the Floor marker query is
-    // not changed in Phase 3. It is exact today — trip-link.ts writes the
-    // derived stop (the OBD's lowest-seq row's) into orders."tripDropId" and is
-    // the only writer, and every move is whole-OBD. Phase 4 (one Floor row per
-    // invoice row) rewrites the board and its marker on the rows.
-    tripDrop: { trip: liveTripsOnDeskWhere(todayDateOnly) },
+    // ANY INVOICE OF THE OBD ON A LIVE TRIP (Phase 5 commit 2, 2026-10-15),
+    // in two branches that together are exact:
+    //   1. the OLD term — the derived stop (the LOWEST-seq row that has one,
+    //      lib/order-invoices/trip-link.ts) is on a live trip. Every unsplit
+    //      OBD, and every split one whose live-trip invoice is that row.
+    //   2. a SPLIT-ONLY row branch — some row with seq > 1 on a live trip. Any
+    //      live-trip row that is not the lowest-seq one with a stop has seq > 1,
+    //      so 1 ∪ 2 = "some row on a live trip".
+    // 🔴 WHY NOT onTripsWhere ALONE: measured 2026-10-15 on the Floor marker it
+    // merge-joined every order_invoices row (60 ms vs 34 ms, lost
+    // orders_tripDropId_idx). Branch 2's seq > 1 filter rides
+    // order_invoices_tripDropId_idx as a bitmap (~1 ms). Keep both branches.
+    // The `tripDropId: { not: null }` above stays: exact by meaning (some row
+    // on a stop ⇔ the derived stop is non-null) and the index term.
+    OR: [
+      { tripDrop: { trip: liveTripsOnDeskWhere(todayDateOnly) } },
+      { invoices: { some: { seq: { gt: 1 }, tripDropId: { not: null }, tripDrop: { trip: liveTripsOnDeskWhere(todayDateOnly) } } } },
+    ],
   };
 }
 

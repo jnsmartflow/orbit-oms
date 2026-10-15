@@ -33,8 +33,16 @@ export const RECORD_ONLY_REASONS: readonly string[] = ["bill cancelled", "alread
  *  reader matches their PREFIX (lib/billing/refusal.ts owns the wording). */
 export const RECORD_ONLY_PREFIXES: readonly string[] = ["On trip ", "In the tint room"];
 
+/** The on-trip refusal for a split OBD only PARTLY on a trip (Phase 5 commit 2,
+ *  lib/order-invoices/trip-refusal.ts): "2 of 4 invoices on L-02 — …". */
+const PARTLY_ON_TRIP = /^\d+ of \d+ invoices on /;
+
 /** A deliberate "not applied" — shown grey, as the status itself. */
 export function isRecordOnlyReason(reason: string | null): boolean {
   if (reason === null) return false;
-  return RECORD_ONLY_REASONS.includes(reason) || RECORD_ONLY_PREFIXES.some((p) => reason.startsWith(p));
+  return (
+    RECORD_ONLY_REASONS.includes(reason) ||
+    RECORD_ONLY_PREFIXES.some((p) => reason.startsWith(p)) ||
+    PARTLY_ON_TRIP.test(reason)
+  );
 }

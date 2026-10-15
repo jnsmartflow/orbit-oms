@@ -11,13 +11,30 @@
 // Then EXPLAIN (text) of the trip-detail bill read (lib/trips/queries.ts
 // loadTripBills' orders.findMany) for the trip with the most stops — old shape
 // and new shape, the SQL captured from Prisma's own query log.
+//
+// --since=Nd (P5-2, 2026-10-15): only trips dated in the last N days plus every
+// LIVE trip (draft / released), whatever its date — the depot PC runs out of
+// memory on the full history. Omitted = every non-cancelled trip, as before.
+// Always (whatever --since says; one cheap SQL over ALL OBDs): the DERIVED STOP
+// check — 0 OBDs whose orders."tripDropId" differs from the stop of their
+// lowest-seq invoice row that has one (the v27.66 rule trip-link.ts writes).
 
 import { PrismaClient, type Prisma } from "@prisma/client";
+import { readFileSync } from "fs";
 import { onStopsWhere, placeOnTrips, stopRowsSelect } from "../lib/order-invoices/trip-read";
 
 const prisma = new PrismaClient({ log: [{ emit: "event", level: "query" }] });
 let captured: { query: string; params: string }[] = [];
 prisma.$on("query", (e) => captured.push({ query: e.query, params: e.params }));
+
+const sinceArg = process.argv.find((a) => a.startsWith("--since="));
+const SINCE_DAYS = sinceArg ? Number(sinceArg.slice("--since=".length).replace(/d$/, "")) : null;
+if (SINCE_DAYS !== null && !(Number.isInteger(SINCE_DAYS) && SINCE_DAYS > 0)) throw new Error(`bad ${sinceArg}`);
+// --scope=<file> (P5-2): the frozen trip set from scripts/parity-oi-scope-p5-2.ts — wins over --since.
+const scopeArg = process.argv.find((a) => a.startsWith("--scope="));
+const SCOPE_IDS: number[] | null = scopeArg
+  ? (JSON.parse(readFileSync(scopeArg.slice("--scope=".length), "utf8")) as { ids: number[] }).ids
+  : null;
 
 type Sets = Map<number, Set<string>>; // tripId → "dropId:orderId"
 
@@ -78,7 +95,58 @@ async function explain(label: string, run: () => Promise<unknown>) {
 }
 
 (async () => {
-  const trips = await prisma.trips.findMany({ where: { status: { not: "cancelled" } }, select: { id: true, tripNumber: true } });
+  // IST today minus N days, in the UTC-midnight @db.Date shape trips.tripDate has.
+  const sinceDate =
+    SINCE_DAYS === null ? null : new Date(`${new Date(Date.now() + 5.5 * 3_600_000 - SINCE_DAYS * 86_400_000).toISOString().slice(0, 10)}T00:00:00Z`);
+  const sinceWhere: Prisma.tripsWhereInput =
+    SCOPE_IDS !== null ? { id: { in: SCOPE_IDS } } : sinceDate === null ? {} : { tripDate: { gte: sinceDate } };
+  const trips = await prisma.trips.findMany({ where: { status: { not: "cancelled" }, ...sinceWhere }, select: { id: true, tripNumber: true } });
+  console.log(
+    SCOPE_IDS !== null
+      ? `scope: --scope file, ${SCOPE_IDS.length} trips (${trips.length} not cancelled now)`
+      : sinceDate === null
+        ? "scope: every non-cancelled trip"
+        : `scope: --since=${SINCE_DAYS}d — trips dated ≥ ${sinceDate.toISOString().slice(0, 10)}`,
+  );
+
+  // The DERIVED STOP check, over ALL OBDs (one SQL, read-only).
+  const [derived] = await prisma.$queryRawUnsafe<{ n: bigint; sample: string | null }[]>(`
+    WITH d AS (
+      SELECT DISTINCT ON ("orderId") "orderId", "tripDropId"
+        FROM order_invoices WHERE "tripDropId" IS NOT NULL ORDER BY "orderId", seq
+    )
+    SELECT count(*) AS n,
+           string_agg(o.id::text || ':' || coalesce(o."tripDropId"::text, 'null') || '≠' || coalesce(d."tripDropId"::text, 'null'), ' ' ORDER BY o.id) AS sample
+      FROM orders o LEFT JOIN d ON d."orderId" = o.id
+     WHERE o."tripDropId" IS DISTINCT FROM d."tripDropId"`);
+  const derivedDiffs = Number(derived.n);
+  console.log(
+    `derived stop check (all OBDs): orders.tripDropId ≠ lowest-seq row's stop: ${derivedDiffs}` +
+      (derivedDiffs > 0 ? ` [${(derived.sample ?? "").slice(0, 400)}]` : ""),
+  );
+  // v27.69 (P5-2): the dual-written flag — orders."partlyOnTrip" ⇔ some row on a
+  // stop AND some row on none. Same SQL as PART 4 of the v27.69 file. Skipped
+  // (reported) before the column exists.
+  const [hasFlag] = await prisma.$queryRawUnsafe<{ n: bigint }[]>(
+    `SELECT count(*) AS n FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'orders' AND column_name = 'partlyOnTrip'`,
+  );
+  let flagDiffs = 0;
+  if (Number(hasFlag.n) === 0) {
+    console.log(`partlyOnTrip check: column not present — skipped`);
+  } else {
+    const [flag] = await prisma.$queryRawUnsafe<{ n: bigint; t: bigint; sample: string | null }[]>(`
+      SELECT count(*) FILTER (WHERE o."partlyOnTrip" IS DISTINCT FROM coalesce(x.v, false)) AS n,
+             count(*) FILTER (WHERE o."partlyOnTrip") AS t,
+             string_agg(o.id::text, ' ' ORDER BY o.id) FILTER (WHERE o."partlyOnTrip" IS DISTINCT FROM coalesce(x.v, false)) AS sample
+        FROM orders o
+        LEFT JOIN (SELECT "orderId", bool_or("tripDropId" IS NOT NULL) AND bool_or("tripDropId" IS NULL) AS v
+                     FROM order_invoices GROUP BY "orderId") x ON x."orderId" = o.id`);
+    flagDiffs = Number(flag.n);
+    console.log(
+      `partlyOnTrip check (all OBDs): flag ≠ rows: ${flagDiffs} · flag true: ${Number(flag.t)}` +
+        (flagDiffs > 0 ? ` [${(flag.sample ?? "").slice(0, 400)}]` : ""),
+    );
+  }
   const drops = await prisma.trip_drops.findMany({
     where: { tripId: { in: trips.map((t) => t.id) } },
     select: { id: true, tripId: true },
@@ -88,7 +156,7 @@ async function explain(label: string, run: () => Promise<unknown>) {
   const tripNo = new Map(trips.map((t) => [t.id, t.tripNumber]));
   console.log(`trips (not cancelled): ${trips.length} · stops: ${drops.length}`);
 
-  let diffs = 0;
+  let diffs = derivedDiffs + flagDiffs;
   for (const withRemoved of [false, true]) {
     const label = withRemoved ? "incl. removed" : "not removed";
     const a = await oldWay(dropIds, tripOf, withRemoved);

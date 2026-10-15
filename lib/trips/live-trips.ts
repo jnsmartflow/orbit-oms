@@ -117,12 +117,34 @@ export function tripsOnDeskWhere(deskDate: Date, todayDate: Date): Prisma.tripsW
   return {
     OR: [
       { tripDate: deskDate },
-      // ⚠ Bills reached through orders."tripDropId" (v27.66 readers B), ON
-      // PURPOSE: this predicate is inside the Floor marker
-      // (getFloorLiveMarkerWhere → floorTripBillsWhere), which Phase 3 does not
-      // change. Exact today — trip-link.ts writes the derived stop and every
-      // move is whole-OBD. Phase 4 rewrites the board and marker on the rows.
-      { tripDate: { lt: deskDate }, drops: { some: { orders: { some: BILL_NOT_DONE } } } },
+      // A STOP HOLDS A BILL WHEN ANY INVOICE ROW OF IT SITS THERE (Phase 5
+      // commit 2, 2026-10-15) — two branches, together exact:
+      //   1. the OLD orders."tripDropId" read: the bill's derived stop (its
+      //      lowest-seq row with one) is this stop. Rides orders_tripDropId_idx.
+      //   2. a SPLIT-ONLY row branch: a row with seq > 1 sits on the stop (any
+      //      row that is not the lowest-seq one with a stop has seq > 1).
+      // 🔴 Reading every row instead (orderInvoices some, no seq filter) was
+      // measured 2026-10-15 inside the Floor marker at ~16 ms of nested-loop
+      // lookups and lost orders_tripDropId_idx. This runs every 15 s — keep
+      // the two branches. The bill's `tripDropId: { not: null }` in branch 2 is
+      // redundant by meaning and keeps the inner orders read on that index.
+      // ⚠ ONE `drops: { some: { OR } }`, measured against the alternative
+      // (2026-10-15, Floor marker, EXPLAIN ANALYZE ×3): this form 35.8–37.1 ms
+      // (HEAD 34 ms) — the stop list is one seq scan of trip_drops (~3.8k rows,
+      // ~5 ms with both hashed filters); splitting into two trip-level branches
+      // kept HEAD's merge semi-join for branch 1 but grew a second trip_drops
+      // scan for branch 2 and ran SLOWER (37.8–38.9 ms). No index is lost either way.
+      {
+        tripDate: { lt: deskDate },
+        drops: {
+          some: {
+            OR: [
+              { orders: { some: BILL_NOT_DONE } },
+              { orderInvoices: { some: { seq: { gt: 1 }, order: { ...BILL_NOT_DONE, tripDropId: { not: null } } } } },
+            ],
+          },
+        },
+      },
     ],
   };
 }

@@ -34,6 +34,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { onTripRefusal } from "@/lib/billing/refusal";
+import { INVOICE_TRIPS_SELECT, invoiceTripsOf } from "@/lib/order-invoices/trip-refusal";
 
 export type ShipToResult =
   | { ok: true; orderId: number; shipToOverrideCustomerId: number | null; changed: boolean }
@@ -63,6 +64,8 @@ export async function setShipToOverride(args: {
       shipToOverrideCustomerId: true,
       tripDropId: true,
       tripDrop: { select: { trip: { select: { tripNumber: true } } } },
+      // Each invoice row's trip — the partly-on-a-trip message (Phase 5 commit 2).
+      invoices: INVOICE_TRIPS_SELECT,
     },
   });
   if (!order) {
@@ -75,6 +78,7 @@ export async function setShipToOverride(args: {
   const onTrip = onTripRefusal({
     tripDropId: order.tripDropId,
     tripNumber: order.tripDrop?.trip.tripNumber ?? null,
+    invoiceTrips: invoiceTripsOf(order.invoices),
   });
   if (onTrip !== null) {
     return { ok: false, status: 409, error: onTrip };

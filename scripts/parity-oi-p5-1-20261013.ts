@@ -18,19 +18,50 @@
 // Plus (NEW code only) a SYNTHETIC in-memory check: order 18648 as if 713 + 715
 // sat on one stop → 460 L and 356.33 + 270.30 kg (lib/floor/invoice-rows.ts placeLoad).
 //
+// --since=Nd (P5-2, 2026-10-15): N days instead of 14, for the trips and the
+// day checks. Live trips are always in.
+//
 // Last line: PARITY OK or PARITY FAILED.
 
 import { PrismaClient } from "@prisma/client";
 import { readFileSync, writeFileSync } from "fs";
 
 const prisma = new PrismaClient();
-const mode = process.argv[2] ?? "";
-const file = process.argv[3] ?? "";
+const positional = process.argv.slice(2).filter((a) => !a.startsWith("--"));
+const mode = positional[0] ?? "";
+const file = positional[1] ?? "";
+const sinceArg = process.argv.find((a) => a.startsWith("--since="));
+const SINCE_DAYS = sinceArg ? Number(sinceArg.slice("--since=".length).replace(/d$/, "")) : null;
+if (SINCE_DAYS !== null && !(Number.isInteger(SINCE_DAYS) && SINCE_DAYS > 0)) throw new Error(`bad ${sinceArg}`);
+const DAYS = SINCE_DAYS ?? 14;
+// --scope=<file> (P5-2): the frozen trip set from scripts/parity-oi-scope-p5-2.ts —
+// replaces the trip query below (813 of 858 trips are draft / released, so
+// "live" by status is the whole history).
+const scopeArg = process.argv.find((a) => a.startsWith("--scope="));
+const SCOPE_IDS: number[] | null = scopeArg
+  ? (JSON.parse(readFileSync(scopeArg.slice("--scope=".length), "utf8")) as { ids: number[] }).ids
+  : null;
 let failures = 0;
 const fail = (m: string) => {
   failures++;
   console.log("  ✖ " + m);
 };
+// P5-2 (2026-10-15): the pooler resets connections mid-run (Windows 10054),
+// and this run is ~40 min. Each read is retried on a CONNECTION error only
+// (Prisma reconnects on the next query); any other error still throws.
+const CONN_ERR = /P1017|P1001|Can't reach database server|Server has closed the connection|ConnectionReset|ECONNRESET/;
+async function retry<T>(what: string, fn: () => Promise<T>): Promise<T> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await fn();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (attempt >= 5 || !CONN_ERR.test(msg)) throw e;
+      console.log(`  ↻ ${what}: connection error, retry ${attempt}/4 in 5s`);
+      await new Promise((r) => setTimeout(r, 5000));
+    }
+  }
+}
 const r3 = (n: number | null | undefined) => (n === null || n === undefined ? null : Math.round(n * 1000) / 1000);
 
 (async () => {
@@ -48,29 +79,29 @@ const r3 = (n: number | null | undefined) => (n === null || n === undefined ? nu
     d.setUTCDate(d.getUTCDate() - n);
     return d.toISOString().slice(0, 10);
   };
-  const from = new Date(`${dayMinus(14)}T00:00:00Z`);
-  const trips = await prisma.trips.findMany({
-    where: {
-      status: { not: "cancelled" },
-      OR: [{ tripDate: { gte: from } }, { status: { in: ["draft", "released", "loading"] } }],
-    },
+  const from = new Date(`${dayMinus(DAYS)}T00:00:00Z`);
+  const trips = await retry("trips", () => prisma.trips.findMany({
+    where:
+      SCOPE_IDS !== null
+        ? { status: { not: "cancelled" }, id: { in: SCOPE_IDS } }
+        : { status: { not: "cancelled" }, OR: [{ tripDate: { gte: from } }, { status: { in: ["draft", "released", "loading"] } }] },
     select: { id: true },
     orderBy: { id: "asc" },
-  });
+  }));
   const ids = trips.map((t) => t.id);
   console.log(`trips in scope: ${ids.length}`);
 
   const dump: Record<string, unknown> = {};
-  const summaries = await getTripSummariesByIds(ids);
+  const summaries = await retry("summaries", () => getTripSummariesByIds(ids));
   for (const s of summaries) {
     dump[`summary ${s.id}`] = { counts: s.counts, litres: r3(s.totalLitres), kg: r3(s.totalWeightKg), unknownKg: s.weightUnknownCount, stops: s.dropCount };
   }
   for (const id of ids) {
-    const d = await getTripDetail(id);
+    const d = await retry(`detail ${id}`, () => getTripDetail(id));
     if (!d) continue;
     dump[`detail ${id}`] = d.drops.map((x) => ({ id: x.id, bills: x.bills, litres: r3(x.litres), orderIds: x.orderIds }));
   }
-  const print = await loadPrintTrips(ids);
+  const print = await retry("print", () => loadPrintTrips(ids));
   for (const p of print) {
     dump[`print ${p.id}`] = {
       bills: p.bills,
@@ -82,20 +113,20 @@ const r3 = (n: number | null | undefined) => (n === null || n === undefined ? nu
     };
   }
   for (const id of ids) {
-    const sh = await getTripSheet(id);
+    const sh = await retry(`sheet ${id}`, () => getTripSheet(id));
     if (!sh) continue;
     dump[`sheet ${id}`] = {
       totals: { ...sh.totals, litres: r3(sh.totals.litres), kg: r3(sh.totals.kg) },
       bills: sh.stops.flatMap((s) => s.bills.map((b) => ({ id: b.orderId, litres: r3(b.litres), kg: r3(b.kg), redel: b.redel }))),
     };
   }
-  const dayIds = await upcountryDayBillIds();
-  const v2 = await runLoadPlanV2({ orderIds: dayIds, includeOnTrips: true });
+  const dayIds = await retry("upcountry", () => upcountryDayBillIds());
+  const v2 = await retry("load plan v2", () => runLoadPlanV2({ orderIds: dayIds, includeOnTrips: true }));
   dump["load plan v2"] = JSON.parse(JSON.stringify(v2.plan ?? null), (_k, v) => (typeof v === "number" ? r3(v) : v));
-  for (let n = 0; n <= 14; n++) {
+  for (let n = 0; n <= DAYS; n++) {
     const day = dayMinus(n);
     try {
-      const c = await loadDayCheck(day);
+      const c = await retry(`day check ${day}`, () => loadDayCheck(day));
       dump[`day check ${day}`] = JSON.parse(JSON.stringify(c?.check ?? null), (_k, v) => (typeof v === "number" ? r3(v) : v));
     } catch (e) {
       dump[`day check ${day}`] = `error ${e instanceof Error ? e.message : String(e)}`;
@@ -108,16 +139,37 @@ const r3 = (n: number | null | undefined) => (n === null || n === undefined ? nu
     console.log(`snapshot written → ${file}`);
   } else if (mode === "compare") {
     const old = JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>;
-    const keys = Array.from(new Set([...Object.keys(old), ...Object.keys(dump)])).sort();
+    // With --scope the snapshot may cover MORE trips than this run (a wider
+    // old-code snapshot): an old per-trip key whose trip is not in the scope is
+    // OUT OF SCOPE — counted, never compared. Every other key is compared.
+    const inScope = new Set((SCOPE_IDS ?? []).map(String));
+    const tripKey = /^(summary|detail|print|sheet) (\d+)$/;
+    let outOfScope = 0;
+    const keys = Array.from(new Set([...Object.keys(old), ...Object.keys(dump)]))
+      .filter((k) => {
+        const m = tripKey.exec(k);
+        if (SCOPE_IDS !== null && m && !inScope.has(m[2]) && !(k in dump)) {
+          outOfScope++;
+          return false;
+        }
+        return true;
+      })
+      .sort();
     let diff = 0;
+    const differing: string[] = [];
     for (const k of keys) {
       if (JSON.stringify(old[k]) !== JSON.stringify(dump[k])) {
         diff++;
+        differing.push(k);
         if (diff <= 10) fail(`${k}: old ${String(JSON.stringify(old[k])).slice(0, 220)} · new ${String(JSON.stringify(dump[k])).slice(0, 220)}`);
       }
     }
-    console.log(`compare: ${keys.length} entries · differing ${diff}`);
+    console.log(`compare: ${keys.length} entries · differing ${diff} · old-only out of --scope (not compared) ${outOfScope}`);
+    if (differing.length > 0) console.log(`differing keys: ${differing.join(" | ")}`);
     if (diff > 10) fail(`… ${diff} differing in all`);
+    // Kept so every difference can be itemised afterwards.
+    writeFileSync(`${file}.new.json`, JSON.stringify(dump));
+    console.log(`this run's dump → ${file}.new.json`);
   }
 
   // ── Synthetic (NEW code only): 18648 as if 713 + 715 sat on one stop ───────
@@ -127,7 +179,7 @@ const r3 = (n: number | null | undefined) => (n === null || n === undefined ? nu
     | undefined;
   if (placeLoad) {
     const { getFloorBoard } = await import("../lib/floor/queries");
-    const b = await getFloorBoard({ mode: "live", onlyIds: [18648] });
+    const b = await retry("board 18648", () => getFloorBoard({ mode: "live", onlyIds: [18648] }));
     const row = b.rows.find((r) => r.orderId === 18648);
     if (!row) fail("18648 not on the live board");
     else {

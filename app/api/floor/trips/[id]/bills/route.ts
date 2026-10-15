@@ -6,21 +6,40 @@ import { computeDropKey } from "@/lib/trips/drop-key";
 import { deleteTripDropIfEmpty, findOrCreateTripDrop } from "@/lib/trips/drop";
 import { logTripBills } from "@/lib/trips/activity";
 import { CHALLAN_LINKED } from "@/lib/workflow-stages";
-import { setOrderTrip } from "@/lib/order-invoices/trip-link";
-import { obdStopOnTrip } from "@/lib/order-invoices/trip-read";
+import { needsDerivedRepair, setRowsTrip } from "@/lib/order-invoices/trip-link";
+import { foreignRowIds, planAddRows, planRemoveRows, type TripBillRow } from "@/lib/order-invoices/trip-bills";
 
 export const dynamic = "force-dynamic";
 
 interface Failed {
   orderId: number;
   error: string;
+  /** Set when the refusal is about ONE invoice of a split OBD (Phase 5). */
+  invoiceRowId?: number;
+  invoiceNo?: string | null;
 }
 
 /**
  * POST /api/floor/trips/[id]/bills — attach bills to a trip, or detach them.
  *
- * Body: `{ orderIds: number[], action: "add" | "remove" }`
+ * Body: `{ orderIds: number[], action: "add" | "remove",
+ *          invoiceRowIds?: { [orderId]: number[] } }`
  * Response: `{ attached|detached: number[], skipped: number[], failed: [...] }`
+ *
+ * 🔴 PER INVOICE (Add invoices, Phase 5 commit 2, 2026-10-15). The invoice ROW
+ * is the dispatch unit (Schema v27.66). `invoiceRowIds` names, per OBD, which
+ * of its order_invoices rows the press is about; an OBD with no entry means
+ * EVERY row — the whole OBD, exactly as before. Per row
+ * (lib/order-invoices/trip-bills.ts):
+ *   · add — a row on no trip attaches; a row already on ANOTHER trip is
+ *     refused for THAT invoice only ("I536230713 is already on L-… — remove it
+ *     from that trip first") and the rest still attach. All of an OBD's rows on
+ *     one trip sit on its customer's ONE stop (dropKey unchanged).
+ *   · remove — strips only rows on THIS trip, never another trip's.
+ * An OBD in `attached` / `detached` may ALSO have `failed` entries (one per
+ * refused invoice, with `invoiceRowId`). An unsplit OBD's messages are
+ * unchanged, word for word. The Floor screen still sends whole OBDs (P5-3
+ * adds per-invoice ticks).
  *
  * 🔴 TRIP MEMBERSHIP IS NOT GATED BY STAGE. A bill can join a trip at ANY
  * `workflowStage` — waiting, with a picker, picked, checked. That is an owner
@@ -74,7 +93,11 @@ export async function POST(
     return NextResponse.json({ error: "Invalid trip id" }, { status: 400 });
   }
 
-  const body = (await req.json().catch(() => ({}))) as { orderIds?: number[]; action?: string };
+  const body = (await req.json().catch(() => ({}))) as {
+    orderIds?: number[];
+    action?: string;
+    invoiceRowIds?: unknown;
+  };
   const action = body.action;
   if (action !== "add" && action !== "remove") {
     return NextResponse.json({ error: 'action is required and must be "add" or "remove"' }, { status: 400 });
@@ -91,6 +114,29 @@ export async function POST(
       { error: "orderIds is required and must be a non-empty array of integers" },
       { status: 400 },
     );
+  }
+  // Optional, per OBD: which invoice rows. Every key must be one of orderIds
+  // and every value a non-empty list of integers — else 400, nothing written.
+  const chosenRows = new Map<number, number[]>();
+  if (body.invoiceRowIds !== undefined && body.invoiceRowIds !== null) {
+    const raw = body.invoiceRowIds;
+    const asked = new Set(orderIds);
+    const ok =
+      typeof raw === "object" &&
+      !Array.isArray(raw) &&
+      Object.entries(raw as Record<string, unknown>).every(([k, v]) => {
+        const id = Number(k);
+        if (!Number.isInteger(id) || !asked.has(id)) return false;
+        if (!Array.isArray(v) || v.length === 0 || !v.every((x) => typeof x === "number" && Number.isInteger(x))) return false;
+        chosenRows.set(id, v as number[]);
+        return true;
+      });
+    if (!ok) {
+      return NextResponse.json(
+        { error: "invoiceRowIds must map an orderId from orderIds to a non-empty array of invoice row ids" },
+        { status: 400 },
+      );
+    }
   }
 
   const trip = await prisma.trips.findUnique({
@@ -128,7 +174,13 @@ export async function POST(
           // number is what is printed on the paper in his hand.
           obdNumber: true,
           isRemoved: true,
+          // The DERIVED stop (lib/order-invoices/trip-link.ts). Read here only
+          // to spot a press that died half-way (needsDerivedRepair below); every
+          // "is it on a trip" decision reads the invoice rows.
           tripDropId: true,
+          tripDrop: { select: { tripId: true } },
+          // v27.69 — the derived flag, for the same half-write repair check.
+          partlyOnTrip: true,
           customerId: true,
           shipToOverrideCustomerId: true,
           shipToCustomerId: true,
@@ -144,41 +196,80 @@ export async function POST(
         continue;
       }
 
+      // The OBD's invoice rows and where each sits — ONE read, keyed on
+      // order_invoices_orderId_seq_key. Every per-row decision below reads it.
+      const rowRecs = await prisma.order_invoices.findMany({
+        where: { orderId },
+        orderBy: { seq: "asc" },
+        select: {
+          id: true,
+          seq: true,
+          invoiceNo: true,
+          tripDropId: true,
+          tripDrop: { select: { tripId: true, dropKey: true, trip: { select: { tripNumber: true } } } },
+        },
+      });
+      const rows: TripBillRow[] = rowRecs.map((r) => ({
+        id: r.id,
+        seq: r.seq,
+        invoiceNo: r.invoiceNo,
+        tripDropId: r.tripDropId,
+        tripId: r.tripDrop?.tripId ?? null,
+        dropKey: r.tripDrop?.dropKey ?? null,
+        tripNumber: r.tripDrop?.trip.tripNumber ?? null,
+      }));
+      const chosen = chosenRows.get(orderId) ?? "all";
+      const foreign = foreignRowIds(rows, chosen);
+      if (foreign.length > 0) {
+        failed.push({ orderId, error: `Invoice row ${foreign.join(", ")} is not an invoice of ${order.obdNumber}` });
+        continue;
+      }
+      const refuseRows = (refused: { rowId: number; invoiceNo: string | null; error: string }[]) => {
+        for (const x of refused) failed.push({ orderId, error: x.error, invoiceRowId: x.rowId, invoiceNo: x.invoiceNo });
+      };
+
       if (action === "remove") {
-        // 🔴 THE BILL MUST BE ON THIS TRIP (2026-10-03 — closes FLOOR_TRIPS open
-        // item 4 / landmine 8). This path used to clear WHATEVER stop a bill was
-        // on, whatever trip the URL named, so a wrong call could strip a bill off
-        // its real trip. Now the bill's stop is read first: on no trip, or on a
-        // different trip → refused, NO WRITE (a no-op update would still bump
+        // 🔴 ONLY ROWS ON THIS TRIP COME OFF (2026-10-03 — closes FLOOR_TRIPS
+        // open item 4 / landmine 8; per row since Phase 5 commit 2). This path
+        // used to clear WHATEVER stop a bill was on, whatever trip the URL
+        // named; until 2026-10-15 it still cleared ALL of an OBD's invoice rows
+        // once one of them was on this trip. Now each row's stop is read: rows
+        // on this trip come off (setRowsTrip with onlyFromTripId — the writer
+        // re-checks it), a row on another trip is never touched. Nothing on
+        // this trip → refused, NO WRITE (a no-op update would still bump
         // updatedAt and fire a false "changed" on every board). Every floor
         // caller already sends only bills on the URL's trip (floor-page.tsx
         // undoAdd and removeSelectionFromTrips), so they never meet this.
-        //
-        // "On THIS trip" is read THROUGH THE INVOICE ROWS (v27.66 readers C,
-        // lib/order-invoices/trip-read.ts): the stop of the bill's lowest-seq
-        // row on this trip. The write below is unchanged (trip-link.ts).
-        const here = await obdStopOnTrip(orderId, tripId);
-        if (here === null) {
-          failed.push({ orderId, error: "Not on this trip" });
+        const plan = planRemoveRows(rows, chosen, tripId, order.obdNumber);
+        refuseRows(plan.refused);
+        if (plan.detach.length === 0) {
+          // A press that died between the rows and orders left orders.tripDropId
+          // on this trip with no row here: land the derived stop (no row moves).
+          if (plan.refused.length === 0 && order.tripDrop?.tripId === tripId && needsDerivedRepair(rows, order)) {
+            await setRowsTrip(orderId, [], null, { onlyFromTripId: tripId });
+            changed.push(orderId);
+            changedObds.push(order.obdNumber);
+            continue;
+          }
+          if (plan.refused.length === 0) failed.push({ orderId, error: "Not on this trip" });
           continue;
         }
-        const dropId = here.id;
 
-        // The bill's invoice rows, then ONE orders.update (v27.66 —
-        // lib/order-invoices/trip-link.ts, the only trip-link writer).
-        await setOrderTrip(orderId, null);
+        // Those rows, then ONE orders.update (lib/order-invoices/trip-link.ts,
+        // the only trip-link writer).
+        await setRowsTrip(orderId, plan.detach, null, { onlyFromTripId: tripId });
         changed.push(orderId);
         changedObds.push(order.obdNumber);
 
-        // If that stop now holds nothing, delete it. Counted AFTER the update
-        // above so this bill is already gone from the tally.
+        // If a stop they left now holds nothing, delete it. Counted AFTER the
+        // update above so these rows are already gone from the tally.
         //
         // ⚠ "Nothing" = no order (removed ones included — a soft-removed bill
-        // still carries its pointer) AND no re-delivery (2026-10-03, discovery
-        // B9: trip_redeliveries.tripDropId is RESTRICT). The rule lives in
-        // lib/trips/drop.ts deleteTripDropIfEmpty, shared with the re-delivery
-        // remove path.
-        await deleteTripDropIfEmpty(dropId);
+        // still carries its pointer), no invoice row AND no re-delivery
+        // (2026-10-03, discovery B9: trip_redeliveries.tripDropId is RESTRICT).
+        // The rule lives in lib/trips/drop.ts deleteTripDropIfEmpty, shared
+        // with the re-delivery remove path.
+        for (const dropId of plan.dropIds) await deleteTripDropIfEmpty(dropId);
         continue;
       }
 
@@ -200,36 +291,27 @@ export async function POST(
 
       const dropKey = computeDropKey(order);
 
-      // "On ANY trip" reads orders."tripDropId" — exact while trip-link.ts is
-      // the only writer (non-null ⇔ some invoice row has a stop; v27.66 readers C).
-      if (order.tripDropId !== null) {
-        // Already on a stop. If it is the right stop on THIS trip, skip with no
-        // write. If it is anywhere else, refuse rather than silently moving it:
-        // a bill on two loads is the kind of thing nobody notices until a van is
-        // short, and "move" is a different action the caller should ask for.
-        //
-        // "On THIS trip, at which stop" is read THROUGH THE INVOICE ROWS
-        // (readers C): the lowest-seq row's stop on this trip.
-        const here = await obdStopOnTrip(orderId, tripId);
-        if (here !== null) {
-          if (here.dropKey === dropKey) skipped.push(orderId);
-          else failed.push({ orderId, error: "Already attached to a different stop on this trip." });
-          continue;
+      // Per invoice row (lib/order-invoices/trip-bills.ts planAddRows). A row
+      // already on a stop is never silently moved: the right stop on THIS trip
+      // is a no-op, anywhere else is refused for THAT invoice — a bill on two
+      // loads is the kind of thing nobody notices until a van is short, and
+      // "move" is a different action the caller should ask for. The trip
+      // NUMBER is in the refusal (2026-09-18): a planner reads it, and an
+      // internal id is nothing he can act on. The rest of the OBD still attaches.
+      const plan = planAddRows(rows, chosen, tripId, dropKey, order.obdNumber);
+      refuseRows(plan.refused);
+      if (plan.attach.length === 0) {
+        if (plan.refused.length === 0 && plan.here.length > 0) {
+          // Everything asked for is already here. A press that died between the
+          // rows and orders left orders.tripDropId stale: land it (no row moves).
+          if (needsDerivedRepair(rows, order)) {
+            await setRowsTrip(orderId, [], null);
+            changed.push(orderId);
+            changedObds.push(order.obdNumber);
+          } else {
+            skipped.push(orderId);
+          }
         }
-        // On another trip: name it. "Which stop is this bill on" = the derived
-        // stop orders."tripDropId" holds (trip-link.ts, the only writer).
-        // The trip NUMBER rides this same read (2026-09-18): the refusal is
-        // read by a planner, and an internal id is nothing he can act on.
-        const current = await prisma.trip_drops.findUnique({
-          where: { id: order.tripDropId },
-          select: { trip: { select: { tripNumber: true } } },
-        });
-        failed.push({
-          orderId,
-          error: current
-            ? `Already on ${current.trip.tripNumber} — remove it from that trip first.`
-            : "Already attached to a different stop on this trip.",
-        });
         continue;
       }
 
@@ -256,9 +338,9 @@ export async function POST(
       // reported as this bill's failure, as before.
       const drop = await findOrCreateTripDrop(tripId, order);
 
-      // Every invoice row of the bill, then ONE orders.update — still the only
-      // write to `orders` on this path (v27.66, lib/order-invoices/trip-link.ts).
-      await setOrderTrip(orderId, drop.id);
+      // The rows that attach, then ONE orders.update — still the only write to
+      // `orders` on this path (v27.66, lib/order-invoices/trip-link.ts).
+      await setRowsTrip(orderId, plan.attach, drop.id);
       changed.push(orderId);
       changedObds.push(order.obdNumber);
     } catch (err) {

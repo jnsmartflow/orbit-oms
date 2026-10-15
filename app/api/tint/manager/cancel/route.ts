@@ -4,6 +4,7 @@ import { isSuperuser } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
 import { deskCancelRequiresNote, type DeskCancelReason } from "@/lib/floor/desk-cancel-reasons";
 import { FLOOR_REMARK_MAX, isFloorCancelReason, offFloorRefusal } from "@/lib/floor/off-floor";
+import { invoiceTripsOf } from "@/lib/order-invoices/trip-refusal";
 import { applyBillAction, BILL_ACTION_ORDER_SELECT } from "@/lib/floor/bill-actions";
 import { stopTintWork } from "@/lib/tint/stop-work";
 import { checkTintAction, tintBillRefusal } from "@/lib/tint/manager-bill";
@@ -123,6 +124,7 @@ export async function POST(req: Request): Promise<NextResponse> {
         workflowStage: order.workflowStage,
         tripDropId: order.tripDropId,
         tripNumber: order.tripDrop?.trip.tripNumber ?? null,
+        invoiceTrips: invoiceTripsOf(order.invoices),
       },
       { allowTintRoom: true },
     );

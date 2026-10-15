@@ -5,7 +5,7 @@ import { logTripCancelled } from "@/lib/trips/activity";
 import { cancelledTripNumber, isTripNumberCollision } from "@/lib/trips/number";
 import { prisma } from "@/lib/prisma";
 import { DISPATCHED } from "@/lib/workflow-stages";
-import { setOrderTrip } from "@/lib/order-invoices/trip-link";
+import { setRowsTrip } from "@/lib/order-invoices/trip-link";
 import { onStopsWhere } from "@/lib/order-invoices/trip-read";
 
 export const dynamic = "force-dynamic";
@@ -41,7 +41,8 @@ interface Failed {
  * RESTRICT, so a trip with history cannot be deleted at all. (CORE §3 forbids
  * deleting files; this is the same instinct applied to a row.)
  *
- * 🔴 THE DROP ROWS STAY. Only `orders.tripDropId` is cleared. The drops are the
+ * 🔴 THE DROP ROWS STAY. Only the trip link is cleared — this trip's invoice
+ * rows (`order_invoices.tripDropId`) and the derived `orders.tripDropId`. The drops are the
  * record of what was PLANNED — which stops, in which order — and a cancelled
  * trip that kept its number but lost its shape would answer "what did we call
  * off?" with nothing. `trip_drops.tripId` is ON DELETE CASCADE, so deleting the
@@ -234,9 +235,13 @@ export async function POST(
 
   for (const o of orders) {
     try {
-      // The bill's invoice rows, then ONE orders.update (v27.66 —
-      // lib/order-invoices/trip-link.ts, the only trip-link writer).
-      await setOrderTrip(o.id, null);
+      // The bill's invoice rows ON THIS TRIP, then ONE orders.update (v27.66 —
+      // lib/order-invoices/trip-link.ts, the only trip-link writer). Phase 5
+      // commit 2 (2026-10-15): until then this stripped ALL of the OBD's rows,
+      // so cancelling trip A also took a split OBD's other invoice off trip B.
+      // onlyFromTripId leaves every row on another trip where it is, and the
+      // OBD's derived stop is recomputed from the rows that remain.
+      await setRowsTrip(o.id, "all", null, { onlyFromTripId: tripId });
       detached.push(o.id);
     } catch (err) {
       failed.push({ orderId: o.id, error: err instanceof Error ? err.message : "Unexpected error" });

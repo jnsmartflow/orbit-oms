@@ -65,6 +65,7 @@ import { resolveCiDealer } from "@/lib/ci/derive";
 import { linkRowForOrder } from "@/lib/order-invoices/links";
 import { computeFullBillLines } from "@/lib/ci/full-bill";
 import { offFloorRefusal } from "@/lib/floor/off-floor";
+import { INVOICE_TRIPS_SELECT, invoiceTripsOf } from "@/lib/order-invoices/trip-refusal";
 
 export interface CiReasonOption {
   id: number;
@@ -140,6 +141,8 @@ export async function raiseFullBillCi(args: {
         isChallanOrder: true,
         tripDropId: true,
         tripDrop: { select: { trip: { select: { tripNumber: true } } } },
+        // Each invoice row's trip — the partly-on-a-trip message (Phase 5 commit 2).
+        invoices: INVOICE_TRIPS_SELECT,
       },
     });
     if (order === null) {
@@ -159,6 +162,7 @@ export async function raiseFullBillCi(args: {
         workflowStage: order.workflowStage,
         tripDropId: order.tripDropId,
         tripNumber: order.tripDrop?.trip.tripNumber ?? null,
+        invoiceTrips: invoiceTripsOf(order.invoices),
       },
       { allowTintRoom: args.allowTintRoom === true },
     );

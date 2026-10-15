@@ -131,9 +131,18 @@ const sort = (rows: FloorBoardRow[]) => sortFloorRows(rows);
  * board, including bills on trips the pool never shows, so a bill could be
  * ticked where nobody could see it. One predicate, so what is ticked and what is
  * listed cannot disagree.
+ *
+ * PER INVOICE (Add invoices, Phase 5 commit 2, 2026-10-15): a split OBD is in
+ * the pool while ANY of its invoices is on no trip — its row's `tripDropId` is
+ * the derived stop (lowest-seq row on a trip), so it is non-null as soon as one
+ * invoice is on a truck while the others still need planning. The pool lists
+ * then narrow it to the off-trip invoices (narrowToPlace). An unsplit OBD
+ * (invoiceRows []) is tested exactly as before.
  */
 export function isPoolRow(r: FloorBoardRow): boolean {
-  return r.tripDropId === null && !isTintRoomRow(r);
+  if (isTintRoomRow(r)) return false;
+  const inv = r.invoiceRows ?? [];
+  return inv.length >= 2 ? inv.some((i) => i.tripDropId === null) : r.tripDropId === null;
 }
 
 export function TripDesk({
@@ -1074,6 +1083,8 @@ export function TripDesk({
                     // the heading on every row (owner). The pool and By route
                     // keep it — out there the trips are mixed.
                     hideTripTag
+                    // Trip stops show Area, not Route (owner 2026-10-15). Pool/Tinting tables keep Route.
+                    showArea
                     selectionLocked={adding}
                     {...selProps}
                     // Re-delivery rows tick by their own id (never the History

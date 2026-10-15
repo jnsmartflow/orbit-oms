@@ -7,7 +7,7 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { deriveObdTripDropId, planWholeObdTripMove, type TripLinkRow } from "./trip-link";
+import { deriveObdTripDropId, derivePartlyOnTrip, needsDerivedRepair, planRowsTripMove, planWholeObdTripMove, type TripLinkRow } from "./trip-link";
 import { linkRowFor } from "./links";
 
 const rows18648 = (drops: (number | null)[]): TripLinkRow[] =>
@@ -38,6 +38,7 @@ test("move onto a stop: every row updated, OBD derived to that stop", () => {
   assert.deepEqual(planWholeObdTripMove(rows18648([null, null, null, null]), 2478), {
     rowIdsToUpdate: [17010, 36798, 36799, 36800],
     derived: 2478,
+    partlyOnTrip: false,
     noRows: false,
   });
 });
@@ -46,6 +47,7 @@ test("move off any trip: every row cleared, OBD derived to null", () => {
   assert.deepEqual(planWholeObdTripMove(rows18648([2478, 2478, 2478, 2478]), null), {
     rowIdsToUpdate: [17010, 36798, 36799, 36800],
     derived: null,
+    partlyOnTrip: false,
     noRows: false,
   });
 });
@@ -65,8 +67,8 @@ test("rows that drifted apart are all brought onto the target", () => {
 });
 
 test("an OBD with no invoice rows: orders written alone with the target, flagged", () => {
-  assert.deepEqual(planWholeObdTripMove([], 2478), { rowIdsToUpdate: [], derived: 2478, noRows: true });
-  assert.deepEqual(planWholeObdTripMove([], null), { rowIdsToUpdate: [], derived: null, noRows: true });
+  assert.deepEqual(planWholeObdTripMove([], 2478), { rowIdsToUpdate: [], derived: 2478, partlyOnTrip: false, noRows: true });
+  assert.deepEqual(planWholeObdTripMove([], null), { rowIdsToUpdate: [], derived: null, partlyOnTrip: false, noRows: true });
 });
 
 // ── linkRowFor ───────────────────────────────────────────────────────────────
@@ -93,4 +95,107 @@ test("link: no seq-1 row → NULL for every kind", () => {
   for (const kind of ["copy", "redelivery", "ci"] as const) {
     assert.equal(linkRowFor({ seq1Id: null, split: false }, kind), null);
   }
+});
+
+// ── planRowsTripMove (Phase 5 commit 2 — setRowsTrip's plan) ────────────────
+
+// Rows with the trip of their stop: 2478 is on trip 605, 2763 on trip 668.
+const TRIP_OF: Record<number, number> = { 2478: 605, 2763: 668 };
+const placed = (drops: (number | null)[]): TripLinkRow[] =>
+  rows18648(drops).map((r) => ({ ...r, tripId: r.tripDropId === null ? null : TRIP_OF[r.tripDropId] }));
+
+test("rows: an unsplit OBD moves exactly as the whole-OBD plan did", () => {
+  const one: TripLinkRow[] = [{ id: 500, seq: 1, tripDropId: null, tripId: null }];
+  assert.deepEqual(planRowsTripMove(one, "all", 2478), { rowIdsToUpdate: [500], derived: 2478, partlyOnTrip: false, noRows: false });
+  assert.deepEqual(planRowsTripMove(one, "all", 2478), planWholeObdTripMove(one, 2478));
+  const on: TripLinkRow[] = [{ id: 500, seq: 1, tripDropId: 2478, tripId: 605 }];
+  assert.deepEqual(planRowsTripMove(on, "all", null, { onlyFromTripId: 605 }), { rowIdsToUpdate: [500], derived: null, partlyOnTrip: false, noRows: false });
+});
+
+test("rows: PARTIAL add — 713 + 715 onto stop 2763; the OBD's stop is the lowest seq with one (713's)", () => {
+  assert.deepEqual(planRowsTripMove(placed([null, null, null, null]), [36798, 36800], 2763), {
+    rowIdsToUpdate: [36798, 36800],
+    derived: 2763,
+    partlyOnTrip: true,
+    noRows: false,
+  });
+});
+
+test("rows: derived is recomputed from ALL rows, not from the moved ones", () => {
+  // 716 already on 2478; 715 joins 2763 → seq 1's stop still wins.
+  const plan = planRowsTripMove(placed([2478, null, null, null]), [36800], 2763);
+  assert.deepEqual(plan.rowIdsToUpdate, [36800]);
+  assert.equal(plan.derived, 2478);
+});
+
+test("rows: PARTIAL remove — 715 off; 713 stays, the OBD stays on its stop", () => {
+  const plan = planRowsTripMove(placed([null, 2763, null, 2763]), [36800], null, { onlyFromTripId: 668 });
+  assert.deepEqual(plan, { rowIdsToUpdate: [36800], derived: 2763, partlyOnTrip: true, noRows: false });
+});
+
+test("rows: onlyFromTripId never strips a row on ANOTHER trip (remove / cancel of trip 668)", () => {
+  const plan = planRowsTripMove(placed([2478, 2763, null, 2763]), "all", null, { onlyFromTripId: 668 });
+  assert.deepEqual(plan.rowIdsToUpdate, [36798, 36800]);
+  // 716 is still on 2478 (trip 605) — the OBD now derives to it.
+  assert.equal(plan.derived, 2478);
+  // Cancelling trip 605 instead leaves 713 + 715 on 668.
+  const other = planRowsTripMove(placed([2478, 2763, null, 2763]), "all", null, { onlyFromTripId: 605 });
+  assert.deepEqual(other, { rowIdsToUpdate: [17010], derived: 2763, partlyOnTrip: true, noRows: false });
+});
+
+test("rows: onlyFromTripId with no row on that trip moves nothing; derived is the rows' own", () => {
+  assert.deepEqual(planRowsTripMove(placed([2478, null, null, null]), "all", null, { onlyFromTripId: 668 }), {
+    rowIdsToUpdate: [],
+    derived: 2478,
+    partlyOnTrip: true,
+    noRows: false,
+  });
+});
+
+test("rows: RETRY AFTER A FAILED HALF-WRITE converges — no row re-written, orders gets the derived stop", () => {
+  // Add died after the rows: 713 + 715 on 2763, orders.tripDropId still null.
+  const rows = placed([null, 2763, null, 2763]);
+  assert.equal(needsDerivedRepair(rows, { tripDropId: null, partlyOnTrip: false }), true);
+  const retry = planRowsTripMove(rows, [36798, 36800], 2763);
+  assert.deepEqual(retry, { rowIdsToUpdate: [], derived: 2763, partlyOnTrip: true, noRows: false });
+  // The route's repair call (no rows chosen) lands the same derived stop.
+  assert.equal(planRowsTripMove(rows, [], null).derived, 2763);
+  assert.deepEqual(planRowsTripMove(rows, [], null).rowIdsToUpdate, []);
+  assert.equal(needsDerivedRepair(rows, { tripDropId: 2763, partlyOnTrip: true }), false);
+
+  // Remove died after the rows: rows already off trip 668, orders still on 2763.
+  const off = placed([null, null, null, null]);
+  assert.equal(needsDerivedRepair(off, { tripDropId: 2763, partlyOnTrip: true }), true);
+  assert.deepEqual(planRowsTripMove(off, "all", null, { onlyFromTripId: 668 }), { rowIdsToUpdate: [], derived: null, partlyOnTrip: false, noRows: false });
+});
+
+test("rows: ids that are not the OBD's rows are ignored by the plan", () => {
+  assert.deepEqual(planRowsTripMove(placed([null, null, null, null]), [999], 2763).rowIdsToUpdate, []);
+});
+
+test("rows: an OBD with no rows → orders written alone with the target, flagged", () => {
+  assert.deepEqual(planRowsTripMove([], [1], 2478), { rowIdsToUpdate: [], derived: 2478, partlyOnTrip: false, noRows: true });
+  assert.equal(needsDerivedRepair([], { tripDropId: 2478, partlyOnTrip: false }), false);
+});
+
+// ── "partlyOnTrip" (v27.69 — the dual-written flag) ──────────────────────────
+
+test("partly: only some rows on a stop; unsplit, all-on and all-off are false", () => {
+  assert.equal(derivePartlyOnTrip(rows18648([null, 2763, null, 2763])), true);
+  assert.equal(derivePartlyOnTrip(rows18648([2763, 2763, 2763, 2763])), false);
+  assert.equal(derivePartlyOnTrip(rows18648([null, null, null, null])), false);
+  assert.equal(derivePartlyOnTrip([{ seq: 1, tripDropId: 2478 }]), false);
+  assert.equal(derivePartlyOnTrip([]), false);
+  // On two different stops, none off: not partly (every invoice is on a truck).
+  assert.equal(derivePartlyOnTrip(rows18648([2478, 2763, 2478, 2763])), false);
+});
+
+test("partly: the last off-trip invoice joining clears the flag; the first leaving sets it", () => {
+  assert.equal(planRowsTripMove(placed([null, 2763, 2763, 2763]), [17010], 2763).partlyOnTrip, false);
+  assert.equal(planRowsTripMove(placed([2763, 2763, 2763, 2763]), [36800], null, { onlyFromTripId: 668 }).partlyOnTrip, true);
+});
+
+test("repair: a stale FLAG alone (stop right) still needs the orders write", () => {
+  const rows = placed([null, 2763, null, 2763]);
+  assert.equal(needsDerivedRepair(rows, { tripDropId: 2763, partlyOnTrip: false }), true);
 });
