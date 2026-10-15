@@ -11,6 +11,7 @@ import {
   AlertTriangle,
   Eye,
   ClipboardPaste,
+  ClipboardList,
   FileSpreadsheet,
 } from "lucide-react";
 import { getTodayIST } from "@/lib/dates";
@@ -43,7 +44,21 @@ type Stage =
   | "result"
   | "error";
 
-type Format = "sap-paste" | "sap" | "manual-template";
+// "obd-paste" (2026-10-15) is the SAP paste with rule D.1b off: the SAME paste
+// box, date, preview and header-pill handoff, the SAME two routes with
+// `obd: true` in the body. The server keeps every shipping point and tags each
+// bill orders.isObdImport. Test a paste branch with isPasteFormat, never
+// `format === "sap-paste"` — that would silently drop the OBD card.
+type Format = "sap-paste" | "obd-paste" | "sap" | "manual-template";
+
+function isPasteFormat(f: Format): boolean {
+  return f === "sap-paste" || f === "obd-paste";
+}
+
+/** The paste routes' JSON body. `obd: true` only for the OBD card. */
+function pasteBody(f: Format, block: string, obdEmailDate: string): string {
+  return JSON.stringify(f === "obd-paste" ? { block, obdEmailDate, obd: true } : { block, obdEmailDate });
+}
 
 type Tab = "new" | "log";
 
@@ -51,10 +66,11 @@ type Tab = "new" | "log";
 // batches in the 60 days before). Manual template stays on the /import page
 // (components/import/import-page-content.tsx). Its branches below are left in
 // place, unreachable from this window: `format` can no longer become
-// "manual-template" here.
+// "manual-template" here. The third card, "OBD" (2026-10-15), is a paste.
 const FORMAT_CARDS: { format: Format; title: string; Icon: typeof ClipboardPaste }[] = [
   { format: "sap-paste", title: "Paste from SAP", Icon: ClipboardPaste },
   { format: "sap",       title: "SAP file",       Icon: FileSpreadsheet },
+  { format: "obd-paste", title: "OBD",            Icon: ClipboardList },
 ];
 
 /** Footer Cancel — a bordered secondary button, so it reads as a button. */
@@ -218,7 +234,7 @@ export function ImportModal({ open, onClose }: ImportModalProps): React.JSX.Elem
   }
 
   function discardPrompt(): string {
-    return format === "sap-paste"
+    return isPasteFormat(format)
       ? "Discard this import? Your paste will be cleared."
       : "Discard this import? Your file will be cleared.";
   }
@@ -230,7 +246,7 @@ export function ImportModal({ open, onClose }: ImportModalProps): React.JSX.Elem
   // the summary; Ctrl+V still works from there via the modal-level listener.
 
   useEffect(() => {
-    if (!open || tab !== "new" || stage !== "idle" || format !== "sap-paste" || paste || pasteBlocked) return;
+    if (!open || tab !== "new" || stage !== "idle" || !isPasteFormat(format) || paste || pasteBlocked) return;
     pasteSinkRef.current?.focus();
   }, [open, tab, stage, format, paste, pasteBlocked]);
 
@@ -251,7 +267,10 @@ export function ImportModal({ open, onClose }: ImportModalProps): React.JSX.Elem
   // ── Paste: read a block into state B or C ────────────────────────────────
 
   function loadPaste(text: string): void {
-    setFormat("sap-paste");
+    // A paste lands on a paste card — and STAYS on the OBD card if that is the
+    // one selected. Functional update: the paste listener's closure does not
+    // track `format`, so reading it here could be stale.
+    setFormat((f) => (isPasteFormat(f) ? f : "sap-paste"));
     setErrorMessage(null);
     if (stage === "error") setStage("idle");
 
@@ -348,7 +367,7 @@ export function ImportModal({ open, onClose }: ImportModalProps): React.JSX.Elem
     const res = await fetch(`/api/import/obd?action=${action}`, {
       method:  "POST",
       headers: { "Content-Type": "application/json" },
-      body:    JSON.stringify({ block: paste.block, obdEmailDate }),
+      body:    pasteBody(format, paste.block, obdEmailDate),
     });
 
     const isJson = (res.headers.get("content-type") ?? "").includes("application/json");
@@ -415,7 +434,7 @@ export function ImportModal({ open, onClose }: ImportModalProps): React.JSX.Elem
 
   async function handlePrimaryFromIdle(): Promise<void> {
     // Paste needs a block that READ cleanly; the file formats need a file.
-    if (format === "sap-paste" ? paste === null : !file) return;
+    if (isPasteFormat(format) ? paste === null : !file) return;
     if (previewEnabled) {
       await runPreview();
     } else {
@@ -427,7 +446,7 @@ export function ImportModal({ open, onClose }: ImportModalProps): React.JSX.Elem
     setStage("parsing");
     setErrorMessage(null);
     try {
-      if (format === "sap-paste") {
+      if (isPasteFormat(format)) {
         const data = await postPaste<SapPreviewResponse>("sap-paste-preview");
         if (data === null) return; // blocked — state C is already on screen
         setPreviewData(data);
@@ -475,7 +494,7 @@ export function ImportModal({ open, onClose }: ImportModalProps): React.JSX.Elem
    */
   function handOffSapWrite(obdCount: number | null): void {
     let job: ImportJobRequest;
-    if (format === "sap-paste") {
+    if (isPasteFormat(format)) {
       if (paste === null) return;
       if (paste.block.length > SAP_PASTE_MAX_CHARS) {
         setPaste(null);
@@ -485,12 +504,12 @@ export function ImportModal({ open, onClose }: ImportModalProps): React.JSX.Elem
       }
       job = {
         obdCount:    obdCount ?? paste.obdCount,
-        sourceLabel: "Clipboard paste",
+        sourceLabel: format === "obd-paste" ? "OBD paste" : "Clipboard paste",
         url:         "/api/import/obd?action=sap-paste-confirm",
         init: {
           method:  "POST",
           headers: { "Content-Type": "application/json" },
-          body:    JSON.stringify({ block: paste.block, obdEmailDate }),
+          body:    pasteBody(format, paste.block, obdEmailDate),
         },
       };
     } else {
@@ -522,8 +541,8 @@ export function ImportModal({ open, onClose }: ImportModalProps): React.JSX.Elem
 
   async function runDirectImport(): Promise<void> {
     // SAP writes leave the window — see handOffSapWrite.
-    if (format === "sap-paste" || format === "sap") {
-      handOffSapWrite(format === "sap-paste" && paste !== null ? paste.obdCount : null);
+    if (isPasteFormat(format) || format === "sap") {
+      handOffSapWrite(isPasteFormat(format) && paste !== null ? paste.obdCount : null);
       return;
     }
     setStage("submitting");
@@ -578,7 +597,7 @@ export function ImportModal({ open, onClose }: ImportModalProps): React.JSX.Elem
   async function handleConfirmYes(): Promise<void> {
     // SAP writes leave the window — see handOffSapWrite. The count is what the
     // preview said would be written (new + patch).
-    if (format === "sap-paste" || format === "sap") {
+    if (isPasteFormat(format) || format === "sap") {
       const s = previewData ? toUnifiedSummary(previewData, format) : null;
       handOffSapWrite(s ? s.new + s.patch : null);
       return;
@@ -642,10 +661,13 @@ export function ImportModal({ open, onClose }: ImportModalProps): React.JSX.Elem
 
   const isInFlight = stage === "parsing" || stage === "submitting";
   const isLocked   = file !== null;
-  const isSapLike  = format === "sap" || format === "sap-paste";
+  const isSapLike  = format === "sap" || isPasteFormat(format);
   // Paste: a block that read cleanly. File formats: a file.
-  const canSubmit  = format === "sap-paste" ? paste !== null : file !== null;
-  const sourceChip = format === "sap-paste" ? "Clipboard paste" : (file?.name ?? "—");
+  const canSubmit  = isPasteFormat(format) ? paste !== null : file !== null;
+  const sourceChip =
+    format === "obd-paste" ? "OBD paste" :
+    format === "sap-paste" ? "Clipboard paste" :
+    (file?.name ?? "—");
 
   return (
     <div
@@ -773,14 +795,14 @@ export function ImportModal({ open, onClose }: ImportModalProps): React.JSX.Elem
             {/* RIGHT — what to import, date, preview */}
             <div className="min-w-0 flex flex-col">
             <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-ink-500">
-              {format === "sap-paste" ? "Paste" : "File"}
+              {isPasteFormat(format) ? "Paste" : "File"}
             </p>
 
             {/* Grows to fill the column — the empty paste box / dropzone inside
                 takes all of it; a loaded summary or file chip sits at its top. */}
             <div className="flex min-h-[240px] flex-1 flex-col">
             {/* Paste area (states A / B / C) OR the file area, unchanged */}
-            {format === "sap-paste" ? (
+            {isPasteFormat(format) ? (
               <>
                 {pasteBlocked !== null ? (
                   <PasteBlockedPanel blocked={pasteBlocked} />
@@ -950,6 +972,14 @@ export function ImportModal({ open, onClose }: ImportModalProps): React.JSX.Elem
                 >
                   SAP file
                 </button>
+                <button
+                  disabled
+                  className={`px-[14px] py-[5px] text-[11px] rounded-[5px] cursor-not-allowed ${
+                    format === "obd-paste" ? "bg-gray-900 text-white font-medium" : "text-gray-500"
+                  }`}
+                >
+                  OBD
+                </button>
               </div>
             </div>
 
@@ -1002,6 +1032,14 @@ export function ImportModal({ open, onClose }: ImportModalProps): React.JSX.Elem
                   }`}
                 >
                   SAP file
+                </button>
+                <button
+                  disabled
+                  className={`px-[14px] py-[5px] text-[11px] rounded-[5px] cursor-not-allowed ${
+                    format === "obd-paste" ? "bg-gray-900 text-white font-medium" : "text-gray-500"
+                  }`}
+                >
+                  OBD
                 </button>
               </div>
             </div>
@@ -1142,7 +1180,7 @@ export function ImportModal({ open, onClose }: ImportModalProps): React.JSX.Elem
                   ? (stage === "parsing" ? "Parsing…" : "Importing…")
                   : previewEnabled
                     ? "Preview"
-                    : format === "sap-paste" && paste !== null
+                    : isPasteFormat(format) && paste !== null
                       ? `Import ${paste.obdCount.toLocaleString("en-IN")} OBD${paste.obdCount === 1 ? "" : "s"}`
                       : "Import"}
               </button>
@@ -1573,9 +1611,9 @@ function toUnifiedSummary(
   p:      SapPreviewResponse | ImportPreviewResponse,
   format: Format,
 ): UnifiedSummary {
-  // sap AND sap-paste — the paste routes return the SAME SapPreviewResponse.
+  // sap AND both pastes — the paste routes return the SAME SapPreviewResponse.
   // A missed widening here returns zeros silently (see the fallback below).
-  if ((format === "sap" || format === "sap-paste") && isSapPreview(p)) {
+  if ((format === "sap" || isPasteFormat(format)) && isSapPreview(p)) {
     const total =
       p.summary.newOBDs +
       p.summary.patchOBDs +
@@ -1609,7 +1647,7 @@ function toUnifiedRows(
   p:      SapPreviewResponse | ImportPreviewResponse,
   format: Format,
 ): UnifiedRow[] {
-  if ((format === "sap" || format === "sap-paste") && isSapPreview(p)) {
+  if ((format === "sap" || isPasteFormat(format)) && isSapPreview(p)) {
     return p.obds.map((o) => ({
       key:       o.obdNumber,
       obdNumber: o.obdNumber,
@@ -1648,7 +1686,7 @@ function toResultCells(
   preview: SapPreviewResponse | ImportPreviewResponse | null,
   format:  Format,
 ): ResultCell[] {
-  if ((format === "sap" || format === "sap-paste") && isSapConfirm(result)) {
+  if ((format === "sap" || isPasteFormat(format)) && isSapConfirm(result)) {
     return [
       { label: "Created",   value: result.summary.created,   tone: "neutral" },
       { label: "Patched",   value: result.summary.patched,   tone: result.summary.patched > 0 ? "amber" : "neutral" },

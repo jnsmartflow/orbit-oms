@@ -2311,6 +2311,13 @@ async function parseManualSapForm(req: Request): Promise<ParsedManualSapForm> {
 // carry the same line authority (LINE_AUTHORITY, lib/import-upsert/types.ts).
 // A paste batch is told apart only by its headerFile marker `[sap-paste] …`;
 // the per-OBD audit notes read "via manual-sap batch BATCH-…".
+//
+// ⚠ THE OBD PASTE (2026-10-15) RIDES THESE SAME TWO ACTIONS with `obd: true` in
+// the body — same session gate, same SAP_IMPORT_ENABLED gate, same import_obd
+// permission, same "manual-sap" source, by construction rather than by copy.
+// It differs in exactly three places, each marked "OBD MODE": rule D.1b is off
+// (any shipping point is kept), the headerFile marker is `[obd-paste] …`, and
+// upsertObd gets markObdImport (orders.isObdImport = true, sticky).
 
 /** Characters, not bytes. A full day is ~370 KB; Vercel refuses a 4.5 MB body
  *  with a NON-JSON 413, so refuse well before it with one the client can read. */
@@ -2333,7 +2340,7 @@ function unresolvedPasteCustomers(kept: KeptName[]): PasteUnresolvedCustomer[] {
 }
 
 type ParsedSapPasteBody =
-  | { kind: "ok"; block: string; fallbackObdEmailDate: Date; dateStr: string }
+  | { kind: "ok"; block: string; fallbackObdEmailDate: Date; dateStr: string; obdMode: boolean }
   | { kind: "error"; response: NextResponse };
 
 async function parseSapPasteBody(req: Request): Promise<ParsedSapPasteBody> {
@@ -2373,7 +2380,8 @@ async function parseSapPasteBody(req: Request): Promise<ParsedSapPasteBody> {
     )};
   }
 
-  return { kind: "ok", block: b.block, fallbackObdEmailDate, dateStr: dateStr.trim() };
+  // OBD MODE — only a literal `true` turns it on; anything else is a normal paste.
+  return { kind: "ok", block: b.block, fallbackObdEmailDate, dateStr: dateStr.trim(), obdMode: b.obd === true };
 }
 
 // ── SAP PASTE PREVIEW handler ─────────────────────────────────────────────────
@@ -2388,11 +2396,12 @@ async function handleSapPastePreview(req: Request, _session: Session): Promise<N
 
   const parsed = await parseSapPasteBody(req);
   if (parsed.kind === "error") return parsed.response;
-  const { block, fallbackObdEmailDate } = parsed;
+  const { block, fallbackObdEmailDate, obdMode } = parsed;
 
   // DIFFERENCE vs .xlsx: a bad paste does not throw — it comes back blocked,
   // with EVERY unreadable line, and nothing is previewed.
-  const pasteResult = await parseSapPaste(block, { fallbackObdEmailDate });
+  // OBD MODE: rule D.1b off — no bill is skipped for its shipping point.
+  const pasteResult = await parseSapPaste(block, { fallbackObdEmailDate, skipForeignShippingPoint: !obdMode });
   if (pasteResult.kind === "blocked") {
     return NextResponse.json(
       { ok: false, error: pasteResult.error, errors: pasteResult.errors },
@@ -2515,7 +2524,7 @@ async function handleSapPastePreview(req: Request, _session: Session): Promise<N
   return NextResponse.json({
     ok:        true,
     // DIFFERENCE vs .xlsx: there is no file, so the label says what it was.
-    filename:  `Clipboard paste (${parseResult.fileStats.totalRows} rows)`,
+    filename:  `${obdMode ? "OBD paste" : "Clipboard paste"} (${parseResult.fileStats.totalRows} rows)`,
     fileStats: parseResult.fileStats,
     summary,
     obds:      obdEntries,
@@ -2541,11 +2550,12 @@ async function handleSapPasteConfirm(req: Request, session: Session): Promise<Ne
 
   const parsedBody = await parseSapPasteBody(req);
   if (parsedBody.kind === "error") return parsedBody.response;
-  const { block, fallbackObdEmailDate, dateStr } = parsedBody;
+  const { block, fallbackObdEmailDate, dateStr, obdMode } = parsedBody;
 
   // Re-parsed here — the server is the only parsing authority; the preview's
   // result is never trusted for a write.
-  const pasteResult = await parseSapPaste(block, { fallbackObdEmailDate });
+  // OBD MODE: rule D.1b off, exactly as in the preview.
+  const pasteResult = await parseSapPaste(block, { fallbackObdEmailDate, skipForeignShippingPoint: !obdMode });
   if (pasteResult.kind === "blocked") {
     return NextResponse.json(
       { ok: false, error: pasteResult.error, errors: pasteResult.errors },
@@ -2561,11 +2571,12 @@ async function handleSapPasteConfirm(req: Request, session: Session): Promise<Ne
 
   // DIFFERENCE 1 — the marker. import_batches has no source column; this prefix
   // is how a paste batch is told apart later (`headerFile LIKE '[sap-paste]%'`).
+  // OBD MODE: `[obd-paste]` instead (`headerFile LIKE '[obd-paste]%'`).
   const batchRef = await generateBatchRef();
   const batch = await createBatchWithRetry({
     batchRef,
     importedBy:   { connect: { id: userId } },
-    headerFile:   `[sap-paste] clipboard ${parseResult.fileStats.totalRows} rows (obdEmailDate: ${dateStr})`,
+    headerFile:   `${obdMode ? "[obd-paste]" : "[sap-paste]"} clipboard ${parseResult.fileStats.totalRows} rows (obdEmailDate: ${dateStr})`,
     lineFile:     "",
     status:       "processing",
   });
@@ -2670,9 +2681,10 @@ async function handleSapPasteConfirm(req: Request, session: Session): Promise<Ne
         : null;
 
       // Source is "manual-sap" ON PURPOSE — same report, same line authority.
+      // OBD MODE: markObdImport tags the bill (create AND patch/unchanged).
       const r = await upsertObd(
         input, "manual-sap", batchId, batchRef, userId, now,
-        { dryRun: false, preloaded: { order: existingOrder, summary: existingSummary, lines: existingLines, customerId } },
+        { dryRun: false, preloaded: { order: existingOrder, summary: existingSummary, lines: existingLines, customerId }, markObdImport: obdMode },
       );
 
       counters[r.outcome] += 1;

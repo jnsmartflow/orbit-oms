@@ -139,7 +139,7 @@ export type SapPasteConfirmResponse = SapConfirmResponse & { unresolvedCustomers
 // count comes from import_batches + orders.batchId; nothing per-OBD is stored,
 // so there is no skip REASON and no patched/unchanged split.
 
-export type ImportLogHow = "sap-paste" | "sap-file" | "template"
+export type ImportLogHow = "sap-paste" | "obd-paste" | "sap-file" | "template"
 
 export interface ImportLogRow {
   id:       number

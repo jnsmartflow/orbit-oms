@@ -124,6 +124,7 @@ export async function GET(): Promise<NextResponse> {
 
 function howFromHeaderFile(headerFile: string): ImportLogHow {
   if (headerFile.startsWith("[sap-paste]"))  return "sap-paste";
+  if (headerFile.startsWith("[obd-paste]"))  return "obd-paste";
   if (headerFile.startsWith("[manual-sap]")) return "sap-file";
   return "template";
 }

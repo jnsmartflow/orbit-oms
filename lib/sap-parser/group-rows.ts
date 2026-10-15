@@ -10,6 +10,9 @@
 //        warning naming the value(s). Never row-level: SAP sources carry
 //        LINE_AUTHORITY, so a dropped row on a kept bill would be marked
 //        removed_by_import.
+//        ⚠ OPTIONAL since the OBD source (2026-10-15): the Import window's
+//        "OBD" card passes skipForeignShippingPoint: false, and D.1b does not
+//        run at all. Every other caller passes nothing and keeps the skip.
 // The other skip rules — all-ZZRE and no-valid-lines — are applied later in
 // apply-rules.ts after per-row filtering, since they depend on what survives
 // line-level processing.
@@ -29,6 +32,13 @@ export interface GroupRowsResult {
   uniqueDeliveries: Set<string>;
 }
 
+export interface GroupRowsOptions {
+  /** Rule D.1b. Default true — the .xlsx and the normal paste always skip a
+   *  bill whose shipping point is not DEPOT_SHIPPING_POINT. Only the OBD
+   *  paste passes false. */
+  skipForeignShippingPoint?: boolean;
+}
+
 /**
  * Bucket rows by Delivery, preserving insertion order. Apply skip rule D.1:
  * non-LF returns are removed from the result and added to `skipped[]`.
@@ -37,7 +47,8 @@ export interface GroupRowsResult {
  * non-contiguous row groups) and log `duplicate-delivery-header` warnings —
  * the rows are still merged into a single group.
  */
-export function groupRows(rows: RawSapRow[]): GroupRowsResult {
+export function groupRows(rows: RawSapRow[], options: GroupRowsOptions = {}): GroupRowsResult {
+  const skipForeignShippingPoint = options.skipForeignShippingPoint !== false;
   const groupMap = new Map<string, RawSapRow[]>();
   const seenContiguousEnd = new Map<string, number>(); // last row number we saw contiguously
   const duplicateDeliveries = new Set<string>();
@@ -92,10 +103,11 @@ export function groupRows(rows: RawSapRow[]): GroupRowsResult {
     // Skip rule D.1b — other depot's shipping point. Checked on EVERY row,
     // not the first: buildObds stores rows[0]'s value, so a mixed delivery
     // would otherwise import under whichever row came first.
+    // Off for the OBD paste (GroupRowsOptions) — then rows[0]'s value is stored.
     const shippingPoints = Array.from(new Set(
       deliveryRows.map((r: RawSapRow) => (r.warehouse ?? "").trim().toUpperCase() || "(blank)"),
     ));
-    if (shippingPoints.length !== 1 || shippingPoints[0] !== DEPOT_SHIPPING_POINT) {
+    if (skipForeignShippingPoint && (shippingPoints.length !== 1 || shippingPoints[0] !== DEPOT_SHIPPING_POINT)) {
       const rowNumbers = deliveryRows.map((r: RawSapRow) => r.rowNumber);
       const message =
         shippingPoints.length > 1

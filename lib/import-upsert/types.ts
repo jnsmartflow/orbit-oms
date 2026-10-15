@@ -117,6 +117,13 @@ export interface UpsertOptions {
     lines:      ExistingLine[];
     customerId: number | null;
   };
+  /**
+   * The OBD paste (2026-10-15, v27.68): set orders.isObdImport = true — in the
+   * create data on a new bill, and once on an existing one (patched OR
+   * unchanged). STICKY: nothing anywhere writes it back to false. Every other
+   * caller omits it and never touches the column.
+   */
+  markObdImport?: boolean;
 }
 
 // ─── Internal types (re-exported within the subfolder, not from the barrel) ─

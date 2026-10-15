@@ -38,10 +38,13 @@ export type SapPasteParseResult =
  *
  * `fallbackObdEmailDate` is the date the operator picked — stamped on every
  * OBD, exactly as for the .xlsx (the list has no email-date column).
+ *
+ * `skipForeignShippingPoint` — rule D.1b (group-rows.ts). Omitted = true, the
+ * normal paste. The OBD paste passes false: every shipping point is kept.
  */
 export async function parseSapPaste(
   block:   string,
-  options: { fallbackObdEmailDate: Date },
+  options: { fallbackObdEmailDate: Date; skipForeignShippingPoint?: boolean },
 ): Promise<SapPasteParseResult> {
   const read = readPaste(block);
 
@@ -57,7 +60,7 @@ export async function parseSapPaste(
     };
   }
 
-  const grouped = groupRows(read.rows);
+  const grouped = groupRows(read.rows, { skipForeignShippingPoint: options.skipForeignShippingPoint });
   const applied = applyRules(grouped.groups);
   const built   = await buildObds(grouped.groups, applied, options.fallbackObdEmailDate);
 

@@ -1361,6 +1361,13 @@ model orders {
   challanSoLinks         challan_order_so_links[] @relation("ChallanSoLinkOrbOrder")
   challanSoLinksAsLinked challan_order_so_links[] @relation("ChallanSoLinkLinkedOrder")
 
+  // ── OBD IMPORT TAG (2026-10-15, Schema v27.68, added live by the owner in the
+  // SQL Editor). Live: boolean NOT NULL DEFAULT false. TRUE on a bill saved through
+  // the Import window's "OBD" paste (rule D.1b off — any shipping point), on create
+  // AND on a re-import of an existing bill. STICKY: the only writer is
+  // lib/import-upsert.ts (markObdImport), and it never writes false.
+  isObdImport Boolean @default(false)
+
   // Partial index created directly in Supabase, NOT expressible in Prisma
   // syntax — do NOT model it as @@index:
   //   orders_billing_pending_idx ON orders ("workflowStage")

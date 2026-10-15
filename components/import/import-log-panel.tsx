@@ -27,6 +27,7 @@ export interface ImportLogPanelProps {
 
 const HOW_LABEL: Record<ImportLogHow, string> = {
   "sap-paste": "SAP paste",
+  "obd-paste": "OBD paste",
   "sap-file":  "SAP file",
   "template":  "Template",
 };

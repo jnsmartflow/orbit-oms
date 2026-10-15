@@ -100,6 +100,7 @@ export async function upsertObd(
   options:  UpsertOptions = {},
 ): Promise<UpsertResult> {
   const dryRun = options.dryRun === true;
+  const markObdImport = options.markObdImport === true;
   const result: UpsertResult = {
     obdNumber: input.obdNumber,
     outcome:   "errored",
@@ -126,12 +127,12 @@ export async function upsertObd(
 
     if (loaded.order === null) {
       return await createPath(input, source, batchId, batchRef, userId, now,
-        divisionResolved, resolvedCustomerId, result, dryRun);
+        divisionResolved, resolvedCustomerId, result, dryRun, markObdImport);
     }
 
     return await patchPath(loaded.order, loaded.summary, loaded.lines,
       input, source, batchId, batchRef, userId, now,
-      divisionResolved, resolvedCustomerId, result, dryRun);
+      divisionResolved, resolvedCustomerId, result, dryRun, markObdImport);
   } catch (err) {
     result.outcome = "errored";
     result.errors.push(err instanceof Error ? err.message : String(err));
@@ -152,6 +153,7 @@ async function createPath(
   resolvedCustomerId: number | null,
   result:             UpsertResult,
   dryRun:             boolean,
+  markObdImport:      boolean,
 ): Promise<UpsertResult> {
   const hasTinting    = input.lines.some((l) => l.isTinting);
   const orderType     = hasTinting ? "tint" : "non_tint";
@@ -190,6 +192,8 @@ async function createPath(
           grossWeight:         input.grossWeight,
           volume:              input.volume,
           customerMissing:     resolvedCustomerId === null,
+          // The OBD paste only. Omitted otherwise, so the column default applies.
+          ...(markObdImport ? { isObdImport: true } : {}),
         },
         select: { id: true },
       });
@@ -205,7 +209,7 @@ async function createPath(
         if (retry.order) {
           return await patchPath(retry.order, retry.summary, retry.lines,
             input, source, batchId, batchRef, userId, now,
-            divisionResolved, resolvedCustomerId, result, dryRun);
+            divisionResolved, resolvedCustomerId, result, dryRun, markObdImport);
         }
         result.errors.push(`P2002 on create but order still not found: ${input.obdNumber}`);
         return result;
@@ -317,7 +321,19 @@ async function patchPath(
   resolvedCustomerId: number | null,
   result:             UpsertResult,
   dryRun:             boolean,
+  markObdImport:      boolean,
 ): Promise<UpsertResult> {
+  // The OBD paste, on a bill that already exists. Runs BEFORE the unchanged
+  // early return: re-pasting an untouched bill through OBD must still tag it.
+  // Guarded on `isObdImport: false`, so it writes at most once in a bill's life
+  // (no repeat orders.updatedAt bump) and can never write false.
+  if (!dryRun && markObdImport) {
+    await prisma.orders.updateMany({
+      where: { id: existing.id, isObdImport: false },
+      data:  { isObdImport: true },
+    });
+  }
+
   const headerPlan = patchHeader(existing, existingSummary, input, source, divisionResolved, resolvedCustomerId);
   const linePlan   = patchLines(existingLines, input.lines, source, batchId, now);
 
