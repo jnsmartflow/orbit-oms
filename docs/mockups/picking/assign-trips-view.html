@@ -1,0 +1,402 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Assign — Trips view</title>
+<style>
+  :root{
+    --brand:#7c3aed; --brand-dk:#6d28d9; --mast:#f3f1fc;
+    --ink:#16131f; --ink2:#5e5a6e; --ink3:#9b97a8; --line:#ececf2; --bg:#f6f6f9; --shelf:#f6f6f9;
+    --wait:#d3d3dd; --pick:#5b8ded; --check:#fbbf24; --done:#2eb862; --tint:#f9a8d4; --track:#ececf2;
+    --green:#16a34a; --pinkbg:#fde8f1; --pink:#be185d;
+    --local:#2563eb; --localbg:#eaf1ff; --upc:#ea580c; --upcbg:#fff1e7;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:"Plus Jakarta Sans",Inter,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:#e7e6ee;color:var(--ink);padding:24px 16px}
+  h1{font-size:20px;margin-bottom:6px}
+  .lead{color:var(--ink2);font-size:14px;margin-bottom:24px;max-width:1100px;line-height:1.5}
+  .row{display:flex;gap:28px;flex-wrap:wrap;align-items:flex-start}
+  .col{width:390px}
+  .cap{font-size:13px;font-weight:800;color:var(--brand-dk);margin-bottom:8px;letter-spacing:.03em}
+  .note{font-size:13px;color:var(--ink2);margin-top:10px;line-height:1.55}
+  .note b{color:var(--ink)}
+  .new{background:#fef9c3;border-radius:4px;padding:0 3px}
+
+  .phone{width:390px;height:844px;background:var(--bg);border-radius:34px;border:8px solid #16131f;overflow:hidden;position:relative;display:flex;flex-direction:column}
+  .mast{background:var(--mast);padding:16px 16px 12px;display:grid;grid-template-columns:48px 1fr 72px;align-items:center;border-bottom:1px solid var(--line)}
+  .ava{width:44px;height:44px;border-radius:50%;background:#fff;border:1px solid var(--line);display:grid;place-items:center;font-weight:700;font-size:14px}
+  .mast .t{text-align:center;font-size:22px;font-weight:800;color:var(--brand)}
+  .mast .ic{display:flex;gap:16px;justify-content:flex-end;color:var(--ink2);font-size:20px}
+
+  .filters{background:#fff;padding:12px 14px;display:flex;gap:8px;align-items:center;border-bottom:1px solid var(--line)}
+  .pill{border:1.5px solid var(--line);border-radius:999px;padding:6px 14px;font-size:14px;font-weight:600;color:var(--ink)}
+  .pill.on{background:var(--ink);border-color:var(--ink);color:#fff}
+  .pill .n{font-weight:500;color:var(--ink3);margin-left:4px}
+  .pill.on .n{color:#c9c6d4}
+  .drop{margin-left:auto;border:1.5px solid var(--line);border-radius:999px;padding:6px 14px;font-size:14px;color:var(--ink2)}
+
+  .segwrap{background:#fff;padding-bottom:10px;border-bottom:1px solid var(--line)}
+  .segwrap.hl{outline:3px dashed #eab308;outline-offset:-3px}
+  .seg{display:flex;background:#ececf2;border-radius:10px;padding:3px;margin:10px 14px 0}
+  .seg div{flex:1;text-align:center;font-size:13px;font-weight:700;padding:7px 0;border-radius:8px;color:var(--ink2)}
+  .seg .on{background:#fff;color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.08)}
+
+  .summ{background:#efeff4;padding:10px 16px;font-size:14px;color:var(--ink2);border-bottom:1px solid var(--line)}
+  .summ b{color:var(--ink)}
+  .tint{background:var(--pinkbg);color:var(--pink);font-size:14px;font-weight:600;padding:10px 16px;display:flex;justify-content:space-between}
+  .list{flex:1;overflow:hidden;padding:4px 12px 0}
+  .sh{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:800;letter-spacing:.05em;color:var(--ink2);padding:12px 4px 8px}
+  .sh i{width:8px;height:8px;border-radius:50%;background:var(--green)}
+  .sh .cnt{margin-left:auto;font-weight:600;letter-spacing:0;color:var(--ink3)}
+
+  /* existing bill card */
+  .bc{background:#fff;border-radius:18px;margin-bottom:10px;box-shadow:0 1px 3px rgba(20,16,40,.07);overflow:hidden;border-left:4px solid var(--green)}
+  .bc.plain{border-left-color:transparent}
+  .bc .in{padding:11px 14px 9px}
+  .r1{display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--ink3)}
+  .obd{font-family:ui-monospace,Menlo,monospace}
+  .tag{font-size:12px;font-weight:600;border:1px solid var(--line);background:#f4f4f7;color:var(--ink2);border-radius:999px;padding:2px 10px}
+  .r2{display:flex;justify-content:space-between;align-items:baseline;margin-top:5px}
+  .dealer{font-size:18px;font-weight:700}
+  .slot{font-size:18px;font-weight:600;color:var(--ink2)}
+  .r3{display:flex;align-items:center;gap:8px;margin-top:5px;font-size:15px;color:var(--ink2)}
+  .v{font-weight:700;color:var(--ink)} .v small{font-weight:400;color:var(--ink3)}
+  .rd{width:10px;height:10px;border-radius:50%;display:inline-block}
+  .shelf{background:var(--shelf);padding:8px 12px;display:flex;gap:8px;align-items:center;border-top:1px solid var(--line)}
+  .chip{background:#ececf1;border-radius:8px;padding:4px 10px;font-size:13px;color:var(--ink2)}
+  .go{margin-left:auto;width:32px;height:32px;border-radius:50%;background:#ececf1;display:grid;place-items:center;color:var(--ink3)}
+  .bc.sel{box-shadow:0 0 0 2px var(--brand) inset,0 1px 3px rgba(20,16,40,.07);background:#faf7ff}
+  .bc.sel .shelf{background:#f3eefe}
+  .tick{width:22px;height:22px;border-radius:50%;background:var(--brand);color:#fff;font-size:12px;display:grid;place-items:center}
+  .stop{font-size:12px;font-weight:700;color:var(--brand-dk);background:#f1ecfe;border-radius:6px;padding:1px 7px;font-family:inherit}
+  .st{font-size:12px;font-weight:700;border-radius:999px;padding:3px 10px;margin-left:auto}
+  .sp{background:#eaf1ff;color:#2f5fd0} .sc{background:#fff7db;color:#a16207} .sd{background:#e8f8ee;color:var(--green)}
+  .bc.moving{border-left-color:transparent}
+
+  /* trip card */
+  .tc{background:#fff;border-radius:18px;margin-bottom:10px;box-shadow:0 1px 3px rgba(20,16,40,.07);overflow:hidden;border-left:5px solid var(--local)}
+  .tc.upc{border-left-color:var(--upc)}
+  .tc .in{padding:12px 14px 12px}
+  .ttop{display:flex;justify-content:space-between;align-items:center}
+  .tno{font-size:22px;font-weight:800;letter-spacing:-.01em;font-variant-numeric:tabular-nums}
+  .type{font-size:12px;font-weight:800;letter-spacing:.06em;border-radius:6px;padding:3px 8px}
+  .type.l{background:var(--localbg);color:var(--local)}
+  .type.u{background:var(--upcbg);color:var(--upc)}
+  .meta{font-size:14px;color:var(--ink2);margin-top:4px;display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+  .veh{font-size:12px;font-weight:700;color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:1px 7px;background:#fafafc}
+  .bar{display:flex;gap:1.5px;height:6px;margin:10px 0 8px;background:var(--track);border-radius:4px;overflow:hidden}
+  .bar span{display:block}
+  .w{background:var(--wait)} .p{background:var(--pick)} .c{background:var(--check)} .d{background:var(--done)} .ti{background:var(--tint)}
+  .leg{display:flex;gap:12px;font-size:13px;color:var(--ink2);flex-wrap:wrap;align-items:center}
+  .leg i{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:5px}
+  .leg b{color:var(--ink)}
+  .leg .lit{margin-left:auto;color:var(--ink3);font-size:12px}
+  .lock{font-size:12px;font-weight:600;background:#fff7ed;color:#c2410c;border-radius:999px;padding:2px 9px}
+  .tc.alldone{background:#f6fbf7}
+  .alltag{font-size:12px;font-weight:700;color:var(--green)}
+  .tc.loose{border-left-color:#c4c2cf}
+  .tc.cmp .in{padding:9px 14px 8px}.tc.cmp .tno{font-size:19px}.tc.cmp .bar{margin:7px 0 0;height:5px}.tc.cmp .meta{margin-top:2px}
+  .tc.loose .in{display:flex;justify-content:space-between;align-items:center}
+  /* trip row v5 — fully round */
+  .tr{display:flex;align-items:center;gap:12px;background:#fff;border-radius:22px;padding:10px 12px 10px 10px;margin-bottom:9px;box-shadow:0 1px 2px rgba(20,16,40,.05),0 4px 14px rgba(20,16,40,.05)}
+  .tr .av{width:46px;height:46px;border-radius:50%;display:grid;place-items:center;font-weight:800;font-size:18px;flex:none}
+  .tr .av.l{background:var(--localbg);color:var(--local)}
+  .tr .av.u{background:var(--upcbg);color:var(--upc)}
+  .tr .mid{flex:1;min-width:0}
+  .tr .no{font-size:18px;font-weight:800;letter-spacing:-.01em;font-variant-numeric:tabular-nums;display:flex;align-items:center;gap:7px}
+  .tr .tp{font-size:10.5px;font-weight:800;letter-spacing:.07em;border-radius:999px;padding:2px 8px}
+  .tr .tp.l{background:var(--localbg);color:var(--local)}
+  .tr .tp.u{background:var(--upcbg);color:var(--upc)}
+  .tr .mt{font-size:13px;color:var(--ink2);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .tr .mt .vp{font-weight:700;color:var(--ink);background:#f4f4f7;border-radius:999px;padding:1px 8px;font-size:12px}
+  .tr .mt .vp.none{color:var(--ink3);font-weight:600}
+  .ring{width:50px;height:50px;border-radius:50%;flex:none;display:grid;place-items:center}
+  .ring .hole{width:38px;height:38px;border-radius:50%;background:#fff;display:grid;place-items:center;line-height:1}
+  .ring .hole b{font-size:15px;font-weight:800;display:block;text-align:center}
+  .ring .hole small{font-size:8.5px;font-weight:700;color:var(--ink3);letter-spacing:.04em;display:block;text-align:center;margin-top:1px}
+  .tr.done{background:#f3fbf6}
+  .tr.done .ring .hole{background:#f3fbf6}
+  .tr.loose .av{background:#f1f1f5;color:var(--ink3);font-size:16px}
+  
+  /* v6 — full details, nothing cut */
+  .tr{align-items:flex-start;padding:12px 12px 12px 12px}
+  .tr .av{width:38px;height:38px;font-size:16px;margin-top:2px}
+  .tr .no{font-size:19px;white-space:nowrap}
+  .tr .mt{white-space:normal;overflow:visible;line-height:1.45}
+  .tr .rt{font-size:14px;font-weight:600;color:var(--ink);margin-top:3px;line-height:1.35}
+  .tr .rt span{font-weight:400;color:var(--ink2)}
+  .tr .vh{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:7px;font-size:12px;color:var(--ink2)}
+  .tr .vh .vp{font-weight:700;color:var(--ink);background:#f4f4f7;border-radius:999px;padding:2px 9px;font-size:12px}
+  .tr .vh .vp.none{color:var(--ink3);font-weight:600}
+  .tr .vh .sl{font-weight:700;color:var(--ink);background:#f1ecfe;color:var(--brand-dk);border-radius:999px;padding:2px 9px}
+  .ring{width:46px;height:46px;margin-top:2px}
+  .tr{flex-wrap:wrap;row-gap:0}
+  .tr .vh{flex-basis:100%;padding-left:50px;margin-top:8px}
+  .tr .vh .dr{font-weight:600;color:var(--ink2)}
+  .ring .hole{width:35px;height:35px}
+
+  .tr .rt{font-size:15px;font-weight:500;color:var(--ink2)}
+  .tr .rt .co{font-size:12px;font-weight:700;color:var(--brand-dk);background:#f1ecfe;border-radius:999px;padding:2px 9px}
+  .tr{align-items:center}
+  .tr .chev{color:var(--ink3);font-size:18px;margin-left:-4px}
+
+
+  /* level 2 */
+  .l2{background:#fff;padding:14px 14px 12px;margin:10px 12px 0;border-radius:22px;box-shadow:0 1px 2px rgba(20,16,40,.05),0 4px 14px rgba(20,16,40,.05)}
+  .l2top{display:flex;align-items:center;gap:10px}
+  .back{width:36px;height:36px;border-radius:50%;background:#f4f4f7;display:grid;place-items:center;font-size:20px;color:var(--ink2);border:1px solid var(--line);flex:none}
+  .tinfo{display:grid;grid-template-columns:1fr 1fr;gap:8px 12px;background:#f7f7fa;border-radius:14px;padding:10px 12px;margin-top:10px}
+  .tinfo span{display:block;font-size:11px;font-weight:700;letter-spacing:.05em;color:var(--ink3);text-transform:uppercase}
+  .tinfo b{font-size:13px;font-weight:700}
+  .secrow{display:flex;justify-content:space-between;align-items:center;padding:12px 4px 8px;font-size:13px;font-weight:800;letter-spacing:.05em;color:var(--ink2)}
+  .secrow a{color:var(--brand);font-size:14px;font-weight:700;letter-spacing:0;text-decoration:none}
+  .secrow .dt{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:6px}
+  .float{position:absolute;left:12px;right:12px;bottom:96px;background:var(--ink);color:#fff;border-radius:16px;padding:10px 12px;display:flex;justify-content:space-between;align-items:center;font-size:14px;box-shadow:0 6px 20px rgba(0,0,0,.2)}
+  .float button{background:var(--brand);color:#fff;border:0;border-radius:12px;padding:10px 16px;font-weight:700;font-size:14px}
+
+  /* detail */
+  .dh{background:var(--mast);padding:14px;border-bottom:1px solid var(--line)}
+  .dh .top{display:flex;gap:10px;align-items:center}
+  .dh .dn{font-size:19px;font-weight:800}
+  .dh .ds{font-size:13px;color:var(--ink2);font-family:ui-monospace,Menlo,monospace}
+  .crumb{font-size:12px;font-weight:700;color:var(--local);background:var(--localbg);border-radius:6px;padding:2px 8px;display:inline-block;margin-top:8px}
+  .band{background:#fff;display:flex;align-items:center;gap:12px;padding:10px 14px;border-bottom:1px solid var(--line)}
+  .bay{font-size:26px;font-weight:800;color:#d97706}
+  .rule{width:1px;height:28px;background:var(--line)}
+  .stat{display:flex;justify-content:space-between;padding:10px 16px;font-size:13px;color:var(--ink2);background:#fff;border-bottom:1px solid var(--line)}
+  .line{display:flex;gap:12px;align-items:center;background:#fff;padding:11px 14px;border-bottom:1px solid var(--line)}
+  .pk{width:58px;text-align:center;font-weight:700;font-size:13px;border:1px solid var(--line);border-radius:8px;padding:6px 0;background:#fafafc;flex:none}
+  .ln{flex:1;min-width:0}
+  .ln .sku{font-family:ui-monospace,Menlo,monospace;font-size:13px;font-weight:700}
+  .ln .nm{font-size:13px;color:var(--ink2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .qty{font-size:18px;font-weight:800}
+  .cta{position:absolute;left:0;right:0;bottom:0;background:#fff;border-top:1px solid var(--line);padding:12px 14px 22px;display:flex;gap:10px}
+  .cta .b1{flex:1;border:1.5px solid var(--line);background:#fff;border-radius:12px;padding:12px;font-weight:700;font-size:14px;color:var(--ink2);text-align:center}
+  .cta .b2{flex:2;background:#f4f4f7;border-radius:12px;padding:12px;font-weight:700;font-size:14px;color:var(--ink3);text-align:center}
+
+  .tabs{display:flex;background:#fff;border-top:1px solid var(--line);padding:8px 0 22px;margin-top:auto}
+  .tabs div{flex:1;text-align:center;font-size:13px;color:var(--ink3);position:relative;font-weight:500}
+  .tabs .ico{font-size:22px;display:block;line-height:30px}
+  .tabs .on{color:var(--ink);font-weight:700}
+  .tabs .on:after{content:"";display:block;width:40px;height:3px;border-radius:2px;background:var(--brand);margin:5px auto 0}
+  .bdg{position:absolute;top:-4px;left:52%;background:var(--ink);color:#fff;font-size:11px;font-weight:700;border-radius:999px;padding:1px 6px;border:2px solid #fff}
+</style>
+</head>
+<body>
+
+<h1>Picking › Assign tab — Trips view (v7)</h1>
+<p class="lead">Built on today's real Assign tab. The only addition to the existing screen is a <b>Bills | Trips</b> switch. <b>Trips</b> = one card per trip the planner made on Floor. The <b>trip number is the headline</b>, and a round <b>L</b> (blue) or <b>U</b> (orange) tile makes the type obvious at a glance. Inside a trip, every bill uses the <b>same card as today</b>, and tapping any card opens today's bill screen.</p>
+
+<div class="row">
+
+<!-- ① -->
+<div class="col">
+<div class="cap">① TODAY'S ASSIGN TAB + THE SWITCH</div>
+<div class="phone">
+  <div class="mast"><div class="ava">TS</div><div class="t">Picking</div><div class="ic">▦ ⌕</div></div>
+  <div class="filters"><span class="pill on">All</span><span class="pill">Local</span><span class="pill">UPC</span><span class="drop">All routes ⌄</span></div>
+  <div class="segwrap hl"><div class="seg"><div class="on">Bills</div><div>Trips</div></div></div>
+  <div class="summ"><b>All routes</b> · 39 due · 40,154.4 L ready to load</div>
+  <div class="tint"><span>Tinting now · 8 bills · 195 D · 3,904 L</span><span>View ›</span></div>
+  <div class="list">
+    <div class="sh"><i></i>SAME MATERIAL · ONE PICKER</div>
+    <div class="bc">
+      <div class="in">
+        <div class="r1"><span><span class="obd">9109882693</span> · 7 Oct, 6:47 PM</span><span class="tag">released</span></div>
+        <div class="r2"><span class="dealer">Ashirwad Paints</span><span class="slot">10:30</span></div>
+        <div class="r3"><span class="rd" style="background:#2563eb"></span>Ghod Dod · <span class="v">2,358 <small>L</small></span></div>
+      </div>
+      <div class="shelf"><span class="chip">113 Drum</span><span class="chip">78 Carton</span><span class="go">›</span></div>
+    </div>
+    <div class="bc">
+      <div class="in">
+        <div class="r1"><span><span class="obd">9109959336</span> · 6 Oct, 1:06 PM</span><span class="tag">no date</span></div>
+        <div class="r2"><span class="dealer">(Q35D) JSW Dulux Ltd</span><span class="slot" style="color:var(--ink3)">no slot</span></div>
+        <div class="r3"><span class="rd" style="background:#a1a1aa"></span>Maharashtra &amp; Goa · <span class="v">5,151 <small>L</small></span></div>
+      </div>
+      <div class="shelf"><span class="chip">152 Drum</span><span class="chip">370 Carton</span><span class="chip">1 Tin</span><span class="go">›</span></div>
+    </div>
+  </div>
+  <div class="tabs"><div class="on"><span class="ico">📥</span>Assign<span class="bdg">39</span></div><div><span class="ico">📦</span>Picking<span class="bdg">27</span></div><div><span class="ico">✅</span>Done<span class="bdg">1</span></div></div>
+</div>
+<p class="note">Nothing moves on today's screen. <span class="new">New:</span> one Bills | Trips switch under the filters. Bills is the default.</p>
+</div>
+
+<!-- ② -->
+<div class="col">
+<div class="cap">② TAP "TRIPS"</div>
+<div class="phone">
+  <div class="mast"><div class="ava">TS</div><div class="t">Picking</div><div class="ic">▦ ⌕</div></div>
+  <div class="filters"><span class="pill on">All</span><span class="pill">Local<span class="n">9</span></span><span class="pill">UPC<span class="n">2</span></span></div>
+  <div class="segwrap"><div class="seg"><div>Bills</div><div class="on">Trips</div></div></div>
+  <div class="summ"><b>11 trips</b> · 39 bills to assign</div>
+  <div class="list">
+    <div class="tr">
+      <div class="av l">L</div>
+      <div class="mid">
+        <div class="no">L-261013-03</div>
+        <div class="rt">10:30 · Ghod Dod +2</div>
+        </div>
+      <div class="ring" style="background:conic-gradient(#d3d3dd 2deg 148deg, #fff 148deg 150deg, #5b8ded 152deg 268deg, #fff 268deg 270deg, #fbbf24 272deg 328deg, #fff 328deg 330deg, #2eb862 332deg 358deg, #fff 358deg 360deg)"><div class="hole"><b>5</b><small>LEFT</small></div></div>
+    </div>
+    <div class="tr">
+      <div class="av l">L</div>
+      <div class="mid">
+        <div class="no">L-261013-04</div>
+        <div class="rt">10:30 · Varachha +1</div>
+        </div>
+      <div class="ring" style="background:conic-gradient(#d3d3dd 2deg 278deg, #fff 278deg 280deg, #5b8ded 282deg 358deg, #fff 358deg 360deg)"><div class="hole"><b>7</b><small>LEFT</small></div></div>
+    </div>
+    <div class="tr">
+      <div class="av l">L</div>
+      <div class="mid">
+        <div class="no">L-261013-05</div>
+        <div class="rt">12:30 · Adajan</div>
+        </div>
+      <div class="ring" style="background:conic-gradient(#d3d3dd 2deg 178deg, #fff 178deg 180deg, #5b8ded 182deg 314deg, #fff 314deg 315deg, #fbbf24 316deg 358deg, #fff 358deg 360deg)"><div class="hole"><b>4</b><small>LEFT</small></div></div>
+    </div>
+    <div class="tr">
+      <div class="av u">U</div>
+      <div class="mid">
+        <div class="no">U-261013-01</div>
+        <div class="rt">12:30 · Navsari</div>
+        </div>
+      <div class="ring" style="background:conic-gradient(#d3d3dd 2deg 268deg, #fff 268deg 270deg, #f9a8d4 272deg 358deg, #fff 358deg 360deg)"><div class="hole"><b>3</b><small>LEFT</small></div></div>
+    </div>
+    <div class="tr">
+      <div class="av l">L</div>
+      <div class="mid">
+        <div class="no">L-261013-06</div>
+        <div class="rt">12:30 · Udhana +1</div>
+        </div>
+      <div class="ring" style="background:conic-gradient(#d3d3dd 2deg 358deg, #fff 358deg 360deg)"><div class="hole"><b>6</b><small>LEFT</small></div></div>
+    </div>
+    <div class="tr">
+      <div class="av l">L</div>
+      <div class="mid">
+        <div class="no">L-261013-07</div>
+        <div class="rt">16:00 · Katargam</div>
+        </div>
+      <div class="ring" style="background:conic-gradient(#d3d3dd 2deg 358deg, #fff 358deg 360deg)"><div class="hole"><b>5</b><small>LEFT</small></div></div>
+    </div>
+    <div class="tr">
+      <div class="av u">U</div>
+      <div class="mid">
+        <div class="no">U-261013-02</div>
+        <div class="rt">16:00 · Vapi</div>
+        </div>
+      <div class="ring" style="background:conic-gradient(#d3d3dd 2deg 358deg, #fff 358deg 360deg)"><div class="hole"><b>4</b><small>LEFT</small></div></div>
+    </div>
+    <div class="tr">
+      <div class="av l">L</div>
+      <div class="mid">
+        <div class="no">L-261013-08</div>
+        <div class="rt">18:00 · Olpad</div>
+        </div>
+      <div class="ring" style="background:conic-gradient(#d3d3dd 2deg 358deg, #fff 358deg 360deg)"><div class="hole"><b>3</b><small>LEFT</small></div></div>
+    </div>
+    <div class="tr done">
+      <div class="av l">L</div>
+      <div class="mid">
+        <div class="no">L-261013-02</div>
+        <div class="rt">10:30 · Adajan +1</div>
+        </div>
+      <div class="ring" style="background:conic-gradient(#5b8ded 2deg 214deg, #fff 214deg 216deg, #fbbf24 218deg 250deg, #fff 250deg 252deg, #2eb862 253deg 358deg, #fff 358deg 360deg)"><div class="hole"><b style="color:var(--green)">✓</b><small>ALL IN</small></div></div>
+    </div>
+    <div class="tr loose">
+      <div class="av">—</div>
+      <div class="mid"><div class="no" style="font-size:16px">Not on a trip</div><div class="mt">Bills the planner hasn't put on a truck</div></div>
+      <div class="ring" style="background:#d3d3dd"><div class="hole"><b>16</b><small>LEFT</small></div></div>
+    </div>
+  </div>
+  <div class="tabs"><div class="on"><span class="ico">📥</span>Assign<span class="bdg">39</span></div><div><span class="ico">📦</span>Picking<span class="bdg">27</span></div><div><span class="ico">✅</span>Done<span class="bdg">1</span></div></div>
+</div>
+<p class="note"><b>Main card is kept minimal:</b> the trip number, the main route and the cutoff time. A round <b>L</b> (blue) or <b>U</b> (orange) tile shows the type. The ring shows the whole trip, with the number of bills still to assign in the centre. Vehicle, driver, stops and the full route list are shown <b>only after the card is opened</b> (③).</p>
+</div>
+
+<!-- ③ -->
+<div class="col">
+<div class="cap">③ TAP A TRIP — EVERY BILL, SAME CARDS</div>
+<div class="phone">
+  <div class="l2">
+    <div class="l2top"><span class="back">‹</span>
+      <div style="flex:1"><div class="ttop"><span class="tno">L-261013-03</span><span class="type l">LOCAL</span></div>
+      <div class="meta" style="margin-top:3px">Cutoff 10:30 · 4 stops</div></div>
+    </div>
+    <div class="tinfo">
+      <div><span>Vehicle</span><b>🚚 GJ05 AB 1234</b></div>
+      <div><span>Driver</span><b>Rakesh · 98250 11223</b></div>
+      <div style="grid-column:1/-1"><span>Routes</span><b>Ghod Dod, Udhana, Bhatar</b></div>
+    </div>
+    <div style="display:none"><div></div>
+    </div>
+    <div class="bar" style="margin-bottom:6px"><span class="w" style="flex:5"></span><span class="p" style="flex:4"></span><span class="c" style="flex:2"></span><span class="d" style="flex:1"></span></div>
+    <div class="leg"><span><i class="w"></i><b>5</b> to assign</span><span><i class="p"></i><b>4</b> picking</span><span><i class="c"></i><b>2</b> check</span><span><i class="d"></i><b>1</b> done</span></div>
+  </div>
+  <div class="list">
+    <div class="secrow"><span><span class="dt w"></span>TO ASSIGN · 5</span><a href="#">Select all</a></div>
+    <div class="bc plain sel">
+      <div class="in">
+        <div class="r1"><span><span class="obd">9109882693</span> · <span class="stop">Stop 1</span></span><span class="tick">✓</span></div>
+        <div class="r2"><span class="dealer">Ashirwad Paints</span><span class="slot">10:30</span></div>
+        <div class="r3"><span class="rd" style="background:#2563eb"></span>Ghod Dod · <span class="v">2,358 <small>L</small></span></div>
+      </div>
+      <div class="shelf"><span class="chip">113 Drum</span><span class="chip">78 Carton</span><span class="go">›</span></div>
+    </div>
+
+    <div class="secrow"><span><span class="dt p"></span>PICKING · 4</span></div>
+    <div class="bc moving">
+      <div class="in">
+        <div class="r1"><span><span class="obd">9110021187</span> · 8 Oct, 9:12 AM</span><span class="tag">released</span></div>
+        <div class="r2"><span class="dealer">Jay Ambe Traders</span><span class="slot">10:30</span></div>
+        <div class="r3"><span class="rd" style="background:#2563eb"></span>Ghod Dod · <span class="v">1,904 <small>L</small></span><span style="margin-left:auto;font-size:14px">Ramesh</span></div>
+      </div>
+      <div class="shelf"><span class="chip">60 Drum</span><span class="chip">41 Carton</span><span class="st" style="background:#fff7db;color:#a16207">32m</span></div>
+    </div>
+
+    <div class="secrow"><span><span class="dt c"></span>NEEDS CHECK · 2</span></div>
+    <div class="bc moving">
+      <div class="in">
+        <div class="r1"><span><span class="obd">9110020455</span> · 8 Oct, 8:40 AM</span><span class="tag">released</span></div>
+        <div class="r2"><span class="dealer">Krishna Paint House</span><span class="slot">10:30</span></div>
+        <div class="r3"><span class="rd" style="background:#2563eb"></span>Udhana · <span class="v">980 <small>L</small></span><span style="margin-left:auto;font-size:14px">Suresh</span></div>
+      </div>
+      <div class="shelf"><span class="chip">22 Drum</span><span class="chip">30 Carton</span><span class="st sd">Picked 8m ago</span></div>
+    </div>
+
+    <div class="secrow"><span><span class="dt d"></span>DONE · 1</span></div>
+  </div>
+  <div class="float"><span><b>1 selected</b> · 2,358 L</span><button>Assign to picker</button></div>
+  <div class="tabs"><div class="on"><span class="ico">📥</span>Assign<span class="bdg">39</span></div><div><span class="ico">📦</span>Picking<span class="bdg">27</span></div><div><span class="ico">✅</span>Done<span class="bdg">1</span></div></div>
+</div>
+<p class="note"><b>Trip header</b> (when opened): trip number + type, cutoff and stops, then vehicle, driver and the full route list, then the status bar. <b>No new card</b> below. Each band uses the <b>exact card that tab already uses</b>, which is the same shared card component in the code: <b>To assign</b> = the Assign-tab card (tap to select), <b>Picking</b> = the Picking-tab card, <b>Needs check / Done</b> = the Done-tab cards. The only grouping is by trip. Tap any card to open the bill (④).<br><br>⚠ Bands 2–4 in this mockup are drawn from the docs, not a screenshot. The build will reuse the real card, so it will match pixel for pixel.</p>
+</div>
+
+<!-- ④ -->
+<div class="col">
+<div class="cap">④ TAP A MOVING CARD → TODAY'S BILL SCREEN</div>
+<div class="phone">
+  <div class="dh">
+    <div class="top"><span class="back">‹</span>
+      <div><div class="dn">Jay Ambe Traders</div><div class="ds">9110021187 · 10:30</div></div>
+      <span class="st sp">Ramesh · 25m</span>
+    </div>
+    <span class="crumb">L-261013-03 · LOCAL · Stop 2</span>
+  </div>
+  <div class="band"><span class="bay">4</span><span class="rule"></span><span style="font-weight:700">Ghod Dod</span><span style="margin-left:auto;color:var(--ink3)">△</span></div>
+  <div class="stat"><span>101 packs · 1,904 L</span><span>‹ 1 of 4 ›</span></div>
+  <div style="flex:1;overflow:hidden">
+    <div class="line"><span class="pk">20L</span><div class="ln"><div class="sku">IN5210345</div><div class="nm">Weathershield Max White</div></div><span class="qty">24</span></div>
+    <div class="line"><span class="pk">10L</span><div class="ln"><div class="sku">IN5211890</div><div class="nm">Promise Interior Emulsion Base</div></div><span class="qty">36</span></div>
+    <div class="line"><span class="pk">4L</span><div class="ln"><div class="sku">IN5104772</div><div class="nm">Velvet Touch Pearl Glo White</div></div><span class="qty">18</span></div>
+    <div class="line"><span class="pk">1L</span><div class="ln"><div class="sku">5961032</div><div class="nm">Gloss Enamel Black</div></div><span class="qty">23</span></div>
+  </div>
+  <div class="cta"><span class="b1">⋯</span><span class="b2">Undo assign</span></div>
+</div>
+<p class="note"><b>This is today's bill screen, unchanged.</b> It shows the same lines, bay band and actions for that stage: Undo on a picking bill, line ticks + Approve on a needs-check bill. <span class="new">New:</span> one small line under the name showing the trip, type and stop, so he knows which truck this bill belongs to. Swiping ‹ › pages through <b>this trip's bills in the same band</b> (here, the 4 being picked). Back returns to the trip.</p>
+</div>
+
+</div>
+</body>
+</html>
