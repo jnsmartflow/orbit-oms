@@ -56,6 +56,12 @@ export interface PickingQueueRow {
    * `include` already brings — no select change.
    */
   isChallanOrder: boolean;
+  /**
+   * OBD — the bill came in through the Import window's OBD source
+   * (orders.isObdImport, schema v27.68). Drives the OBD pill
+   * (components/shared/obd-badge.tsx). A scalar the queue's `include` already brings.
+   */
+  isObdImport: boolean;
   windowId: number | null;
   windowTime: string | null;
   windowSortOrder: number | null;

@@ -64,6 +64,8 @@ export interface FloorPartyFields {
   isHand: boolean;
   /** An ORB order (orders.isChallanOrder, 2026-10-07) — drives the CHALLAN pill. */
   isChallanOrder: boolean;
+  /** An OBD import (orders.isObdImport, v27.68) — drives the OBD pill + filter flag. */
+  isObdImport: boolean;
   dealerName: string;         // effective ship-to (shipToOverrideCustomer ?? customer)
   billToName: string | null;  // bill-to dealer (import_raw_summary.billToCustomerName)
   isShipToOverride: boolean;
@@ -765,6 +767,8 @@ export interface FloorDetail {
   isTint: boolean;
   /** An ORB order (orders.isChallanOrder, 2026-10-07) — the CHALLAN pill in the header. */
   isChallanOrder: boolean;
+  /** An OBD import (orders.isObdImport, v27.68) — drives the OBD pill + filter flag. */
+  isObdImport: boolean;
   /** TINT / BASE / nothing — the same field, and the same warning, as
    *  FloorPartyFields above. The panel's Details tab reads THIS, not `isTint`. */
   colourWork: ColourWork | null;

@@ -54,6 +54,7 @@ import { ColourWorkBadge } from "@/components/picking/card-atoms";
 import { GiftBadge } from "./gift-badge";
 import { HandBadge } from "@/components/shared/hand-badge";
 import { ChallanBadge } from "@/components/shared/challan-badge";
+import { ObdBadge } from "@/components/shared/obd-badge";
 import { ChallanCell } from "./challan-cell";
 import {
   StatusPill,
@@ -327,6 +328,9 @@ const BLOCK_TAG_SAME = "bg-[#fef2f2] text-[#b91c1c]";
 // ChallanBadge's own colours (components/shared/challan-badge.tsx — CLAUDE_UI §3
 // "Split" purple) without its border, the same treatment HAND gets above.
 const BLOCK_TAG_CHALLAN = "bg-purple-50 text-purple-700";
+// ObdBadge's own colours (components/shared/obd-badge.tsx) — SOLID plum, never a
+// pale plum, which is CHALLAN's lavender (CLAUDE_UI §2.1).
+const BLOCK_TAG_OBD = "bg-data-plum text-white";
 
 /**
  * The block row's per-bill tags, in the owner's order: URGENT · TINT/BASE ·
@@ -341,6 +345,9 @@ function blockTags(row: FloorBoardRow, dup: boolean): ReactNode[] {
   // ChallanBadge pill everywhere else.
   if (row.isChallanOrder)
     tags.push({ key: "challan", cls: BLOCK_TAG_CHALLAN, title: "Challan order — goods sent without a SAP bill yet", label: "Challan" });
+  // OBD (2026-10-16) — straight after CHALLAN, the same order as the pills.
+  if (row.isObdImport)
+    tags.push({ key: "obd", cls: BLOCK_TAG_OBD, title: "OBD import — came in through the OBD paste", label: "OBD" });
   if (row.priorityLevel === 1) tags.push({ key: "urgent", cls: BLOCK_TAG_URGENT, title: "Urgent", label: "Urgent" });
   if (row.colourWork !== null)
     tags.push({
@@ -1663,6 +1670,12 @@ export function FloorTable({
           {row.isChallanOrder && (
             <span className="mr-1.5 inline-block align-[-1px]">
               <ChallanBadge />
+            </span>
+          )}
+          {/* OBD (2026-10-16) — after CHALLAN, same slot and shape. */}
+          {row.isObdImport && (
+            <span className="mr-1.5 inline-block align-[-1px]">
+              <ObdBadge />
             </span>
           )}
           <span className="text-[11.5px] font-medium text-[#111827]">

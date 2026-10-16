@@ -263,6 +263,8 @@ async function plainRows(orderIds: number[]): Promise<Map<number, FloorHoldRow>>
       isHand: o.handAt !== null,
       // FloorHoldRow shape (2026-10-07) — an `include`, so the scalar is loaded.
       isChallanOrder: o.isChallanOrder,
+      // OBD pill (2026-10-16) — the shared Hold table shows it here too.
+      isObdImport: o.isObdImport,
       dealerName: dealerDisplayName(dealer?.customerName, o.shipToCustomerName),
       billToName: null,
       isShipToOverride: o.shipToOverrideCustomerId !== null,

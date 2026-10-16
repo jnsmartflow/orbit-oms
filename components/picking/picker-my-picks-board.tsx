@@ -23,6 +23,7 @@ import { BillBand } from "./bill-band";
 import { BillSymbols, hasBillSymbols } from "./bill-symbols";
 import { GiftBadge } from "@/components/floor/gift-badge";
 import { ChallanBadge } from "@/components/shared/challan-badge";
+import { ObdBadge } from "@/components/shared/obd-badge";
 import { HandBadge } from "@/components/shared/hand-badge";
 // The duplicate-SO red is owned by ONE file — never re-type its hexes here.
 // Same import list, same tokens and the same tag the supervisor board and Floor
@@ -1615,6 +1616,7 @@ export function PickerMyPicksBoard({
                         is byte-identical DOM. */}
                     {/* CHALLAN (2026-10-07) — same pill, same slot as the supervisor card. */}
                     {row.isChallanOrder && <ChallanBadge />}
+                    {row.isObdImport && <ObdBadge />}
                     <ColourWorkBadge work={row.colourWork} onRed={dup} />
                     {/* GIFT beside TINT/BASE — same pill as the supervisor card. */}
                     {row.isGift && <GiftBadge />}

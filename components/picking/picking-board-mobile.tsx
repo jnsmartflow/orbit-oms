@@ -98,6 +98,7 @@ import { BillBand } from "./bill-band";
 import { BillSymbols, hasBillSymbols } from "./bill-symbols";
 import { GiftBadge } from "@/components/floor/gift-badge";
 import { ChallanBadge } from "@/components/shared/challan-badge";
+import { ObdBadge } from "@/components/shared/obd-badge";
 import { HandBadge } from "@/components/shared/hand-badge";
 import { loadLitres } from "@/lib/orders/gift";
 import type { PickingDetailLine, PickingLineFinding, PickingQueueRow, PickingTrip } from "@/lib/picking/types";
@@ -850,6 +851,7 @@ function PickingCard({
                   after the number it explains. All five variants. No "Billed:" line
                   on Picking (M8). */}
               {row.isChallanOrder && <ChallanBadge />}
+              {row.isObdImport && <ObdBadge />}
               <ColourWorkBadge work={row.colourWork} onRed={dup} />
               {/* GIFT — SAP material type GIFTS, beside TINT/BASE, all five
                   variants for the same reason. Floor's own pill, imported. */}
@@ -1577,6 +1579,10 @@ export function PickingBoardMobile(): React.JSX.Element {
   const [query, setQuery] = useState("");
   const [activeType, setActiveType] = useState<TypeFilter>("All");
   const [activeRoute, setActiveRoute] = useState<string | null>(null); // null = "All routes"
+  // OBD toggle (2026-10-16) — Assign tab only, default OFF = every bill. ON keeps
+  // only OBD imports (orders.isObdImport). Narrows the list like type/route do;
+  // the route sheet's counts stay as they were.
+  const [obdOnly, setObdOnly] = useState<boolean>(false);
   const [routeSheetOpen, setRouteSheetOpen] = useState(false);
   const [selected, setSelected] = useState<Set<number>>(new Set());
 
@@ -2171,10 +2177,11 @@ export function PickingBoardMobile(): React.JSX.Element {
     return waitingRows.filter((r) => {
       if (activeType !== "All" && r.deliveryType !== activeType) return false;
       if (activeRoute !== null && r.route !== activeRoute) return false;
+      if (obdOnly && !r.isObdImport) return false;
       if (q && !matchesPickingSearch(r, q)) return false;
       return true;
     });
-  }, [waitingRows, activeType, activeRoute, q]);
+  }, [waitingRows, activeType, activeRoute, obdOnly, q]);
 
   // ── Zone partition (step 5a) ─────────────────────────────────────────────
   // A DISPLAY partition, not a sort. Array.filter preserves the server's
@@ -2525,7 +2532,7 @@ export function PickingBoardMobile(): React.JSX.Element {
   }
 
   const laneLabel =
-    [activeType !== "All" ? (activeType === "Upcountry" ? "UPC" : activeType) : null, activeRoute]
+    [activeType !== "All" ? (activeType === "Upcountry" ? "UPC" : activeType) : null, obdOnly ? "OBD" : null, activeRoute]
       .filter(Boolean)
       .join(" · ") || "All routes";
 
@@ -3728,6 +3735,22 @@ export function PickingBoardMobile(): React.JSX.Element {
               {/* handleTypeChange, not setActiveType — it also drops an
                   orphaned route selection. See its comment. */}
               <TypeFilterPills value={activeType} onChange={handleTypeChange} />
+              {/* OBD toggle (2026-10-16). SELECTION colours when on (data.slate,
+                  CLAUDE_UI §59.9), the same pair the route pill uses — never the
+                  plum pill colour, which marks a bill, not a chosen filter. */}
+              <button
+                type="button"
+                aria-pressed={obdOnly}
+                onClick={() => setObdOnly((v) => !v)}
+                className={
+                  "shrink-0 text-[12.5px] font-medium px-3 py-1.5 rounded-full border whitespace-nowrap " +
+                  (obdOnly
+                    ? "border-data-slate bg-ink-25 text-ink-900 font-semibold"
+                    : "border-gray-200 bg-white text-gray-700")
+                }
+              >
+                OBD
+              </button>
               <button
                 type="button"
                 onClick={() => setRouteSheetOpen(true)}

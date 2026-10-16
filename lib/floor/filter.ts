@@ -4,7 +4,7 @@
 // + Flags. Multiple options AND together, matching the mockup's `.every`.
 
 export type FloorFilterStatus = "waiting" | "withPicker" | "needsCheck" | "done" | "direct";
-export type FloorFilterFlag = "key" | "urgent" | "tint" | "site" | "carried" | "redirect";
+export type FloorFilterFlag = "key" | "urgent" | "tint" | "site" | "carried" | "redirect" | "obd";
 
 export interface FloorFilters {
   status: FloorFilterStatus[];
@@ -33,6 +33,8 @@ export const FLAG_OPTIONS: Array<[FloorFilterFlag, string]> = [
   ["site", "Site delivery"],
   ["carried", "Carried over"],
   ["redirect", "Ship-to changed"],
+  // OBD import (orders.isObdImport, 2026-10-16) — the OBD pill's bills.
+  ["obd", "OBD"],
 ];
 
 const PROJECT_SMUS = new Set(["Retail Offtake", "Decorative Projects"]);
@@ -50,6 +52,8 @@ interface FlaggableRow {
   smu: string | null;
   isShipToOverride: boolean;
   ageDays?: number | null;
+  /** OBD import (v27.68). Optional so a hand-built row without it reads as not OBD. */
+  isObdImport?: boolean;
 }
 
 function matchesFlag(r: FlaggableRow, flag: FloorFilterFlag): boolean {
@@ -68,6 +72,8 @@ function matchesFlag(r: FlaggableRow, flag: FloorFilterFlag): boolean {
       return (r.ageDays ?? 0) > 0;
     case "redirect":
       return r.isShipToOverride;
+    case "obd":
+      return r.isObdImport === true;
   }
 }
 

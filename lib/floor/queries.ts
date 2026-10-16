@@ -1532,6 +1532,8 @@ export async function getFloorBoard(
       isHand: order.handAt !== null,
       // CHALLAN pill (2026-10-07) — a scalar the `include` already brings.
       isChallanOrder: order.isChallanOrder,
+      // OBD pill (2026-10-16) — a scalar the `include` already brings.
+      isObdImport: order.isObdImport,
       stopKey: computeDropKey(order),
       shipToCode: order.shipToCustomerId,
       tripDropId: order.tripDropId,
@@ -1792,6 +1794,8 @@ export async function getFloorHold(
       isHand: order.handAt !== null,
       // CHALLAN pill (2026-10-07) — a scalar the `include` already brings.
       isChallanOrder: order.isChallanOrder,
+      // OBD pill (2026-10-16) — a scalar the `include` already brings.
+      isObdImport: order.isObdImport,
       dealerName: dealerDisplayName(dealer?.customerName, order.shipToCustomerName),
       billToName: billTo.get(order.obdNumber) ?? null,
       isShipToOverride: order.shipToOverrideCustomerId !== null,
@@ -2010,6 +2014,8 @@ export async function getFloorCancelled(
       isHand: order.handAt !== null,
       // CHALLAN pill (2026-10-07) — a scalar the `include` already brings.
       isChallanOrder: order.isChallanOrder,
+      // OBD pill (2026-10-16) — a scalar the `include` already brings.
+      isObdImport: order.isObdImport,
       dealerName: dealerDisplayName(dealer?.customerName, order.shipToCustomerName),
       billToName: billTo.get(order.obdNumber) ?? null,
       isShipToOverride: order.shipToOverrideCustomerId !== null,

@@ -30,6 +30,7 @@ import { FloorSkeleton } from "./floor-skeleton";
 import { ColourWorkBadge } from "@/components/picking/card-atoms";
 import { HandBadge } from "@/components/shared/hand-badge";
 import { ChallanBadge } from "@/components/shared/challan-badge";
+import { ObdBadge } from "@/components/shared/obd-badge";
 import { shipMarkers, SEARCH_HIT_ROW_CLS } from "./floor-table";
 import { InvoiceCountChip } from "./bill-ref-cells";
 import { formatLitres, formatWeightKg } from "./status-pill";
@@ -284,6 +285,12 @@ export function CancelledTab({
                       {row.isChallanOrder && (
                         <span className="mr-1.5 inline-block align-[-1px]">
                           <ChallanBadge />
+                        </span>
+                      )}
+                      {/* OBD (2026-10-16) — after CHALLAN, same slot and shape. */}
+                      {row.isObdImport && (
+                        <span className="mr-1.5 inline-block align-[-1px]">
+                          <ObdBadge />
                         </span>
                       )}
                       <span className="text-[11.5px] font-medium text-[#111827]">{row.dealerName}</span>

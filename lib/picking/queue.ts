@@ -905,6 +905,8 @@ export async function getPickingQueue(
       isHand: order.handAt !== null,
       // CHALLAN pill (2026-10-07) — a scalar the `include` already brings.
       isChallanOrder: order.isChallanOrder,
+      // OBD pill (2026-10-16) — a scalar the `include` already brings.
+      isObdImport: order.isObdImport,
       windowId: order.dispatchWindow?.id ?? null,
       windowTime: order.dispatchWindow?.windowTime ?? null,
       windowSortOrder: order.dispatchWindow?.sortOrder ?? null,

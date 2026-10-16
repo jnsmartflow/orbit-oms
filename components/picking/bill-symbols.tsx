@@ -26,6 +26,7 @@ import { DUP_SO_MUTED, DuplicateSoTag } from "@/components/shared/duplicate-so-t
 import { ColourWorkBadge, isColourWorkBadged, isSmuBadged } from "./card-atoms";
 import { GiftBadge } from "@/components/floor/gift-badge";
 import { ChallanBadge } from "@/components/shared/challan-badge";
+import { ObdBadge } from "@/components/shared/obd-badge";
 import { HandBadge } from "@/components/shared/hand-badge";
 import type { ColourWork } from "@/lib/picking/colour-work";
 
@@ -48,6 +49,8 @@ export interface BillSymbolSource {
   isHand: boolean;
   /** CHALLAN — an ORB order (2026-10-07): the first pill in the run. */
   isChallanOrder: boolean;
+  /** OBD — an OBD import (2026-10-16): straight after CHALLAN. */
+  isObdImport: boolean;
 }
 
 /** Does this bill put ANYTHING in the run? Exported so a caller can decide
@@ -70,6 +73,7 @@ export function hasBillSymbols(row: BillSymbolSource): boolean {
     row.isHand ||
     // And the CHALLAN pill (2026-10-07).
     row.isChallanOrder ||
+    row.isObdImport ||
     isSmuBadged(row.smuCode)
   );
 }
@@ -149,6 +153,7 @@ export function BillSymbols({ row }: { row: BillSymbolSource }): React.JSX.Eleme
           `tone()` does for every other item in this run. */}
       {/* CHALLAN — an ORB order (2026-10-07): leads the pill run, like the cards. */}
       {row.isChallanOrder && <ChallanBadge />}
+      {row.isObdImport && <ObdBadge />}
       <ColourWorkBadge work={row.colourWork} onRed={dup} />
       {/* GIFT — the second pill in the run, straight after TINT/BASE. Floor's
           own component, imported (components/floor/gift-badge.tsx). Its pale

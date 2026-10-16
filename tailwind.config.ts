@@ -163,6 +163,10 @@ const config: Config = {
           brown:  "#8B5A2B", // Hand (dealer collects) — owner 2026-09-24
                              // After brown, NO data.* colour is free — the next category
                              // needs a new token (CLAUDE_UI.md §2.1).
+          plum:   "#86198F", // OBD (orders.isObdImport) — owner 2026-10-16. SOLID ONLY
+                             // (bg-data-plum text-white): a pale plum pill is the same
+                             // lavender as CHALLAN's purple-50 (ΔE 1.5). Not #BE185D —
+                             // that hardcoded pink is TINT/BASE.
         },
       },
       borderRadius: {
