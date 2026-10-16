@@ -347,7 +347,7 @@ function blockTags(row: FloorBoardRow, dup: boolean): ReactNode[] {
     tags.push({ key: "challan", cls: BLOCK_TAG_CHALLAN, title: "Challan order — goods sent without a SAP bill yet", label: "Challan" });
   // OBD (2026-10-16) — straight after CHALLAN, the same order as the pills.
   if (row.isObdImport)
-    tags.push({ key: "obd", cls: BLOCK_TAG_OBD, title: "OBD import — came in through the OBD paste", label: "OBD" });
+    tags.push({ key: "obd", cls: BLOCK_TAG_OBD, title: "ODB import — came in through the ODB paste", label: "ODB" });
   if (row.priorityLevel === 1) tags.push({ key: "urgent", cls: BLOCK_TAG_URGENT, title: "Urgent", label: "Urgent" });
   if (row.colourWork !== null)
     tags.push({

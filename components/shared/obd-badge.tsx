@@ -17,10 +17,10 @@ export function ObdBadge() {
   return (
     <span
       className="shrink-0 whitespace-nowrap rounded-full border border-data-plum bg-data-plum px-2 py-[3px] text-[11px] font-bold tracking-[0.04em] text-white"
-      aria-label="OBD import — came in through the OBD paste"
-      title="OBD import — came in through the OBD paste"
+      aria-label="ODB import — came in through the ODB paste"
+      title="ODB import — came in through the ODB paste"
     >
-      OBD
+      ODB
     </span>
   );
 }

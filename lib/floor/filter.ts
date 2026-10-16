@@ -34,7 +34,7 @@ export const FLAG_OPTIONS: Array<[FloorFilterFlag, string]> = [
   ["carried", "Carried over"],
   ["redirect", "Ship-to changed"],
   // OBD import (orders.isObdImport, 2026-10-16) — the OBD pill's bills.
-  ["obd", "OBD"],
+  ["obd", "ODB"],
 ];
 
 const PROJECT_SMUS = new Set(["Retail Offtake", "Decorative Projects"]);

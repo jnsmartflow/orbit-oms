@@ -2524,7 +2524,7 @@ async function handleSapPastePreview(req: Request, _session: Session): Promise<N
   return NextResponse.json({
     ok:        true,
     // DIFFERENCE vs .xlsx: there is no file, so the label says what it was.
-    filename:  `${obdMode ? "OBD paste" : "Clipboard paste"} (${parseResult.fileStats.totalRows} rows)`,
+    filename:  `${obdMode ? "ODB paste" : "Clipboard paste"} (${parseResult.fileStats.totalRows} rows)`,
     fileStats: parseResult.fileStats,
     summary,
     obds:      obdEntries,

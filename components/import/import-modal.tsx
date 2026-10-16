@@ -70,7 +70,7 @@ type Tab = "new" | "log";
 const FORMAT_CARDS: { format: Format; title: string; Icon: typeof ClipboardPaste }[] = [
   { format: "sap-paste", title: "Paste from SAP", Icon: ClipboardPaste },
   { format: "sap",       title: "SAP file",       Icon: FileSpreadsheet },
-  { format: "obd-paste", title: "OBD",            Icon: ClipboardList },
+  { format: "obd-paste", title: "ODB",            Icon: ClipboardList },
 ];
 
 /** Footer Cancel — a bordered secondary button, so it reads as a button. */
@@ -504,7 +504,7 @@ export function ImportModal({ open, onClose }: ImportModalProps): React.JSX.Elem
       }
       job = {
         obdCount:    obdCount ?? paste.obdCount,
-        sourceLabel: format === "obd-paste" ? "OBD paste" : "Clipboard paste",
+        sourceLabel: format === "obd-paste" ? "ODB paste" : "Clipboard paste",
         url:         "/api/import/obd?action=sap-paste-confirm",
         init: {
           method:  "POST",
@@ -665,7 +665,7 @@ export function ImportModal({ open, onClose }: ImportModalProps): React.JSX.Elem
   // Paste: a block that read cleanly. File formats: a file.
   const canSubmit  = isPasteFormat(format) ? paste !== null : file !== null;
   const sourceChip =
-    format === "obd-paste" ? "OBD paste" :
+    format === "obd-paste" ? "ODB paste" :
     format === "sap-paste" ? "Clipboard paste" :
     (file?.name ?? "—");
 
@@ -978,7 +978,7 @@ export function ImportModal({ open, onClose }: ImportModalProps): React.JSX.Elem
                     format === "obd-paste" ? "bg-gray-900 text-white font-medium" : "text-gray-500"
                   }`}
                 >
-                  OBD
+                  ODB
                 </button>
               </div>
             </div>
@@ -1039,7 +1039,7 @@ export function ImportModal({ open, onClose }: ImportModalProps): React.JSX.Elem
                     format === "obd-paste" ? "bg-gray-900 text-white font-medium" : "text-gray-500"
                   }`}
                 >
-                  OBD
+                  ODB
                 </button>
               </div>
             </div>

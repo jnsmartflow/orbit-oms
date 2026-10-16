@@ -2532,7 +2532,7 @@ export function PickingBoardMobile(): React.JSX.Element {
   }
 
   const laneLabel =
-    [activeType !== "All" ? (activeType === "Upcountry" ? "UPC" : activeType) : null, obdOnly ? "OBD" : null, activeRoute]
+    [activeType !== "All" ? (activeType === "Upcountry" ? "UPC" : activeType) : null, obdOnly ? "ODB" : null, activeRoute]
       .filter(Boolean)
       .join(" · ") || "All routes";
 
@@ -3749,7 +3749,7 @@ export function PickingBoardMobile(): React.JSX.Element {
                     : "border-gray-200 bg-white text-gray-700")
                 }
               >
-                OBD
+                ODB
               </button>
               <button
                 type="button"
