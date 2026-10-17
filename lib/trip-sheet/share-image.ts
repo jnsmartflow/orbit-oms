@@ -13,6 +13,11 @@
 //   - toBlob at pixelRatio 2, cacheBust false — TWICE, keeping the second
 //     (the WebKit first-draw quirk, see captureSheet).
 // The data is the TripSheet already in memory — no fetch.
+//
+// TWO HALVES (2026-10-17, the list's share chips): prepareTripSheetShare does
+// the slow capture; deliverTripSheetShare hands a READY file to the share
+// sheet. A chip that lost the iPhone gesture window (NotAllowedError) keeps its
+// prepared file and delivers it on the next tap, with nothing slow in between.
 
 import { createElement } from "react";
 import { createRoot } from "react-dom/client";
@@ -88,44 +93,73 @@ async function captureSheet(sheet: TripSheet): Promise<Blob> {
   }
 }
 
-/**
- * Capture and hand off. "shared" = the phone's share sheet opened (or the user
- * dismissed it); "downloaded" = no file sharing here, so the PNG was downloaded
- * and the caption copied. Throws on a capture failure — the caller toasts it.
- */
-export async function shareTripSheet(sheet: TripSheet): Promise<"shared" | "downloaded"> {
-  const caption = buildTripSheetCaption(sheet);
-  const blob = await captureSheet(sheet);
-  const fileName = `TripSheet-${sheet.header.tripNumber}.png`;
-  const file = new File([blob], fileName, { type: "image/png" });
+/** A captured sheet, ready to hand to the share sheet with nothing slow left to do. */
+export interface PreparedTripSheetShare {
+  file: File;
+  caption: string;
+  title: string;
+}
 
+/**
+ * The slow half: caption + capture. `groupLabel` (a list share chip, e.g.
+ * "City 1") rides in the caption's first line, the file name and the share
+ * title — "L-261017-02 · City 1". Throws on a capture failure.
+ */
+export async function prepareTripSheetShare(sheet: TripSheet, groupLabel?: string): Promise<PreparedTripSheetShare> {
+  const caption = buildTripSheetCaption(sheet, groupLabel);
+  const blob = await captureSheet(sheet);
+  const tag = groupLabel ? `-${groupLabel.replace(/[^A-Za-z0-9]+/g, "-")}` : "";
+  const fileName = `TripSheet-${sheet.header.tripNumber}${tag}.png`;
+  const title = `Trip Sheet ${sheet.header.tripNumber}${groupLabel ? ` · ${groupLabel}` : ""}`;
+  return { file: new File([blob], fileName, { type: "image/png" }), caption, title };
+}
+
+/**
+ * The fast half: hand off a prepared file. "shared" = the share sheet completed;
+ * "cancelled" = the user closed it (AbortError); "downloaded" = no file sharing
+ * here, so the PNG was downloaded and the caption copied. Any other share error
+ * — NotAllowedError when the tap's gesture window has expired — is THROWN, so
+ * the caller can keep the prepared file and offer a second tap.
+ */
+export async function deliverTripSheetShare(p: PreparedTripSheetShare): Promise<"shared" | "cancelled" | "downloaded"> {
   if (
     typeof navigator.canShare === "function" &&
     typeof navigator.share === "function" &&
-    navigator.canShare({ files: [file] })
+    navigator.canShare({ files: [p.file] })
   ) {
     try {
-      await navigator.share({ files: [file], text: caption, title: `Trip Sheet ${sheet.header.tripNumber}` });
+      await navigator.share({ files: [p.file], text: p.caption, title: p.title });
     } catch (err) {
       // The user closing the share sheet is not an error.
-      if (err instanceof DOMException && err.name === "AbortError") return "shared";
+      if (err instanceof DOMException && err.name === "AbortError") return "cancelled";
       throw err;
     }
     return "shared";
   }
 
-  const url = URL.createObjectURL(blob);
+  const url = URL.createObjectURL(p.file);
   const a = document.createElement("a");
   a.href = url;
-  a.download = fileName;
+  a.download = p.file.name;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
   try {
-    await navigator.clipboard.writeText(caption);
+    await navigator.clipboard.writeText(p.caption);
   } catch {
     // Best effort — an insecure context or a denied permission is fine.
   }
   return "downloaded";
+}
+
+/**
+ * Capture and hand off — the detail page's full-trip Share, unchanged in
+ * behaviour. "shared" = the phone's share sheet opened (or the user dismissed
+ * it); "downloaded" = no file sharing here, so the PNG was downloaded and the
+ * caption copied. Throws on a capture failure — the caller toasts it.
+ */
+export async function shareTripSheet(sheet: TripSheet): Promise<"shared" | "downloaded"> {
+  const outcome = await deliverTripSheetShare(await prepareTripSheetShare(sheet));
+  return outcome === "cancelled" ? "shared" : outcome;
 }

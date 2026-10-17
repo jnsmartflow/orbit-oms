@@ -47,10 +47,13 @@ function dayMonth(isoDate: string): string {
  * sheet's time (manualDispatchAt IST, else the slot window) — no time → the date
  * alone. No phone → "👤 {name}"; no driver → the line is skipped. N = the stops
  * on the sheet. Areas = unique, in sheet order; no areas → the line is skipped.
+ *
+ * `groupLabel` (a list share chip, 2026-10-17): the first line becomes
+ * "🚚 L-261010-02 · City 1"; the sheet passed in is already that group's.
  */
-export function buildTripSheetCaption(sheet: TripSheet): string {
+export function buildTripSheetCaption(sheet: TripSheet, groupLabel?: string): string {
   const h = sheet.header;
-  const lines: string[] = [`🚚 ${h.tripNumber}`];
+  const lines: string[] = [`🚚 ${h.tripNumber}${groupLabel ? ` · ${groupLabel}` : ""}`];
   const time = to12h(h.timeLabel);
   lines.push(`🕐 ${dayMonth(h.tripDate)}${time ? ` ${time}` : ""}`);
   const first = driverFirstName(h.driverName);

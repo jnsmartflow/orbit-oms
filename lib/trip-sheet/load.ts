@@ -17,12 +17,15 @@
 //   - gifts → lib/orders/gift.ts;
 //   - the delivery point → lib/trips/drop-key.ts effectiveCustomerId;
 //   - the mixed-type label → lib/floor/scope.ts tripMixLabel;
-//   - the Sales Officer → lib/floor/queries.ts salesOfficerByOrder (Floor's SO column).
+//   - the Sales Officer → lib/floor/queries.ts salesOfficerByOrder (Floor's SO column);
+//   - totals / stop numbers → ./totals.ts summariseStops (shared with filterSheet);
+//   - the share chips → ./share-groups.ts (v27.71).
 //
 // QUERY COUNT. The sheet core (loadSheetCore) is a fixed number of batched reads
 // for ANY number of trips: drops, own bills, re-delivery rows, re-delivered
 // bills, snapshots, bill-to, delivery points, pick assignments, user names, and
-// at most two SO reads — never one per bill. The summary builder adds its own
+// at most two SO reads, one shareGroup read — never one per bill. The list adds
+// one trip_share_log read. The summary builder adds its own
 // fixed batch on top.
 
 import { prisma } from "@/lib/prisma";
@@ -32,11 +35,21 @@ import { effectiveCustomerId } from "@/lib/trips/drop-key";
 import { tripMixLabel } from "@/lib/floor/scope";
 import { salesOfficerByOrder } from "@/lib/floor/queries";
 import { billQuantities, isSiteDelivery, loadBillToByObd, loadSnapshots } from "@/lib/reports/bill-facts";
-import { isGiftBill, loadKg, loadLitres } from "@/lib/orders/gift";
+import { isGiftBill } from "@/lib/orders/gift";
 import { onStopsWhere, placeOnTrips, stopRowsSelect } from "@/lib/order-invoices/trip-read";
 import { loadSplitInvoiceRows } from "@/lib/order-invoices/invoice-load";
 import { placeLoad } from "@/lib/floor/invoice-rows";
+import { summariseStops } from "./totals";
+import {
+  SHARE_GROUP_LABEL,
+  billShareGroups,
+  groupOrderIds,
+  parseSoShareGroup,
+  sheetShareGroups,
+  tripShareKind,
+} from "./share-groups";
 import type {
+  TripShareChip,
   TripSheet,
   TripSheetBill,
   TripSheetHeader,
@@ -137,9 +150,14 @@ interface SheetCore {
   soNames: string[];
 }
 
-async function loadSheetCore(tripIds: number[]): Promise<Map<number, SheetCore>> {
+/** The two trip facts the core needs: its id and its STORED type (the share chips' rule). */
+type CoreTrip = { id: number; deliveryTypeName: string | null };
+
+async function loadSheetCore(trips: CoreTrip[]): Promise<Map<number, SheetCore>> {
   const out = new Map<number, SheetCore>();
-  if (tripIds.length === 0) return out;
+  if (trips.length === 0) return out;
+  const tripIds = trips.map((t) => t.id);
+  const kindByTrip = new Map(trips.map((t) => [t.id, tripShareKind(t.deliveryTypeName)]));
 
   // 1. Stops.
   const drops = await prisma.trip_drops.findMany({
@@ -248,6 +266,16 @@ async function loadSheetCore(tripIds: number[]): Promise<Map<number, SheetCore>>
   // 10–11. Sales Officer — Floor's rule, at most two reads.
   const soByOrder = await salesOfficerByOrder(uniqueOrders);
 
+  // 12. Share chips (v27.71): ONE batched read of the known SOs' "shareGroup".
+  // salesOfficerByOrder is Floor's and stays untouched — the id is enough.
+  const soIds = Array.from(
+    new Set(Array.from(soByOrder.values()).map((so) => so.salesOfficerId).filter((id): id is number => id !== null)),
+  );
+  const soGroups = soIds.length
+    ? await prisma.sales_officer_master.findMany({ where: { id: { in: soIds } }, select: { id: true, shareGroup: true } })
+    : [];
+  const shareGroupBySo = new Map(soGroups.map((m) => [m.id, parseSoShareGroup(m.shareGroup)]));
+
   // ── Assemble per trip ────────────────────────────────────────────────────
   const stopsByTrip = new Map<number, Map<number, TripSheetStop>>();
   for (const p of placed) {
@@ -266,6 +294,8 @@ async function loadSheetCore(tripIds: number[]): Promise<Map<number, SheetCore>>
     const deliveryCode = blank(eid !== null ? codeByPointId.get(eid) : null) ?? blank(o.shipToCustomerId);
     const directLoaded = o.directLoadedAt !== null;
     const checkerId = a?.checkedById ?? (directLoaded ? o.directLoadedById : null);
+    const so = soByOrder.get(o.id);
+    const soName = blank(so?.name);
     const bill: TripSheetBill = {
       orderId: o.id,
       number: blank(o.invoiceNo) ?? o.obdNumber,
@@ -279,12 +309,18 @@ async function loadSheetCore(tripIds: number[]): Promise<Map<number, SheetCore>>
       kg: q.kg,
       shipToChanged: billToCode !== null && deliveryCode !== null && billToCode !== deliveryCode,
       billToName: blank(billTo?.name),
-      soName: blank(soByOrder.get(o.id)?.name),
-      soId: soByOrder.get(o.id)?.salesOfficerId ?? null,
-      soPhone: blank(soByOrder.get(o.id)?.phone),
+      soName,
+      soId: so?.salesOfficerId ?? null,
+      soPhone: blank(so?.phone),
       pickerName: a ? blank(userName.get(a.pickerId)) : null,
       checkerName: checkerId !== null ? blank(userName.get(checkerId)) : null,
       directLoaded,
+      shareGroups: billShareGroups(kindByTrip.get(drop.tripId) ?? null, {
+        smu: o.smu,
+        // No shown name = no salesman (the bill card shows none either).
+        soSource: so && soName !== null ? so.source : null,
+        shareGroup: so?.salesOfficerId != null ? (shareGroupBySo.get(so.salesOfficerId) ?? null) : null,
+      }),
     };
     const tripStops = stopsByTrip.get(drop.tripId) ?? new Map<number, TripSheetStop>();
     // Is the EFFECTIVE point a site? isSiteDelivery on the point the truck goes
@@ -318,32 +354,7 @@ async function loadSheetCore(tripIds: number[]): Promise<Map<number, SheetCore>>
       const byArea = (a.area ?? "").localeCompare(b.area ?? "", "en", { sensitivity: "base" });
       return byArea || a.dropSeq - b.dropSeq;
     });
-    const totals: TripSheetTotals = { stops: stops.length, bills: 0, articles: 0, litres: 0, kg: 0, kgUnknownCount: 0 };
-    const captionAreas: string[] = [];
-    const soNames: string[] = [];
-    // One entry per PERSON: the master id when known, else the shown name.
-    const soSeen = new Set<string>();
-    stops.forEach((s, i) => {
-      s.no = i + 1;
-      s.bills.sort((a, b) => a.obd.localeCompare(b.obd));
-      if (s.area !== null && !captionAreas.includes(s.area)) captionAreas.push(s.area);
-      for (const b of s.bills) {
-        totals.bills += 1;
-        totals.articles += b.articles ?? 0;
-        totals.litres += loadLitres(b.litres, b.gift);
-        const kg = loadKg(b.kg, b.gift);
-        if (kg === null) totals.kgUnknownCount += 1;
-        else totals.kg += kg;
-        if (b.soName !== null) {
-          const key = b.soId !== null ? `id:${b.soId}` : `name:${b.soName.toLowerCase()}`;
-          if (!soSeen.has(key)) {
-            soSeen.add(key);
-            soNames.push(b.soName);
-          }
-        }
-      }
-    });
-    out.set(tripId, { stops, totals, captionAreas, soNames });
+    out.set(tripId, summariseStops(stops));
   }
   return out;
 }
@@ -362,17 +373,67 @@ export async function getTripSheet(tripId: number): Promise<TripSheet | null> {
   const [summary] = await getTripsForDate(trip.tripDate, parseTripDate(getTodayIST()), [tripId]);
   if (!summary) return null;
 
-  const core = (await loadSheetCore([tripId])).get(tripId);
+  const core = (await loadSheetCore([summary])).get(tripId);
   if (!core) return null;
   return { header: headerFor(summary), ...core };
+}
+
+/** Same set of order ids? (Both sides de-duplicated.) */
+function sameIds(a: number[], b: number[]): boolean {
+  const sa = new Set(a);
+  const sb = new Set(b);
+  return sa.size === sb.size && Array.from(sa).every((id) => sb.has(id));
+}
+
+/**
+ * A card's share chips (v27.71): one per group with ≥1 bill, in chip order.
+ * `shared` = the LATEST trip_share_log row for (trip, group); `stale` = its
+ * snapshot is not the group's bills now — the card then shows it as not shared.
+ * None on a Hand trip (no sheet, no Share — spec §3).
+ */
+function chipsFor(
+  sheet: TripSheet,
+  latest: Map<string, { sharedAt: Date; orderIds: number[]; byName: string | null }>,
+): TripShareChip[] {
+  if (sheet.header.isHand) return [];
+  return sheetShareGroups(sheet).map((key) => {
+    const orderIds = groupOrderIds(sheet, key);
+    const log = latest.get(`${sheet.header.id}:${key}`);
+    return {
+      key,
+      label: SHARE_GROUP_LABEL[key],
+      billCount: orderIds.length,
+      orderIds,
+      shared: log ? { at: log.sharedAt.toISOString(), byName: blank(log.byName) } : null,
+      stale: log ? !sameIds(log.orderIds, orderIds) : false,
+    };
+  });
 }
 
 /** List rows for already-built summaries — the ONE place a card's numbers come from. */
 export async function listRowsFor(summaries: TripSummary[]): Promise<TripSheetListRow[]> {
   const live = summaries.filter((t) => t.status !== TRIP_CANCELLED);
-  const core = await loadSheetCore(live.map((t) => t.id));
+  const core = await loadSheetCore(live);
+
+  // The share log — ONE read for every card; newest first, so the first row
+  // seen per (trip, group) is its latest.
+  const logs = live.length
+    ? await prisma.tripShareLog.findMany({
+        where: { tripId: { in: live.map((t) => t.id) } },
+        orderBy: [{ sharedAt: "desc" }, { id: "desc" }],
+        select: { tripId: true, groupKey: true, sharedAt: true, orderIds: true, sharedBy: { select: { name: true } } },
+      })
+    : [];
+  const latest = new Map<string, { sharedAt: Date; orderIds: number[]; byName: string | null }>();
+  for (const l of logs) {
+    const k = `${l.tripId}:${l.groupKey}`;
+    if (!latest.has(k)) latest.set(k, { sharedAt: l.sharedAt, orderIds: l.orderIds, byName: l.sharedBy?.name ?? null });
+  }
+
+  const empty: SheetCore = summariseStops([]);
   return live.map((t) => {
-    const c = core.get(t.id);
+    const c = core.get(t.id) ?? empty;
+    const sheet: TripSheet = { header: headerFor(t), ...c };
     const driver = blank(t.driverName);
     return {
       id: t.id,
@@ -386,14 +447,16 @@ export async function listRowsFor(summaries: TripSummary[]): Promise<TripSheetLi
       driverPhone: blank(t.driverPhone),
       timeLabel: timeLabelFor(t),
       areaLabel: t.areaLabel,
-      stops: c?.totals.stops ?? 0,
-      bills: c?.totals.bills ?? 0,
-      litres: c?.totals.litres ?? 0,
-      kg: c?.totals.kg ?? 0,
-      soNames: c?.soNames ?? [],
+      stops: c.totals.stops,
+      bills: c.totals.bills,
+      litres: c.totals.litres,
+      kg: c.totals.kg,
+      soNames: c.soNames,
       isReady: t.isReady,
       isHand: t.isHand,
       typeLabel: typeLabelFor(t),
+      chips: chipsFor(sheet, latest),
+      sheet,
     };
   });
 }

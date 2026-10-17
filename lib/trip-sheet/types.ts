@@ -20,6 +20,9 @@ export type ArticleSource =
 
 export type TripSheetPending = null | "picking" | "vehicle" | "both";
 
+/** A per-group share chip (2026-10-17, lib/trip-sheet/share-groups.ts). */
+export type ShareGroupKey = "city1" | "city2" | "upc" | "project" | "other";
+
 export interface TripSheetHeader {
   id: number;
   tripNumber: string;
@@ -91,6 +94,9 @@ export interface TripSheetBill {
   checkerName: string | null;
   /** Sent to pick_checked with no picker (Schema v27.52). */
   directLoaded: boolean;
+  /** The share chip(s) this bill goes to (share-groups.ts billShareGroups) —
+   *  empty on an IGT / Cross trip. Phone only. */
+  shareGroups: ShareGroupKey[];
 }
 
 export interface TripSheetStop {
@@ -134,6 +140,19 @@ export interface TripSheet {
   soNames: string[];
 }
 
+/** One share chip on a list card (2026-10-17). */
+export interface TripShareChip {
+  key: ShareGroupKey;
+  label: string;
+  billCount: number;
+  /** The group's bills now — what a share logs (trip_share_log."orderIds"). */
+  orderIds: number[];
+  /** The latest trip_share_log row for (trip, group), or null. */
+  shared: { at: string; byName: string | null } | null;
+  /** The latest share's bills differ from orderIds — the chip shows as NOT shared. */
+  stale: boolean;
+}
+
 /** One row of the phone list (/trip-sheets). Same numbers as the trip's sheet. */
 export interface TripSheetListRow {
   id: number;
@@ -162,6 +181,11 @@ export interface TripSheetListRow {
   isReady: boolean;
   isHand: boolean;
   typeLabel: string;
+  /** Share chips in chip order, only groups with a bill; empty on IGT / Cross and Hand trips. */
+  chips: TripShareChip[];
+  /** The trip's full sheet — the SAME object the detail page gets — so a chip
+   *  shares from memory with no fetch after the tap (the iPhone gesture window). */
+  sheet: TripSheet;
 }
 
 /** Which field a search hit came from — shown as "matched: {label} {value}". */

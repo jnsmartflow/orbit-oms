@@ -348,6 +348,8 @@ model users {
   // FKs to users, so all three relations MUST be named on both sides.
   orderInvoicesHeld           order_invoices[]         @relation("OrderInvoiceHeldBy")
   orderInvoicesDispatched     order_invoices[]         @relation("OrderInvoiceDispatchedBy")
+  // Trip Sheets share log (v27.71) — one FK from trip_share_log, unnamed.
+  tripSharesLogged            TripShareLog[]
 }
 
 // Per-user page permissions — the table the role→user access conversion is
@@ -785,6 +787,11 @@ model sales_officer_master {
   // Schema v27.62 (2026-10-10) — how a person should be SHOWN, filled later.
   // Live: text NULL. Nothing reads it yet.
   displayName             String?
+  // Schema v27.71 (2026-10-17) — which Trip Sheets share chip this person's
+  // bills go to (lib/trip-sheet/share-groups.ts). Live CHECK
+  // chk_sales_officer_master_share_group: NULL or city1 | city2 | upc |
+  // project | city_both. NULL = not mapped.
+  shareGroup              String?
   isActive                Boolean                   @default(true)
   createdAt               DateTime                  @default(now())
   // ⚠ Live-vs-schema drift recorded 2026-10-10 (CLAUDE_CORE.md v27.62 entry),
@@ -825,6 +832,30 @@ model sales_officer_master {
 // ⚠ No live_changes trigger yet (CORE §13) — added in the commit that first
 // makes a screen read this table.
 // ─────────────────────────────────────────────
+// Trip Sheets — per-group WhatsApp share log (Schema v27.71, 2026-10-17;
+// docs/prompts/drafts/code-update-2026-10-17-trip-share-groups.sql). One row per
+// share of one group's sheet; orderIds = that group's bills at share time, so the
+// list can show a tick as stale when the group changes. Written only by
+// POST /api/trip-sheets/[id]/share-log. Live CHECK chk_trip_share_log_group
+// (city1 | city2 | upc | project | other) is not expressible in Prisma. Live
+// feed: trg_live_changes_trip_share_log_{ins,upd,del} on live_changes_child_*
+// ('trip', 'parent', 'tripId'). Every constraint / index name is Prisma's own
+// default, so none carries a map:. One FK to trips and one to users, so both
+// relations are deliberately UNNAMED.
+model TripShareLog {
+  id         Int      @id @default(autoincrement())
+  tripId     Int
+  trip       trips    @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  groupKey   String
+  sharedAt   DateTime @default(now()) @db.Timestamptz(6)
+  sharedById Int?
+  sharedBy   users?   @relation(fields: [sharedById], references: [id], onDelete: SetNull)
+  orderIds   Int[]
+
+  @@index([tripId, groupKey])
+  @@map("trip_share_log")
+}
+
 model SalesOfficerAlias {
   id             Int                  @id @default(autoincrement())
   aliasKey       String               @unique
@@ -4098,6 +4129,8 @@ model trips {
   redeliveriesPrevious  trip_redeliveries[] @relation("TripRedeliveryPrevTrip")
   // Billing Print v2 (v27.56): the bills billing has copied on THIS trip.
   billCopies            trip_bill_copies[]  @relation("TripBillCopyTrip")
+  // Trip Sheets per-group WhatsApp shares (v27.71).
+  shareLog              TripShareLog[]
 
   // ⚠ NO @@unique ON (tripDate, typeCode, seq) SINCE 2026-09-15. The live
   // uniqueness is the PARTIAL index trips_date_type_seq_live_key (see the header

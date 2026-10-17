@@ -12,9 +12,19 @@
 // TABS = Floor's own rule: a trip is on the tab of the type it was NUMBERED
 // under (lib/floor/scope.ts tripInScope) — I- and C- trips share "IGT / Cross".
 
+//
+// SHARE CHIPS (2026-10-17, Schema v27.71) replace the SO-names line: one chip
+// per group (City 1 · City 2 · UPC · Project · Other — lib/trip-sheet/
+// share-groups.ts). A tap shares THAT group's sheet from the row's in-memory
+// sheet (no fetch after the tap — the iPhone gesture window), then logs it
+// (POST /api/trip-sheets/[id]/share-log) and the chip turns green. Cancelled →
+// no log. NotAllowedError → the captured file is kept and the chip offers
+// "Tap to send". Tapping the card still opens the full trip.
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { ChevronLeft, ChevronRight, Loader2, MapPin, Search, Truck, Plane, UserRound, X } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, Loader2, MapPin, Search, Send, Share2, Truck, Plane, X } from "lucide-react";
+import { toast } from "sonner";
 import { RoleLayoutClient } from "@/components/shared/role-layout-client";
 import type { RoleSidebarRole } from "@/components/shared/role-sidebar";
 import { ModuleMobileHeader } from "@/components/shared/module-mobile-header";
@@ -25,8 +35,25 @@ import { getTodayIST } from "@/lib/dates";
 import { smartTitleCase } from "@/lib/mail-orders/utils";
 import { tripInScope } from "@/lib/floor/scope";
 import { TRIP_SHEET_TABS, parseTripSheetTab, scopeOfTab, type TripSheetTab } from "@/lib/trip-sheet/tabs";
-import type { TripSheetListRow, TripSheetMatchField, TripSheetSearchHit } from "@/lib/trip-sheet/types";
+import type {
+  TripShareChip,
+  TripSheetListRow,
+  TripSheetMatchField,
+  TripSheetSearchHit,
+} from "@/lib/trip-sheet/types";
+import { filterSheet } from "@/lib/trip-sheet/share-groups";
+import type { PreparedTripSheetShare } from "@/lib/trip-sheet/share-image";
 import { CallButton, CardShell, CardShelf, HandChip, ReadyChip, fmtNum } from "./card-bits";
+
+type ShareModule = typeof import("@/lib/trip-sheet/share-image");
+
+/** A chip's in-flight state on THIS phone: capturing, or captured and waiting for a second tap. */
+type ChipPhase = "busy" | "ready";
+
+/** What a chip shows. */
+type ChipView = "idle" | "busy" | "ready" | "shared";
+
+const chipId = (tripId: number, key: string) => `${tripId}:${key}`;
 
 const MATCH_LABEL: Record<TripSheetMatchField, string> = {
   trip: "trip",
@@ -162,6 +189,95 @@ function ListBody({
   const [searching, setSearching] = useState(false);
   const dateInput = useRef<HTMLInputElement>(null);
   const searchSeq = useRef(0);
+
+  // ── Share chips ──────────────────────────────────────────────────────────
+  // The capture code + inlined logo are fetched when the LIST mounts, as the
+  // detail page does, so a chip tap never spends iOS's gesture window on a
+  // network fetch. The tap awaits the same promise.
+  const shareModule = useRef<Promise<ShareModule> | null>(null);
+  useEffect(() => {
+    shareModule.current = import("@/lib/trip-sheet/share-image");
+    shareModule.current.catch(() => {
+      shareModule.current = null; // retried on the tap
+    });
+  }, []);
+  const [phase, setPhase] = useState<Record<string, ChipPhase>>({});
+  /** Files captured but refused by navigator.share (NotAllowedError) — sent on the next tap. */
+  const prepared = useRef(new Map<string, PreparedTripSheetShare>());
+  /** Shares logged on this phone since the rows loaded, with the bills they covered. */
+  const [logged, setLogged] = useState<Record<string, number[]>>({});
+
+  const setChipPhase = (id: string, p: ChipPhase | null) =>
+    setPhase((prev) => {
+      const next = { ...prev };
+      if (p === null) delete next[id];
+      else next[id] = p;
+      return next;
+    });
+
+  function chipView(row: TripSheetListRow, chip: TripShareChip): ChipView {
+    const id = chipId(row.id, chip.key);
+    if (phase[id]) return phase[id];
+    const mine = logged[id];
+    if (mine && mine.length === chip.orderIds.length && mine.every((x, i) => x === chip.orderIds[i])) return "shared";
+    return chip.shared !== null && !chip.stale ? "shared" : "idle";
+  }
+
+  async function onChip(row: TripSheetListRow, chip: TripShareChip) {
+    const id = chipId(row.id, chip.key);
+    if (phase[id] === "busy") return;
+    let mod: ShareModule;
+    let p = prepared.current.get(id);
+    try {
+      mod = await (shareModule.current ?? import("@/lib/trip-sheet/share-image"));
+      if (!p) {
+        setChipPhase(id, "busy");
+        p = await mod.prepareTripSheetShare(filterSheet(row.sheet, chip.key), chip.label);
+      }
+    } catch (err) {
+      setChipPhase(id, null);
+      console.error("Trip sheet share failed:", err);
+      toast.error(`Couldn't prepare the ${chip.label} sheet: ${err instanceof Error ? err.message : String(err)}`);
+      return;
+    }
+
+    let outcome: "shared" | "cancelled" | "downloaded";
+    try {
+      outcome = await mod.deliverTripSheetShare(p);
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "NotAllowedError") {
+        // The capture outlived the tap's gesture window — keep the file; the
+        // next tap hands it over at once.
+        prepared.current.set(id, p);
+        setChipPhase(id, "ready");
+        return;
+      }
+      prepared.current.delete(id);
+      setChipPhase(id, null);
+      console.error("Trip sheet share failed:", err);
+      toast.error(`Couldn't share the ${chip.label} sheet: ${err instanceof Error ? err.message : String(err)}`);
+      return;
+    }
+    prepared.current.delete(id);
+    setChipPhase(id, null);
+    if (outcome === "cancelled") return; // closed the share sheet — no log, chip unchanged
+
+    if (outcome === "downloaded") toast("Image downloaded and caption copied — attach it in WhatsApp");
+    try {
+      const res = await fetch(`/api/trip-sheets/${row.id}/share-log`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ groupKey: chip.key, orderIds: chip.orderIds }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.error ?? `HTTP ${res.status}`);
+      }
+      setLogged((prev) => ({ ...prev, [id]: chip.orderIds }));
+    } catch (err) {
+      toast.error(`Shared, but the tick was not saved: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
 
   const term = q.trim();
   const searchMode = searchOpen && term.length >= 2;
@@ -312,6 +428,8 @@ function ListBody({
                       row={h}
                       href={`/trip-sheets/${h.id}?date=${h.tripDate}&type=${tab}`}
                       matched={`matched: ${MATCH_LABEL[h.match.field]} ${h.match.value}`}
+                      chipView={chipView}
+                      onChip={onChip}
                     />
                   ))}
                 </section>
@@ -341,7 +459,15 @@ function ListBody({
               ) : shown.length === 0 ? (
                 <p className="py-16 text-center text-[13px] text-[#98a2b3]">No {tabLabel} trips on this day</p>
               ) : (
-                shown.map((r) => <TripCard key={r.id} row={r} href={`/trip-sheets/${r.id}?date=${date}&type=${tab}`} />)
+                shown.map((r) => (
+                  <TripCard
+                    key={r.id}
+                    row={r}
+                    href={`/trip-sheets/${r.id}?date=${date}&type=${tab}`}
+                    chipView={chipView}
+                    onChip={onChip}
+                  />
+                ))
               )}
             </>
           )}
@@ -364,24 +490,36 @@ function Spinner() {
  *   1  trip no (small mono, grey)                         time
  *   2  DRIVER FULL NAME (19px bold, wraps)                 [call]
  *   3  vehicle (mono, grey) · area label (+N muted)
- *   4  SO names (unchanged)
+ *   4  share chips (2026-10-17 — replaced the SO names line)
  *   shelf: stops · bills · kg · Ready/Picking
  *
  * ⚠ THE CARD LINK IS A STRETCHED OVERLAY, NOT A WRAPPER. The call button is an
  * <a href="tel:">, and an <a> inside an <a> is invalid HTML that browsers
  * repair unpredictably. So the card is a plain box, the trip link covers it
- * (absolute, z-1), and the call button sits ABOVE the link (z-2) — a tap on it
- * never reaches the link at all. No fixed heights: the card grows with a long
- * name or many SOs.
+ * (absolute, z-1), and the call button and share chips sit ABOVE the link
+ * (z-2) — a tap on them never reaches the link at all. No fixed heights: the
+ * card grows with a long name or many chips.
  */
-function TripCard({ row, href, matched }: { row: TripSheetListRow; href: string; matched?: string }) {
+function TripCard({
+  row,
+  href,
+  matched,
+  chipView,
+  onChip,
+}: {
+  row: TripSheetListRow;
+  href: string;
+  matched?: string;
+  chipView: (row: TripSheetListRow, chip: TripShareChip) => ChipView;
+  onChip: (row: TripSheetListRow, chip: TripShareChip) => void;
+}) {
   // areaLabel is "Pandesara +5" — the "+N" is greyed, as the Floor rail does.
   const m = row.areaLabel ? /^(.*?)( \+\d+)?$/.exec(row.areaLabel) : null;
   const driver = smartTitleCase(row.driverName);
   return (
     <div className="relative mb-3">
       <CardShell muted={row.isHand} roomy>
-        <div className="flex flex-col gap-2 px-[18px] pt-[18px] pb-[14px]">
+        <div className="flex flex-col gap-2 px-5 pt-5 pb-4">
           <div className="flex items-baseline justify-between gap-3">
             <span className="font-mono text-[12px] text-[#98a0aa]">{row.tripNumber}</span>
             <span className="shrink-0 text-[15px] font-semibold tabular-nums text-[#475467]">{row.timeLabel ?? "—"}</span>
@@ -404,10 +542,11 @@ function TripCard({ row, href, matched }: { row: TripSheetListRow; href: string;
               </>
             )}
           </div>
-          {row.soNames.length > 0 && (
-            <div className="flex items-start gap-1.5 text-[13px] leading-snug text-[#475467]">
-              <UserRound size={15} className="mt-[2px] shrink-0 text-brand-600" />
-              <span className="min-w-0 break-words">{row.soNames.map((n) => smartTitleCase(n)).join(", ")}</span>
+          {row.chips.length > 0 && (
+            <div className="flex flex-wrap gap-2 pt-1">
+              {row.chips.map((c) => (
+                <ShareChipButton key={c.key} chip={c} view={chipView(row, c)} onTap={() => onChip(row, c)} />
+              ))}
             </div>
           )}
           {matched && <div className="truncate text-[12px] text-[#98a2b3]">{matched}</div>}
@@ -429,5 +568,47 @@ function TripCard({ row, href, matched }: { row: TripSheetListRow; href: string;
         className="absolute inset-0 z-[1] rounded-[16px] active:bg-black/[0.04]"
       />
     </div>
+  );
+}
+
+/**
+ * One share chip (2026-10-17). Not shared: brand outline + share icon. Shared
+ * (and not stale): ok-green fill + tick. Capturing: spinner. Captured but the
+ * phone refused the share (NotAllowedError): brand fill, "Tap to send".
+ * No bill counts. 40px tall; z-[2] so it sits ABOVE the card's stretched link.
+ */
+function ShareChipButton({ chip, view, onTap }: { chip: TripShareChip; view: ChipView; onTap: () => void }) {
+  const base =
+    "relative z-[2] inline-flex h-10 items-center gap-1.5 rounded-full border px-3.5 text-[13.5px] font-semibold active:opacity-80 disabled:opacity-70";
+  const look =
+    view === "shared"
+      ? "border-ok bg-ok text-white"
+      : view === "ready"
+        ? "border-brand-600 bg-brand-600 text-white"
+        : "border-brand-600 bg-white text-brand-700";
+  const label = view === "ready" ? `Tap to send · ${chip.label}` : chip.label;
+  return (
+    <button
+      type="button"
+      disabled={view === "busy"}
+      onClick={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        onTap();
+      }}
+      aria-label={view === "shared" ? `${chip.label} — shared, share again` : `Share ${chip.label} sheet`}
+      className={`${base} ${look}`}
+    >
+      {view === "busy" ? (
+        <Loader2 size={15} className="animate-spin" />
+      ) : view === "shared" ? (
+        <Check size={15} strokeWidth={2.6} />
+      ) : view === "ready" ? (
+        <Send size={15} />
+      ) : (
+        <Share2 size={15} />
+      )}
+      {label}
+    </button>
   );
 }

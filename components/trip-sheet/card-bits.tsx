@@ -30,8 +30,8 @@ export function CardShell({ children, muted = false, roomy = false }: { children
 
 /**
  * The shelf: divider + grey band + one row of pills, an optional right slot.
- * `roomy` (trip list): 18px sides and 12px below the divider, to match the
- * card's 18px padding.
+ * `roomy` (trip list): 20px sides and 12px below the divider, to match the
+ * card's 20px padding (was 18px until the share chips, 2026-10-17).
  */
 export function CardShelf({
   pills,
@@ -46,7 +46,7 @@ export function CardShelf({
 }) {
   return (
     <div
-      className={`border-t border-[#eef1f4] bg-[#f6f8fa] flex items-center gap-1.5 ${roomy ? "px-[18px] py-3" : "px-[14px] py-[9px]"}`}
+      className={`border-t border-[#eef1f4] bg-[#f6f8fa] flex items-center gap-1.5 ${roomy ? "px-5 py-3" : "px-[14px] py-[9px]"}`}
     >
       <div className="flex flex-1 min-w-0 flex-wrap gap-1.5">
         {pills.map((p, i) => (
