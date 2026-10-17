@@ -29,7 +29,7 @@ import { findBillsByNumber, parseBillLookupTerm } from "@/lib/trips/find-bill";
 import { deleteTripDropIfEmpty, findOrCreateTripDrop } from "@/lib/trips/drop";
 import { logTripRedeliveryAdded, logTripRedeliveryRemoved, type RedeliveryLogItem } from "@/lib/trips/activity";
 import { dealerDisplayName } from "@/lib/orders/dealer-name";
-import { linkRowForOrder } from "@/lib/order-invoices/links";
+import { linkRowForOrder, RECORD_OBD_SELECT, recordObdOf, recordsOfObds } from "@/lib/order-invoices/links";
 import { obdStopIds } from "@/lib/order-invoices/trip-read";
 
 // ── Vocabulary — lives in lib/trips/redelivery-reasons.ts (pure, client-safe) ──
@@ -119,10 +119,13 @@ export async function getAttemptHistories(orderIds: number[]): Promise<Map<numbe
   const drops = dropIds.length
     ? await prisma.trip_drops.findMany({ where: { id: { in: dropIds } }, select: { id: true, tripId: true } })
     : [];
-  const rows = await prisma.trip_redeliveries.findMany({
-    where: { orderId: { in: ids } },
-    select: { orderId: true, tripId: true, reason: true, createdAt: true },
-  });
+  // Through the invoice row each re-delivery names (P5-4, lib/order-invoices/links.ts).
+  const rows = (
+    await prisma.trip_redeliveries.findMany({
+      where: recordsOfObds(ids),
+      select: { ...RECORD_OBD_SELECT, tripId: true, reason: true, createdAt: true },
+    })
+  ).map((r) => ({ ...r, orderId: recordObdOf(r) }));
 
   const tripIds = Array.from(new Set([...drops.map((d) => d.tripId), ...rows.map((r) => r.tripId)]));
   const trips = tripIds.length
@@ -312,10 +315,10 @@ export async function searchForRedelivery(tripId: number, raw: string): Promise<
   const histories = await getAttemptHistories(ids);
   const own = await ownTripIds(bills);
   const here = await prisma.trip_redeliveries.findMany({
-    where: { tripId, orderId: { in: ids } },
-    select: { orderId: true },
+    where: { tripId, ...recordsOfObds(ids) },
+    select: RECORD_OBD_SELECT,
   });
-  const hereSet = new Set(here.map((r) => r.orderId));
+  const hereSet = new Set(here.map(recordObdOf));
 
   const out: RedeliveryCandidate[] = bills.map((b) => {
     const dealer = b.shipToOverrideCustomer ?? b.customer;
@@ -411,8 +414,10 @@ export async function addRedeliveries(
 
       const history = (await getAttemptHistories([orderId])).get(orderId) ?? [];
       const own = await ownTripIds([order]);
-      const existing = await prisma.trip_redeliveries.findUnique({
-        where: { tripId_orderId: { tripId, orderId } },
+      // Any re-delivery of this OBD on this trip, through its invoice row
+      // (P5-4) — not the (tripId, orderId) unique, which PART 7 drops.
+      const existing = await prisma.trip_redeliveries.findFirst({
+        where: { tripId, ...recordsOfObds([orderId]) },
         select: { id: true },
       });
       const j = judgeBillForTrip(
@@ -437,9 +442,10 @@ export async function addRedeliveries(
       // The stop, by the shared drop-key rule. A lost race on its unique
       // throws into this bill's catch.
       const drop = await findOrCreateTripDrop(tripId, order);
-      // Which invoice row it re-delivers (v27.66, lib/order-invoices/links.ts):
-      // seq 1 — the whole OBD, until Phase 5 re-delivers single invoices.
-      const orderInvoiceId = await linkRowForOrder(orderId, "redelivery");
+      // Which invoice row it re-delivers (lib/order-invoices/links.ts): seq 1 on
+      // an unsplit bill; on a split one the lowest-seq row on the trip it came
+      // back from (P5-4) — the whole OBD, until Phase 5 re-delivers single invoices.
+      const orderInvoiceId = await linkRowForOrder(orderId, "redelivery", prevTripIdFor(history));
 
       let row: { id: number };
       try {

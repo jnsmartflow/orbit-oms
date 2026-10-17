@@ -40,6 +40,7 @@ import type { FloorBoardRow } from "@/lib/floor/types";
 import { isGiftBill, loadKg, loadLitres } from "@/lib/orders/gift";
 import { onStopsWhere, placeOnTrips, stopRowsSelect } from "@/lib/order-invoices/trip-read";
 import { loadSplitInvoiceRows } from "@/lib/order-invoices/invoice-load";
+import { RECORD_OBD_SELECT, recordObdOf } from "@/lib/order-invoices/links";
 import { placeLoad } from "@/lib/floor/invoice-rows";
 // 🔴 THE ROUTE/AREA RANKING LIVES IN ONE PLACE (2026-09-16) — a pure module the
 // CLIENT can import too, so the rail card-s label and the pool-s add hint cannot
@@ -1025,10 +1026,13 @@ async function summariesForTrips(trips: TripRow[]): Promise<TripSummary[]> {
   // Re-deliveries (2026-10-03): ONE batched read for the whole feed — the count
   // per trip, and which stops hold one (a re-delivery-only stop still names the
   // trip's area/route, plan rev 5 §2 #9).
-  const redeliveryRows = await prisma.trip_redeliveries.findMany({
-    where: { tripId: { in: trips.map((t) => t.id) } },
-    select: { tripId: true, tripDropId: true, orderId: true },
-  });
+  // The OBD through the invoice row each re-delivery names (P5-4).
+  const redeliveryRows = (
+    await prisma.trip_redeliveries.findMany({
+      where: { tripId: { in: trips.map((t) => t.id) } },
+      select: { tripId: true, tripDropId: true, ...RECORD_OBD_SELECT },
+    })
+  ).map((r) => ({ ...r, orderId: recordObdOf(r) }));
   const redeliveryCountByTripId = new Map<number, number>();
   for (const r of redeliveryRows) {
     redeliveryCountByTripId.set(r.tripId, (redeliveryCountByTripId.get(r.tripId) ?? 0) + 1);
@@ -1095,23 +1099,26 @@ async function summariesForTrips(trips: TripRow[]): Promise<TripSummary[]> {
 async function loadTripRedeliveries(
   tripId: number,
 ): Promise<Array<{ tripDropId: number; row: TripRedeliveryRow }>> {
-  const rows = await prisma.trip_redeliveries.findMany({
-    where: { tripId },
-    orderBy: { id: "asc" },
-    select: {
-      id: true,
-      tripDropId: true,
-      orderId: true,
-      obdNumber: true,
-      invoiceNo: true,
-      attemptNo: true,
-      reason: true,
-      note: true,
-      confirmedReturn: true,
-      createdAt: true,
-      createdBy: { select: { name: true } },
-    },
-  });
+  // The OBD through the invoice row each re-delivery names (P5-4).
+  const rows = (
+    await prisma.trip_redeliveries.findMany({
+      where: { tripId },
+      orderBy: { id: "asc" },
+      select: {
+        id: true,
+        tripDropId: true,
+        ...RECORD_OBD_SELECT,
+        obdNumber: true,
+        invoiceNo: true,
+        attemptNo: true,
+        reason: true,
+        note: true,
+        confirmedReturn: true,
+        createdAt: true,
+        createdBy: { select: { name: true } },
+      },
+    })
+  ).map((r) => ({ ...r, orderId: recordObdOf(r) }));
   if (rows.length === 0) return [];
 
   const orderIds = Array.from(new Set(rows.map((r) => r.orderId)));

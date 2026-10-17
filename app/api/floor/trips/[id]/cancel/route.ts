@@ -7,6 +7,7 @@ import { prisma } from "@/lib/prisma";
 import { DISPATCHED } from "@/lib/workflow-stages";
 import { setRowsTrip } from "@/lib/order-invoices/trip-link";
 import { onStopsWhere } from "@/lib/order-invoices/trip-read";
+import { RECORD_OBD_SELECT, recordObdOf } from "@/lib/order-invoices/links";
 
 export const dynamic = "force-dynamic";
 
@@ -205,9 +206,10 @@ export async function POST(
   // Re-deliveries planned on this trip (2026-10-03). Their rows are KEPT as the
   // record of the plan (plan rev 5 §2 #6), exactly like the drop rows; every
   // history and attempt count ignores a cancelled trip. Listed in the log only.
+  // The OBD through the invoice row each one names (P5-4).
   const redeliveries = await prisma.trip_redeliveries.findMany({
     where: { tripId },
-    select: { orderId: true, obdNumber: true },
+    select: { ...RECORD_OBD_SELECT, obdNumber: true },
     orderBy: { id: "asc" },
   });
 
@@ -218,7 +220,7 @@ export async function POST(
     renamedTo,
     orderIds: orders.map((o) => o.id),
     obdNumbers: orders.map((o) => o.obdNumber),
-    redeliveries: redeliveries.map((r) => ({ orderId: r.orderId, obd: r.obdNumber })),
+    redeliveries: redeliveries.map((r) => ({ orderId: recordObdOf(r), obd: r.obdNumber })),
     // ⚠ NO REASON IS PASSED, because this route does not take one — it reads
     // `_req` and never parses a body. `logTripCancelled` accepts one so a later
     // slice can add the field without touching the writer; inventing a body

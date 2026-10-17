@@ -20,8 +20,9 @@
 //      REVIEW instead: it never goes in the bulk Copy; billing opens it, reads
 //      the finding, and marks it done from the panel.
 //   4. COPIES ARE PER BILL AND MAY BE PARTIAL. Every copy press writes one
-//      trip_bill_copies row per bill (UNIQUE tripId + orderId — a second press
-//      on the same bill is skipped); the next press copies only bills that
+//      trip_bill_copies row per bill (UNIQUE tripId + orderInvoiceId, and the
+//      old tripId + orderId until PART 7 — a second press on the same bill is
+//      skipped, P5-4); the next press copies only bills that
 //      became ready since. Slice 9's "never a partial set" (a trip copyable only
 //      once every bill had an invoice number) was REMOVED on purpose — do not
 //      restore it.
@@ -69,7 +70,7 @@ import { tintPhaseOf } from "@/lib/floor/tint-phase";
 import { CHALLAN_LINKED, DISPATCHED, PICK_ASSIGNED, PICK_CHECKED, PICK_DONE } from "@/lib/workflow-stages";
 import { BILLABLE_BILL_WHERE } from "@/lib/challan-orders/where";
 import { logTripBillingDone, logTripBillsCopied } from "@/lib/trips/activity";
-import { invoiceRowLinks, linkRowFor } from "@/lib/order-invoices/links";
+import { invoiceRowLinks, linkRowFor, RECORD_OBD_SELECT, recordObdOf, recordsOfObds } from "@/lib/order-invoices/links";
 import { onStopsWhere, onTripsWhere, placeOnTrips, stopRowsSelect } from "@/lib/order-invoices/trip-read";
 import { loadSplitInvoiceRows } from "@/lib/order-invoices/invoice-load";
 import { placeLoad } from "@/lib/floor/invoice-rows";
@@ -316,13 +317,17 @@ export async function loadPrintTrips(tripIds: number[]): Promise<PrintTrip[]> {
   const findingOrderIds = new Set(findingRows.map((f) => f.orderId));
 
   // Every copy of these bills, on any trip: this trip's row decides `copied`,
-  // another trip's row is the quiet note.
+  // another trip's row is the quiet note. Reached THROUGH the invoice row each
+  // copy names (P5-4, lib/order-invoices/links.ts) — any copy on a trip naming
+  // one of the OBD's rows makes it copied there.
   const copyRows = orderIds.length
-    ? await prisma.trip_bill_copies.findMany({
-        where: { orderId: { in: orderIds } },
-        select: { tripId: true, orderId: true, copiedAt: true, copiedById: true, kind: true },
-        orderBy: { copiedAt: "desc" },
-      })
+    ? (
+        await prisma.trip_bill_copies.findMany({
+          where: recordsOfObds(orderIds),
+          select: { tripId: true, ...RECORD_OBD_SELECT, copiedAt: true, copiedById: true, kind: true },
+          orderBy: { copiedAt: "desc" },
+        })
+      ).map((c) => ({ ...c, orderId: recordObdOf(c) }))
     : [];
   const otherTripIds = Array.from(
     new Set(copyRows.map((c) => c.tripId).filter((tid) => !trips.some((t) => t.id === tid))),
@@ -529,7 +534,8 @@ export async function getPrintWorkTripIds(): Promise<number[]> {
                 AND o."workflowStage" <> ${CHALLAN_LINKED}
                 AND NOT EXISTS (
                       SELECT 1 FROM trip_bill_copies c
-                       WHERE c."tripId" = t.id AND c."orderId" = o.id)
+                        JOIN order_invoices ci ON ci.id = c."orderInvoiceId"
+                       WHERE c."tripId" = t.id AND ci."orderId" = o.id)
            )
          )
        )
@@ -645,7 +651,9 @@ function requiredState(kind: Exclude<PrintCopyKind, "invoice">): PrintBillState 
  * claims a bill the screen did not show as copyable.
  *
  * ⚠ A SECOND PRESS ON THE SAME BILL IS SKIPPED, NOT DOUBLE-RECORDED: the rows go
- * in with createMany skipDuplicates over trip_bill_copies_trip_order_key. Fewer
+ * in with createMany skipDuplicates over trip_bill_copies_trip_invoice_key (and
+ * the old trip_bill_copies_trip_order_key until PART 7). Both presses name the
+ * same invoice row — linkRowFor is deterministic on the same rows. Fewer
  * rows landing than were sent means someone else copied them first; the answer
  * says how many. `single` and `review` take exactly one bill.
  *
@@ -738,14 +746,14 @@ export async function copyTripBills(opts: {
   }
 
   const pressedAt = new Date();
-  // Which invoice row each copy names (v27.66, lib/order-invoices/links.ts):
-  // seq 1 — the whole OBD on an unsplit bill, the SAP invoice on a split one.
+  // Which invoice row each copy names (lib/order-invoices/links.ts): seq 1 on
+  // an unsplit bill; on a split one the lowest-seq row on THIS trip (P5-4).
   const invoiceRows = await invoiceRowLinks(bills.map((b) => b.orderId));
   const created = await prisma.trip_bill_copies.createMany({
     data: bills.map((b) => ({
       tripId: trip.id,
       orderId: b.orderId,
-      orderInvoiceId: linkRowFor(invoiceRows.get(b.orderId) ?? { seq1Id: null, split: false }, "copy"),
+      orderInvoiceId: linkRowFor(invoiceRows.get(b.orderId) ?? { seq1Id: null, split: false }, "copy", trip.id),
       obdNumber: b.obdNumber,
       invoiceNo: b.invoiceNo,
       kind: opts.kind,
@@ -772,13 +780,13 @@ export async function copyTripBills(opts: {
   const landedRows = await prisma.trip_bill_copies.findMany({
     where: {
       tripId: trip.id,
-      orderId: { in: bills.map((b) => b.orderId) },
+      ...recordsOfObds(bills.map((b) => b.orderId)),
       copiedById: opts.actorId,
       copiedAt: pressedAt,
     },
-    select: { orderId: true },
+    select: RECORD_OBD_SELECT,
   });
-  const landedIds = new Set(landedRows.map((r) => r.orderId));
+  const landedIds = new Set(landedRows.map(recordObdOf));
   const landed = bills.filter((b) => landedIds.has(b.orderId));
   const landedInvoiceNos = isInvoice
     ? Array.from(new Set(landed.map((b) => invoiceOf(b.invoiceNo)).filter((n): n is string => n !== null)))

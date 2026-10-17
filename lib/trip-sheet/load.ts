@@ -38,6 +38,7 @@ import { billQuantities, isSiteDelivery, loadBillToByObd, loadSnapshots } from "
 import { isGiftBill } from "@/lib/orders/gift";
 import { onStopsWhere, placeOnTrips, stopRowsSelect } from "@/lib/order-invoices/trip-read";
 import { loadSplitInvoiceRows } from "@/lib/order-invoices/invoice-load";
+import { RECORD_OBD_SELECT, recordObdOf } from "@/lib/order-invoices/links";
 import { placeLoad } from "@/lib/floor/invoice-rows";
 import { summariseStops } from "./totals";
 import {
@@ -182,10 +183,13 @@ async function loadSheetCore(trips: CoreTrip[]): Promise<Map<number, SheetCore>>
 
   // 3–4. Re-deliveries carried on these trucks (Schema v27.53). The bill's own
   // tripDropId points at its FIRST trip, so the stop comes from the row.
-  const redelRows = await prisma.trip_redeliveries.findMany({
-    where: { tripId: { in: tripIds } },
-    select: { tripId: true, tripDropId: true, orderId: true },
-  });
+  // The OBD through the invoice row each re-delivery names (P5-4).
+  const redelRows = (
+    await prisma.trip_redeliveries.findMany({
+      where: { tripId: { in: tripIds } },
+      select: { tripId: true, tripDropId: true, ...RECORD_OBD_SELECT },
+    })
+  ).map((r) => ({ ...r, orderId: recordObdOf(r) }));
   const redelOrders: BillRow[] = redelRows.length
     ? await prisma.orders.findMany({
         where: { id: { in: Array.from(new Set(redelRows.map((r) => r.orderId))) }, isRemoved: false },

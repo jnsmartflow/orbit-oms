@@ -8,7 +8,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { deriveObdTripDropId, derivePartlyOnTrip, needsDerivedRepair, planRowsTripMove, planWholeObdTripMove, type TripLinkRow } from "./trip-link";
-import { linkRowFor } from "./links";
+import { linkRowFor, recordObdOf, recordsOfObds } from "./links";
 
 const rows18648 = (drops: (number | null)[]): TripLinkRow[] =>
   [17010, 36798, 36799, 36800].map((id, i) => ({ id, seq: i + 1, tripDropId: drops[i] }));
@@ -95,6 +95,50 @@ test("link: no seq-1 row → NULL for every kind", () => {
   for (const kind of ["copy", "redelivery", "ci"] as const) {
     assert.equal(linkRowFor({ seq1Id: null, split: false }, kind), null);
   }
+});
+
+// ── linkRowFor on a trip (P5-4) ──────────────────────────────────────────────
+
+// 18648 with 713 (36798) + 715 (36800) on trip 668, 716 + 714 off any trip.
+const SPLIT_ON = {
+  seq1Id: 17010,
+  split: true,
+  rows: [
+    { id: 36800, seq: 4, tripId: 668 },
+    { id: 17010, seq: 1, tripId: null },
+    { id: 36798, seq: 2, tripId: 668 },
+    { id: 36799, seq: 3, tripId: null },
+  ],
+};
+
+test("link on a trip: a split OBD → its LOWEST-seq row on that trip, whatever the list order", () => {
+  assert.equal(linkRowFor(SPLIT_ON, "copy", 668), 36798);
+  assert.equal(linkRowFor(SPLIT_ON, "redelivery", 668), 36798);
+});
+
+test("link on a trip: no row of a split OBD on that trip, or no trip → seq 1", () => {
+  assert.equal(linkRowFor(SPLIT_ON, "copy", 605), 17010);
+  assert.equal(linkRowFor(SPLIT_ON, "redelivery", null), 17010);
+  assert.equal(linkRowFor(SPLIT, "copy", 668), 17010); // rows unknown
+});
+
+test("link on a trip: unsplit is always seq 1, CI on a split OBD always NULL", () => {
+  const one = { seq1Id: 500, split: false, rows: [{ id: 500, seq: 1, tripId: 605 }] };
+  assert.equal(linkRowFor(one, "copy", 605), 500);
+  assert.equal(linkRowFor(one, "copy", 668), 500);
+  assert.equal(linkRowFor(SPLIT_ON, "ci", 668), null);
+});
+
+// ── recordObdOf / recordsOfObds (P5-4 readers) ──────────────────────────────
+
+test("record: the OBD comes through the invoice row; orderId only when the key is NULL", () => {
+  assert.equal(recordObdOf({ orderId: 18648, orderInvoice: { orderId: 18648 } }), 18648);
+  assert.equal(recordObdOf({ orderId: 1, orderInvoice: { orderId: 18648 } }), 18648);
+  assert.equal(recordObdOf({ orderId: 18648, orderInvoice: null }), 18648);
+});
+
+test("record: the where reaches records through the invoice row, never orderId", () => {
+  assert.deepEqual(recordsOfObds([18648, 7]), { orderInvoice: { orderId: { in: [18648, 7] } } });
 });
 
 // ── planRowsTripMove (Phase 5 commit 2 — setRowsTrip's plan) ────────────────
