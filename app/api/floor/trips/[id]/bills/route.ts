@@ -7,7 +7,8 @@ import { deleteTripDropIfEmpty, findOrCreateTripDrop } from "@/lib/trips/drop";
 import { logTripBills } from "@/lib/trips/activity";
 import { CHALLAN_LINKED } from "@/lib/workflow-stages";
 import { needsDerivedRepair, setRowsTrip } from "@/lib/order-invoices/trip-link";
-import { foreignRowIds, planAddRows, planRemoveRows, type TripBillRow } from "@/lib/order-invoices/trip-bills";
+import { foreignRowIds, invoiceLabel, planAddRows, planRemoveRows, type TripBillRow } from "@/lib/order-invoices/trip-bills";
+import { getTripSummariesByIds } from "@/lib/trips/queries";
 
 export const dynamic = "force-dynamic";
 
@@ -40,6 +41,13 @@ interface Failed {
  * refused invoice, with `invoiceRowId`). An unsplit OBD's messages are
  * unchanged, word for word. The Floor screen still sends whole OBDs (P5-3
  * adds per-invoice ticks).
+ *
+ * 🔴 MOVE (2026-10-17): `{ action: "move", fromTripId, orderIds, invoiceRowIds? }`
+ * on the TARGET trip's URL takes the ticked rows that sit on `fromTripId` straight
+ * onto this trip — per bill ONE setRowsTrip (one order_invoices.updateMany + ONE
+ * orders.update), so a bill is never on no trip in between. Response
+ * `{ moved, skipped, failed, trips: { source, target }, sourceEmpty }`.
+ * 2026-10-17: move between trips added — before this, bills had to be removed to To plan then re-added. Do not split back into remove+add (two orders.update per bill, limbo state).
  *
  * 🔴 TRIP MEMBERSHIP IS NOT GATED BY STAGE. A bill can join a trip at ANY
  * `workflowStage` — waiting, with a picker, picked, checked. That is an owner
@@ -97,10 +105,21 @@ export async function POST(
     orderIds?: number[];
     action?: string;
     invoiceRowIds?: unknown;
+    fromTripId?: unknown;
   };
   const action = body.action;
-  if (action !== "add" && action !== "remove") {
-    return NextResponse.json({ error: 'action is required and must be "add" or "remove"' }, { status: 400 });
+  if (action !== "add" && action !== "remove" && action !== "move") {
+    return NextResponse.json({ error: 'action is required and must be "add", "remove" or "move"' }, { status: 400 });
+  }
+  // MOVE names the trip the bills come OFF; this URL is the trip they go ON.
+  const fromTripId = action === "move" ? Number(body.fromTripId) : null;
+  if (action === "move") {
+    if (body.fromTripId === undefined || body.fromTripId === null || !Number.isInteger(fromTripId) || fromTripId! <= 0) {
+      return NextResponse.json({ error: "fromTripId is required for a move" }, { status: 400 });
+    }
+    if (fromTripId === tripId) {
+      return NextResponse.json({ error: "Those bills are already on this trip." }, { status: 409 });
+    }
   }
   const orderIds = body.orderIds;
   // Rejected BEFORE the loop, so a 422 below means "everything was tried and
@@ -142,7 +161,7 @@ export async function POST(
   const trip = await prisma.trips.findUnique({
     where: { id: tripId },
     // isHand — the add branch admits only matching bills (2026-09-24).
-    select: { id: true, status: true, isHand: true },
+    select: { id: true, status: true, isHand: true, tripNumber: true },
   });
   if (!trip) return NextResponse.json({ error: "Trip not found" }, { status: 404 });
   // A cancelled or dispatched trip is finished with. Refusing here is the
@@ -153,6 +172,21 @@ export async function POST(
       { error: `Cannot change the bills on a ${trip.status} trip.` },
       { status: 409 },
     );
+  }
+  // MOVE: the source is held to the same rule — remove refuses a finished trip,
+  // so a move off one must too.
+  const source =
+    fromTripId !== null
+      ? await prisma.trips.findUnique({ where: { id: fromTripId }, select: { id: true, status: true, tripNumber: true } })
+      : null;
+  if (fromTripId !== null) {
+    if (!source) return NextResponse.json({ error: "The trip the bills come from was not found" }, { status: 404 });
+    if (source.status === "cancelled" || source.status === "dispatched") {
+      return NextResponse.json(
+        { error: `Cannot move bills off a ${source.status} trip (${source.tripNumber}).` },
+        { status: 409 },
+      );
+    }
   }
 
   const changed: number[] = [];
@@ -227,6 +261,80 @@ export async function POST(
       const refuseRows = (refused: { rowId: number; invoiceNo: string | null; error: string }[]) => {
         for (const x of refused) failed.push({ orderId, error: x.error, invoiceRowId: x.rowId, invoiceNo: x.invoiceNo });
       };
+
+      if (action === "move" && source !== null) {
+        // ── move ─────────────────────────────────────────────────────────────
+        // Copied bills move with no warning — owner decision 2026-10-17; trip_bill_copies is not touched here, billing's copy-row workflow gets redesigned later.
+        //
+        // The challan-link rule binds a move exactly as it binds an add: the
+        // bill would be JOINING this truck.
+        if (order.workflowStage === CHALLAN_LINKED) {
+          failed.push({
+            orderId,
+            error: `${order.obdNumber} is billed against a challan order — its goods already went out on the challan. It never goes on a trip.`,
+          });
+          continue;
+        }
+        // Which of the ticked rows sit on the SOURCE — only those move. A row
+        // anywhere else (no trip, a third trip) is never touched.
+        const plan = planRemoveRows(rows, chosen, source.id, order.obdNumber);
+        for (const x of plan.refused) {
+          failed.push({
+            orderId,
+            error: `${invoiceLabel({ seq: rows.find((r) => r.id === x.rowId)?.seq ?? 0, invoiceNo: x.invoiceNo }, order.obdNumber)} is not on ${source.tripNumber}`,
+            invoiceRowId: x.rowId,
+            invoiceNo: x.invoiceNo,
+          });
+        }
+        if (plan.detach.length === 0) {
+          if (plan.refused.length > 0) continue;
+          // Already here (a retry of a move that landed): a skip, with the
+          // derived-stop repair if the earlier press died before its orders write.
+          const asked = chosen === "all" ? rows : rows.filter((r) => chosen.includes(r.id));
+          if (asked.length > 0 && asked.every((r) => r.tripId === tripId)) {
+            if (needsDerivedRepair(rows, order)) {
+              await setRowsTrip(orderId, [], null);
+              changed.push(orderId);
+              changedObds.push(order.obdNumber);
+            } else {
+              skipped.push(orderId);
+            }
+            continue;
+          }
+          failed.push({ orderId, error: `Not on ${source.tripNumber}` });
+          continue;
+        }
+        // HAND vs TRUCK — the add branch's rule, word for word, for the whole bill.
+        const isHandBill = order.handAt !== null;
+        if (isHandBill !== trip.isHand) {
+          failed.push({
+            orderId,
+            error: isHandBill
+              ? "The dealer collects this bill (Hand) — put it on a Hand trip, not a truck."
+              : "This is a Hand trip (dealer collects) — only Hand bills can join it.",
+          });
+          continue;
+        }
+        // One OBD, one stop per trip: rows of this OBD already on the target at
+        // ANOTHER stop would split it across two stops — refused, as add does.
+        const dropKey = computeDropKey(order);
+        if (rows.some((r) => r.tripId === tripId && r.dropKey !== dropKey)) {
+          failed.push({ orderId, error: `Already attached to a different stop on ${trip.tripNumber}.` });
+          continue;
+        }
+
+        // The target stop, then ONE setRowsTrip: the rows go straight from the
+        // source stop to the target stop (onlyFromTripId re-checks they are
+        // still on the source) and orders gets its ONE update.
+        const drop = await findOrCreateTripDrop(tripId, order);
+        await setRowsTrip(orderId, plan.detach, drop.id, { onlyFromTripId: source.id });
+        changed.push(orderId);
+        changedObds.push(order.obdNumber);
+        // Source stops left with nothing go, and the source closes up 1..N —
+        // the remove path's own helper (lib/trips/drop.ts).
+        for (const dropId of plan.dropIds) await deleteTripDropIfEmpty(dropId);
+        continue;
+      }
 
       if (action === "remove") {
         // 🔴 ONLY ROWS ON THIS TRIP COME OFF (2026-10-03 — closes FLOOR_TRIPS
@@ -357,10 +465,59 @@ export async function POST(
   // press that moved some bills and failed on others still moved them.
   // `logTripBills` returns early when nothing actually changed, so a press that
   // achieved nothing writes no row.
+  if (action === "move" && source !== null) {
+    // A MOVE writes one row on EACH trip: "moved to" on the source, "moved in
+    // from" on the target (lib/trips/activity.ts logTripBills `movedWith`).
+    await logTripBills({
+      tripId: source.id,
+      actorId,
+      direction: "remove",
+      orderIds: changed,
+      obdNumbers: changedObds,
+      movedWith: { tripId, tripNumber: trip.tripNumber },
+    });
+    await logTripBills({
+      tripId,
+      actorId,
+      direction: "add",
+      orderIds: changed,
+      obdNumbers: changedObds,
+      movedWith: { tripId: source.id, tripNumber: source.tripNumber },
+    });
+    // Both trips as they stand now — the client's receipt, read back rather
+    // than added up (another planner may be filling either load).
+    const after = await getTripSummariesByIds([source.id, tripId]);
+    const totals = (id: number) => {
+      const t = after.find((x) => x.id === id);
+      return t
+        ? {
+            id: t.id,
+            tripNumber: t.tripNumber,
+            bills: t.counts.total,
+            stops: t.dropCount,
+            litres: t.totalLitres,
+            redeliveries: t.redeliveryCount ?? 0,
+          }
+        : null;
+    };
+    const sourceTotals = totals(source.id);
+    const moveStatus = changed.length === 0 && skipped.length === 0 && failed.length > 0 ? 422 : 200;
+    return NextResponse.json(
+      {
+        moved: changed,
+        skipped,
+        failed,
+        trips: { source: sourceTotals, target: totals(tripId) },
+        sourceEmpty: sourceTotals !== null && sourceTotals.bills === 0 && sourceTotals.redeliveries === 0,
+      },
+      { status: moveStatus },
+    );
+  }
   await logTripBills({
     tripId,
     actorId,
-    direction: action,
+    // Never "move" here — the move branch returned above.
+    direction: action === "add" ? "add" : "remove",
     orderIds: changed,
     obdNumbers: changedObds,
   });

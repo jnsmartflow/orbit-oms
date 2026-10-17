@@ -88,6 +88,26 @@ export interface TripChip {
   cls: string;
 }
 
+/**
+ * What a MOVE of the ticked bills from the open trip to `target` would do
+ * (2026-10-17) — built by floor-page from rows it already holds (no fetch), per
+ * target, because the Hand rule and the gate note depend on the target.
+ */
+export interface MoveSummary {
+  /** Ticked bills on the open (source) trip. */
+  count: number;
+  /** "L · kg" of those bills — the bottom bar's own figures. */
+  figures: string;
+  /** With a picker, picked or checked — the picker keeps working. */
+  picking: number;
+  /** Waiting bills that drop off the supervisor's screen: gate on, source shown, target not. */
+  waitingHidden: number;
+  /** Refused by the Hand rule against THIS target — they stay where they are. */
+  handMismatch: number;
+  /** The source after the move (refused bills stay on it). */
+  after: { stops: number; bills: number; litres: number; empty: boolean };
+}
+
 export function TripRail({
   trips,
   loading,
@@ -103,6 +123,10 @@ export function TripRail({
   addFigures = "",
   sameRouteLabel = null,
   onAddToTrip,
+  moveFromTripId = null,
+  moveCount = 0,
+  moveSummaryFor,
+  onMoveToTrip,
   searchTripIds = null,
 }: {
   trips: TripSummary[] | null;
@@ -160,6 +184,18 @@ export function TripRail({
   sameRouteLabel?: string | null;
   onAddToTrip?: (tripId: number) => Promise<void> | void;
   /**
+   * 🔴 MOVE MODE (2026-10-17). A trip is open and some of ITS bills are ticked
+   * (floor-page derives it; null = off). Every OTHER card that can take bills
+   * gets the "+", and a card click or "+" asks to MOVE them there — straight
+   * from this trip, one server action. Never on at the same time as addMode
+   * (that one needs the pool open).
+   */
+  moveFromTripId?: number | null;
+  /** Ticked bills on the open trip — the "+" aria-label. */
+  moveCount?: number;
+  moveSummaryFor?: (target: TripSummary) => MoveSummary | null;
+  onMoveToTrip?: (targetTripId: number) => Promise<void> | void;
+  /**
    * SEARCH NARROWING (owner, 2026-09-29): the trips holding bills the search
    * matched. While non-null the rail lists ONLY these, and the scope tab does
    * not hide one — a search names the bill, and its truck is the answer
@@ -190,14 +226,21 @@ export function TripRail({
   // 🔴 THE ADD CONFIRMATION (2026-10-17). A card click or "+" in add mode only
   // names the trip here; the add itself waits for the dialog's own button.
   // Read off the LIVE list each render, so its figures are the trip as it is now.
+  // MOVE MODE reuses the same confirmation and the same card wiring. The open
+  // trip is looked up in `all`, not `live`: an opened trip is unscoped, so it
+  // can be off the filtered list while its bills are ticked.
+  const moveMode = !addMode && moveFromTripId !== null;
+  const moveSource = moveMode ? all.find((t) => t.id === moveFromTripId) ?? null : null;
   const [confirmTripId, setConfirmTripId] = useState<number | null>(null);
   const [confirmBusy, setConfirmBusy] = useState(false);
   const confirmTrip = confirmTripId === null ? null : live.find((t) => t.id === confirmTripId) ?? null;
   // The dialog closes itself when what it asks about is gone: the ticks cleared
-  // (add mode off — which is also how a finished add ends it), or the trip left
-  // the rail or was dispatched underneath it.
+  // (add / move mode off — which is also how a finished press ends it), or
+  // either trip left the rail or was dispatched underneath it.
+  const isFinished = (t: TripSummary | null) => t === null || t.status === "dispatched" || t.status === "cancelled";
   const confirmStale =
-    confirmTripId !== null && (!addMode || confirmTrip === null || confirmTrip.status === "dispatched");
+    confirmTripId !== null &&
+    ((!addMode && !moveMode) || isFinished(confirmTrip) || (moveMode && isFinished(moveSource)));
   useEffect(() => {
     if (confirmStale) setConfirmTripId(null);
   }, [confirmStale]);
@@ -206,13 +249,21 @@ export function TripRail({
     if (confirmTripId === null || confirmBusy) return;
     setConfirmBusy(true);
     try {
-      // The existing path, unchanged — its toast and 10s Undo still fire.
-      await onAddToTrip?.(confirmTripId);
+      // The existing paths, unchanged — their toasts and 10s Undo still fire.
+      if (moveMode) await onMoveToTrip?.(confirmTripId);
+      else await onAddToTrip?.(confirmTripId);
     } finally {
       setConfirmBusy(false);
       setConfirmTripId(null);
     }
   };
+  const confirmMove =
+    moveMode && moveSource !== null && confirmTrip !== null
+      ? (() => {
+          const summary = moveSummaryFor?.(confirmTrip) ?? null;
+          return summary !== null ? { source: moveSource, summary } : null;
+        })()
+      : null;
 
   return (
     <div className="flex min-h-0 flex-col overflow-y-auto border-r border-[#e7e7ee] bg-[#fafafc] px-[11px] pb-4 pt-3">
@@ -271,34 +322,41 @@ export function TripRail({
         </div>
       )}
 
-      {live.map((t) => (
-        <TripCard
-          key={t.id}
-          trip={t}
-          anchorIso={anchorIso}
-          gateOn={gateOn}
-          selected={selection.kind === "trip" && selection.tripId === t.id}
-          onSelect={() => onSelect({ kind: "trip", tripId: t.id })}
-          // ⚠ A DISPATCHED TRIP IS NOT ADDABLE, and says so on hover. The bills
-          // route refuses one with a 409 (app/api/floor/trips/[id]/bills), so a
-          // click on that card would be a press that is guaranteed to fail.
-          // (Cancelled trips never reach this rail at all.)
-          addable={addMode && t.status !== "dispatched" && t.status !== "cancelled"}
-          // Its own label must match exactly: "Adajan" is the same route,
-          // "Adajan +1" is a load that also goes somewhere else.
-          sameRoute={sameRouteLabel !== null && t.routeName === sameRouteLabel && t.routeExtraCount === 0}
-          addMode={addMode}
-          addCount={addCount}
-          // 2026-10-17: rail add now confirms first — accidental card clicks were adding bills to wrong trips. Do not remove.
-          onAdd={() => setConfirmTripId(t.id)}
-        />
-      ))}
+      {live.map((t) => {
+        // In move mode every card but the OPEN trip is a target; the open trip's
+        // own card stays an ordinary card.
+        const picker = addMode || (moveMode && t.id !== moveFromTripId);
+        return (
+          <TripCard
+            key={t.id}
+            trip={t}
+            anchorIso={anchorIso}
+            gateOn={gateOn}
+            selected={selection.kind === "trip" && selection.tripId === t.id}
+            onSelect={() => onSelect({ kind: "trip", tripId: t.id })}
+            // ⚠ A DISPATCHED TRIP IS NOT ADDABLE, and says so on hover. The bills
+            // route refuses one with a 409 (app/api/floor/trips/[id]/bills), so a
+            // click on that card would be a press that is guaranteed to fail.
+            // (Cancelled trips never reach this rail at all.)
+            addable={picker && t.status !== "dispatched" && t.status !== "cancelled"}
+            // Its own label must match exactly: "Adajan" is the same route,
+            // "Adajan +1" is a load that also goes somewhere else.
+            sameRoute={sameRouteLabel !== null && t.routeName === sameRouteLabel && t.routeExtraCount === 0}
+            addMode={picker}
+            addCount={moveMode ? moveCount : addCount}
+            verb={moveMode ? "Move" : "Add"}
+            // 2026-10-17: rail add now confirms first — accidental card clicks were adding bills to wrong trips. Do not remove.
+            onAdd={() => setConfirmTripId(t.id)}
+          />
+        );
+      })}
 
-      {confirmTrip !== null && !confirmStale && (
+      {confirmTrip !== null && !confirmStale && (!moveMode || confirmMove !== null) && (
         <AddToTripConfirm
           trip={confirmTrip}
-          billCount={addCount}
+          billCount={moveMode ? moveCount : addCount}
           figures={addFigures}
+          move={confirmMove}
           busy={confirmBusy}
           onCancel={() => setConfirmTripId(null)}
           onConfirm={() => void confirmAdd()}
@@ -310,7 +368,9 @@ export function TripRail({
 
 /**
  * "Add N bills to L-…?" — the rail add's confirmation (2026-10-17, owner:
- * accidental card clicks were putting bills on the wrong truck).
+ * accidental card clicks were putting bills on the wrong truck). With `move`
+ * (later the same day) it is "Move N bills from A to B?" — From / To / Moving
+ * blocks and the notes; same dialog, same guards.
  *
  * The off-floor-dialog.tsx modal pattern: a whole-page scrim at z-[120],
  * CENTRED so a double-click on a rail card cannot land on its Add button.
@@ -328,6 +388,7 @@ function AddToTripConfirm({
   trip,
   billCount,
   figures,
+  move = null,
   busy,
   onCancel,
   onConfirm,
@@ -335,6 +396,8 @@ function AddToTripConfirm({
   trip: TripSummary;
   billCount: number;
   figures: string;
+  /** MOVE variant (2026-10-17): the open trip the bills come off, and what the move does. */
+  move?: { source: TripSummary; summary: MoveSummary } | null;
   busy: boolean;
   onCancel: () => void;
   onConfirm: () => void;
@@ -352,16 +415,22 @@ function AddToTripConfirm({
 
   const bills = `${billCount} bill${billCount === 1 ? "" : "s"}`;
   const bar = tripBarCounts(trip.counts);
-  const title = `Add ${bills} to ${trip.tripNumber}?`;
+  const title = move
+    ? `Move ${bills} from ${move.source.tripNumber} to ${trip.tripNumber}?`
+    : `Add ${bills} to ${trip.tripNumber}?`;
   // The card's own words for what the trip holds now.
   const holds =
     bar.total === 0 && (trip.redeliveryCount ?? 0) === 0
       ? "no bills yet"
       : `${trip.dropCount} stop${trip.dropCount === 1 ? "" : "s"} · ${bar.total} bill${bar.total === 1 ? "" : "s"} · ${formatLitres(trip.totalLitres)} L` +
         ((trip.redeliveryCount ?? 0) > 0 ? ` · +${trip.redeliveryCount} re-del` : "");
-  const route = trip.routeName
-    ? `${trip.routeName}${trip.routeExtraCount > 0 ? ` +${trip.routeExtraCount}` : ""}`
-    : "No route";
+  const routeOf = (t: TripSummary) =>
+    t.routeName ? `${t.routeName}${t.routeExtraCount > 0 ? ` +${t.routeExtraCount}` : ""}` : "No route";
+  const route = routeOf(trip);
+  const s = move?.summary ?? null;
+  // Every ticked bill refused by the Hand rule → nothing would move.
+  const nothingMoves = s !== null && s.count - s.handMismatch <= 0;
+  const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`;
 
   return (
     <div
@@ -378,28 +447,58 @@ function AddToTripConfirm({
         <div className="px-6 py-5">
           <h3 className="text-[18px] font-bold text-ink-900">{title}</h3>
           <div className="mt-4 overflow-hidden rounded-[10px] border border-ink-100 text-[13px]">
+            {move && s && (
+              <div className="border-b border-ink-50 px-3 py-2.5">
+                <div className="text-[12px] font-semibold uppercase tracking-[0.05em] text-ink-500">From</div>
+                <div className="mt-0.5 font-semibold text-ink-900">
+                  <span className="font-mono">{move.source.tripNumber}</span> · {routeOf(move.source)}
+                </div>
+                <div className="mt-0.5 tabular-nums text-ink-600">
+                  {s.after.empty
+                    ? `${move.source.tripNumber} will be empty`
+                    : `After: ${plural(s.after.stops, "stop")} · ${plural(s.after.bills, "bill")} · ${formatLitres(s.after.litres)} L`}
+                </div>
+              </div>
+            )}
             <div className="border-b border-ink-50 px-3 py-2.5">
-              <div className="text-[12px] font-semibold uppercase tracking-[0.05em] text-ink-500">Trip</div>
+              <div className="text-[12px] font-semibold uppercase tracking-[0.05em] text-ink-500">{move ? "To" : "Trip"}</div>
               <div className="mt-0.5 font-semibold text-ink-900">
                 <span className="font-mono">{trip.tripNumber}</span> · {route}
               </div>
               <div className="mt-0.5 tabular-nums text-ink-600">Now: {holds}</div>
             </div>
             <div className="px-3 py-2.5">
-              <div className="text-[12px] font-semibold uppercase tracking-[0.05em] text-ink-500">Adding</div>
+              <div className="text-[12px] font-semibold uppercase tracking-[0.05em] text-ink-500">{move ? "Moving" : "Adding"}</div>
               <div className="mt-0.5 tabular-nums text-ink-900">
                 {bills}
-                {figures !== "" && <span className="text-ink-600"> · {figures}</span>}
+                {(s?.figures ?? figures) !== "" && <span className="text-ink-600"> · {s?.figures ?? figures}</span>}
               </div>
             </div>
           </div>
+          {/* Notes — only when true. Facts the planner would want before the
+              press, never a block (the Hand refusals are the server's). */}
+          {s && (s.picking > 0 || s.waitingHidden > 0 || s.handMismatch > 0) && (
+            <ul className="mt-3 space-y-1 text-[12.5px] leading-snug text-warn-text">
+              {s.picking > 0 && (
+                <li>{s.picking} already being picked / picked — picker keeps working, truck changes</li>
+              )}
+              {s.waitingHidden > 0 && (
+                <li>
+                  {plural(s.waitingHidden, "waiting bill")} will be hidden from the floor until {trip.tripNumber} is shown
+                </li>
+              )}
+              {s.handMismatch > 0 && <li>{s.handMismatch} can&apos;t move — hand/non-hand mismatch</li>}
+            </ul>
+          )}
         </div>
         <div className="flex items-center justify-end gap-2.5 border-t border-ink-100 bg-ink-25 px-6 py-3.5">
           <button type="button" autoFocus onClick={onCancel} disabled={busy} className={BAR_SECONDARY}>
             Cancel
           </button>
-          <button type="button" onClick={onConfirm} disabled={busy} className={BAR_PRIMARY}>
-            {busy ? "Adding…" : `Add to ${trip.tripNumber}`}
+          <button type="button" onClick={onConfirm} disabled={busy || nothingMoves} className={BAR_PRIMARY}>
+            {move
+              ? busy ? "Moving…" : `Move to ${trip.tripNumber}`
+              : busy ? "Adding…" : `Add to ${trip.tripNumber}`}
           </button>
         </div>
       </div>
@@ -417,6 +516,7 @@ function TripCard({
   addable = false,
   addCount = 0,
   sameRoute = false,
+  verb = "Add",
   onAdd,
 }: {
   trip: TripSummary;
@@ -432,6 +532,8 @@ function TripCard({
   addCount?: number;
   /** This trip already runs the selection-s route. */
   sameRoute?: boolean;
+  /** "Move" in move mode (2026-10-17) — only the "+" label changes. */
+  verb?: "Add" | "Move";
   onAdd?: () => void;
 }) {
   // 🔴 A CARRIED TRIP READS AS OLD, NOT AS TODAY'S (2026-09-11). Printing its REAL
@@ -599,8 +701,8 @@ function TripCard({
       // centred.
       <button
         type="button"
-        aria-label={`Add ${addCount} bill${addCount === 1 ? "" : "s"} to ${trip.tripNumber}`}
-        title={`Add ${addCount} bill${addCount === 1 ? "" : "s"} to ${trip.tripNumber}`}
+        aria-label={`${verb} ${addCount} bill${addCount === 1 ? "" : "s"} to ${trip.tripNumber}`}
+        title={`${verb} ${addCount} bill${addCount === 1 ? "" : "s"} to ${trip.tripNumber}`}
         onClick={(e) => {
           e.stopPropagation();
           onAdd?.();

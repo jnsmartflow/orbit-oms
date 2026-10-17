@@ -117,7 +117,7 @@ import type { DispatchWindow } from "@/components/floor/dispatch-slot-picker";
 import type { FloorScope, FloorBoardResult, FloorBoardRow, FloorPicker, FloorHoldRow, FloorCancelledRow, FloorDetailSource, FloorRouteClub, FloorSearchHit } from "@/lib/floor/types";
 import type { FloorLoadPlanPayload } from "@/lib/floor/load-plan-config";
 import type { InvoicePartner } from "@/lib/floor/invoice-pairs";
-import type { RailSelection } from "./trip-rail";
+import type { MoveSummary, RailSelection } from "./trip-rail";
 import type { TripSummary, TripDetail, TripRedeliveryRow } from "@/lib/trips/queries";
 import { chooseTripTypeName } from "@/lib/trips/type-choice";
 import type {
@@ -195,6 +195,25 @@ function addDaysIso(iso: string, delta: number): string {
  */
 /** A bills-route refusal (app/api/floor/trips/[id]/bills). `invoiceRowId` = about ONE invoice of a split OBD. */
 type BillsFailed = { orderId: number; error: string; invoiceRowId?: number };
+
+/** One trip's figures as the move route reads them back (2026-10-17). */
+type MoveTripTotals = { id: number; tripNumber: string; bills: number; stops: number; litres: number; redeliveries: number };
+/** POST /api/floor/trips/[id]/bills { action: "move" } — the answer. */
+type MoveResponse = {
+  moved?: number[];
+  skipped?: number[];
+  failed?: BillsFailed[];
+  trips?: { source: MoveTripTotals | null; target: MoveTripTotals | null };
+  sourceEmpty?: boolean;
+  error?: string;
+};
+
+/** The refused bills by OBD, for a toast: "OBD1: reason; OBD2: reason …". */
+function refusalList(failed: readonly BillsFailed[], rows: readonly FloorBoardRow[]): string {
+  const obd = new Map(rows.map((r) => [r.orderId, r.obdNumber]));
+  const shown = failed.slice(0, 3).map((f) => `${obd.get(f.orderId) ?? `#${f.orderId}`}: ${f.error}`);
+  return shown.join("; ") + (failed.length > 3 ? ` … and ${failed.length - 3} more` : "");
+}
 
 /**
  * "2 bills not added" — or "2 invoices not added" when every refusal is about
@@ -608,6 +627,10 @@ export function FloorPage({
   // OBD, the whole OBD or the ticked invoice rows. Every trip press posts these.
   const selectedUnitsRef = useRef<SelectionUnit[]>([]);
   const tripsRef = useRef<TripSummary[] | null>(null);
+  // MOVE MODE (2026-10-17): the ticked units that sit on the OPEN trip, and that
+  // trip's id — what a rail move posts. Same render-time refresh as above.
+  const moveUnitsRef = useRef<SelectionUnit[]>([]);
+  const moveFromRef = useRef<number | null>(null);
 
   // Selection (design §7.8) — a Set of orderIds; survives a re-sort, cleared on
   // any tab/scope/date change below.
@@ -1268,6 +1291,124 @@ export function FloorPage({
       await load();
     },
     [load, undoAdd],
+  );
+
+  // ── MOVE BETWEEN TRIPS (2026-10-17) ───────────────────────────────────────
+  // 2026-10-17: move between trips added — before this, bills had to be removed to To plan then re-added. Do not split back into remove+add (two orders.update per bill, limbo state).
+  //
+  // ONE server action (bills route, action "move"): each bill goes straight from
+  // the open trip's stop to the target's stop. The rail's confirmation is the
+  // only caller; Undo is the same action pointed back.
+  const postMove = useCallback(async (fromTripId: number, toTripId: number, units: SelectionUnit[]) => {
+    const res = await fetch(`/api/floor/trips/${toTripId}/bills`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...billsBodyOf(units, "add"), action: "move", fromTripId }),
+    });
+    const body = (await res.json().catch(() => ({}))) as MoveResponse;
+    return { res, body };
+  }, []);
+
+  /**
+   * Undo one move: the bills THAT PRESS moved go back from `nowOnId` to
+   * `backToId` — undoAdd's shape. 🔴 IT RE-READS FIRST: only ids still on the
+   * trip they were moved to are sent back; anything moved again since is left
+   * where it is and said out loud. (The server also only moves rows that are
+   * on `nowOnId`.)
+   */
+  const undoMove = useCallback(
+    async (nowOnId: number, backToId: number, units: SelectionUnit[]) => {
+      if (units.length === 0) return;
+      setTripBusyId(nowOnId);
+      try {
+        // ⚠ GET /api/floor/trips/[id] answers { trip } — read `.trip`.
+        const detail = await fetch(`/api/floor/trips/${nowOnId}`, { cache: "no-store" })
+          .then((r) => (r.ok ? (r.json() as Promise<{ trip?: TripDetail }>) : null))
+          .then((b) => b?.trip ?? null)
+          .catch(() => null);
+        if (detail === null) {
+          toast.error("Could not undo — the trip could not be read.");
+          return;
+        }
+        const stillOn = new Set(detail.drops.flatMap((d) => d.orderIds));
+        const back = units.filter((u) => stillOn.has(u.orderId));
+        const gone = units.length - back.length;
+        if (back.length === 0) {
+          toast.info("Nothing to undo — those bills are no longer on that trip.");
+          return;
+        }
+        const { res, body } = await postMove(nowOnId, backToId, back);
+        const moved = body.moved ?? [];
+        const failed = body.failed ?? [];
+        if (!res.ok && moved.length === 0) {
+          toast.error(`Could not undo — ${failed.length > 0 ? refusalList(failed, dataRef.current?.floor.rows ?? []) : body.error ?? `HTTP ${res.status}`}`);
+          return;
+        }
+        if (failed.length > 0) {
+          toast.error(`${notDoneLabel(failed, "not moved back")} — ${refusalList(failed, dataRef.current?.floor.rows ?? [])}`);
+        }
+        toast.success(
+          `Undone — ${moved.length} bill${moved.length === 1 ? "" : "s"} back on ${body.trips?.target?.tripNumber ?? "the trip"}` +
+            (gone > 0 ? `; ${gone} had already been moved elsewhere and ${gone === 1 ? "was" : "were"} left alone` : ""),
+        );
+      } catch {
+        toast.error("Could not undo — check your connection.");
+      } finally {
+        setTripBusyId(null);
+      }
+      await load();
+    },
+    [load, postMove],
+  );
+
+  /** Move the ticked bills of the OPEN trip to `targetId` (the rail confirmation). */
+  const moveSelectionToTrip = useCallback(
+    async (targetId: number) => {
+      const units = moveUnitsRef.current;
+      const fromId = moveFromRef.current;
+      if (units.length === 0 || fromId === null) return;
+      setTripBusyId(targetId);
+      try {
+        const { res, body } = await postMove(fromId, targetId, units);
+        const moved = body.moved ?? [];
+        const skipped = body.skipped ?? [];
+        const failed = body.failed ?? [];
+        const boardRows = dataRef.current?.floor.rows ?? [];
+        // What Undo sends back — the invoices that actually moved.
+        const undoUnits = undoUnitsOf(units, moved, failed, boardRows);
+        if (!res.ok && moved.length === 0 && skipped.length === 0) {
+          toast.error(`Could not move — ${failed.length > 0 ? refusalList(failed, boardRows) : body.error ?? `HTTP ${res.status}`}`);
+        } else {
+          if (moved.length > 0 || skipped.length > 0) {
+            // The receipt, READ BACK by the route (both trips as they stand now).
+            const t = body.trips?.target ?? null;
+            const label = t?.tripNumber ?? "the trip";
+            const what =
+              moved.length > 0
+                ? `${moved.length} bill${moved.length === 1 ? "" : "s"} moved to ${label}`
+                : `${skipped.length} already on ${label}`;
+            const now = t !== null ? ` · ${label} now ${t.bills} bill${t.bills === 1 ? "" : "s"} · ${formatLitres(t.litres)} L` : "";
+            const empty = body.sourceEmpty ? ` · ${body.trips?.source?.tripNumber ?? "the old trip"} is now empty` : "";
+            toast.success(`${what}${now}${empty}`, {
+              duration: 10_000,
+              ...(moved.length > 0
+                ? { action: { label: "Undo", onClick: () => void undoMove(targetId, fromId, undoUnits) } }
+                : {}),
+            });
+          }
+          // Never swallowed, even beside a success — FLOOR §6(b). By OBD.
+          if (failed.length > 0) toast.error(`${notDoneLabel(failed, "not moved")} — ${refusalList(failed, boardRows)}`);
+        }
+      } catch {
+        toast.error("Could not move — check your connection.");
+      } finally {
+        setTripBusyId(null);
+      }
+      // Ticks cleared; the open trip stays open (railSelection untouched).
+      setSelection(new Set());
+      await load();
+    },
+    [load, postMove, undoMove],
   );
 
   /** Take the ticked bills off whatever trip they are on. */
@@ -3427,6 +3568,97 @@ export function FloorPage({
   const addFigures =
     `${formatLitres(sumLitres(selectedLoadRows))} L` +
     (addKg === null ? "" : ` · ${addKg}${selectionWeight.unknown > 0 ? "+" : ""} kg`);
+
+  // ── MOVE MODE (2026-10-17) ────────────────────────────────────────────────
+  // A trip is open (live, not finished), its bills are ticked, and the bar is
+  // not filling a named trip ("+ Add bills"). Derived like addMode — no state —
+  // so clearing the ticks ends it. Never on with addMode: that needs the pool.
+  const moveSourceTrip =
+    railSelection.kind === "trip" && viewMode === "live" && addingToTripId === null
+      ? (trips ?? []).find(
+          (t) => t.id === railSelection.tripId && t.status !== "dispatched" && t.status !== "cancelled",
+        ) ?? null
+      : null;
+  const moveRowById = new Map(rows.map((r) => [r.orderId, r] as const));
+  // Only what sits ON the open trip moves: per OBD, the ticked invoice rows
+  // whose own trip is this one (the server re-checks every row).
+  const moveUnits: SelectionUnit[] =
+    moveSourceTrip === null
+      ? []
+      : selectedUnits.flatMap((u): SelectionUnit[] => {
+          const r = moveRowById.get(u.orderId);
+          if (!r) return [];
+          const inv = r.invoiceRows ?? [];
+          if (inv.length >= 2) {
+            const chosen = u.invoiceRowIds === null ? inv : inv.filter((i) => u.invoiceRowIds!.includes(i.id));
+            const ids = chosen.filter((i) => i.tripNumber === moveSourceTrip.tripNumber).map((i) => i.id);
+            if (ids.length === 0) return [];
+            return [{ orderId: u.orderId, invoiceRowIds: ids.length === inv.length ? null : ids }];
+          }
+          return r.tripNumber === moveSourceTrip.tripNumber ? [u] : [];
+        });
+  const moveFromTripId = moveUnits.length > 0 && moveSourceTrip !== null ? moveSourceTrip.id : null;
+  moveUnitsRef.current = moveUnits;
+  moveFromRef.current = moveFromTripId;
+
+  /**
+   * What moving the ticked bills to `target` would do — the rail confirmation's
+   * figures and notes, from rows already on the page (no fetch). Per target,
+   * because the Hand rule and the gate note depend on it.
+   */
+  const moveSummaryFor = (target: TripSummary): MoveSummary | null => {
+    if (moveSourceTrip === null || moveUnits.length === 0) return null;
+    const src = moveSourceTrip;
+    const items = moveUnits.flatMap((u) => {
+      const r = moveRowById.get(u.orderId);
+      return r ? [{ u, r, load: narrowToInvoiceIds(r, u.invoiceRowIds) }] : [];
+    });
+    const loads = items.map((x) => x.load);
+    const kg = sumWeightKg(loads);
+    const kgText = formatWeightKg(kg.kg);
+    const figures =
+      `${formatLitres(sumLitres(loads))} L` + (kgText === null ? "" : ` · ${kgText}${kg.unknown > 0 ? "+" : ""} kg`);
+    // The Hand rule (bills route): refused bills stay on the source.
+    const going = items.filter((x) => x.r.isHand === target.isHand);
+    const handMismatch = items.length - going.length;
+    const picking = items.filter((x) => x.r.isAssigned || x.r.isDone || x.r.isChecked).length;
+    // Waiting = no picker, not picked, not checked, not gone (the row carries no
+    // stage — the nearest client read). Hidden only when the gate is on and the
+    // move takes it from a SHOWN trip to one that is not.
+    const waitingHidden =
+      gateOn && src.shownAt && !target.shownAt
+        ? going.filter((x) => !x.r.isAssigned && !x.r.isDone && !x.r.isChecked && !x.r.isDispatched).length
+        : 0;
+    // The source afterwards. An OBD leaves it only when none of its invoice rows
+    // stay behind (a partly-ticked split OBD keeps a bill there).
+    const leaving = new Set(
+      going
+        .filter(({ u, r }) => {
+          const inv = r.invoiceRows ?? [];
+          if (inv.length < 2 || u.invoiceRowIds === null) return true;
+          return inv.every((i) => i.tripNumber !== src.tripNumber || u.invoiceRowIds!.includes(i.id));
+        })
+        .map((x) => x.r.orderId),
+    );
+    const bills = Math.max(0, src.counts.total - leaving.size);
+    const litres = Math.max(0, src.totalLitres - sumLitres(going.map((x) => x.load)));
+    // Stops: read off the open trip's detail when it is loaded (it is, while the
+    // trip is open); else the card's count, unchanged.
+    const stops =
+      tripDetail?.id === src.id
+        ? tripDetail.drops.filter(
+            (d) => (d.redeliveries?.length ?? 0) > 0 || d.orderIds.some((id) => !leaving.has(id)),
+          ).length
+        : src.dropCount;
+    return {
+      count: items.length,
+      figures,
+      picking,
+      waitingHidden,
+      handMismatch,
+      after: { stops, bills, litres, empty: bills === 0 && (src.redeliveryCount ?? 0) === 0 },
+    };
+  };
   // Pieces. Bills with no article tag are skipped rather than counted as zero
   // (~27% of SKUs are unmastered, CORE §7.1.c) — countArticles reports those
   // separately and the bar simply omits the number when nothing parsed.
@@ -3857,6 +4089,12 @@ export function FloorPage({
               // The promise goes back to the rail so its confirm dialog can hold
               // "Adding…" until the add is over (2026-10-17).
               onAddToTrip={(id) => addSelectionToTrip(id)}
+              // ── MOVE MODE (2026-10-17) — a trip open with its bills ticked:
+              // the other cards take a confirmed move instead.
+              moveFromTripId={moveFromTripId}
+              moveCount={moveUnits.length}
+              moveSummaryFor={moveSummaryFor}
+              onMoveToTrip={(id) => moveSelectionToTrip(id)}
               // Targeted add — "+ Add bills" inside a trip (2026-09-16).
               addingToTripId={addingToTripId}
               lastAddCount={lastAdd?.units.length ?? 0}

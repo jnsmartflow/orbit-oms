@@ -38,7 +38,7 @@ import { LoadPlanView } from "./load-plan";
 import { LoadPlanV2View } from "./load-plan-v2";
 import type { VehicleSize } from "@/lib/trips/vehicle-size";
 import type { LoadPlanConfig } from "@/lib/trips/load-plan";
-import { TripRail, type RailSelection } from "./trip-rail";
+import { TripRail, type MoveSummary, type RailSelection } from "./trip-rail";
 import { TripDetailHeader } from "./trip-detail-header";
 import { TripAddBand } from "./trip-add-band";
 import { FloorPairRowsContext } from "./pair-cells";
@@ -177,6 +177,10 @@ export function TripDesk({
   addMode,
   addCount,
   addFigures,
+  moveFromTripId,
+  moveCount,
+  moveSummaryFor,
+  onMoveToTrip,
   sameRouteLabel,
   onAddToTrip,
   addingToTripId,
@@ -249,6 +253,14 @@ export function TripDesk({
   addCount: number;
   /** The ticked selection's "L · kg" figures — the rail's add confirmation. */
   addFigures: string;
+  /**
+   * MOVE MODE (2026-10-17): the open trip whose ticked bills can be moved to
+   * another rail card, or null. Passed straight through to TripRail.
+   */
+  moveFromTripId: number | null;
+  moveCount: number;
+  moveSummaryFor: (target: TripSummary) => MoveSummary | null;
+  onMoveToTrip: (targetTripId: number) => Promise<void> | void;
   /** The selection-s route when it is a single one — cards matching it say so. */
   sameRouteLabel: string | null;
   onAddToTrip: (tripId: number) => Promise<void> | void;
@@ -1227,6 +1239,10 @@ export function TripDesk({
         addMode={addMode && addingToTripId === null}
         addCount={addCount}
         addFigures={addFigures}
+        moveFromTripId={moveFromTripId}
+        moveCount={moveCount}
+        moveSummaryFor={moveSummaryFor}
+        onMoveToTrip={onMoveToTrip}
         sameRouteLabel={sameRouteLabel}
         onAddToTrip={onAddToTrip}
         anchorIso={floor.date}

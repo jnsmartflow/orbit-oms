@@ -267,6 +267,14 @@ export async function logTripCreated(opts: {
  * ⚠ `orderIds` IS WHAT ACTUALLY MOVED, not what was asked for. A bill the route
  * skipped (already on this stop) or refused (on another trip) is not in it, and
  * must not be — the log is a record of what happened.
+ *
+ * A MOVE BETWEEN TRIPS (2026-10-17) passes `movedWith` — the OTHER trip — and
+ * writes the SAME two actions: `bills_removed` on the source, `bills_added` on
+ * the target, worded as a move and naming the other trip in the detail
+ * (`movedTo` / `movedFrom`). No new action, so chk_trip_activity_action needs no
+ * ALTER, and the readers keyed on `bills_added` + `detail.orderIds`
+ * (lib/tint/base-feed.ts — "joined this trip today") see a move-in exactly as an
+ * add, which is what it is for them.
  */
 export async function logTripBills(opts: {
   tripId: number;
@@ -274,15 +282,27 @@ export async function logTripBills(opts: {
   direction: "add" | "remove";
   orderIds: number[];
   obdNumbers: string[];
+  movedWith?: { tripId: number; tripNumber: string };
 }): Promise<void> {
   if (opts.orderIds.length === 0) return; // nothing happened, nothing to say
   const added = opts.direction === "add";
+  const moved = opts.movedWith;
   await writeActivity({
     tripId: opts.tripId,
     action: added ? TRIP_BILLS_ADDED : TRIP_BILLS_REMOVED,
     actorId: opts.actorId,
-    summary: `${bills(opts.orderIds.length)} ${added ? "added to" : "removed from"} the trip`,
-    detail: { orderIds: opts.orderIds, obdNumbers: opts.obdNumbers },
+    summary: moved
+      ? `${bills(opts.orderIds.length)} ${added ? "moved in from" : "moved to"} ${moved.tripNumber}`
+      : `${bills(opts.orderIds.length)} ${added ? "added to" : "removed from"} the trip`,
+    detail: {
+      orderIds: opts.orderIds,
+      obdNumbers: opts.obdNumbers,
+      ...(moved
+        ? added
+          ? { movedFrom: { tripId: moved.tripId, tripNumber: moved.tripNumber } }
+          : { movedTo: { tripId: moved.tripId, tripNumber: moved.tripNumber } }
+        : {}),
+    },
   });
 }
 
