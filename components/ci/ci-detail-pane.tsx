@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { ciSourceTag, type CiDetail } from "@/lib/ci/types";
+import { cleanDigitId, cleanMoney } from "@/lib/paste-clean";
 
 // Billing's right-hand pane — frames 1-3 of docs/mockups/ci/billing.html.
 //
@@ -44,7 +45,13 @@ import { ciSourceTag, type CiDetail } from "@/lib/ci/types";
 //
 // ⚠ NEVER `Number()`, never `parseFloat`, never `<input type="number">` — the
 // last one hands back a coerced JS number and would undo this at the widget.
-const MONEY_RE = /^\d{1,10}(\.\d{1,2})?$/;
+//
+// PASTES ARE CLEANED, NOT REFUSED (2026-10-17). "₹1,234.00", "72,881/-" and a
+// trailing tab out of SAP or Excel go through cleanMoney / cleanDigitId
+// (lib/paste-clean.ts) — the SAME functions the close route runs, so the screen
+// and the server cannot disagree about what is valid. The cleaned value is shown
+// back in the box on blur and is what gets sent; when Close CI stays grey, one
+// line beside it says why.
 
 export function CiDetailPane({
   detail,
@@ -80,23 +87,40 @@ export function CiDetailPane({
     onFormActive(dirty || saving);
   }, [dirty, saving, onFormActive]);
 
+  const cleanNumber = cleanDigitId(sapCiNumber);
+  const cleanValue = cleanMoney(ciValue);
+
   const canClose =
     detail !== null &&
     detail.status === "submitted" &&
     ciDate !== "" &&
-    sapCiNumber.trim() !== "" &&
-    MONEY_RE.test(ciValue.trim()) &&
+    cleanNumber.ok &&
+    cleanValue.ok &&
     !saving;
 
+  // ONE line: the first thing standing between him and Close CI, in the order
+  // the fields sit in the bar (date → number → value).
+  // `wrong` = he typed something and it is not valid (red); otherwise the field
+  // is just not filled yet (grey).
+  const blocked: { reason: string; wrong: boolean } | null =
+    ciDate === ""
+      ? { reason: "Pick the CI date", wrong: false }
+      : !cleanNumber.ok
+        ? { reason: cleanNumber.reason, wrong: sapCiNumber.trim() !== "" }
+        : !cleanValue.ok
+          ? { reason: cleanValue.reason, wrong: ciValue.trim() !== "" }
+          : null;
+
   const onClose = async (): Promise<void> => {
-    if (detail === null || !canClose) return;
+    if (detail === null || !canClose || !cleanNumber.ok || !cleanValue.ok) return;
     setSaving(true);
     try {
       const res = await fetch(`/api/ci/${detail.id}/close`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        // 🔴 ciValue goes as the STRING he typed. See the note at the top.
-        body: JSON.stringify({ ciDate, sapCiNumber: sapCiNumber.trim(), ciValue: ciValue.trim() }),
+        // 🔴 ciValue goes as a STRING — the cleaned text, never a JS number.
+        // See the note at the top. The route cleans it again; same function.
+        body: JSON.stringify({ ciDate, sapCiNumber: cleanNumber.value, ciValue: cleanValue.value }),
       });
       const j = (await res.json().catch(() => ({}))) as {
         error?: string;
@@ -423,6 +447,10 @@ export function CiDetailPane({
                   inputMode="numeric"
                   value={sapCiNumber}
                   onChange={(e) => setSapCiNumber(e.target.value)}
+                  onBlur={() => {
+                    if (cleanNumber.ok) setSapCiNumber(cleanNumber.value);
+                  }}
+                  aria-invalid={sapCiNumber.trim() !== "" && !cleanNumber.ok}
                   placeholder="85832091"
                   aria-label="SAP CI number"
                   className={BAR_INPUT + " font-mono placeholder:font-sans placeholder:text-gray-300"}
@@ -440,6 +468,10 @@ export function CiDetailPane({
                     inputMode="decimal"
                     value={ciValue}
                     onChange={(e) => setCiValue(e.target.value)}
+                    onBlur={() => {
+                      if (cleanValue.ok) setCiValue(cleanValue.value);
+                    }}
+                    aria-invalid={ciValue.trim() !== "" && !cleanValue.ok}
                     placeholder="0.00"
                     aria-label="Value in rupees"
                     className={BAR_INPUT + " tabular-nums placeholder:text-gray-300"}
@@ -452,7 +484,21 @@ export function CiDetailPane({
           {/* The status tag sits IMMEDIATELY BEFORE the button, on purpose: when
               Close CI is grey this is the thing that says why, and it is the
               next place the eye goes. */}
-          <div className="ml-auto flex shrink-0 items-center gap-3 pb-[5px]">
+          <div className="ml-auto flex min-w-0 shrink items-center gap-3 pb-[5px]">
+            {/* WHY CLOSE CI IS GREY — one short line, only while it is. A field
+                he has typed into and got wrong reads red (something is wrong);
+                a field he simply has not filled yet reads grey. */}
+            {!closed && !saving && blocked !== null && (
+              <span
+                className={
+                  "min-w-0 truncate text-[11.5px] font-medium " +
+                  (blocked.wrong ? "text-red-600" : "text-gray-500")
+                }
+                title={blocked.reason}
+              >
+                {blocked.reason}
+              </span>
+            )}
             <span
               className={
                 "rounded-full px-2 py-[3px] text-[11px] font-semibold " +

@@ -34,7 +34,9 @@ export const LAST_FOUR_DIGITS = /^\d{4}$/;
  * is only to canonicalise a WHOLE term.
  */
 export function normaliseCiSearchTerm(raw: string): string {
-  const q = raw.trim().toUpperCase();
+  // Internal whitespace goes too (2026-10-17): "9110 155831" pasted or typed
+  // with a gap is the same number. No live invoice or OBD contains a space.
+  const q = raw.replace(/\s+/g, "").toUpperCase();
   if (LAST_FOUR_DIGITS.test(q)) return q;
   return BARE_INVOICE_DIGITS.test(q) ? `I${q}` : q;
 }

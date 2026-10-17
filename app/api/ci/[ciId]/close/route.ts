@@ -5,6 +5,7 @@ import { checkAnyPermission } from "@/lib/permissions";
 import { hasRole, ROLES } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
 import { parseCiDateOnly } from "@/lib/ci/derive";
+import { cleanDigitId, cleanMoney } from "@/lib/paste-clean";
 
 export const dynamic = "force-dynamic";
 
@@ -47,9 +48,6 @@ export const dynamic = "force-dynamic";
 
 /** Who may close: this is BILLING's action. */
 const CLOSE_ROLES = [ROLES.BILLING_OPERATOR, ROLES.OPERATIONS, ROLES.ADMIN];
-
-/** ₹ value: up to 10 integer digits and 2 decimals, matching numeric(12,2). */
-const MONEY_RE = /^\d{1,10}(\.\d{1,2})?$/;
 
 export async function POST(
   req: Request,
@@ -122,36 +120,46 @@ export async function POST(
     );
   }
 
-  if (typeof body.sapCiNumber !== "string" || body.sapCiNumber.trim() === "") {
+  // 🔴 THE SAME CLEANERS THE SCREEN RUNS (lib/paste-clean.ts, 2026-10-17), so
+  // the desk and this route cannot disagree about what is valid. cleanDigitId
+  // strips spaces, tabs, commas and an Excel ".0", then requires DIGITS ONLY,
+  // keeping leading zeros. ⚠ Before this a SAP number was only trimmed, so
+  // "8583 2091" or "85,832,091" was stored exactly as typed.
+  if (typeof body.sapCiNumber !== "string") {
     return NextResponse.json(
       { error: "`sapCiNumber` is required — SAP's CI number, as punched" },
       { status: 400 },
     );
   }
-  const sapCiNumber = body.sapCiNumber.trim();
+  const cleanNumber = cleanDigitId(body.sapCiNumber);
+  if (!cleanNumber.ok) {
+    return NextResponse.json({ error: cleanNumber.reason }, { status: 400 });
+  }
+  const sapCiNumber = cleanNumber.value;
 
   // Accepted as a string OR a number, but VALIDATED AS TEXT and handed to
-  // Prisma as a Decimal.
+  // Prisma as a Decimal — FROM THE CLEANED STRING.
   // ⚠ NEVER parseFloat into a JS number and store that: this is money on a
   // document someone signs, and binary floating point cannot hold 0.1 exactly.
-  // The regex also rejects "1e3", "+5" and "5." — shapes Number() would happily
-  // accept and silently reshape.
+  // cleanMoney strips ₹ / Rs / INR, commas, spaces and a trailing "/-", then
+  // applies the same MONEY_RE as ever — which still rejects "1e3", "+5" and
+  // "5.", shapes Number() would happily accept and silently reshape.
   const rawValue =
     typeof body.ciValue === "string"
-      ? body.ciValue.trim()
+      ? body.ciValue
       : typeof body.ciValue === "number" && Number.isFinite(body.ciValue)
         ? String(body.ciValue)
         : "";
-  if (!MONEY_RE.test(rawValue)) {
+  const cleanValue = cleanMoney(rawValue);
+  if (!cleanValue.ok) {
     return NextResponse.json(
       {
-        error:
-          "`ciValue` is required — a rupee amount with at most 2 decimals (0 is allowed)",
+        error: `${cleanValue.reason} — a rupee amount with at most 2 decimals (0 is allowed)`,
       },
       { status: 400 },
     );
   }
-  const ciValue = new Prisma.Decimal(rawValue);
+  const ciValue = new Prisma.Decimal(cleanValue.value);
 
   // ── Read, to answer honestly on a repeat call. NO WRITE YET. ──────────────
   const ci = await prisma.ci_returns.findFirst({
