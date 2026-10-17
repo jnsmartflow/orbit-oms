@@ -126,6 +126,21 @@ export function matchedInvoiceSeqOf(
   return null;
 }
 
+/**
+ * The search AUTO-TICK on a split OBD (P5-3, 2026-10-17): the ids of every
+ * invoice a pasted number names. [] when the number named the OBD (or its SO)
+ * rather than one of its invoices — the caller then ticks every invoice shown.
+ */
+export function matchedInvoiceIdsOf(
+  row: { invoiceRows?: ReadonlyArray<{ id: number; invoiceNo: string | null }> },
+  parsed: ParsedSearch,
+): number[] {
+  if (parsed.mode !== "numbers") return [];
+  return (row.invoiceRows ?? [])
+    .filter((r) => parsed.tokens.some((t) => tokenMatchesInvoice(t, r.invoiceNo)))
+    .map((r) => r.id);
+}
+
 function matchesText(row: Searchable, text: string): boolean {
   return (
     row.obdNumber.toLowerCase().includes(text) ||

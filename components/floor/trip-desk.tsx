@@ -97,6 +97,8 @@ function fmtHistLabel(iso: string): string {
 type LeafProps = {
   selection?: FloorDeskSelection;
   onToggleRow?: (id: number) => void;
+  /** A split OBD's invoice row ticks that invoice (P5-3, floor-table.tsx). */
+  onToggleInvoice?: (invoiceRowId: number) => void;
   onToggleAll?: (rows: FloorBoardRow[]) => void;
   onMarkUrgent: (id: number) => void;
   onOpenDetail: (id: number, invoiceSeq?: number) => void;
@@ -159,6 +161,7 @@ export function TripDesk({
   onStepHistory,
   rowSelection,
   onToggleRow,
+  onToggleInvoice,
   onToggleRedelivery,
   onOpenRedelivery,
   onAddRedelivery,
@@ -221,6 +224,8 @@ export function TripDesk({
   /** Open the Re-delivery dialog for a trip (header stops bar). */
   onAddRedelivery: (tripId: number) => void;
   onToggleRow: (id: number) => void;
+  /** Tick ONE invoice of a split OBD — `inv:<id>` (P5-3, lib/floor/selection.ts). */
+  onToggleInvoice: (invoiceRowId: number) => void;
   onToggleAll: (rows: FloorBoardRow[]) => void;
   onMarkUrgent: (id: number) => void;
   onOpenDetail: (id: number, invoiceSeq?: number) => void;
@@ -455,7 +460,7 @@ export function TripDesk({
   // follows, FLOOR §4.7).
   const selProps: LeafProps = isHistory
     ? { onMarkUrgent, onOpenDetail, gateOn }
-    : { selection: rowSelection, onToggleRow, onToggleAll, onMarkUrgent, onOpenDetail, gateOn };
+    : { selection: rowSelection, onToggleRow, onToggleInvoice, onToggleAll, onMarkUrgent, onOpenDetail, gateOn };
 
   // ── THE POOL, IN TWO HALVES (2026-09-10 b) ───────────────────────────────
   //

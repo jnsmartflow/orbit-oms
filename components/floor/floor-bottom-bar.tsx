@@ -18,6 +18,8 @@
 //                              · Add invoices / Edit invoices (2026-10-10) —
 //                                exactly ONE OBD ticked + the floor_add_invoices
 //                                tick; floor-page decides (`addInvoices` prop)
+//                              — all three GREY while an OBD is only partly
+//                                ticked (P5-3, `wholeObdBlock`)
 //
 // 🔴 IT RENDERS INSIDE THE BILLS COLUMN (2026-09-22). floor-page builds it and
 // TripDesk places it in its `relative` bills column, so it never runs under the
@@ -59,6 +61,7 @@ export function FloorBottomBar({
   countLabel = null,
   addInvoices = null,
   onAddInvoices,
+  wholeObdBlock = null,
 }: {
   count: number;
   /** Already formatted by the caller through formatLitres. */
@@ -136,6 +139,15 @@ export function FloorBottomBar({
    */
   addInvoices?: { label: string; hint: string; disabled: boolean } | null;
   onAddInvoices?: () => void;
+  /**
+   * 🔴 OWNER DECISION 3 (Add invoices P5-3, 2026-10-17). Hold, Cancel / Raise CI
+   * and Add invoices act on the WHOLE OBD; with only some invoices of a split
+   * OBD ticked they are GREY with this reason — "Acts on the whole OBD — tick
+   * all 4 invoices" (lib/floor/selection.ts wholeObdReason). null = nothing is
+   * partly ticked, and the menu is exactly as before. The trip CTA is never
+   * blocked by it: trips take invoices one by one.
+   */
+  wholeObdBlock?: string | null;
 }) {
   // 🔴 INSIDE A TRIP THE FORM IS OFFERED GREY, NOT HIDDEN (owner, 2026-09-22):
   // every bill there would be refused ("On trip … — remove it from the trip
@@ -216,6 +228,7 @@ export function FloorBottomBar({
             label: "Hold",
             hint: "Off the floor until released · Undo for 8s",
             icon: <Pause size={15} strokeWidth={2.2} />,
+            ...(wholeObdBlock !== null ? { hint: wholeObdBlock, disabled: true } : {}),
             onSelect: onHold,
           },
           ...(addInvoices !== null && onAddInvoices
@@ -223,9 +236,9 @@ export function FloorBottomBar({
                 {
                   key: "add-invoices",
                   label: addInvoices.label,
-                  hint: addInvoices.hint,
+                  hint: wholeObdBlock ?? addInvoices.hint,
                   icon: <FileText size={15} strokeWidth={2.2} />,
-                  disabled: addInvoices.disabled,
+                  disabled: addInvoices.disabled || wholeObdBlock !== null,
                   onSelect: onAddInvoices,
                 },
               ]
@@ -233,11 +246,13 @@ export function FloorBottomBar({
           {
             key: "off-floor",
             label: "Cancel / Raise CI…",
-            hint: onTripSelection ? "Remove from trip first" : "Opens a form · choose Cancel or Raise CI",
+            hint:
+              wholeObdBlock ??
+              (onTripSelection ? "Remove from trip first" : "Opens a form · choose Cancel or Raise CI"),
             icon: <X size={15} strokeWidth={2.2} />,
             danger: true,
             dividerBefore: true,
-            disabled: onTripSelection,
+            disabled: onTripSelection || wholeObdBlock !== null,
             onSelect: onOffFloor,
           },
         ]}

@@ -186,8 +186,13 @@ type PlaceRow = Pick<FloorInvoiceRow, "tripDropId" | "litres" | "kg" | "kgExact"
  * OBD's own totals (not split, or wholly in the place); see above.
  */
 export function placeLoad(invoiceRows: readonly PlaceRow[], inPlace: (tripDropId: number | null) => boolean): PlaceLoad | null {
+  return loadWhere(invoiceRows, (r) => inPlace(r.tripDropId));
+}
+
+/** placeLoad's rule over any test of the invoice row — null = all of them, or unsplit. */
+function loadWhere<R extends PlaceRow>(invoiceRows: readonly R[], keep: (r: R) => boolean): PlaceLoad | null {
   if (invoiceRows.length < 2) return null;
-  const here = invoiceRows.filter((r) => inPlace(r.tripDropId));
+  const here = invoiceRows.filter(keep);
   if (here.length === invoiceRows.length) return null;
   let kg: number | null = 0;
   for (const r of here) kg = kg === null || r.kg === null ? null : kg + r.kg;
@@ -204,20 +209,78 @@ export function placeLoad(invoiceRows: readonly PlaceRow[], inPlace: (tripDropId
  * A board row NARROWED to one place: only the invoices in it, and the row's
  * litres / kg replaced by theirs (placeLoad). The same row object when the OBD
  * is wholly in the place — so every list of rows that is already right stays
- * byte-identical. Drawn rows keep the OBD's own k/n (drawRowsOf numbers within
- * the narrowed list; Phase 5 commit 3 carries the OBD-wide k).
+ * byte-identical. A narrowed row keeps EVERY invoice in `invoiceRowsAll`, so
+ * drawn rows keep the OBD's own k/n (drawRowsOf, P5-3) and the bar can say
+ * where the rest are (awayChipOf).
  */
-export function narrowToPlace<T extends { invoiceRows: FloorInvoiceRow[]; volumeLitres: number | null; weightKg: number | null }>(
-  row: T,
-  inPlace: (tripDropId: number | null) => boolean,
-): T {
-  const load = placeLoad(row.invoiceRows ?? [], inPlace);
+type Narrowable = {
+  invoiceRows: FloorInvoiceRow[];
+  invoiceRowsAll?: FloorInvoiceRow[];
+  volumeLitres: number | null;
+  weightKg: number | null;
+};
+
+export function narrowToPlace<T extends Narrowable>(row: T, inPlace: (tripDropId: number | null) => boolean): T {
+  return narrowWhere(row, (r) => inPlace(r.tripDropId));
+}
+
+/**
+ * A board row narrowed to the TICKED invoices of a split OBD (P5-3) — the
+ * bottom bar's litres / kg and its "2 of 4 invoices". `ids` null = the whole
+ * OBD (the same row object back).
+ */
+export function narrowToInvoiceIds<T extends Narrowable>(row: T, ids: readonly number[] | null): T {
+  if (ids === null) return row;
+  const set = new Set(ids);
+  return narrowWhere(row, (r) => set.has(r.id));
+}
+
+function narrowWhere<T extends Narrowable>(row: T, keep: (r: FloorInvoiceRow) => boolean): T {
+  const load = loadWhere(row.invoiceRows ?? [], keep);
   if (load === null) return row;
   return {
     ...row,
-    invoiceRows: row.invoiceRows.filter((r) => inPlace(r.tripDropId)),
+    invoiceRows: row.invoiceRows.filter(keep),
+    invoiceRowsAll: row.invoiceRowsAll ?? row.invoiceRows,
     volumeLitres: load.litres,
     weightKg: load.kg,
+  };
+}
+
+// ── WHERE THE REST ARE (P5-3, 2026-10-17, owner decision 6) ──────────────────
+//
+// A split OBD whose invoices sit in DIFFERENT places (To plan, a trip) draws an
+// AMBER bar and a chip naming the invoices this list does not show — "2 on
+// L-02" in To plan, "2 in To plan" on a trip stop, "1 on L-05" beside it. All
+// in one place → null, and the bar stays the `pair` token. A place is To plan
+// or ONE trip (an OBD's rows on a trip share one stop — trip-bills.ts).
+
+/** The chip for the invoices of `all` that are not in `drawn`, or null when none are away. */
+export function awayChipOf(
+  all: readonly Pick<FloorInvoiceRow, "id" | "tripDropId" | "tripNumber">[],
+  drawn: readonly Pick<FloorInvoiceRow, "id">[],
+  shortTrip: (tripNumber: string) => string = (t) => t,
+): { text: string; title: string } | null {
+  const here = new Set(drawn.map((r) => r.id));
+  const byPlace = new Map<string, { label: string; long: string; k: number }>();
+  for (const r of all) {
+    if (here.has(r.id)) continue;
+    const key = r.tripDropId === null ? "plan" : `t:${r.tripNumber ?? r.tripDropId}`;
+    const e =
+      byPlace.get(key) ??
+      (r.tripDropId === null
+        ? { label: "in To plan", long: "in To plan", k: 0 }
+        : r.tripNumber === null
+          ? { label: "on a trip", long: "on a trip", k: 0 }
+          : { label: `on ${shortTrip(r.tripNumber)}`, long: `on ${r.tripNumber}`, k: 0 });
+    e.k++;
+    byPlace.set(key, e);
+  }
+  if (byPlace.size === 0) return null;
+  const parts = Array.from(byPlace.values());
+  return {
+    text: parts.map((p) => `${p.k} ${p.label}`).join(" · "),
+    title: `${parts.map((p) => `${p.k} of ${all.length} invoices ${p.long}`).join(", ")} — not shown here`,
   };
 }
 
@@ -243,29 +306,40 @@ export interface InvoiceDrawRow<T> {
   last: boolean;
 }
 
-type Drawable = { orderId: number; invoiceRows?: FloorInvoiceRow[]; redelivery?: { id: number } | null };
+type Drawable = {
+  orderId: number;
+  invoiceRows?: FloorInvoiceRow[];
+  invoiceRowsAll?: FloorInvoiceRow[];
+  redelivery?: { id: number } | null;
+};
 
 /**
  * An OBD row → the rows to draw. A split OBD gives one per invoice (seq order);
  * anything else gives itself once. 🔴 A RE-DELIVERY ROW NEVER EXPANDS: its row
  * describes the bill's FIRST trip (lib/floor/selection.ts deskKeyOf), the same
  * reason keepPairsAdjacent skips it.
+ *
+ * A row NARROWED to a place (narrowToPlace) draws only its invoices there, but
+ * k / n stay OBD-WIDE (P5-3): 3 and 4 of 4 in To plan, 1 and 2 of 4 on the
+ * trip — and a split OBD with ONE invoice left in a place still draws as an
+ * invoice row ("2/4"), never as a plain OBD row.
  */
 export function drawRowsOf<T extends Drawable>(row: T): InvoiceDrawRow<T>[] {
-  const inv = row.redelivery ? [] : row.invoiceRows ?? [];
-  if (inv.length < 2) {
+  const all = row.redelivery ? [] : row.invoiceRowsAll ?? row.invoiceRows ?? [];
+  if (all.length < 2) {
     const key = row.redelivery ? `rd:${row.redelivery.id}` : String(row.orderId);
     return [{ key, row, invoice: null, k: 1, n: 1, first: true, last: true }];
   }
-  const n = inv.length;
+  const inv = row.invoiceRows ?? [];
+  const n = all.length;
   return inv.map((invoice, i) => ({
     key: `inv:${invoice.id}`,
     row,
     invoice,
-    k: i + 1,
+    k: all.findIndex((a) => a.id === invoice.id) + 1,
     n,
     first: i === 0,
-    last: i === n - 1,
+    last: i === inv.length - 1,
   }));
 }
 

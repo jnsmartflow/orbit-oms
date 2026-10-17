@@ -405,6 +405,14 @@ export interface FloorBoardRow extends PickingQueueRow {
    * (`skipInvoicePartners`, the Tint Manager Base feed).
    */
   invoiceRows: FloorInvoiceRow[];
+  /**
+   * EVERY invoice of a split OBD, set ONLY on a row narrowed to a place or to
+   * the ticked invoices (lib/floor/invoice-rows.ts narrowToPlace /
+   * narrowToInvoiceIds, P5-3) — `invoiceRows` then holds just the ones in it.
+   * Undefined on every board row the server sends. Read for the OBD-wide k/n
+   * and for where the rest are (the amber bar's chip).
+   */
+  invoiceRowsAll?: FloorInvoiceRow[];
   // ⚠ `totalArticle` was added here on 2026-08-11 for the By-picker card and
   // REMOVED the same day, superseded: the card now shows a typed breakdown
   // ("18 D · 14 C") built from `articleTag` via formatArticleBreakdown()

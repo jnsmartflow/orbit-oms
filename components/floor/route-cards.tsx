@@ -386,6 +386,8 @@ const sortUpcoming = (rows: FloorBoardRow[]) =>
 interface LeafWiring {
   selection?: ReadonlySet<FloorDeskKey>;
   onToggleRow?: (id: number) => void;
+  /** Per-invoice ticks on a split OBD (P5-3) — spread into each FloorTable. */
+  onToggleInvoice?: (invoiceRowId: number) => void;
   onToggleAll?: (rows: FloorBoardRow[]) => void;
   onMarkUrgent: (id: number) => void;
   onOpenDetail: (id: number, invoiceSeq?: number) => void;

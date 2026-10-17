@@ -111,14 +111,20 @@ export function InvoicePartChip({ k, n }: { k: number; n: number }) {
   );
 }
 
-/** "4 invoices" — a split OBD drawn as one row (Add invoices Phase 4). */
-export function InvoiceCountChip({ n, className = "ml-1" }: { n: number; className?: string }) {
+/**
+ * "4 invoices" — a split OBD drawn as one row (Add invoices Phase 4). `of` =
+ * the OBD's own count when only `n` of them are in this place (P5-3, owner
+ * decision 1: a stop says how many invoices are ON it) — then "2 invoices"
+ * reads "2 of this OBD's 4 invoices are here" on hover.
+ */
+export function InvoiceCountChip({ n, of, className = "ml-1" }: { n: number; of?: number; className?: string }) {
   return (
     <span
-      title={`This OBD was billed as ${n} SAP invoices`}
+      title={of !== undefined && of !== n ? `${n} of this OBD's ${of} SAP invoices are here` : `This OBD was billed as ${n} SAP invoices`}
       className={`${className} rounded-[4px] bg-ink-100 px-1 py-px font-sans text-[10px] font-semibold text-ink-700`}
     >
-      {n} invoices
+      {/* Two arms so the n ≥ 2 markup is exactly what it always was. */}
+      {n === 1 ? <>{n} invoice</> : <>{n} invoices</>}
     </span>
   );
 }

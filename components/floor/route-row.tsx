@@ -21,6 +21,7 @@ export function RouteRow({
   variant,
   selection,
   onToggleRow,
+  onToggleInvoice,
   onToggleAll,
   onMarkUrgent,
   onOpenDetail,
@@ -55,6 +56,8 @@ export function RouteRow({
   variant: FloorTableVariant;
   selection?: ReadonlySet<FloorDeskKey>;
   onToggleRow?: (id: number) => void;
+  /** Forwarded to the FloorTable — per-invoice ticks (P5-3). */
+  onToggleInvoice?: (invoiceRowId: number) => void;
   onToggleAll?: (rows: FloorBoardRow[]) => void;
   onMarkUrgent?: (id: number) => void;
   onOpenDetail?: (id: number, invoiceSeq?: number) => void;
@@ -117,6 +120,7 @@ export function RouteRow({
             variant={variant}
             selection={selection}
             onToggleRow={onToggleRow}
+            onToggleInvoice={onToggleInvoice}
             onToggleAll={onToggleAll}
             onMarkUrgent={onMarkUrgent}
             onOpenDetail={onOpenDetail}

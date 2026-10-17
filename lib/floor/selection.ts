@@ -92,7 +92,9 @@ export function toggleAll(sel: FloorSelection, rows: SelectableRow[]): FloorSele
 // above — they never draw a re-delivery.
 
 export type RdKey = `rd:${number}`;
-export type FloorDeskKey = number | RdKey;
+/** One invoice of a SPLIT OBD — `inv:<order_invoices.id>` (P5-3, below). */
+export type InvKey = `inv:${number}`;
+export type FloorDeskKey = number | RdKey | InvKey;
 export type FloorDeskSelection = Set<FloorDeskKey>;
 
 export function rdKey(redeliveryId: number): RdKey {
@@ -100,7 +102,20 @@ export function rdKey(redeliveryId: number): RdKey {
 }
 
 export function isRdKey(key: FloorDeskKey): key is RdKey {
-  return typeof key === "string";
+  return typeof key === "string" && key.startsWith("rd:");
+}
+
+export function invKey(invoiceRowId: number): InvKey {
+  return `inv:${invoiceRowId}`;
+}
+
+export function isInvKey(key: FloorDeskKey): key is InvKey {
+  return typeof key === "string" && key.startsWith("inv:");
+}
+
+/** The order_invoices.id inside an `inv:` key. */
+export function invIdOf(key: InvKey): number {
+  return Number(key.slice(4));
 }
 
 /** The trip_redeliveries.id inside an `rd:` key. */
@@ -120,22 +135,215 @@ export function toggleDeskKey(sel: FloorDeskSelection, key: FloorDeskKey): Floor
   return next;
 }
 
-type DeskRow = { orderId: number; redelivery?: { id: number } | null };
+type DeskRow = {
+  orderId: number;
+  redelivery?: { id: number } | null;
+  /** The invoices DRAWN in this list — narrowed to a place (invoice-rows.ts narrowToPlace). */
+  invoiceRows?: ReadonlyArray<{ id: number }>;
+  /** Every invoice of the OBD, set only on a narrowed row. */
+  invoiceRowsAll?: ReadonlyArray<{ id: number }>;
+};
 
-/** isAllIdsSelected, by each row's DESK key — a re-delivery row counts as its `rd:` key. */
-export function isAllDeskSelected(sel: ReadonlySet<FloorDeskKey>, rows: DeskRow[]): boolean {
-  return rows.length > 0 && rows.every((r) => sel.has(deskKeyOf(r)));
+// ── PER-INVOICE TICKS (Add invoices P5-3, 2026-10-17, owner) ────────────────
+//
+// 🔴 A SPLIT OBD IS TICKED BY INVOICE, `inv:<order_invoices.id>` — never by its
+// orderId. The invoice ROW is the dispatch unit (Schema v27.66), so ticking one
+// drawn invoice row ticks THAT invoice and nothing else. A header / select-all /
+// ship-to block tick takes every invoice DRAWN in that list (the row's
+// `invoiceRows`, already narrowed to the place — a ticked invoice the planner
+// cannot see is how a van leaves short). An unsplit OBD keeps its orderId key
+// and a re-delivery its `rd:` key, exactly as before.
+//
+// `perInvoice` false = the Phase 4 rule (split OBD ticked by orderId), for a
+// FloorTable whose caller does not tick invoices (Freight Trips).
+
+/** Is this a SPLIT OBD (2+ invoices across the whole OBD)? A re-delivery row never is. */
+export function isSplitObdRow(row: DeskRow): boolean {
+  return !row.redelivery && (row.invoiceRowsAll ?? row.invoiceRows ?? []).length >= 2;
 }
 
-/** toggleAllIds, by DESK key — the header tick of a stop holding re-deliveries adds `rd:` keys. */
+/** A row's selection keys: one per drawn invoice on a split OBD, else its one desk key. */
+export function deskKeysOf(row: DeskRow, perInvoice = true): FloorDeskKey[] {
+  if (perInvoice && isSplitObdRow(row)) return (row.invoiceRows ?? []).map((i) => invKey(i.id));
+  return [deskKeyOf(row)];
+}
+
+/** isAllIdsSelected, by each row's DESK keys — a re-delivery row counts as its `rd:` key, a split OBD as its drawn invoices. */
+export function isAllDeskSelected(sel: ReadonlySet<FloorDeskKey>, rows: DeskRow[], perInvoice = true): boolean {
+  const keys = rows.flatMap((r) => deskKeysOf(r, perInvoice));
+  return keys.length > 0 && keys.every((k) => sel.has(k));
+}
+
+/** toggleAllIds, by DESK keys — the header tick of a stop holding re-deliveries adds `rd:` keys. */
 export function toggleAllDesk(sel: FloorDeskSelection, rows: DeskRow[]): FloorDeskSelection {
   const next = new Set(sel);
+  const keys = rows.flatMap((r) => deskKeysOf(r));
   if (isAllDeskSelected(sel, rows)) {
-    for (const r of rows) next.delete(deskKeyOf(r));
+    for (const k of keys) next.delete(k);
   } else {
-    for (const r of rows) next.add(deskKeyOf(r));
+    for (const k of keys) next.add(k);
   }
   return next;
+}
+
+/**
+ * What a press acts on, per OBD. `invoiceRowIds` null = the WHOLE OBD (an
+ * unsplit OBD, or a split one with every invoice ticked); a list = only those
+ * invoice rows — the bills route's `invoiceRowIds` (app/api/floor/trips/[id]/bills).
+ */
+export interface SelectionUnit {
+  orderId: number;
+  invoiceRowIds: number[] | null;
+}
+
+type UnitRow = { orderId: number; invoiceRows?: ReadonlyArray<{ id: number }> };
+
+/**
+ * The selection as units, in `rows` order. `rows` are the FULL board rows (every
+ * invoice of the OBD — never a narrowed list), so "all ticked" means all of the
+ * OBD's invoices. A split OBD found by its orderId key (it was unsplit when
+ * ticked) counts as whole. `rd:` keys are never units.
+ */
+export function selectionUnits(sel: ReadonlySet<FloorDeskKey>, rows: readonly UnitRow[]): SelectionUnit[] {
+  const out: SelectionUnit[] = [];
+  for (const r of rows) {
+    const inv = r.invoiceRows ?? [];
+    if (inv.length >= 2 && !sel.has(r.orderId)) {
+      const ticked = inv.filter((i) => sel.has(invKey(i.id))).map((i) => i.id);
+      if (ticked.length === 0) continue;
+      out.push({ orderId: r.orderId, invoiceRowIds: ticked.length === inv.length ? null : ticked });
+    } else if (sel.has(r.orderId)) {
+      out.push({ orderId: r.orderId, invoiceRowIds: null });
+    }
+  }
+  return out;
+}
+
+/** Only some of the OBD's invoices are ticked. */
+export const isPartialUnit = (u: SelectionUnit): boolean => u.invoiceRowIds !== null;
+
+/**
+ * The bills route's body for these units. `invoiceRowIds` is sent ONLY when a
+ * unit is partial — a selection of whole OBDs posts exactly what it always did.
+ */
+export function billsBodyOf(
+  units: readonly SelectionUnit[],
+  action: "add" | "remove",
+): { orderIds: number[]; action: "add" | "remove"; invoiceRowIds?: Record<number, number[]> } {
+  const partial = units.filter(isPartialUnit);
+  return {
+    orderIds: units.map((u) => u.orderId),
+    action,
+    ...(partial.length > 0
+      ? { invoiceRowIds: Object.fromEntries(partial.map((u) => [u.orderId, u.invoiceRowIds as number[]])) }
+      : {}),
+  };
+}
+
+/**
+ * Owner decision 3 (2026-10-13): Hold / Cancel / Raise CI / Add invoices act on
+ * the WHOLE OBD, so they are disabled while any OBD is only partly ticked. The
+ * reason, or null when nothing is partial. `invoiceCount` = that OBD's invoices.
+ */
+export function wholeObdReason(partials: ReadonlyArray<{ obdNumber: string; invoiceCount: number }>): string | null {
+  if (partials.length === 0) return null;
+  if (partials.length === 1) return `Acts on the whole OBD — tick all ${partials[0].invoiceCount} invoices`;
+  return `Acts on whole OBDs — tick every invoice of ${partials.map((p) => p.obdNumber).join(", ")}`;
+}
+
+/** The orderIds a selection touches — `inv:` keys resolved through `rows` (full board rows). */
+export function tickedOrderIds(sel: ReadonlySet<FloorDeskKey>, rows: readonly UnitRow[]): number[] {
+  return selectionUnits(sel, rows).map((u) => u.orderId);
+}
+
+/**
+ * The keys that tick these units back on — what a press leaves ticked (a Hold
+ * that failed, a Cancel form's unticked lines, a load-plan card). A split OBD
+ * is ticked by its invoices (all of them for a whole unit), anything else by
+ * its orderId.
+ */
+export function unitKeys(units: readonly SelectionUnit[], rows: readonly UnitRow[]): FloorDeskKey[] {
+  const byId = new Map(rows.map((r) => [r.orderId, r]));
+  return units.flatMap((u): FloorDeskKey[] => {
+    const inv = byId.get(u.orderId)?.invoiceRows ?? [];
+    if (inv.length < 2) return [u.orderId];
+    return (u.invoiceRowIds ?? inv.map((i) => i.id)).map(invKey);
+  });
+}
+
+/** unitKeys for whole OBDs. */
+export function keysForOrders(orderIds: readonly number[], rows: readonly UnitRow[]): FloorDeskKey[] {
+  return unitKeys(orderIds.map((orderId) => ({ orderId, invoiceRowIds: null })), rows);
+}
+
+/**
+ * The ticked OBDs in the order they were TICKED (a Set keeps insertion order) —
+ * an `inv:` key counts for its OBD at its first invoice. `rd:` keys and ids not
+ * in `rows` are left out. For the "+ New trip" type choice (lib/trips/type-choice.ts).
+ */
+export function orderIdsInTickOrder(sel: ReadonlySet<FloorDeskKey>, rows: readonly UnitRow[]): number[] {
+  const owner = new Map<number, number>();
+  const onBoard = new Set<number>();
+  for (const r of rows) {
+    onBoard.add(r.orderId);
+    for (const i of r.invoiceRows ?? []) owner.set(i.id, r.orderId);
+  }
+  const out: number[] = [];
+  for (const key of Array.from(sel)) {
+    const id = typeof key === "number" ? key : isInvKey(key) ? owner.get(invIdOf(key)) : undefined;
+    if (id !== undefined && onBoard.has(id) && !out.includes(id)) out.push(id);
+  }
+  return out;
+}
+
+type TickRow = {
+  orderId: number;
+  invoiceRows?: ReadonlyArray<{ id: number; tripDropId: number | null }>;
+};
+
+/**
+ * RECONCILE the ticks against fresh rows (live sync, FLOOR §5) — "drop the tick
+ * on anything that changed elsewhere". `before` = the rows the ticks were made
+ * on (full board rows); `after` = fresh answers by orderId: a row, or null when
+ * the bill LEFT the board. An OBD missing from `after` was not asked about and
+ * keeps its ticks.
+ *   orderId key   dropped when the bill left, or it is split now (its invoices
+ *                 are ticked one by one — a whole-OBD tick would hide that)
+ *   inv: key      dropped when the bill left, the invoice is gone, or it MOVED
+ *                 (its trip stop is not the one it was ticked on)
+ *   rd: key       never judged here (the trip detail decides)
+ * `dropped` counts OBDs, for the "N selected bills changed elsewhere" toast.
+ */
+export function reconcileTicks(
+  sel: ReadonlySet<FloorDeskKey>,
+  before: readonly TickRow[],
+  after: ReadonlyMap<number, TickRow | null>,
+): { next: FloorDeskSelection; dropped: number } {
+  const owner = new Map<number, { orderId: number; tripDropId: number | null }>();
+  for (const r of before) for (const i of r.invoiceRows ?? []) owner.set(i.id, { orderId: r.orderId, tripDropId: i.tripDropId });
+  const next: FloorDeskSelection = new Set();
+  const droppedObds = new Set<number>();
+  for (const key of Array.from(sel)) {
+    if (isRdKey(key)) {
+      next.add(key);
+    } else if (isInvKey(key)) {
+      const id = invIdOf(key);
+      const o = owner.get(id);
+      const a = o ? after.get(o.orderId) : undefined;
+      if (o === undefined || a === undefined) {
+        next.add(key);
+        continue;
+      }
+      const fresh = a === null ? undefined : (a.invoiceRows ?? []).find((i) => i.id === id);
+      if (fresh !== undefined && fresh.tripDropId === o.tripDropId) next.add(key);
+      else droppedObds.add(o.orderId);
+    } else {
+      const a = after.get(key);
+      if (a === undefined || (a !== null && (a.invoiceRows ?? []).length < 2)) next.add(key);
+      else droppedObds.add(key);
+    }
+  }
+  return { next, dropped: droppedObds.size };
 }
 
 // ── Hold / Cancelled: every row is selectable ────────────────────────────────
@@ -172,11 +380,16 @@ export function toggleAllIds(sel: FloorSelection, rows: IdRow[]): FloorSelection
 type CountRow = {
   invoiceNo: string | null;
   invoicePartners?: readonly unknown[];
-  /** A split OBD's invoices (Add invoices Phase 4) — 2+ entries when split. */
+  /** A split OBD's invoices (Add invoices Phase 4) — 2+ entries when split.
+   *  On a PARTLY ticked OBD: only the ticked ones (narrowToInvoiceIds). */
   invoiceRows?: ReadonlyArray<{ invoiceNo: string | null }>;
+  /** Every invoice of the OBD — set only when `invoiceRows` is narrowed (P5-3). */
+  invoiceRowsAll?: ReadonlyArray<{ invoiceNo: string | null }>;
 };
 
-const isSplitRow = (r: CountRow) => (r.invoiceRows?.length ?? 0) > 1;
+const isSplitRow = (r: CountRow) => ((r.invoiceRowsAll ?? r.invoiceRows)?.length ?? 0) > 1;
+const isPartlyTicked = (r: CountRow) =>
+  r.invoiceRowsAll !== undefined && (r.invoiceRows?.length ?? 0) < r.invoiceRowsAll.length;
 
 // ── ADD INVOICES (Phase 4 commit 2, 2026-10-13, owner) ──────────────────────
 // When the selection holds a SPLIT OBD (one drawn row per invoice), the bar
@@ -184,9 +397,29 @@ const isSplitRow = (r: CountRow) => (r.invoiceRows?.length ?? 0) > 1;
 // tick in Phase 4 selects the whole OBD. Invoices = distinct numbers: every
 // invoice of a split OBD, SAP's of any other bill; a bill with none is said
 // apart ("+ 1 not invoiced"). Without a split OBD, the pair label above, unchanged.
+//
+// P5-3 (2026-10-17): with ONLY SOME invoices of a split OBD ticked the bar says
+// how many of how many — "1 OBD · 2 of 4 invoices". Counted by invoice ROW:
+// ticked invoices of each split OBD + every other invoiced bill, out of all
+// the selected OBDs' invoices; an un-invoiced bill is said apart, as above.
 export function selectionCountLabel(rows: readonly CountRow[]): string | null {
   const n = rows.length;
   const obds = `${n} OBD${n === 1 ? "" : "s"}`;
+  if (rows.some(isPartlyTicked)) {
+    let ticked = 0;
+    let total = 0;
+    let notInvoiced = 0;
+    for (const r of rows) {
+      if (isSplitRow(r)) {
+        ticked += r.invoiceRows?.length ?? 0;
+        total += (r.invoiceRowsAll ?? r.invoiceRows)?.length ?? 0;
+      } else if (r.invoiceNo !== null) {
+        ticked++;
+        total++;
+      } else notInvoiced++;
+    }
+    return `${obds} · ${ticked} of ${total} invoices` + (notInvoiced > 0 ? ` + ${notInvoiced} not invoiced` : "");
+  }
   if (rows.some(isSplitRow)) {
     const numbers = new Set<string>();
     let notInvoiced = 0;

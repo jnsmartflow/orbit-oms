@@ -47,7 +47,7 @@ import { formatArticleTag } from "@/lib/floor/format";
 // panel's "Invoice date" reads) is used inside InvoiceLines.
 import { InvoiceCountChip, InvoiceLines, ObdDateLine, fmtDateTime } from "./bill-ref-cells";
 // ONE FLOOR ROW PER INVOICE (Add invoices Phase 4 commit 2) — the draw rule.
-import { drawRowsOf, type InvoiceDrawRow } from "@/lib/floor/invoice-rows";
+import { awayChipOf, drawRowsOf, type InvoiceDrawRow } from "@/lib/floor/invoice-rows";
 // TINT / BASE -- one owner for the word, shared with both picking boards. The
 // pinks it paints are copied FROM this module's neighbour status-pill.tsx.
 import { ColourWorkBadge } from "@/components/picking/card-atoms";
@@ -65,7 +65,7 @@ import {
   formatWeightKg,
   sumWeightKg,
 } from "./status-pill";
-import { deskKeyOf, isAllDeskSelected, type FloorDeskKey } from "@/lib/floor/selection";
+import { deskKeyOf, invKey, isAllDeskSelected, type FloorDeskKey } from "@/lib/floor/selection";
 // SOFT variant only (2026-08-25). The solid DUP_SO_* tokens are the PICKING
 // treatment and are deliberately no longer imported here: under `soft` every
 // cell, badge and pill on a duplicate row renders exactly as it does on an
@@ -422,6 +422,7 @@ export function FloorTable({
   onToggleAll,
   onMarkUrgent,
   onOpenDetail,
+  onToggleInvoice,
   onToggleRedelivery,
   onOpenRedelivery,
   showInvoice = true,
@@ -513,6 +514,15 @@ export function FloorTable({
   /** A split OBD's row also hands its invoice seq (Add invoices Phase 4) — the
    *  panel opens scoped to that invoice. */
   onOpenDetail?: (id: number, invoiceSeq?: number) => void;
+  /**
+   * PER-INVOICE TICKS (Add invoices P5-3, 2026-10-17). Passed by the Floor desk
+   * only: a split OBD's drawn invoice row then ticks THAT invoice
+   * (`inv:<order_invoices.id>`, lib/floor/selection.ts), wears the violet bar
+   * and wash on its own, and the header tick takes every drawn invoice.
+   * Omitted (Freight Trips) = the Phase 4 rule, byte for byte: any invoice row
+   * ticks the whole OBD by its orderId.
+   */
+  onToggleInvoice?: (invoiceRowId: number) => void;
   /**
    * RE-DELIVERY rows (2026-10-03, row.redelivery set by trip-desk.tsx). Their
    * tick goes HERE with the trip_redeliveries id — never onToggleRow with the
@@ -628,6 +638,8 @@ export function FloorTable({
   // and ⋯ still working — simply by omitting the selection handlers, with no
   // new prop threaded through slot-band and route-row to reach here.
   const interactive = variant === "live" && !!onToggleRow;
+  // Split OBDs ticked per invoice (see the prop). Only ever on a live table.
+  const perInvoice = interactive && !!onToggleInvoice;
   // The upcoming block, normalised once. Read by the width arrays' neighbour
   // (the divider's colSpan), by the body and by nothing else.
   const upcoming = upcomingRows ?? [];
@@ -785,7 +797,7 @@ export function FloorTable({
   // per-row `selectable` below, in a second place, which is exactly where a
   // half-done fix of this leaves a header checkbox that lies.
   const tableRows = upcoming.length > 0 ? [...rows, ...upcoming] : rows;
-  const allOn = interactive && selection ? isAllDeskSelected(selection, tableRows) : false;
+  const allOn = interactive && selection ? isAllDeskSelected(selection, tableRows, perInvoice) : false;
 
   // ── INVOICE PAIRS (2026-10-08, owner) ─────────────────────────────────────
   // Worked out PER LIST: the due rows and the upcoming rows separately, so a
@@ -817,8 +829,10 @@ export function FloorTable({
   // INVOICE, seq order (lib/floor/invoice-rows.ts drawRowsOf), in a <tbody> of
   // its own — hover and the selected wash on the tbody, a faint dashed divider
   // between its rows, the normal one under the last. The DATA is still one row
-  // per OBD: selection, sort, live-merge and search key on the OBD, so a tick on
-  // any invoice row ticks them all (Phase 4 — per-invoice actions are Phase 5/6).
+  // per OBD: sort, live-merge and search key on the OBD. TICKS are per invoice
+  // on the Floor desk since P5-3 (`onToggleInvoice`); without it a tick on any
+  // invoice row ticks them all (Phase 4). A row narrowed to a place draws only
+  // its invoices there, numbered k/n across the whole OBD (drawRowsOf).
   //
   // THE OBD CELL REPEATS ON EVERY INVOICE ROW (owner, 2026-10-13, after looking
   // on localhost — it was rowspan'd across the block in e8942595). Every row of
@@ -836,7 +850,8 @@ export function FloorTable({
   const splitDraws = (row: FloorBoardRow): InvoiceDrawRow<FloorBoardRow>[] | null => {
     if (!invCell || row.redelivery) return null;
     const draws = drawRowsOf(row);
-    return draws.length > 1 ? draws : null;
+    // An invoice draw even with ONE invoice left in this place (P5-3 — k/n are OBD-wide).
+    return draws.length > 0 && draws[0].invoice !== null ? draws : null;
   };
 
   return (
@@ -986,11 +1001,12 @@ export function FloorTable({
         i += p.size;
       } else if (splitDraws(list[i]) !== null) {
         // ONE ROW PER INVOICE — its own <tbody>, like a merged pair. Selected =
-        // the OBD is ticked (selection stays per OBD in Phase 4).
+        // the OBD is ticked (Phase 4). PER INVOICE (P5-3) the wash is each
+        // ticked row's own (renderRow), so this tbody only hovers.
         flush();
         const row = list[i];
         const draws = splitDraws(row)!;
-        const blockOn = interactive && !selectionLocked && !!selection && selection.has(deskKeyOf(row));
+        const blockOn = !perInvoice && interactive && !selectionLocked && !!selection && selection.has(deskKeyOf(row));
         out.push(
           <tbody key={`${keyBase}-obd-${row.orderId}`} className={blockOn ? "bg-brand-50" : "hover:bg-[#fafafa]"}>
             {draws.map((d) => renderRow(row, p ?? null, d))}
@@ -1035,11 +1051,22 @@ export function FloorTable({
     const pairSelected = merged && interactive && !!selection && pair.memberIds.every((id) => selection.has(id));
     // A split block is SELECTED when its OBD is ticked; its bar is the `pair`
     // token (or the pair's own amber when it is also a split invoice pair).
-    const splitSelected = split && interactive && !selectionLocked && !!selection && selection.has(deskKeyOf(row));
+    // PER INVOICE (P5-3): THIS row is selected when ITS invoice is ticked.
+    const invSelKey = inv !== null && perInvoice ? invKey(inv.id) : null;
+    const splitSelected =
+      split && interactive && !selectionLocked && !!selection && selection.has(invSelKey ?? deskKeyOf(row));
+    // P5-3, owner decision 6: the OBD's invoices in DIFFERENT places (To plan /
+    // a trip) → AMBER, and the first drawn row's Invoice cell names the rest
+    // ("2 on L-02", "2 in To plan"). Live tables only, like the pair chips. A
+    // list that draws every invoice (not narrowed) has none away.
+    const away =
+      split && variant === "live" ? awayChipOf(row.invoiceRowsAll ?? row.invoiceRows, row.invoiceRows, shortTripNumber) : null;
     const barKind: PairBarKind | null = split
       ? splitSelected
         ? "selected"
-        : pair?.bar ?? "ok"
+        : away !== null
+          ? "warn"
+          : pair?.bar ?? "ok"
       : pair
         ? pairSelected
           ? "selected"
@@ -1399,9 +1426,15 @@ export function FloorTable({
     // every member unless all are on, then removes them all). Same handler the
     // merged ☐ uses, so the row click and the tick can never disagree.
     const toggleThis = () =>
-      rd ? onToggleRedelivery?.(rd.id) : merged ? onToggleAll?.(pair.members) : onToggleRow?.(row.orderId);
+      rd
+        ? onToggleRedelivery?.(rd.id)
+        : merged
+          ? onToggleAll?.(pair.members)
+          : inv !== null && invSelKey !== null
+            ? onToggleInvoice?.(inv.id)
+            : onToggleRow?.(row.orderId);
     const blockClickable = shipToBlock && interactive && selectable;
-    const blockSelected = blockClickable && (merged ? pairSelected : (selection?.has(selKey) ?? false));
+    const blockSelected = blockClickable && (merged ? pairSelected : (selection?.has(invSelKey ?? selKey) ?? false));
     const blockRowProps = blockClickable
       ? {
           tabIndex: 0,
@@ -1420,12 +1453,15 @@ export function FloorTable({
     // own <tbody> (renderList), and their selected bar from the pair bar
     // (barKind "selected") — never the per-row selected classes below.
     const hoverCls = merged || split ? "" : " hover:bg-[#fafafa]";
+    // A ticked INVOICE row (P5-3) wears the brand-50 wash on its own <tr> — its
+    // tbody only hovers then (renderList).
+    const invWash = invSelKey !== null && splitSelected ? " bg-brand-50" : "";
     const rowCls = !shipToBlock
-      ? `group${hoverCls}`
+      ? `group${hoverCls}${invWash}`
       : blockSelected && !merged && !split
         ? "group cursor-pointer bg-brand-50 outline-none focus-visible:bg-brand-100 [&>td:first-child]:shadow-[inset_3px_0_0_theme(colors.brand.600)]"
         : blockClickable
-          ? `group cursor-pointer outline-none${hoverCls} focus-visible:bg-brand-50`
+          ? `group cursor-pointer outline-none${hoverCls}${invWash} focus-visible:bg-brand-50`
           : `group${hoverCls}`;
     const stop = (e: React.MouseEvent) => e.stopPropagation();
     return (
@@ -1466,10 +1502,22 @@ export function FloorTable({
             ) : selectable && (
               <input
                 type="checkbox"
-                aria-label={inv ? `Select ${row.obdNumber} (all ${draw!.n} invoices)` : `Select ${row.obdNumber}`}
+                aria-label={
+                  inv !== null && invSelKey !== null
+                    ? `Select invoice ${draw!.k} of ${draw!.n} of ${row.obdNumber}${inv.invoiceNo ? ` (${inv.invoiceNo})` : ""}`
+                    : inv
+                      ? `Select ${row.obdNumber} (all ${draw!.n} invoices)`
+                      : `Select ${row.obdNumber}`
+                }
                 className="h-[13px] w-[13px] cursor-pointer align-middle accent-brand-600"
-                checked={selection?.has(selKey) ?? false}
-                onChange={() => (rd ? onToggleRedelivery?.(rd.id) : onToggleRow?.(row.orderId))}
+                checked={selection?.has(invSelKey ?? selKey) ?? false}
+                onChange={() =>
+                  rd
+                    ? onToggleRedelivery?.(rd.id)
+                    : inv !== null && invSelKey !== null
+                      ? onToggleInvoice?.(inv.id)
+                      : onToggleRow?.(row.orderId)
+                }
               />
             )}
           </td>
@@ -1580,7 +1628,7 @@ export function FloorTable({
                     block, or on the single row of a layout that does not expand
                     (no Invoice cell: Tinting). */}
                 {(split || (!invCell && (row.invoiceRows?.length ?? 0) > 1)) && (
-                  <InvoiceCountChip n={row.invoiceRows.length} className="ml-1.5" />
+                  <InvoiceCountChip n={row.invoiceRows.length} of={row.invoiceRowsAll?.length} className="ml-1.5" />
                 )}
               </>
             }
@@ -1654,6 +1702,13 @@ export function FloorTable({
               ) : (
                 // A split OBD drawn as one row (a re-delivery row) says "n invoices".
                 <InvoiceLines invoiceNo={row.invoiceNo} invoiceDate={row.invoiceDate} invoiceCount={row.invoiceRows?.length ?? 0} />
+              )}
+              {/* P5-3: where this OBD's other invoices are — "2 on L-02" / "2 in
+                  To plan" (amber, the bar's partner) — on the first drawn row. */}
+              {away !== null && draw!.first && (
+                <div className="mt-0.5 overflow-hidden text-ellipsis">
+                  <PairPlaceChip chip={{ text: away.text, warn: true, title: away.title }} />
+                </div>
               )}
               {/* The pair's chip names SAP's invoice — seq 1, the block's first row. */}
               {pair?.chip && (!split || draw!.first) && (

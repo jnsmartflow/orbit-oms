@@ -66,6 +66,7 @@ import { prisma } from "@/lib/prisma";
 import { raiseBillOnlyCi } from "@/lib/ci/bill-only";
 import { TELEPHONIC_HOLD_NOTE } from "@/lib/floor/hold-log";
 import { billingRefusal } from "@/lib/billing/refusal";
+import { INVOICE_TRIPS_SELECT, invoiceTripsOf, type InvoiceTrip } from "@/lib/order-invoices/trip-refusal";
 import { CHALLAN_LINKED } from "@/lib/workflow-stages";
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -80,6 +81,9 @@ export interface TagPlanOrder {
   /** For billingRefusal('ci', …) — a CI'd bill cannot be cancelled off a trip. */
   tripDropId: number | null;
   tripNumber: string | null;
+  /** The OBD's invoice rows and their trips (P5-3) — a split OBD partly on a
+   *  trip is refused as "2 of 4 invoices on L-02 — …". Optional. */
+  invoiceTrips?: readonly InvoiceTrip[];
 }
 
 /** The tag fields the planner needs. */
@@ -221,6 +225,7 @@ export function planSoTagApplications<O extends TagPlanOrder, T extends TagPlanT
         isRemoved: order.isRemoved,
         tripDropId: order.tripDropId,
         tripNumber: order.tripNumber,
+        invoiceTrips: order.invoiceTrips,
       });
       if (refusal !== null) return { action: "record_only", order, tag, reason: refusal };
       return { action: "ci_cancel", order, tag };
@@ -299,6 +304,7 @@ export async function applySoTagHolds(
         isRemoved: true, dispatchStatus: true, obdEmailDate: true,
         tripDropId: true,
         tripDrop: { select: { trip: { select: { tripNumber: true } } } },
+        invoices: INVOICE_TRIPS_SELECT,
       },
     });
     const orders: HookOrder[] = rows.map((r) => ({
@@ -311,6 +317,7 @@ export async function applySoTagHolds(
       obdEmailDate: r.obdEmailDate,
       tripDropId: r.tripDropId,
       tripNumber: r.tripDrop?.trip.tripNumber ?? null,
+      invoiceTrips: invoiceTripsOf(r.invoices),
     }));
     const soNumbers = Array.from(
       new Set(orders.map((o) => normaliseSo(o.soNumber)).filter((s): s is string => s !== null)),

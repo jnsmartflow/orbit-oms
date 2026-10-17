@@ -6,7 +6,7 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { addedInvoiceNosOf, buildInvoiceRows, drawRows, drawRowsOf, narrowToPlace, placeLoad, type InvoiceLineFacts, type InvoiceRowSource } from "./invoice-rows";
+import { addedInvoiceNosOf, awayChipOf, buildInvoiceRows, drawRows, drawRowsOf, narrowToInvoiceIds, narrowToPlace, placeLoad, type FloorInvoiceRow, type InvoiceLineFacts, type InvoiceRowSource } from "./invoice-rows";
 
 const LINES: InvoiceLineFacts[] = [
   { rawLineItemId: 62850, lineId: 1, skuCodeRaw: "5880380", unitQty: 13, volumeLine: 260, totalWeight: null },
@@ -154,4 +154,48 @@ test("narrowToPlace: the same object when wholly in the place; else only its inv
   assert.deepEqual(pool.invoiceRows.map((r) => r.seq), [1, 3]);
   assert.equal(pool.volumeLitres, 540);
   assert.ok(Math.abs((pool.weightKg ?? 0) - (405.45 + 325.332)) < 1e-9);
+});
+
+// ── P5-3: per-invoice ticks — OBD-wide k/n, ticked load, where the rest are ──
+
+const short = (t: string) => t.replace(/^([A-Z])-\d{6}-(\d+)$/, "$1-$2");
+
+test("drawRowsOf on a NARROWED row: only its invoices, k/n OBD-wide; one left still draws as an invoice", () => {
+  const split = { orderId: 18648, volumeLitres: 1000, weightKg: 1357, invoiceRows: buildInvoiceRows({ rows: ON_STOP, activeLines: LINES, obdKg: 1357 }) };
+  const pool = narrowToPlace(split, (d) => d === null);
+  assert.deepEqual(drawRowsOf(pool).map((d) => [d.key, d.k, d.n, d.first, d.last]), [
+    ["inv:17010", 1, 4, true, false],
+    ["inv:17012", 3, 4, false, true],
+  ]);
+  const trip = narrowToPlace(split, (d) => d === STOP);
+  assert.deepEqual(drawRowsOf(trip).map((d) => [d.key, d.k, d.n]), [["inv:17011", 2, 4], ["inv:17013", 4, 4]]);
+  // One invoice left in a place → an invoice draw "4/4", never a plain OBD row.
+  const one = narrowToInvoiceIds(split, [17013]);
+  assert.deepEqual(drawRowsOf(one).map((d) => [d.key, d.invoice?.id, d.k, d.n]), [["inv:17013", 17013, 4, 4]]);
+});
+
+test("narrowToInvoiceIds: null / every id → the same row; some → their litres and invoiceRowsAll kept", () => {
+  const whole: { orderId: number; volumeLitres: number; weightKg: number; invoiceRows: FloorInvoiceRow[]; invoiceRowsAll?: FloorInvoiceRow[] } =
+    { orderId: 18648, volumeLitres: 1000, weightKg: 1357, invoiceRows: buildInvoiceRows({ rows: ROWS, activeLines: LINES, obdKg: 1357 }) };
+  assert.equal(narrowToInvoiceIds(whole, null), whole);
+  assert.equal(narrowToInvoiceIds(whole, [17010, 17011, 17012, 17013]), whole);
+  const two = narrowToInvoiceIds(whole, [17011, 17013]);
+  assert.deepEqual(two.invoiceRows.map((r) => r.seq), [2, 4]);
+  assert.equal(two.invoiceRowsAll?.length, 4);
+  assert.equal(two.volumeLitres, 460);
+});
+
+test("awayChipOf: all in one place → null; split → '2 on L-20' in To plan, '2 in To plan' on the trip", () => {
+  const all = buildInvoiceRows({ rows: ON_STOP, activeLines: LINES, obdKg: 1357 });
+  const whole = buildInvoiceRows({ rows: ROWS, activeLines: LINES, obdKg: 1357 });
+  assert.equal(awayChipOf(whole, whole, short), null);
+  const inPool = all.filter((r) => r.tripDropId === null);
+  assert.deepEqual(awayChipOf(all, inPool, short), {
+    text: "2 on L-20",
+    title: "2 of 4 invoices on L-261007-20 — not shown here",
+  });
+  assert.equal(awayChipOf(all, all.filter((r) => r.tripDropId === STOP), short)?.text, "2 in To plan");
+  // On two trips and To plan: each place named.
+  const three = all.map((r) => (r.seq === 3 ? { ...r, tripDropId: 99, tripNumber: "L-261007-05" } : r));
+  assert.equal(awayChipOf(three, three.filter((r) => r.tripDropId === STOP), short)?.text, "1 in To plan · 1 on L-05");
 });

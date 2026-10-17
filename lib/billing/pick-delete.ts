@@ -49,6 +49,7 @@ import {
   type PickDeleteOwner,
 } from "@/lib/billing/pick-delete-rule";
 import { offFloorRefusal } from "@/lib/floor/off-floor";
+import { INVOICE_TRIPS_SELECT, invoiceTripsOf, onTripMessage, type InvoiceTrip } from "@/lib/order-invoices/trip-refusal";
 import { findLiveCi, liveCiRefusal } from "@/lib/ci/live-ci";
 import { buildCancelNote } from "@/lib/picking/cancel-reasons";
 import { resolveCatalogByCode, type CatalogEntry } from "@/lib/picking/resolve-lines";
@@ -197,6 +198,10 @@ interface RefusalBill {
   workflowStage: string;
   tripDropId: number | null;
   tripNumber: string | null;
+  /** The OBD's invoice rows and their trips (P5-3) — a split OBD partly on a
+   *  trip then reads "2 of 4 invoices on L-02 — remove them from the trip
+   *  first", like every other refusal (lib/order-invoices/trip-refusal.ts). */
+  invoiceTrips?: readonly InvoiceTrip[];
 }
 
 /** The result of pickDeleteCheck — `message` is the route's 409 text, `label`
@@ -229,12 +234,15 @@ export async function pickDeleteCheck(bill: RefusalBill, twinIds: readonly numbe
     workflowStage: bill.workflowStage,
     tripDropId: bill.tripDropId,
     tripNumber: bill.tripNumber,
+    invoiceTrips: bill.invoiceTrips,
   });
   if (floor !== null) {
+    // "On a trip" by the SAME test offFloorRefusal used — a split OBD can be
+    // partly on a trip with orders."tripDropId" null (its seq 1 invoice off it).
     const label =
       bill.workflowStage === "cancelled" ? "Already cancelled"
       : bill.workflowStage === "dispatched" ? "Dispatched"
-      : bill.tripDropId !== null ? "On a trip"
+      : onTripMessage(bill) !== null ? "On a trip"
       : "In tint room";
     return refused(label, floor);
   }
@@ -309,6 +317,8 @@ const BILL_SELECT = {
   // The SMU name — the decided list's owner filter (ownerOfSmus, 2026-10-01).
   smu: true,
   tripDrop: { select: { trip: { select: { tripNumber: true } } } },
+  // Each invoice row's trip — the on-trip refusal's words (P5-3).
+  invoices: INVOICE_TRIPS_SELECT,
   customer: { select: { customerName: true } },
   shipToOverrideCustomer: { select: { customerName: true } },
   querySnapshot: { select: { totalVolume: true, articleTag: true } },
@@ -380,7 +390,13 @@ export async function getActionableGroups(owner: PickDeleteOwner): Promise<{
       // Sequential awaits (CORE §3). The CI read only runs for a bill that
       // passed the cheap stage/trip checks first.
       const check = await pickDeleteCheck(
-        { id: r.id, workflowStage: r.workflowStage, tripDropId: r.tripDropId, tripNumber: r.tripDrop?.trip.tripNumber ?? null },
+        {
+          id: r.id,
+          workflowStage: r.workflowStage,
+          tripDropId: r.tripDropId,
+          tripNumber: r.tripDrop?.trip.tripNumber ?? null,
+          invoiceTrips: invoiceTripsOf(r.invoices),
+        },
         ids,
       );
       checks.set(id, check);
@@ -669,6 +685,7 @@ export async function pickDelete(args: {
       isChallanOrder: true,
       tripDropId: true,
       tripDrop: { select: { trip: { select: { tripNumber: true } } } },
+      invoices: INVOICE_TRIPS_SELECT,
       pickAssignment: { select: { pickerId: true } },
     },
   });
@@ -693,6 +710,7 @@ export async function pickDelete(args: {
       workflowStage: order.workflowStage,
       tripDropId: order.tripDropId,
       tripNumber: order.tripDrop?.trip.tripNumber ?? null,
+      invoiceTrips: invoiceTripsOf(order.invoices),
     },
     twins,
   );

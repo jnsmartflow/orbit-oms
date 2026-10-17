@@ -25,7 +25,7 @@
 import { Building2 } from "lucide-react";
 import { formatLitres, sumLitres } from "./status-pill";
 import { kgText } from "./route-cards";
-import { deskKeyOf, isAllDeskSelected, type FloorDeskKey } from "@/lib/floor/selection";
+import { deskKeysOf, isAllDeskSelected, type FloorDeskKey } from "@/lib/floor/selection";
 import type { DivisionBand as DivisionBandModel, DivisionKey, ShipToBlock } from "@/lib/floor/division-blocks";
 import type { FloorBoardRow } from "@/lib/floor/types";
 
@@ -102,9 +102,10 @@ export function ShipToBlockHeader({
 }) {
   const tickable = selection !== undefined && onToggleAll !== undefined;
   const allOn = tickable ? isAllDeskSelected(selection, block.rows) : false;
-  // Some, not all — the dash (owner, 2026-10-06). The same desk key the rows
-  // tick by (deskKeyOf), read through selection.ts, never re-derived.
-  const someOn = tickable && !allOn && block.rows.some((r) => selection.has(deskKeyOf(r)));
+  // Some, not all — the dash (owner, 2026-10-06). The same desk keys the rows
+  // tick by (deskKeysOf — one per drawn invoice on a split OBD, P5-3), read
+  // through selection.ts, never re-derived.
+  const someOn = tickable && !allOn && block.rows.some((r) => deskKeysOf(r).some((k) => selection.has(k)));
   return (
     // The trip stop header's classes (trip-desk.tsx), minus the stop number;
     // 8px more air above it than the stop header has (pt-5, owner 2026-10-06).

@@ -87,9 +87,31 @@ import {
 // 🔴 toggleAllIds / (no isSelectable), NOT the stage-gated pair (2026-09-10 d).
 // Selecting a bill on this screen means putting it on a TRIP, and trip
 // membership is not stage-gated — see the two families in lib/floor/selection.ts.
-import { toggleDeskKey, toggleAllDesk, rdKey, isRdKey, rdIdOf, selectionCountLabel, type FloorDeskSelection } from "@/lib/floor/selection";
+import {
+  toggleDeskKey,
+  toggleAllDesk,
+  rdKey,
+  isRdKey,
+  rdIdOf,
+  invKey,
+  isSplitObdRow,
+  selectionCountLabel,
+  selectionUnits,
+  billsBodyOf,
+  isPartialUnit,
+  wholeObdReason,
+  reconcileTicks,
+  tickedOrderIds,
+  unitKeys,
+  keysForOrders,
+  orderIdsInTickOrder,
+  type FloorDeskKey,
+  type FloorDeskSelection,
+  type SelectionUnit,
+} from "@/lib/floor/selection";
+import { narrowToInvoiceIds, narrowToPlace } from "@/lib/floor/invoice-rows";
 import { rowsInScope, scopeBoard } from "@/lib/floor/scope";
-import { parseSearch, applySearch, searchReport, lookupTermOf, type Searchable, type ParsedSearch } from "@/lib/floor/search";
+import { parseSearch, applySearch, searchReport, lookupTermOf, matchedInvoiceIdsOf, type Searchable, type ParsedSearch } from "@/lib/floor/search";
 import { applyFloorFilters, applyFlagFilters, EMPTY_FILTERS, type FloorFilters } from "@/lib/floor/filter";
 import type { DispatchWindow } from "@/components/floor/dispatch-slot-picker";
 import type { FloorScope, FloorBoardResult, FloorBoardRow, FloorPicker, FloorHoldRow, FloorCancelledRow, FloorDetailSource, FloorRouteClub, FloorSearchHit } from "@/lib/floor/types";
@@ -171,6 +193,48 @@ function addDaysIso(iso: string, delta: number): string {
  * differently. The feed is newest-created first, so a number a cancelled trip
  * gave back resolves to the newer trip holding it now.
  */
+/** A bills-route refusal (app/api/floor/trips/[id]/bills). `invoiceRowId` = about ONE invoice of a split OBD. */
+type BillsFailed = { orderId: number; error: string; invoiceRowId?: number };
+
+/**
+ * "2 bills not added" — or "2 invoices not added" when every refusal is about
+ * one invoice of a split OBD (P5-3). An unsplit selection reads as it always did.
+ */
+function notDoneLabel(failed: readonly BillsFailed[], what: string): string {
+  const n = failed.length;
+  const perInvoice = n > 0 && failed.every((f) => f.invoiceRowId !== undefined);
+  return `${n} ${perInvoice ? `invoice${n === 1 ? "" : "s"}` : `bill${n === 1 ? "" : "s"}`} ${what}`;
+}
+
+/**
+ * What an Undo of an add takes back: each attached OBD's units, minus any
+ * invoice the route refused (it never went on). A whole unit with a refusal
+ * becomes the explicit list of the rest (`rows` = full board rows).
+ */
+function undoUnitsOf(
+  sent: readonly SelectionUnit[],
+  attached: readonly number[],
+  failed: readonly BillsFailed[],
+  rows: readonly FloorBoardRow[],
+): SelectionUnit[] {
+  const refused = new Map<number, Set<number>>();
+  for (const f of failed) {
+    if (f.invoiceRowId === undefined) continue;
+    const s = refused.get(f.orderId) ?? new Set<number>();
+    s.add(f.invoiceRowId);
+    refused.set(f.orderId, s);
+  }
+  const byId = new Map(rows.map((r) => [r.orderId, r]));
+  return sent
+    .filter((u) => attached.includes(u.orderId))
+    .flatMap((u): SelectionUnit[] => {
+      const ref = refused.get(u.orderId);
+      if (!ref) return [u];
+      const ids = (u.invoiceRowIds ?? (byId.get(u.orderId)?.invoiceRows ?? []).map((i) => i.id)).filter((id) => !ref.has(id));
+      return ids.length > 0 ? [{ orderId: u.orderId, invoiceRowIds: ids }] : [];
+    });
+}
+
 function findTripByNumber(trips: TripSummary[], tripNumber: string): TripSummary | undefined {
   return trips.find((x) => x.tripNumber === tripNumber);
 }
@@ -531,7 +595,8 @@ export function FloorPage({
    * How many bills the last press added, for the band-s brief Undo — and the ids
    * to hand back. Cleared after ten seconds so the band goes quiet again.
    */
-  const [lastAdd, setLastAdd] = useState<{ tripId: number; orderIds: number[] } | null>(null);
+  // Units, not ids (P5-3): an add of 2 of an OBD's 4 invoices undoes those 2.
+  const [lastAdd, setLastAdd] = useState<{ tripId: number; units: SelectionUnit[] } | null>(null);
   const lastAddTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ⚠ REFS, NOT DEPENDENCIES. `setSelection()` is asynchronous, so a handler
@@ -539,7 +604,9 @@ export function FloorPage({
   // in the same tick as a tick-box change. Putting them in the dependency array
   // instead would rebuild every trip handler on every keystroke of a selection.
   // A ref reads the CURRENT value at call time and keeps the callbacks stable.
-  const selectedIdsRef = useRef<number[]>([]);
+  // The selection as UNITS (P5-3, lib/floor/selection.ts selectionUnits) — per
+  // OBD, the whole OBD or the ticked invoice rows. Every trip press posts these.
+  const selectedUnitsRef = useRef<SelectionUnit[]>([]);
   const tripsRef = useRef<TripSummary[] | null>(null);
 
   // Selection (design §7.8) — a Set of orderIds; survives a re-sort, cleared on
@@ -1010,8 +1077,8 @@ export function FloorPage({
    * still picked.
    */
   const undoAdd = useCallback(
-    async (tripId: number, orderIds: number[]) => {
-      if (orderIds.length === 0) return;
+    async (tripId: number, units: SelectionUnit[]) => {
+      if (units.length === 0) return;
       setTripBusyId(tripId);
       try {
         const detail = await fetch(`/api/floor/trips/${tripId}`, { cache: "no-store" })
@@ -1022,23 +1089,28 @@ export function FloorPage({
           return;
         }
         const stillOn = new Set(detail.drops.flatMap((d) => d.orderIds));
-        const ids = orderIds.filter((id) => stillOn.has(id));
-        const moved = orderIds.length - ids.length;
-        if (ids.length === 0) {
+        // Per OBD; the route then takes off only the invoices this press put on
+        // (P5-3 — `invoiceRowIds` when the add was partial), and refuses any
+        // that moved, by name.
+        const back = units.filter((u) => stillOn.has(u.orderId));
+        const moved = units.length - back.length;
+        if (back.length === 0) {
           toast.info("Nothing to undo — those bills are no longer on this trip.");
           return;
         }
         const res = await fetch(`/api/floor/trips/${tripId}/bills`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ orderIds: ids, action: "remove" }),
+          body: JSON.stringify(billsBodyOf(back, "remove")),
         });
         const body = await res.json().catch(() => ({}));
         const detached: number[] = body?.detached ?? [];
+        const failed: BillsFailed[] = body?.failed ?? [];
         if (!res.ok && detached.length === 0) {
-          toast.error(`Could not undo — ${body?.failed?.[0]?.error ?? body?.error ?? `HTTP ${res.status}`}`);
+          toast.error(`Could not undo — ${failed[0]?.error ?? body?.error ?? `HTTP ${res.status}`}`);
           return;
         }
+        if (failed.length > 0) toast.error(`${notDoneLabel(failed, "not undone")} — ${failed[0].error}`);
         toast.success(
           `Undone — ${detached.length} bill${detached.length === 1 ? "" : "s"} back in the pool` +
             (moved > 0 ? `; ${moved} had already been moved elsewhere and ${moved === 1 ? "was" : "were"} left alone` : ""),
@@ -1116,19 +1188,23 @@ export function FloorPage({
   /** Add the ticked bills to an existing trip. */
   const addSelectionToTrip = useCallback(
     async (tripId: number, opts?: { quiet?: boolean }) => {
-      const ids = selectedIdsRef.current;
-      if (ids.length === 0) return;
+      const units = selectedUnitsRef.current;
+      if (units.length === 0) return;
       setTripBusyId(tripId);
       try {
+        // Whole OBDs as before; a partly ticked split OBD names its invoice
+        // rows (P5-3, billsBodyOf).
         const res = await fetch(`/api/floor/trips/${tripId}/bills`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ orderIds: ids, action: "add" }),
+          body: JSON.stringify(billsBodyOf(units, "add")),
         });
         const body = await res.json().catch(() => ({}));
         const attached: number[] = body?.attached ?? [];
         const skipped: number[] = body?.skipped ?? [];
-        const failed: Array<{ orderId: number; error: string }> = body?.failed ?? [];
+        const failed: BillsFailed[] = body?.failed ?? [];
+        // What Undo takes back — the invoices that actually went on.
+        const undoUnits = undoUnitsOf(units, attached, failed, dataRef.current?.floor.rows ?? []);
         if (!res.ok && attached.length === 0 && skipped.length === 0) {
           toast.error(`Could not add — ${failed[0]?.error ?? body?.error ?? `HTTP ${res.status}`}`);
         } else if (opts?.quiet) {
@@ -1138,7 +1214,7 @@ export function FloorPage({
           // being pressed. The one thing the toast carried is kept: the band
           // shows "· N added · Undo" for ten seconds.
           if (attached.length > 0) {
-            setLastAdd({ tripId, orderIds: attached });
+            setLastAdd({ tripId, units: undoUnits });
             if (lastAddTimer.current) clearTimeout(lastAddTimer.current);
             lastAddTimer.current = setTimeout(() => setLastAdd(null), 10_000);
           }
@@ -1173,15 +1249,15 @@ export function FloorPage({
             // actually attached, off this trip. Nothing to undo when every bill
             // was already there.
             ...(attached.length > 0
-              ? { action: { label: "Undo", onClick: () => void undoAdd(tripId, attached) } }
+              ? { action: { label: "Undo", onClick: () => void undoAdd(tripId, undoUnits) } }
               : {}),
           });
         }
         // Never swallowed, even beside a success — FLOOR §6(b).
+        // The route's words, verbatim — "I536230713 is already on L-… — remove
+        // it from that trip first" for one invoice of a split OBD.
         if (failed.length > 0) {
-          toast.error(
-            `${failed.length} bill${failed.length === 1 ? "" : "s"} not added — ${failed[0].error}`,
-          );
+          toast.error(`${notDoneLabel(failed, "not added")} — ${failed[0].error}`);
         }
       } catch {
         toast.error("Could not add to the trip — check your connection.");
@@ -1196,24 +1272,47 @@ export function FloorPage({
 
   /** Take the ticked bills off whatever trip they are on. */
   const removeSelectionFromTrips = useCallback(
-    async (rowsToRemove: FloorBoardRow[]) => {
-      if (rowsToRemove.length === 0) return;
+    async (unitsToRemove: SelectionUnit[], boardRows: FloorBoardRow[]) => {
+      if (unitsToRemove.length === 0) return;
       setTripBarBusy(true);
       try {
         // Grouped by trip because the route is per-trip. A selection spanning
         // two bands is ordinary — the operator ticks by eye — so this posts once
         // per trip rather than refusing the mixed case.
-        const byTrip = new Map<string, number[]>();
-        for (const r of rowsToRemove) {
-          if (!r.tripNumber) continue;
-          const arr = byTrip.get(r.tripNumber) ?? [];
-          arr.push(r.orderId);
-          byTrip.set(r.tripNumber, arr);
+        //
+        // PER INVOICE (P5-3): a split OBD is grouped by each ticked invoice's
+        // OWN trip, and a partly ticked one sends those invoice rows only. A
+        // whole OBD goes to every trip it has invoices on — the route strips
+        // only that trip's rows.
+        const rowById = new Map(boardRows.map((r) => [r.orderId, r]));
+        const byTrip = new Map<string, SelectionUnit[]>();
+        const put = (tripNumber: string, u: SelectionUnit) => {
+          const arr = byTrip.get(tripNumber) ?? [];
+          arr.push(u);
+          byTrip.set(tripNumber, arr);
+        };
+        for (const u of unitsToRemove) {
+          const r = rowById.get(u.orderId);
+          if (!r) continue;
+          const inv = r.invoiceRows ?? [];
+          if (inv.length >= 2) {
+            const chosen = u.invoiceRowIds === null ? inv : inv.filter((i) => u.invoiceRowIds!.includes(i.id));
+            const onTrip = new Map<string, number[]>();
+            for (const i of chosen) {
+              if (!i.tripNumber) continue;
+              onTrip.set(i.tripNumber, [...(onTrip.get(i.tripNumber) ?? []), i.id]);
+            }
+            for (const [tripNumber, ids] of Array.from(onTrip.entries())) {
+              put(tripNumber, { orderId: u.orderId, invoiceRowIds: u.invoiceRowIds === null ? null : ids });
+            }
+          } else if (r.tripNumber) {
+            put(r.tripNumber, u);
+          }
         }
         const allTrips = tripsRef.current ?? [];
         let removed = 0;
         const problems: string[] = [];
-        for (const [tripNumber, orderIds] of Array.from(byTrip.entries())) {
+        for (const [tripNumber, units] of Array.from(byTrip.entries())) {
           const t = findTripByNumber(allTrips, tripNumber);
           if (!t) {
             problems.push(`${tripNumber} is no longer on the board`);
@@ -1222,11 +1321,11 @@ export function FloorPage({
           const res = await fetch(`/api/floor/trips/${t.id}/bills`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ orderIds, action: "remove" }),
+            body: JSON.stringify(billsBodyOf(units, "remove")),
           });
           const body = await res.json().catch(() => ({}));
           const detached: number[] = body?.detached ?? [];
-          const failed: Array<{ orderId: number; error: string }> = body?.failed ?? [];
+          const failed: BillsFailed[] = body?.failed ?? [];
           removed += detached.length;
           if (failed.length > 0) problems.push(`${tripNumber}: ${failed[0].error}`);
           else if (!res.ok) problems.push(`${tripNumber}: ${body?.error ?? `HTTP ${res.status}`}`);
@@ -1253,9 +1352,9 @@ export function FloorPage({
    * never reaches the bills route: that would take the bill off its FIRST trip.
    */
   const removeSelectionSplit = useCallback(
-    async (rowsToRemove: FloorBoardRow[], redeliveryIds: number[], tripId: number | null) => {
+    async (unitsToRemove: SelectionUnit[], boardRows: FloorBoardRow[], redeliveryIds: number[], tripId: number | null) => {
       if (redeliveryIds.length === 0) {
-        await removeSelectionFromTrips(rowsToRemove);
+        await removeSelectionFromTrips(unitsToRemove, boardRows);
         return;
       }
       setTripBarBusy(true);
@@ -1282,9 +1381,9 @@ export function FloorPage({
       } finally {
         setTripBarBusy(false);
       }
-      if (rowsToRemove.length > 0) {
+      if (unitsToRemove.length > 0) {
         // Clears the selection and reloads itself.
-        await removeSelectionFromTrips(rowsToRemove);
+        await removeSelectionFromTrips(unitsToRemove, boardRows);
       } else {
         setSelection(new Set());
         await load();
@@ -1365,8 +1464,23 @@ export function FloorPage({
   // trip, New trip, Remove, Hold, Cancel / Raise CI, the type choice) reads
   // `selectedRows` / `selectedIdsRef`, so an `rd:` key (a ticked re-delivery)
   // can never reach one of them — it matches no board row by construction.
-  const selectedRows = rows.filter((r) => selection.has(r.orderId));
-  const selectedIds = selectedRows.map((r) => r.orderId);
+  //
+  // PER INVOICE (P5-3): a split OBD is ticked by its invoices (`inv:` keys), so
+  // the selection is read as UNITS — per OBD, whole or the ticked invoice rows
+  // (lib/floor/selection.ts selectionUnits). `selectedRows` stays the WHOLE
+  // OBD rows (what Hold / Cancel / Raise CI / Add invoices act on);
+  // `selectedLoadRows` are them narrowed to the ticked invoices, for the bar's
+  // litres / kg and "1 OBD · 2 of 4 invoices".
+  const selectedUnits = selectionUnits(selection, rows);
+  const unitByOrder = new Map(selectedUnits.map((u) => [u.orderId, u]));
+  const selectedRows = rows.filter((r) => unitByOrder.has(r.orderId));
+  const selectedLoadRows = selectedRows.map((r) => narrowToInvoiceIds(r, unitByOrder.get(r.orderId)?.invoiceRowIds ?? null));
+  // Owner decision 3: the whole-OBD actions are off while any OBD is partly ticked.
+  const wholeObdBlock = wholeObdReason(
+    selectedRows
+      .filter((r) => isPartialUnit(unitByOrder.get(r.orderId)!))
+      .map((r) => ({ obdNumber: r.obdNumber, invoiceCount: r.invoiceRows.length })),
+  );
   // RE-DELIVERIES ticked on the open trip (2026-10-03) — `rd:<id>` keys, resolved
   // against the trip detail the panel draws. Only Remove from trip reads them.
   const tripRedeliveryById = new Map<number, TripRedeliveryRow>(
@@ -1379,7 +1493,7 @@ export function FloorPage({
   // Keep the refs the trip handlers read in step with the render. Assigning
   // during render is safe for a ref (no subscription, no re-render) and is what
   // makes the handlers stable without going stale.
-  selectedIdsRef.current = selectedIds;
+  selectedUnitsRef.current = selectedUnits;
   tripsRef.current = trips;
 
   // ⚠ THE RAIL'S THREE HANDLERS WENT WITH THE RAIL (2026-09-10) — per-card
@@ -1404,6 +1518,8 @@ export function FloorPage({
   const onToggleRow = useCallback((id: number) => setSelection((s) => toggleDeskKey(s, id)), []);
   // A RE-DEL row ticks by `rd:<redeliveryId>` — never the bill's orderId (lib/floor/selection.ts).
   const onToggleRedelivery = useCallback((redeliveryId: number) => setSelection((s) => toggleDeskKey(s, rdKey(redeliveryId))), []);
+  // ONE invoice of a split OBD ticks by `inv:<order_invoices.id>` (P5-3).
+  const onToggleInvoice = useCallback((invoiceRowId: number) => setSelection((s) => toggleDeskKey(s, invKey(invoiceRowId))), []);
   const onToggleAll = useCallback((tableRows: FloorBoardRow[]) => setSelection((s) => toggleAllDesk(s, tableRows)), []);
 
   // ── Bulk bar actions ──────────────────────────────────────────────────────
@@ -1571,8 +1687,11 @@ export function FloorPage({
       } else {
         toast.success(`${n} bill${n === 1 ? "" : "s"} put on hold${tripsBit}`, undo);
       }
-      // The failed ones stay ticked, so the planner can see which they were.
-      setSelection(new Set(failed.map((f) => f.orderId).filter((id): id is number => typeof id === "number")));
+      // The failed ones stay ticked, so the planner can see which they were
+      // (a split OBD by every invoice — Hold acts on the whole OBD).
+      setSelection(
+        new Set(keysForOrders(failed.map((f) => f.orderId).filter((id): id is number => typeof id === "number"), dataRef.current?.floor.rows ?? [])),
+      );
       await load();
     },
     [load, undoHold],
@@ -1867,17 +1986,31 @@ export function FloorPage({
         //     only, by the pool's own test (`isPoolRow`, trip-desk.tsx);
         //   - an open trip: that trip's own bills only, read off the stops the
         //     panel renders (unscoped, as the panel is).
+        //
+        // PER INVOICE (P5-3): each row is NARROWED to the invoices the pane
+        // draws there (the pool's off-trip ones, the trip's own), and a split
+        // OBD ticks only the invoice the number named — every drawn invoice
+        // when the number was the OBD or its SO. An invoice of it drawn
+        // elsewhere ticks nothing here.
         let visible: FloorBoardRow[];
         if (railSelection.kind === "pool" || addingToTripId !== null) {
-          visible = scopedData.floor.rows.filter(isPoolRow);
+          visible = scopedData.floor.rows.filter(isPoolRow).map((r) => narrowToPlace(r, (d) => d === null));
         } else if (tripDetail !== null && tripDetail.id === railSelection.tripId) {
           const onTrip = new Set(tripDetail.drops.flatMap((d) => d.orderIds));
-          visible = (data?.floor.rows ?? []).filter((r) => onTrip.has(r.orderId));
+          const dropIds = new Set(tripDetail.drops.map((d) => d.id));
+          visible = (data?.floor.rows ?? [])
+            .filter((r) => onTrip.has(r.orderId))
+            .map((r) => narrowToPlace(r, (d) => d !== null && dropIds.has(d)));
         } else {
           visible = [];
         }
-        const ids = applySearch(visible, p).map((r) => r.orderId);
-        setSelection(new Set(ids));
+        const keys = applySearch(visible, p).flatMap((r): FloorDeskKey[] => {
+          if (!isSplitObdRow(r)) return [r.orderId];
+          const named = matchedInvoiceIdsOf({ invoiceRows: r.invoiceRowsAll ?? r.invoiceRows }, p);
+          const drawn = r.invoiceRows.map((i) => i.id);
+          return (named.length > 0 ? drawn.filter((id) => named.includes(id)) : drawn).map(invKey);
+        });
+        setSelection(new Set(keys));
       } else {
         setSelection(new Set());
       }
@@ -2563,18 +2696,17 @@ export function FloorPage({
       // finished bill the moment the marker fired, silently undoing the selection
       // a planner had just made (2026-09-10 d). A reconcile that drops ticks the
       // UI allows is worse than none: it is unexplainable from the screen.
-      const stillSelectable = new Set<number>(
-        (board.floor?.rows ?? []).map((r: FloorBoardRow) => r.orderId),
-      );
+      //
+      // PER INVOICE (P5-3): an `inv:` tick is mapped to its OBD and dropped
+      // when the invoice MOVED (another trip stop, or off one) — reconcileTicks.
+      // A ticked RE-DELIVERY (`rd:` key) is not a board row and is never judged
+      // here — the trip detail decides whether it still exists.
+      const freshRows: FloorBoardRow[] = board.floor?.rows ?? [];
       setSelection((prev) => {
-        const next: FloorDeskSelection = new Set();
-        let dropped = 0;
-        for (const id of Array.from(prev)) {
-          // A ticked RE-DELIVERY (`rd:` key) is not a board row and is never
-          // judged here — the trip detail decides whether it still exists.
-          if (isRdKey(id) || stillSelectable.has(id)) next.add(id);
-          else dropped++;
-        }
+        const before = dataRef.current?.floor.rows ?? [];
+        const after = new Map<number, FloorBoardRow | null>(freshRows.map((r) => [r.orderId, r]));
+        for (const id of tickedOrderIds(prev, before)) if (!after.has(id)) after.set(id, null);
+        const { next, dropped } = reconcileTicks(prev, before, after);
         if (dropped > 0) {
           toast.info(`${dropped} selected bill${dropped === 1 ? "" : "s"} changed elsewhere — unticked`);
           return next;
@@ -2773,21 +2905,24 @@ export function FloorPage({
     const ctl = feed.controller.current;
     if (!ctl) return;
     const sel = selectionRef.current;
-    const ids = ctl.pendingSnapshot().orders.filter((id) => sel.has(id) && !tickCheckedRef.current.has(id));
+    // The rows the ticks were made on — the board does not move while ticks are
+    // up. `inv:` keys count for their OBD (P5-3).
+    const before = dataRef.current?.floor.rows ?? [];
+    const ticked = new Set(tickedOrderIds(sel, before));
+    const ids = ctl.pendingSnapshot().orders.filter((id) => ticked.has(id) && !tickCheckedRef.current.has(id));
     if (ids.length === 0) return;
     for (const id of ids) tickCheckedRef.current.add(id);
     const body = await postRows(ids.slice(0, MAX_PATCH_IDS));
     if (body.enabled === false) return ctl.noteDisabled();
-    const left = new Set((body.rows ?? []).filter((r) => r.tab !== "board").map((r) => r.id));
-    if (left.size === 0) return;
+    // Left the board → null; still on it → the fresh row, so a ticked invoice
+    // that MOVED (to a trip, off one) is unticked too.
+    const after = new Map<number, FloorBoardRow | null>(
+      (body.rows ?? []).map((r) => [r.id, r.tab === "board" ? (r.row as FloorBoardRow) : null] as const),
+    );
+    if (after.size === 0) return;
     setSelection((prev) => {
-      const next: FloorDeskSelection = new Set();
-      let dropped = 0;
-      for (const id of Array.from(prev)) {
-        // `rd:` keys are never board rows — kept as they are.
-        if (!isRdKey(id) && left.has(id)) dropped++;
-        else next.add(id);
-      }
+      // `rd:` keys are never board rows — kept as they are (reconcileTicks).
+      const { next, dropped } = reconcileTicks(prev, before, after);
       if (dropped === 0) return prev;
       toast.info(`${dropped} selected bill${dropped === 1 ? "" : "s"} changed elsewhere — unticked`);
       return next;
@@ -3108,9 +3243,10 @@ export function FloorPage({
    */
   const newTripTypeName = useMemo<string | null>(() => {
     const typeById = new Map(selectedRows.map((r) => [r.orderId, r.deliveryType]));
-    // Numeric keys only — an `rd:` key is never a bill on this decision.
-    const inTickOrder = Array.from(selection)
-      .filter((id): id is number => typeof id === "number" && typeById.has(id))
+    // Bills only — an `rd:` key is never a bill on this decision; an `inv:`
+    // key counts for its OBD, once (P5-3).
+    const inTickOrder = orderIdsInTickOrder(selection, selectedRows)
+      .filter((id) => typeById.has(id))
       .map((id) => typeById.get(id) ?? null);
     return chooseTripTypeName(inTickOrder, scope);
   }, [selection, selectedRows, scope]);
@@ -3141,7 +3277,19 @@ export function FloorPage({
   //     the plan regroups, and a toast offers "Open" (which selects the trip
   //     on the rail exactly as a rail click does) instead of opening it.
   const createTripWithSelection = useCallback(async (fromPlan?: { orderIds: number[]; vehicleSize?: VehicleSize }) => {
-    const ids = fromPlan ? fromPlan.orderIds : selectedIdsRef.current;
+    // UNITS (P5-3). A load-plan card's OBD that is partly on a trip already
+    // brings only its invoices on no trip — the ones the card counted
+    // (lib/floor/load-plan-v2-run.ts placeLoad) — so the route never refuses
+    // the others one by one.
+    const boardRows = data?.floor.rows ?? [];
+    const units: SelectionUnit[] = fromPlan
+      ? fromPlan.orderIds.map((orderId) => {
+          const inv = boardRows.find((r) => r.orderId === orderId)?.invoiceRows ?? [];
+          const free = inv.filter((i) => i.tripDropId === null).map((i) => i.id);
+          return { orderId, invoiceRowIds: inv.length >= 2 && free.length > 0 && free.length < inv.length ? free : null };
+        })
+      : selectedUnitsRef.current;
+    const ids = units.map((u) => u.orderId);
     if (ids.length === 0) return;
     // ── HAND TRIP (2026-09-24, design §4) ─────────────────────────────────
     // "+ New trip" with EVERY ticked bill marked Hand builds a Hand trip — the
@@ -3158,7 +3306,7 @@ export function FloorPage({
       return;
     }
     const isHandTrip = handCount > 0;
-    if (fromPlan) setSelection(new Set(ids));
+    if (fromPlan) setSelection(new Set(unitKeys(units, boardRows)));
     setTripBarBusy(true);
     try {
       let opts = tripOptions;
@@ -3220,14 +3368,12 @@ export function FloorPage({
       const billsRes = await fetch(`/api/floor/trips/${trip.id}/bills`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ orderIds: ids, action: "add" }),
+        body: JSON.stringify(billsBodyOf(units, "add")),
       });
       const billsBody = await billsRes.json().catch(() => ({}));
-      const failed: Array<{ orderId: number; error: string }> = billsBody?.failed ?? [];
+      const failed: BillsFailed[] = billsBody?.failed ?? [];
       if (failed.length > 0) {
-        toast.error(
-          `${trip.tripNumber} created, but ${failed.length} bill${failed.length === 1 ? "" : "s"} did not go on — ${failed[0].error}`,
-        );
+        toast.error(`${trip.tripNumber} created, but ${notDoneLabel(failed, "did not go on")} — ${failed[0].error}`);
       }
       if (fromPlan) {
         // STAY on the plan (owner): clear the ticks, reload so the plan
@@ -3273,7 +3419,8 @@ export function FloorPage({
   // "0" and "unknown" are the same stored value — folding them into the sum
   // would report a van-load as lighter than it is, silently, which is the one
   // failure mode this number exists to prevent.
-  const selectionWeight = useMemo(() => sumWeightKg(selectedRows), [selectedRows]);
+  // Only the TICKED invoices of a split OBD (P5-3) — `selectedLoadRows`.
+  const selectionWeight = useMemo(() => sumWeightKg(selectedLoadRows), [selectedLoadRows]);
   // Pieces. Bills with no article tag are skipped rather than counted as zero
   // (~27% of SKUs are unmastered, CORE §7.1.c) — countArticles reports those
   // separately and the bar simply omits the number when nothing parsed.
@@ -3685,6 +3832,7 @@ export function FloorPage({
               onStepHistory={stepHistory}
               rowSelection={selection}
               onToggleRow={onToggleRow}
+              onToggleInvoice={onToggleInvoice}
               onToggleRedelivery={onToggleRedelivery}
               onOpenRedelivery={setRedeliveryInfoId}
               onAddRedelivery={setRedeliveryTripId}
@@ -3702,8 +3850,8 @@ export function FloorPage({
               onAddToTrip={(id) => void addSelectionToTrip(id)}
               // Targeted add — "+ Add bills" inside a trip (2026-09-16).
               addingToTripId={addingToTripId}
-              lastAddCount={lastAdd?.orderIds.length ?? 0}
-              onUndoLastAdd={() => { if (lastAdd) { const { tripId, orderIds } = lastAdd; setLastAdd(null); void undoAdd(tripId, orderIds); } }}
+              lastAddCount={lastAdd?.units.length ?? 0}
+              onUndoLastAdd={() => { if (lastAdd) { const { tripId, units } = lastAdd; setLastAdd(null); void undoAdd(tripId, units); } }}
               onStartAddingTo={startAddingTo}
               onDoneAdding={stopAddingTo}
               tripBusyId={tripBusyId}
@@ -3810,9 +3958,10 @@ export function FloorPage({
                     count={selectedRows.length + selectedRedeliveryIds.length}
                     // "1 invoice · 2 OBDs" when an invoice pair is ticked; null
                     // keeps "N selected" (and always beside a re-delivery).
-                    countLabel={selectedRedeliveryIds.length > 0 ? null : selectionCountLabel(selectedRows)}
+                    // "1 OBD · 2 of 4 invoices" when a split OBD is partly ticked (P5-3).
+                    countLabel={selectedRedeliveryIds.length > 0 ? null : selectionCountLabel(selectedLoadRows)}
                     redeliveryCount={selectedRedeliveryIds.length}
-                    litres={formatLitres(sumLitres(selectedRows))}
+                    litres={formatLitres(sumLitres(selectedLoadRows))}
                     weight={formatWeightKg(selectionWeight.kg)}
                     weightIsPartial={selectionWeight.unknown > 0}
                     articles={selectionArticles}
@@ -3824,7 +3973,8 @@ export function FloorPage({
                     onNewTripWithSelection={() => void createTripWithSelection()}
                     onRemoveFromTrip={() =>
                       void removeSelectionSplit(
-                        selectedRows,
+                        selectedUnits,
+                        rows,
                         selectedRedeliveryIds,
                         railSelection.kind === "trip" ? railSelection.tripId : null,
                       )
@@ -3833,7 +3983,11 @@ export function FloorPage({
                     contextLabel={barContextLabel}
                     menuOpen={moreOpen}
                     onMenuOpenChange={setMoreOpen}
-                    onHold={() => void bulkHold(selectedRows)}
+                    onHold={() => { if (wholeObdBlock === null) void bulkHold(selectedRows); }}
+                    // Owner decision 3 (P5-3): Hold / Cancel / Raise CI / Add
+                    // invoices act on the WHOLE OBD — grey with this reason
+                    // while an OBD is only partly ticked.
+                    wholeObdBlock={wholeObdBlock}
                     addInvoices={addInvMenuItem}
                     onAddInvoices={() => {
                       if (singleAddInvRow) openAddInvoices(singleAddInvRow.orderId, singleAddInvRow.obdNumber);
@@ -3842,9 +3996,10 @@ export function FloorPage({
                       // One tick per OBD in the form, all pre-ticked — an invoice
                       // pair's members arrive as two lines and either can be
                       // unticked (owner, 2026-10-08). Unticked ones stay selected.
+                      wholeObdBlock === null &&
                       openOffFloor(
                         selectedRows.map(boardRowToOffFloorBill),
-                        (_done, notDone) => setSelection(new Set(notDone)),
+                        (_done, notDone) => setSelection(new Set(keysForOrders(notDone, rows))),
                         { perBillTicks: true },
                       )
                     }
