@@ -102,15 +102,16 @@ export interface PreparedTripSheetShare {
 
 /**
  * The slow half: caption + capture. `groupLabel` (a list share chip, e.g.
- * "City 1") rides in the caption's first line, the file name and the share
- * title — "L-261017-02 · City 1". Throws on a capture failure.
+ * "City 1") goes in the FILE NAME only — "TripSheet-L-261017-02-City-1.png".
+ * The caption and the share title are the full trip's format, no label
+ * (owner, 2026-10-17). Throws on a capture failure.
  */
 export async function prepareTripSheetShare(sheet: TripSheet, groupLabel?: string): Promise<PreparedTripSheetShare> {
-  const caption = buildTripSheetCaption(sheet, groupLabel);
+  const caption = buildTripSheetCaption(sheet);
   const blob = await captureSheet(sheet);
   const tag = groupLabel ? `-${groupLabel.replace(/[^A-Za-z0-9]+/g, "-")}` : "";
   const fileName = `TripSheet-${sheet.header.tripNumber}${tag}.png`;
-  const title = `Trip Sheet ${sheet.header.tripNumber}${groupLabel ? ` · ${groupLabel}` : ""}`;
+  const title = `Trip Sheet ${sheet.header.tripNumber}`;
   return { file: new File([blob], fileName, { type: "image/png" }), caption, title };
 }
 

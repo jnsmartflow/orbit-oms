@@ -20,6 +20,10 @@
 // (POST /api/trip-sheets/[id]/share-log) and the chip turns green. Cancelled →
 // no log. NotAllowedError → the captured file is kept and the chip offers
 // "Tap to send". Tapping the card still opens the full trip.
+// NEVER STALE (2026-10-17): the list refetches when visible again and every
+// 60 s; a chip whose row is older than 60 s refetches ITS trip first, captures
+// that, and stops at "Tap to send" (the fetch spent the tap). The caption has
+// no group label — the file name carries it.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
@@ -41,8 +45,9 @@ import type {
   TripSheetMatchField,
   TripSheetSearchHit,
 } from "@/lib/trip-sheet/types";
-import { filterSheet } from "@/lib/trip-sheet/share-groups";
+import { filterSheet, groupOrderIds } from "@/lib/trip-sheet/share-groups";
 import type { PreparedTripSheetShare } from "@/lib/trip-sheet/share-image";
+import type { TripSheet } from "@/lib/trip-sheet/types";
 import { CallButton, CardShell, CardShelf, HandChip, ReadyChip, fmtNum } from "./card-bits";
 
 type ShareModule = typeof import("@/lib/trip-sheet/share-image");
@@ -54,6 +59,24 @@ type ChipPhase = "busy" | "ready";
 type ChipView = "idle" | "busy" | "ready" | "shared";
 
 const chipId = (tripId: number, key: string) => `${tripId}:${key}`;
+
+/** The list refetches this often while visible, and a chip older than this refetches its trip first. */
+const LIST_REFRESH_MS = 60_000;
+
+/** When each row object (list or search hit) arrived from the server — a refetch makes new objects. */
+const fetchedAt = new WeakMap<object, number>();
+
+function stampFetched<T extends object>(rows: T[]): T[] {
+  const now = Date.now();
+  for (const r of rows) fetchedAt.set(r, now);
+  return rows;
+}
+
+/** A captured file waiting for its second tap, with the bills it covers (what the log records). */
+interface PreparedChip {
+  share: PreparedTripSheetShare;
+  orderIds: number[];
+}
 
 const MATCH_LABEL: Record<TripSheetMatchField, string> = {
   trip: "trip",
@@ -104,15 +127,25 @@ export function TripSheetsList({
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<TripSheetTab>(initialTab);
 
-  const load = useCallback(async (d: string) => {
-    setRows(null);
-    setError(null);
+  // The date the newest request is for — a slower answer for another day is dropped.
+  const dateRef = useRef(date);
+  dateRef.current = date;
+
+  /** `silent` = swap the rows in place (no spinner, keep the old rows on a failure). */
+  const load = useCallback(async (d: string, silent = false) => {
+    if (!silent) {
+      setRows(null);
+      setError(null);
+    }
     try {
       const res = await fetch(`/api/trip-sheets?date=${d}`, { cache: "no-store" });
       const body = await res.json().catch(() => null);
       if (!res.ok) throw new Error(body?.error ?? "Could not load trips");
-      setRows(body.rows as TripSheetListRow[]);
+      if (d !== dateRef.current) return;
+      setRows(stampFetched(body.rows as TripSheetListRow[]));
+      setError(null);
     } catch (err) {
+      if (silent || d !== dateRef.current) return;
       setError(err instanceof Error ? err.message : "Could not load trips");
       setRows([]);
     }
@@ -121,6 +154,35 @@ export function TripSheetsList({
   useEffect(() => {
     load(date);
   }, [date, load]);
+
+  // NEVER STALE WHEN SHARED (2026-10-17): a chip shares the row's in-memory
+  // sheet, so the list refetches in place when the page becomes visible again
+  // and every 60 s while it is visible. No timer runs while hidden.
+  const refresh = useCallback(() => load(dateRef.current, true), [load]);
+  useEffect(() => {
+    let timer: ReturnType<typeof setInterval> | null = null;
+    const start = () => {
+      if (timer === null) timer = setInterval(refresh, LIST_REFRESH_MS);
+    };
+    const stop = () => {
+      if (timer !== null) clearInterval(timer);
+      timer = null;
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") {
+        refresh();
+        start();
+      } else {
+        stop();
+      }
+    };
+    if (document.visibilityState === "visible") start();
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      stop();
+    };
+  }, [refresh]);
 
   // Date + tab in the URL so Back from a trip lands on the same day and tab. A
   // history REPLACE, not router.replace — no server round trip, no refresh.
@@ -158,6 +220,7 @@ export function TripSheetsList({
         setTab={setTab}
         counts={counts}
         userInitials={userInitials}
+        refresh={refresh}
       />
     </RoleLayoutClient>
   );
@@ -172,6 +235,7 @@ function ListBody({
   setTab,
   counts,
   userInitials,
+  refresh,
 }: {
   date: string;
   setDate: (d: string) => void;
@@ -181,6 +245,8 @@ function ListBody({
   setTab: (t: TripSheetTab) => void;
   counts: Record<TripSheetTab, number>;
   userInitials: string;
+  /** Refetch the list in place (no spinner). */
+  refresh: () => void;
 }) {
   const { openMenu, openYou } = useMobileShell();
   const [searchOpen, setSearchOpen] = useState(false);
@@ -202,8 +268,9 @@ function ListBody({
     });
   }, []);
   const [phase, setPhase] = useState<Record<string, ChipPhase>>({});
-  /** Files captured but refused by navigator.share (NotAllowedError) — sent on the next tap. */
-  const prepared = useRef(new Map<string, PreparedTripSheetShare>());
+  /** Files captured but not yet handed over — refused by navigator.share
+   *  (NotAllowedError), or captured from a just-refetched trip — sent on the next tap. */
+  const prepared = useRef(new Map<string, PreparedChip>());
   /** Shares logged on this phone since the rows loaded, with the bills they covered. */
   const [logged, setLogged] = useState<Record<string, number[]>>({});
 
@@ -223,16 +290,46 @@ function ListBody({
     return chip.shared !== null && !chip.stale ? "shared" : "idle";
   }
 
+  /** This trip's sheet NOW (GET /api/trip-sheets/[id]); null = the trip is gone. Throws on a failure. */
+  async function fetchFreshSheet(tripId: number): Promise<TripSheet | null> {
+    const res = await fetch(`/api/trip-sheets/${tripId}`, { cache: "no-store" });
+    if (res.status === 404) return null;
+    const body = await res.json().catch(() => null);
+    if (!res.ok || !body?.sheet) throw new Error(body?.error ?? `HTTP ${res.status}`);
+    return body.sheet as TripSheet;
+  }
+
   async function onChip(row: TripSheetListRow, chip: TripShareChip) {
     const id = chipId(row.id, chip.key);
     if (phase[id] === "busy") return;
     let mod: ShareModule;
-    let p = prepared.current.get(id);
+    let ready = prepared.current.get(id);
     try {
       mod = await (shareModule.current ?? import("@/lib/trip-sheet/share-image"));
-      if (!p) {
+      if (!ready) {
         setChipPhase(id, "busy");
-        p = await mod.prepareTripSheetShare(filterSheet(row.sheet, chip.key), chip.label);
+        const age = Date.now() - (fetchedAt.get(row) ?? 0);
+        if (age > LIST_REFRESH_MS) {
+          // OLDER THAN 60 s: share what the trip is NOW, never the old copy.
+          // The fetch spends iOS's gesture window, so capture the fresh sheet
+          // and stop at "Tap to send" — the second tap shares it at once.
+          const fresh = await fetchFreshSheet(row.id);
+          refresh(); // the card's numbers and ticks follow
+          const orderIds = fresh ? groupOrderIds(fresh, chip.key) : [];
+          if (!fresh || orderIds.length === 0) {
+            setChipPhase(id, null);
+            toast(`No ${chip.label} bills on ${row.tripNumber} now — the list has been updated`);
+            return;
+          }
+          const share = await mod.prepareTripSheetShare(filterSheet(fresh, chip.key), chip.label);
+          prepared.current.set(id, { share, orderIds });
+          setChipPhase(id, "ready");
+          return;
+        }
+        ready = {
+          share: await mod.prepareTripSheetShare(filterSheet(row.sheet, chip.key), chip.label),
+          orderIds: chip.orderIds,
+        };
       }
     } catch (err) {
       setChipPhase(id, null);
@@ -243,12 +340,12 @@ function ListBody({
 
     let outcome: "shared" | "cancelled" | "downloaded";
     try {
-      outcome = await mod.deliverTripSheetShare(p);
+      outcome = await mod.deliverTripSheetShare(ready.share);
     } catch (err) {
       if (err instanceof DOMException && err.name === "NotAllowedError") {
         // The capture outlived the tap's gesture window — keep the file; the
         // next tap hands it over at once.
-        prepared.current.set(id, p);
+        prepared.current.set(id, ready);
         setChipPhase(id, "ready");
         return;
       }
@@ -263,17 +360,19 @@ function ListBody({
     if (outcome === "cancelled") return; // closed the share sheet — no log, chip unchanged
 
     if (outcome === "downloaded") toast("Image downloaded and caption copied — attach it in WhatsApp");
+    const orderIds = ready.orderIds;
     try {
       const res = await fetch(`/api/trip-sheets/${row.id}/share-log`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ groupKey: chip.key, orderIds: chip.orderIds }),
+        body: JSON.stringify({ groupKey: chip.key, orderIds }),
       });
       if (!res.ok) {
         const body = await res.json().catch(() => null);
         throw new Error(body?.error ?? `HTTP ${res.status}`);
       }
-      setLogged((prev) => ({ ...prev, [id]: chip.orderIds }));
+      setLogged((prev) => ({ ...prev, [id]: orderIds }));
+      refresh(); // the tick comes back from the server's own log
     } catch (err) {
       toast.error(`Shared, but the tick was not saved: ${err instanceof Error ? err.message : String(err)}`);
     }
@@ -296,7 +395,7 @@ function ListBody({
         const res = await fetch(`/api/trip-sheets/search?q=${encodeURIComponent(term)}`, { cache: "no-store" });
         const body = await res.json().catch(() => null);
         if (seq !== searchSeq.current) return;
-        setHits(res.ok ? ((body?.hits ?? []) as TripSheetSearchHit[]) : []);
+        setHits(res.ok ? stampFetched((body?.hits ?? []) as TripSheetSearchHit[]) : []);
       } catch {
         if (seq === searchSeq.current) setHits([]);
       } finally {
