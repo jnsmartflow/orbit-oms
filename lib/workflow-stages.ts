@@ -274,9 +274,14 @@ export const PICKING_ACTIVE_STAGES: string[] = [
 /**
  * Stages the supervisor board may CANCEL a bill from.
  *
+ * ⚠ DORMANT SINCE 2026-10-17. The supervisor cancel UI (the ⋯ menu's "Cancel
+ * bill" + CancelSheet on the Picking board) was removed, owner decision —
+ * cancelling is Floor Control's only. POST /api/picking/cancel still enforces
+ * this list but has no caller. The history below is kept as written.
+ *
  * ⚠ LIVES HERE, NOT IN THE ROUTE THAT ENFORCES IT. It was declared in
- * app/api/picking/cancel/route.ts when that route landed (3a); the ⋯ menu needs
- * the same list to decide whether to render at all, and a "use client"
+ * app/api/picking/cancel/route.ts when that route landed (3a); the ⋯ menu
+ * needed the same list to decide whether to render at all, and a "use client"
  * component importing from a route module would drag prisma and next-auth into
  * the browser bundle. This file is pure (zero imports) and is already the owner
  * of every other picking stage set, so it is the correct home. The route
