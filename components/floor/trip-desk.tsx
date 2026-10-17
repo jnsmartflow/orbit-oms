@@ -176,6 +176,7 @@ export function TripDesk({
   onSetTripSentToBilling,
   addMode,
   addCount,
+  addFigures,
   sameRouteLabel,
   onAddToTrip,
   addingToTripId,
@@ -246,9 +247,11 @@ export function TripDesk({
   addMode: boolean;
   /** Ticked bills — the rail's "+" button names the count in its aria-label. */
   addCount: number;
+  /** The ticked selection's "L · kg" figures — the rail's add confirmation. */
+  addFigures: string;
   /** The selection-s route when it is a single one — cards matching it say so. */
   sameRouteLabel: string | null;
-  onAddToTrip: (tripId: number) => void;
+  onAddToTrip: (tripId: number) => Promise<void> | void;
   /**
    * TARGETED ADD MODE (2026-09-16): "+ Add bills" was pressed INSIDE a trip, so
    * the pool opens with that trip written across the top and the rail stops
@@ -1223,6 +1226,7 @@ export function TripDesk({
         // already decided, so a card click opens it rather than adding to it.
         addMode={addMode && addingToTripId === null}
         addCount={addCount}
+        addFigures={addFigures}
         sameRouteLabel={sameRouteLabel}
         onAddToTrip={onAddToTrip}
         anchorIso={floor.date}

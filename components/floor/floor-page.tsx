@@ -3421,6 +3421,12 @@ export function FloorPage({
   // failure mode this number exists to prevent.
   // Only the TICKED invoices of a split OBD (P5-3) — `selectedLoadRows`.
   const selectionWeight = useMemo(() => sumWeightKg(selectedLoadRows), [selectedLoadRows]);
+  // The rail's add confirmation (2026-10-17) shows the bottom bar's own two
+  // figures — the same functions, so the dialog and the bar never disagree.
+  const addKg = formatWeightKg(selectionWeight.kg);
+  const addFigures =
+    `${formatLitres(sumLitres(selectedLoadRows))} L` +
+    (addKg === null ? "" : ` · ${addKg}${selectionWeight.unknown > 0 ? "+" : ""} kg`);
   // Pieces. Bills with no article tag are skipped rather than counted as zero
   // (~27% of SKUs are unmastered, CORE §7.1.c) — countArticles reports those
   // separately and the bar simply omits the number when nothing parsed.
@@ -3846,8 +3852,11 @@ export function FloorPage({
               // selection — end it with no second piece of state to go stale.
               addMode={addMode}
               addCount={selectedRows.length}
+              addFigures={addFigures}
               sameRouteLabel={sameRouteLabel}
-              onAddToTrip={(id) => void addSelectionToTrip(id)}
+              // The promise goes back to the rail so its confirm dialog can hold
+              // "Adding…" until the add is over (2026-10-17).
+              onAddToTrip={(id) => addSelectionToTrip(id)}
               // Targeted add — "+ Add bills" inside a trip (2026-09-16).
               addingToTripId={addingToTripId}
               lastAddCount={lastAdd?.units.length ?? 0}

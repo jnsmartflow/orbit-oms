@@ -53,8 +53,10 @@
 // done = checked, or on hold). Its number chip turns amber (redesign) — the
 // number already carries the real date — rather than implying it is today's.
 
+import { useEffect, useState } from "react";
 import { Plus } from "lucide-react";
 import { COLOUR_WORK_PINK } from "@/components/picking/card-atoms";
+import { BAR_PRIMARY, BAR_SECONDARY } from "./floor-action-bar";
 import { HandBadge } from "@/components/shared/hand-badge";
 import { TripBar, tripBarCounts } from "./trip-bar";
 import { formatLitres } from "./status-pill";
@@ -98,6 +100,7 @@ export function TripRail({
   onSelect,
   addMode = false,
   addCount = 0,
+  addFigures = "",
   sameRouteLabel = null,
   onAddToTrip,
   searchTripIds = null,
@@ -134,16 +137,18 @@ export function TripRail({
    * ticked" (floor-page.tsx), never stored here — clearing the selection ends
    * it, which is what makes Escape and ✕ cancel with no extra wiring.
    *
-   * 🔴 NO PINK ANY MORE (2026-09-22, floor-bulk-actions v5). The pink "Click a
-   * trip to add N bills" hint that replaced the header and the pink "+" on each
-   * card are gone; the bottom bar already says what is ticked. Adding is still
-   * "tick bills → click a trip card", and a dispatched card is still inert.
-   * Since 2026-09-22 (later) an addable card also carries a brand "+" button
-   * top-right — see TripCard.
+   * The pink "Click a trip to add N bills" header hint went on 2026-09-22
+   * (floor-bulk-actions v5) — the bottom bar already says what is ticked. The
+   * pink "+" on each addable card went with it and CAME BACK the same day: it is
+   * LIVE, top-right, in the BASE/TINT pinks (see TripCard). A dispatched card is
+   * inert. Since 2026-10-17 both the card click and the "+" open a confirmation
+   * first (AddToTripConfirm) — neither adds on its own.
    */
   addMode?: boolean;
-  /** How many bills are ticked — only for the "+" button's aria-label. */
+  /** How many bills are ticked — the "+" aria-label and the confirmation title. */
   addCount?: number;
+  /** The ticked selection's "L · kg" figures (floor-page) — the confirmation. */
+  addFigures?: string;
   /**
    * The selection-s route when it is a SINGLE one (floor-page). A trip whose own
    * route label is exactly this gets a quiet green "Same route" line.
@@ -153,7 +158,7 @@ export function TripRail({
    * there is no sensible match then, and marking the biggest would be a guess.
    */
   sameRouteLabel?: string | null;
-  onAddToTrip?: (tripId: number) => void;
+  onAddToTrip?: (tripId: number) => Promise<void> | void;
   /**
    * SEARCH NARROWING (owner, 2026-09-29): the trips holding bills the search
    * matched. While non-null the rail lists ONLY these, and the scope tab does
@@ -181,6 +186,33 @@ export function TripRail({
   const billCount = live.reduce((sum, t) => sum + t.counts.total, 0);
 
   const poolOn = selection.kind === "pool";
+
+  // 🔴 THE ADD CONFIRMATION (2026-10-17). A card click or "+" in add mode only
+  // names the trip here; the add itself waits for the dialog's own button.
+  // Read off the LIVE list each render, so its figures are the trip as it is now.
+  const [confirmTripId, setConfirmTripId] = useState<number | null>(null);
+  const [confirmBusy, setConfirmBusy] = useState(false);
+  const confirmTrip = confirmTripId === null ? null : live.find((t) => t.id === confirmTripId) ?? null;
+  // The dialog closes itself when what it asks about is gone: the ticks cleared
+  // (add mode off — which is also how a finished add ends it), or the trip left
+  // the rail or was dispatched underneath it.
+  const confirmStale =
+    confirmTripId !== null && (!addMode || confirmTrip === null || confirmTrip.status === "dispatched");
+  useEffect(() => {
+    if (confirmStale) setConfirmTripId(null);
+  }, [confirmStale]);
+
+  const confirmAdd = async () => {
+    if (confirmTripId === null || confirmBusy) return;
+    setConfirmBusy(true);
+    try {
+      // The existing path, unchanged — its toast and 10s Undo still fire.
+      await onAddToTrip?.(confirmTripId);
+    } finally {
+      setConfirmBusy(false);
+      setConfirmTripId(null);
+    }
+  };
 
   return (
     <div className="flex min-h-0 flex-col overflow-y-auto border-r border-[#e7e7ee] bg-[#fafafc] px-[11px] pb-4 pt-3">
@@ -257,9 +289,120 @@ export function TripRail({
           sameRoute={sameRouteLabel !== null && t.routeName === sameRouteLabel && t.routeExtraCount === 0}
           addMode={addMode}
           addCount={addCount}
-          onAdd={() => onAddToTrip?.(t.id)}
+          // 2026-10-17: rail add now confirms first — accidental card clicks were adding bills to wrong trips. Do not remove.
+          onAdd={() => setConfirmTripId(t.id)}
         />
       ))}
+
+      {confirmTrip !== null && !confirmStale && (
+        <AddToTripConfirm
+          trip={confirmTrip}
+          billCount={addCount}
+          figures={addFigures}
+          busy={confirmBusy}
+          onCancel={() => setConfirmTripId(null)}
+          onConfirm={() => void confirmAdd()}
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * "Add N bills to L-…?" — the rail add's confirmation (2026-10-17, owner:
+ * accidental card clicks were putting bills on the wrong truck).
+ *
+ * The off-floor-dialog.tsx modal pattern: a whole-page scrim at z-[120],
+ * CENTRED so a double-click on a rail card cannot land on its Add button.
+ * Focus starts on Cancel, so a stray Enter never adds; the scrim is Cancel.
+ *
+ * 🔴 IT OWNS ITS ESC, AGAINST THE FLOOR'S SINGLE-OWNER RULE, ON PURPOSE.
+ * floor-page.tsx's Esc handler is a `window` keydown listener in the BUBBLE
+ * phase, and with ticks on the board it runs `clearSelection()` — which would
+ * throw away the very selection the planner was placing. This listener is on
+ * `window` in the CAPTURE phase, which runs before any bubble listener, and
+ * stopPropagation() there means floor-page's handler never sees the press.
+ * Only while this dialog is mounted.
+ */
+function AddToTripConfirm({
+  trip,
+  billCount,
+  figures,
+  busy,
+  onCancel,
+  onConfirm,
+}: {
+  trip: TripSummary;
+  billCount: number;
+  figures: string;
+  busy: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key !== "Escape") return;
+      e.stopPropagation();
+      // Mid-request the press is swallowed, never acted on: the add is going.
+      if (!busy) onCancel();
+    }
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [busy, onCancel]);
+
+  const bills = `${billCount} bill${billCount === 1 ? "" : "s"}`;
+  const bar = tripBarCounts(trip.counts);
+  const title = `Add ${bills} to ${trip.tripNumber}?`;
+  // The card's own words for what the trip holds now.
+  const holds =
+    bar.total === 0 && (trip.redeliveryCount ?? 0) === 0
+      ? "no bills yet"
+      : `${trip.dropCount} stop${trip.dropCount === 1 ? "" : "s"} · ${bar.total} bill${bar.total === 1 ? "" : "s"} · ${formatLitres(trip.totalLitres)} L` +
+        ((trip.redeliveryCount ?? 0) > 0 ? ` · +${trip.redeliveryCount} re-del` : "");
+  const route = trip.routeName
+    ? `${trip.routeName}${trip.routeExtraCount > 0 ? ` +${trip.routeExtraCount}` : ""}`
+    : "No route";
+
+  return (
+    <div
+      className="fixed inset-0 z-[120] flex items-center justify-center bg-black/40 p-4"
+      onClick={busy ? undefined : onCancel}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        className="flex w-[440px] max-w-full flex-col overflow-hidden rounded-xl bg-white shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="px-6 py-5">
+          <h3 className="text-[18px] font-bold text-ink-900">{title}</h3>
+          <div className="mt-4 overflow-hidden rounded-[10px] border border-ink-100 text-[13px]">
+            <div className="border-b border-ink-50 px-3 py-2.5">
+              <div className="text-[12px] font-semibold uppercase tracking-[0.05em] text-ink-500">Trip</div>
+              <div className="mt-0.5 font-semibold text-ink-900">
+                <span className="font-mono">{trip.tripNumber}</span> · {route}
+              </div>
+              <div className="mt-0.5 tabular-nums text-ink-600">Now: {holds}</div>
+            </div>
+            <div className="px-3 py-2.5">
+              <div className="text-[12px] font-semibold uppercase tracking-[0.05em] text-ink-500">Adding</div>
+              <div className="mt-0.5 tabular-nums text-ink-900">
+                {bills}
+                {figures !== "" && <span className="text-ink-600"> · {figures}</span>}
+              </div>
+            </div>
+          </div>
+        </div>
+        <div className="flex items-center justify-end gap-2.5 border-t border-ink-100 bg-ink-25 px-6 py-3.5">
+          <button type="button" autoFocus onClick={onCancel} disabled={busy} className={BAR_SECONDARY}>
+            Cancel
+          </button>
+          <button type="button" onClick={onConfirm} disabled={busy} className={BAR_PRIMARY}>
+            {busy ? "Adding…" : `Add to ${trip.tripNumber}`}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
