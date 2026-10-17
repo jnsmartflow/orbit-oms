@@ -1147,11 +1147,10 @@ async function loadTripRedeliveries(
 /**
  * One trip, with its drops in `dropSeq` order.
  *
- * ⚠ ORDERED BY `dropSeq`, WHICH MAY HAVE GAPS. Removing the last bill from a
- * stop deletes the drop row and leaves its number unused — uniqueness is on
- * (tripId, dropSeq), never contiguity, and renumbering the survivors would
- * change the stop order a driver may already have been given. Read the sequence
- * as an ORDERING, never as an index.
+ * ⚠ ORDERED BY `dropSeq`. Since 2026-10-17 removing a stop closes the others
+ * up 1..N (lib/trips/drop.ts compactTripDropSeq), but a compaction that lost a
+ * race — or a cancelled trip, whose drops are never touched — can still leave a
+ * gap. Read the sequence as an ORDERING, never as an index.
  *
  * Returns null when the trip does not exist, so the route can 404 rather than
  * inventing an empty trip.

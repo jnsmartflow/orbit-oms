@@ -13,6 +13,10 @@
 // if two planners add bills for the same shop at once, and the losing create
 // throws to the caller, which reports that one bill as failed.
 //
+// STOPS CLOSE UP ON REMOVE (2026-10-17): deleting an empty stop renumbers the
+// trip's survivors 1..N in their current order (compactTripDropSeq).
+// Until 2026-10-17 gaps in dropSeq were left alone; owner reversed it, stops now close up on remove. Do not revert.
+//
 // Sequential awaits, never prisma.$transaction (CORE §3).
 
 import { prisma } from "@/lib/prisma";
@@ -37,6 +41,10 @@ import { dealerDisplayName } from "@/lib/orders/dealer-name";
  * (lib/order-invoices/trip-link.ts) the rows sit exactly where their orders do,
  * so this changes nothing today; from Phase 5 a row can sit on a stop its OBD
  * does not point at, and then this is the check that keeps the stop.
+ *
+ * After a delete the trip's stops close up 1..N (compactTripDropSeq, owner
+ * 2026-10-17). Not on cancel — cancel never comes here, and a cancelled trip's
+ * drops stay as the record of the plan.
  */
 export async function deleteTripDropIfEmpty(dropId: number): Promise<boolean> {
   const orders = await prisma.orders.count({ where: { tripDropId: dropId } });
@@ -45,8 +53,53 @@ export async function deleteTripDropIfEmpty(dropId: number): Promise<boolean> {
   if (invoiceRows > 0) return false;
   const redeliveries = await prisma.trip_redeliveries.count({ where: { tripDropId: dropId } });
   if (redeliveries > 0) return false;
-  await prisma.trip_drops.delete({ where: { id: dropId } });
+  const deleted = await prisma.trip_drops.delete({ where: { id: dropId }, select: { tripId: true } });
+  await compactTripDropSeq(deleted.tripId);
   return true;
+}
+
+/**
+ * Renumber a trip's stops 1..N in their current dropSeq order (owner,
+ * 2026-10-17: stop numbers never have gaps). Full compaction, so it also heals
+ * any older gap on the same trip.
+ *
+ * Walking ASCENDING means a row only ever moves DOWN to a number its
+ * predecessors have already vacated, so the unique (tripId, dropSeq) is never
+ * hit by this pass alone. A concurrent add only ever takes MAX + 1, above every
+ * target here.
+ *
+ * ⚠ NEVER THROWS. The delete that called it has already happened; failing the
+ * caller would report a removed bill as not removed. A race (P2002 from a
+ * concurrent compaction, P2025 from a row deleted under us) gets ONE retry from
+ * a fresh read, then a warning — never a loop. A leftover gap is harmless and
+ * the next remove heals it.
+ *
+ * No trip_activity / order_status_logs row and no `orders` write: a renumber is
+ * not something a planner did.
+ */
+export async function compactTripDropSeq(tripId: number): Promise<void> {
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      const drops = await prisma.trip_drops.findMany({
+        where: { tripId },
+        orderBy: { dropSeq: "asc" },
+        select: { id: true, dropSeq: true },
+      });
+      for (let i = 0; i < drops.length; i++) {
+        if (drops[i].dropSeq !== i + 1) {
+          await prisma.trip_drops.update({ where: { id: drops[i].id }, data: { dropSeq: i + 1 } });
+        }
+      }
+      return;
+    } catch (err) {
+      if (attempt === 2) {
+        console.warn(
+          `[trips] could not close up stop numbers on trip ${tripId}:`,
+          err instanceof Error ? err.message : err,
+        );
+      }
+    }
+  }
 }
 
 /** The order fields the stop needs: the drop-key inputs plus SAP's ship-to name. */
@@ -73,13 +126,9 @@ export async function findOrCreateTripDrop(tripId: number, order: TripDropInput)
   });
   if (existing) return existing;
 
-  // dropSeq = max + 1, from 1. MAX+1 not COUNT+1: removing the last bill
-  // from a stop deletes the row and leaves a gap, and a count would then
-  // reuse a number the unique still holds.
-  //
-  // ⚠ GAPS ARE LEFT ALONE, deliberately. Uniqueness is on
-  // (tripId, dropSeq), never contiguity. Renumbering the survivors would
-  // change a stop order a driver may already have been given.
+  // dropSeq = max + 1, from 1. MAX+1 not COUNT+1: stops close up on remove
+  // (compactTripDropSeq), but a compaction that lost a race can leave a gap,
+  // and a count would then reuse a number the unique still holds.
   const last = await prisma.trip_drops.findFirst({
     where: { tripId },
     orderBy: { dropSeq: "desc" },
