@@ -10,8 +10,8 @@ import { CiLineRows, CiPackChips } from "./line-list";
 import { CiQtySheet } from "./qty-sheet";
 import { CiDetailsStep, CiMaterialSheet, CiReasonSheet } from "./details-step";
 import { CiResultCard } from "./result-card";
-import { CiHeaderStrip, formatCiDay } from "./spine";
-import { summariseCiReturn } from "@/lib/ci/derive";
+import { CiHeaderStrip, SHIP_TO_LINE, formatCiDay } from "./spine";
+import { ciShipToLabel, summariseCiReturn } from "@/lib/ci/derive";
 import type {
   CiBillLine,
   CiBillResult,
@@ -700,9 +700,13 @@ export function CiNewReturn({
             )}
             <div className="min-w-0 flex-1">
               <div className="text-[18px] font-semibold text-brand-600 truncate min-w-0">
-                {bill?.customerName ?? "2026"}
+                {bill?.party.name ?? "2026"}
               </div>
               <div className="text-[11.5px] text-ink-500 truncate">{bill?.obdNumber ?? ""}</div>
+              {/* SAP's ship-to, never the override (2026-10-17 owner ruling). */}
+              {bill?.party.shipTo && (
+                <div className={SHIP_TO_LINE}>{ciShipToLabel(bill.party.shipTo)}</div>
+              )}
             </div>
           </div>
         </div>
@@ -754,7 +758,7 @@ export function CiNewReturn({
         ) : step === "success" ? (
           <CiSuccess
             ciNumber={submitted?.ciNumber ?? null}
-            customerName={bill?.customerName ?? ""}
+            customerName={bill?.party.name ?? ""}
             lineCount={lineCount}
             litres={submittedLitres}
             // 🔴 BOTH SET AN INTENT AND POP. The popstate handler is the only
@@ -1128,7 +1132,9 @@ export function CiNewReturn({
               identifier={h.obdNumber}
               caption={formatCiDay(h.invoiceDate ?? h.obdDateTime)}
               // Row 2 — the dealer, with the bill's size on the right.
-              name={h.customerName}
+              // 2026-10-17 owner ruling: BILL-TO, with SAP's ship-to under it.
+              name={h.party.name}
+              subName={h.party.shipTo ? ciShipToLabel(h.party.shipTo) : null}
               value={`${h.totalLitres} L`}
               // Row 3 — the OTHER identifier. NO PILL: a bill has no status, and
               // a pill slot filled with something invented would be worse than

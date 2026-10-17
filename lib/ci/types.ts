@@ -58,6 +58,19 @@ export function isCiMaterialMoved(v: string): v is CiMaterialMoved {
 // ── Search (supervisor frame 2) ──────────────────────────────────────────────
 
 /**
+ * What a CI surface shows as its customer (Schema v27.70, 2026-10-17 owner
+ * ruling). Built by lib/ci/derive.ts ciPartyDisplay — the ONE display rule.
+ * Main line = BILL-TO; "Ship to" line = SAP's own ship-to, never the override.
+ */
+export interface CiPartyDisplay {
+  /** The main line — bill-to, or the old customerName when bill-to is unknown. */
+  name: string;
+  code: string | null;
+  /** The "Ship to" line. null ⇒ the screen HIDES the line. */
+  shipTo: { name: string; code: string | null } | null;
+}
+
+/**
  * One row of the search result list.
  *
  * 🔴 ALWAYS A LIST, NEVER A SINGLE ROW (spec §4). 11 invoice numbers map to two
@@ -70,8 +83,11 @@ export function isCiMaterialMoved(v: string): v is CiMaterialMoved {
 export interface CiSearchHit {
   orderId: number;
   obdNumber: string;
-  /** Effective ship-to, resolved by lib/ci/derive.ts — see resolveCiDealer(). */
+  /** Effective ship-to, resolved by lib/ci/derive.ts — see resolveCiDealer().
+   *  ⚠ NOT what the card shows since 2026-10-17 — it shows `party`. */
   customerName: string;
+  /** What the card shows: live bill-to + SAP ship-to. */
+  party: CiPartyDisplay;
   /** Null when SAP has not sent one yet — 5% of dispatched bills (spec §4). */
   invoiceNo: string | null;
   /** ISO date string, or null. The card's "22 Aug". */
@@ -132,8 +148,11 @@ export interface CiBillLine {
 export interface CiBillResult {
   orderId: number;
   obdNumber: string;
-  /** Header line 1 of frames 3-5. */
+  /** The effective dealer (resolveCiDealer) — what customerName will snapshot. */
   customerName: string;
+  /** Header line 1 of frames 3-5 since 2026-10-17: live bill-to + SAP ship-to,
+   *  the same values the create paths will write. */
+  party: CiPartyDisplay;
   /** The sub-strip: date · invoice · litres. */
   invoiceNo: string | null;
   invoiceDate: string | null;
@@ -204,7 +223,11 @@ export interface CiBoardRow {
    *  number is allocated at the moment a CI leaves draft. */
   ciNumber: string;
   status: CiStatus;
+  /** The old effective-dealer snapshot. Kept for the desk search, which must
+   *  still match what it matched before 2026-10-17. */
   customerName: string;
+  /** What the card shows (bill-to + SAP ship-to, with the old name as fallback). */
+  party: CiPartyDisplay;
   obdNumber: string;
   /**
    * 🔴 LIVE THROUGH `orderId`, WITH THE SNAPSHOT AS FALLBACK — never the
@@ -317,6 +340,8 @@ export interface CiDetail {
   soNumber: string | null;
   customerCode: string | null;
   customerName: string | null;
+  /** What the detail shows (bill-to + SAP ship-to, with the old pair as fallback). */
+  party: CiPartyDisplay;
   /**
    * ⚠ NOT A COLUMN — read LIVE via customerId → delivery_point_master.area.
    * Blank for an unmastered dealer, which is a normal state, not an error.

@@ -1,6 +1,7 @@
 "use client";
 
 import { ciSourceTag, type CiBoardRow } from "@/lib/ci/types";
+import { ciShipToLabel } from "@/lib/ci/derive";
 
 // Billing's left rail — frames 1-4 of docs/mockups/ci/billing.html.
 //
@@ -300,8 +301,16 @@ function CiRailCard({
             : "text-[15.5px] font-bold tracking-[-0.01em] text-gray-900")
         }
       >
-        {row.customerName}
+        {/* 2026-10-17 owner ruling: the BILL-TO is the card's name. */}
+        {row.party.name}
       </div>
+      {/* SAP's own ship-to, small and grey — never the override dealer. Desk
+          grey (UI §3 "text muted"); the phone takes its token from spine.tsx. */}
+      {row.party.shipTo && (
+        <div className="mt-0.5 truncate text-[11.5px] text-gray-400">
+          {ciShipToLabel(row.party.shipTo)}
+        </div>
+      )}
     </button>
   );
 }

@@ -61,7 +61,8 @@ import { Prisma } from "@prisma/client";
 import { challanCancelRefusal, releaseChallanOnCancel } from "@/lib/challan-orders/cancel-guard";
 import { prisma } from "@/lib/prisma";
 import { allocateCiNumber } from "@/lib/ci/number";
-import { resolveCiDealer } from "@/lib/ci/derive";
+import { ciPartyColumns, resolveCiDealer } from "@/lib/ci/derive";
+import { loadBillToByObd } from "@/lib/reports/bill-facts";
 import { linkRowForOrder } from "@/lib/order-invoices/links";
 import { computeFullBillLines } from "@/lib/ci/full-bill";
 import { offFloorRefusal } from "@/lib/floor/off-floor";
@@ -236,6 +237,8 @@ export async function raiseFullBillCi(args: {
       // Which invoice row came back (v27.66, lib/order-invoices/links.ts): seq 1
       // on an unsplit bill; NULL on a split one until Phase 6 assigns it from lines.
       const orderInvoiceId = await linkRowForOrder(order.id, "ci");
+      // The bill-to, newest raw summary row for this OBD (one shared reader).
+      const billTo = (await loadBillToByObd([order.obdNumber])).get(order.obdNumber);
       const MAX_ATTEMPTS = 2;
       for (let attempt = 1; attempt <= MAX_ATTEMPTS && ciNumber === null; attempt += 1) {
         const identity = await allocateCiNumber(now);
@@ -252,6 +255,8 @@ export async function raiseFullBillCi(args: {
               customerId: order.customerId,
               customerCode: order.shipToCustomerId,
               customerName: resolveCiDealer(order),
+              // 2026-10-17 owner ruling: CI DISPLAYS bill-to + SAP ship-to (new columns). customerName still snapshots the effective dealer for history — do not switch display back to it.
+              ...ciPartyColumns(billTo, order),
               returnType: "full",
               // The four chk_ci_returns_complete_when_not_draft needs past
               // draft — all set.

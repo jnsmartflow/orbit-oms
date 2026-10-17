@@ -39,7 +39,7 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 import { sortPackLabels } from "@/lib/picking/pack-sort";
-import type { CiBillLine, CiDetailLine } from "./types";
+import type { CiBillLine, CiDetailLine, CiPartyDisplay } from "./types";
 
 // ── Litres ───────────────────────────────────────────────────────────────────
 
@@ -307,6 +307,10 @@ export interface CiDealerSource {
  *
  * A whitespace-only name is not a name: it would render a blank header, which
  * reads as a broken screen rather than as missing data.
+ *
+ * 2026-10-17 owner ruling: CI DISPLAYS bill-to + SAP ship-to (new columns).
+ * customerName still snapshots the effective dealer for history — do not
+ * switch display back to it. (See ciPartyColumns / ciPartyDisplay below.)
  */
 export function resolveCiDealer(order: CiDealerSource): string {
   return (
@@ -315,6 +319,81 @@ export function resolveCiDealer(order: CiDealerSource): string {
     nonBlank(order.shipToCustomerName) ??
     "(Unmatched)"
   );
+}
+
+// ── Bill-to + SAP ship-to (Schema v27.70, 2026-10-17 owner ruling) ───────────
+//
+// 🔴 THE MAIN NAME ON EVERY CI SURFACE IS THE BILL-TO. Under it, a small "Ship
+// to" line names SAP's OWN ship-to (orders.shipToCustomerId / Name) — NEVER the
+// ship-to override dealer. This reverses CLAUDE_CI.md §13 CI-5 FOR DISPLAY
+// ONLY: customerName above still snapshots the effective dealer, and
+// resolveCiDealer stays Picking's mirror (CI-6).
+
+/** The bill-to as read from import_raw_summary (lib/reports/bill-facts.ts
+ *  loadBillToByObd — the newest raw row per OBD). */
+export interface CiBillToSource {
+  code: string | null;
+  name: string | null;
+}
+
+/** SAP's own ship-to on the order — the two scalar columns, never a relation. */
+export interface CiShipToSource {
+  shipToCustomerId: string | null;
+  shipToCustomerName: string | null;
+}
+
+/** The four ci_returns columns every create path writes. ONE builder so the
+ *  four paths (draft, auto, bill-only, floor raise) cannot drift. */
+export function ciPartyColumns(
+  billTo: CiBillToSource | null | undefined,
+  order: CiShipToSource,
+): {
+  billToCustomerCode: string | null;
+  billToCustomerName: string | null;
+  shipToCustomerCode: string | null;
+  shipToCustomerName: string | null;
+} {
+  return {
+    billToCustomerCode: nonBlank(billTo?.code),
+    billToCustomerName: nonBlank(billTo?.name),
+    shipToCustomerCode: nonBlank(order.shipToCustomerId),
+    shipToCustomerName: nonBlank(order.shipToCustomerName),
+  };
+}
+
+/**
+ * The one display rule.
+ * - Main: bill-to name + code. If the bill-to NAME is missing, fall back to the
+ *   old customerName / customerCode as a pair (never a bill-to code beside a
+ *   ship-to name).
+ * - Ship to: SAP's ship-to name + code; hidden when the name is missing.
+ */
+export function ciPartyDisplay(p: {
+  billToCustomerName: string | null;
+  billToCustomerCode: string | null;
+  shipToCustomerName: string | null;
+  shipToCustomerCode: string | null;
+  customerName: string | null;
+  customerCode: string | null;
+}): CiPartyDisplay {
+  const billToName = nonBlank(p.billToCustomerName);
+  const shipToName = nonBlank(p.shipToCustomerName);
+  return {
+    name: billToName ?? nonBlank(p.customerName) ?? "(Unmatched)",
+    code: billToName !== null ? nonBlank(p.billToCustomerCode) : nonBlank(p.customerCode),
+    shipTo: shipToName !== null ? { name: shipToName, code: nonBlank(p.shipToCustomerCode) } : null,
+  };
+}
+
+/** "Ship to · {name} · {code}" plus any extra parts (the desk adds the area).
+ *  Blank parts drop out, so a missing code never leaves a dangling dot. */
+export function ciShipToLabel(
+  shipTo: { name: string; code: string | null },
+  ...extra: (string | null | undefined)[]
+): string {
+  return ["Ship to", shipTo.name, shipTo.code, ...extra]
+    .filter((p): p is string => nonBlank(p) !== null)
+    .join(" · ");
 }
 
 /** Returns the ORIGINAL string when it survives, never a trimmed copy — so a

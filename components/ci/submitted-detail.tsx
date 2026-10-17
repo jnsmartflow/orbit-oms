@@ -3,7 +3,7 @@
 import { ChevronLeft } from "lucide-react";
 import { CiDetailLineRows, CiLineRows } from "./line-list";
 import { CiDetailsStep, CiReturnSummaryBlock } from "./details-step";
-import { summariseCiDetail, summariseCiReturn } from "@/lib/ci/derive";
+import { ciShipToLabel, summariseCiDetail, summariseCiReturn } from "@/lib/ci/derive";
 import {
   CARD_PAD,
   CARD_SURFACE,
@@ -12,6 +12,7 @@ import {
   CiSpineRow,
   CiSpineValue,
   MUTED_NOTE,
+  SHIP_TO_LINE,
   formatCiDay,
 } from "./spine";
 import type { CiBillResult, CiDetail, CiReasonOption, CiBillLine } from "@/lib/ci/types";
@@ -173,8 +174,12 @@ export function CiSubmittedDetail({
               {detail !== null && <StatusChip status={detail.status} />}
             </div>
             <div className="text-[11.5px] text-ink-500 truncate">
-              {detail?.customerName ?? ""}
+              {detail?.party.name ?? ""}
             </div>
+            {/* SAP's ship-to, never the override (2026-10-17 owner ruling). */}
+            {detail?.party.shipTo && (
+              <div className={SHIP_TO_LINE}>{ciShipToLabel(detail.party.shipTo)}</div>
+            )}
           </div>
         </div>
       </div>

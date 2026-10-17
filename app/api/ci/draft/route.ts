@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { checkAnyPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
-import { resolveCiDealer } from "@/lib/ci/derive";
+import { ciPartyColumns, resolveCiDealer } from "@/lib/ci/derive";
+import { loadBillToByObd } from "@/lib/reports/bill-facts";
 import { linkRowForOrder } from "@/lib/order-invoices/links";
 import { isCiReturnType } from "@/lib/ci/types";
 
@@ -148,6 +149,8 @@ export async function POST(req: Request): Promise<NextResponse> {
   // Which invoice row came back (v27.66, lib/order-invoices/links.ts): seq 1
   // on an unsplit bill; NULL on a split one until Phase 6 assigns it from lines.
   const orderInvoiceId = await linkRowForOrder(order.id, "ci");
+  // The bill-to, newest raw summary row for this OBD (one shared reader).
+  const billTo = (await loadBillToByObd([order.obdNumber])).get(order.obdNumber);
   const created = await prisma.ci_returns.create({
     data: {
       // 🔴 No ciNumber. It is allocated at submit and nowhere else (spec §5).
@@ -169,6 +172,8 @@ export async function POST(req: Request): Promise<NextResponse> {
       // name, which is the COMMON path: 72% of overrides are flag-true with a
       // null id and have no master row to resolve.
       customerName: resolveCiDealer(order),
+      // 2026-10-17 owner ruling: CI DISPLAYS bill-to + SAP ship-to (new columns). customerName still snapshots the effective dealer for history — do not switch display back to it.
+      ...ciPartyColumns(billTo, order),
 
       // Answered on the first screen (Full bill / Part), so it is real here.
       returnType,

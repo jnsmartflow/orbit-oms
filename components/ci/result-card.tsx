@@ -1,6 +1,7 @@
 "use client";
 
 import { ChevronRight } from "lucide-react";
+import { SHIP_TO_LINE } from "./spine";
 
 // The CI list card — shared by BOTH supervisor tabs.
 //
@@ -73,6 +74,7 @@ export function CiResultCard({
   identifier,
   caption,
   name,
+  subName,
   value,
   meta,
   pillLabel,
@@ -86,6 +88,8 @@ export function CiResultCard({
   caption: string;
   /** Row 2 — the dealer. The reason this is a card and not a list row. */
   name: string;
+  /** Under row 2, small and grey — the "Ship to · …" line. Omitted ⇒ no line. */
+  subName?: string | null;
   /** Row 2's right end. Never truncates; the name truncates first. */
   value: string;
   /** Row 3 left — the OTHER identifier. */
@@ -140,6 +144,10 @@ export function CiResultCard({
                 {value}
               </span>
             </div>
+
+            {subName != null && subName !== "" && (
+              <div className={SHIP_TO_LINE + " mt-0.5"}>{subName}</div>
+            )}
 
             {/* ── ROW 3 · meta ────────────────────────────────────────────── */}
             <div className="flex items-center justify-between gap-2.5 mt-1.5">

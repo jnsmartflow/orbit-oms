@@ -50,7 +50,8 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { allocateCiNumber } from "@/lib/ci/number";
 import { linkRowForOrder } from "@/lib/order-invoices/links";
-import { litresPerTin, resolveCiDealer, returnedLitres } from "@/lib/ci/derive";
+import { ciPartyColumns, litresPerTin, resolveCiDealer, returnedLitres } from "@/lib/ci/derive";
+import { loadBillToByObd } from "@/lib/reports/bill-facts";
 import { applyCiCatalog, resolveCiSkus } from "@/lib/ci/resolve-lines";
 
 /**
@@ -330,6 +331,8 @@ async function createAutoCi(
   // Which invoice row came back (v27.66, lib/order-invoices/links.ts): seq 1
   // on an unsplit bill; NULL on a split one until Phase 6 assigns it from lines.
   const orderInvoiceId = await linkRowForOrder(order.id, "ci");
+  // The bill-to, newest raw summary row for this OBD (one shared reader).
+  const billTo = (await loadBillToByObd([order.obdNumber])).get(order.obdNumber);
   const MAX_ATTEMPTS = 2;
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
     const identity = await allocateCiNumber(now);
@@ -348,6 +351,8 @@ async function createAutoCi(
           // hand-picked relation. An auto CI and a manual CI for the same bill
           // must name the same dealer.
           customerName: resolveCiDealer(order),
+          // 2026-10-17 owner ruling: CI DISPLAYS bill-to + SAP ship-to (new columns). customerName still snapshots the effective dealer for history — do not switch display back to it.
+          ...ciPartyColumns(billTo, order),
           // 🔴 ALWAYS 'part'. An auto CI carries the lines that were marked, and
           // "full bill" MEANS every active line at its delivered quantity — a
           // claim only the whole-bill path may make.

@@ -184,8 +184,13 @@ export function CiBillingBoardScreen(): React.JSX.Element {
         : rows.filter(
             (r) =>
               r.ciNumber.toLowerCase().includes(q) ||
-              r.customerName.toLowerCase().includes(q) ||
-              r.obdNumber.toLowerCase().includes(q),
+              r.obdNumber.toLowerCase().includes(q) ||
+              // 2026-10-17: the bill-to (what the card shows), SAP's ship-to,
+              // AND the old dealer snapshot — so nothing that matched before
+              // the owner ruling stops matching.
+              r.party.name.toLowerCase().includes(q) ||
+              (r.party.shipTo?.name.toLowerCase().includes(q) ?? false) ||
+              r.customerName.toLowerCase().includes(q),
           ),
     [q],
   );

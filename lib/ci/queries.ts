@@ -25,11 +25,23 @@ import { prisma } from "@/lib/prisma";
 import { getISTDayRange } from "@/lib/dates";
 // The division number, derived from `orders.smu`'s NAME. ONE map, kept beside
 // its inverse in lib/import-upsert/types.ts — never re-typed locally, and never
-// resolved by joining import_raw_summary, which CI has no other use for.
+// resolved by joining import_raw_summary for it (CI reads that table for the
+// BILL-TO only, through lib/reports/bill-facts.ts loadBillToByObd — 2026-10-17).
 // Third caller of the same rule (lib/picking/queue.ts, lib/floor/queries.ts:779).
 import { SMU_CODE_BY_NAME } from "@/lib/import-upsert/types";
 import { applyCiCatalog, resolveCiSkus } from "./resolve-lines";
-import { billTotals, ciTotals, litresPerTin, resolveCiDealer, round3, sumLitres } from "./derive";
+import {
+  billTotals,
+  ciPartyDisplay,
+  ciTotals,
+  litresPerTin,
+  resolveCiDealer,
+  round3,
+  sumLitres,
+} from "./derive";
+// The bill-to reader — newest import_raw_summary row per OBD. IMPORTED, never a
+// third copy (lib/floor/queries.ts billToByObd is the name-only sibling).
+import { loadBillToByObd } from "@/lib/reports/bill-facts";
 import { asCiSource, asCiStatus } from "./types";
 // 🔴 `import type`, AND THAT KEYWORD IS LOAD-BEARING — do not drop it.
 // lib/ci/workbook.ts imports `xlsx`, a ~900KB CommonJS bundle. A type-only
@@ -43,6 +55,7 @@ export { normaliseCiSearchTerm } from "./search-term";
 import type {
   CiBillLine,
   CiBillResult,
+  CiPartyDisplay,
   CiBillingBoard,
   CiBoardRow,
   CiDetail,
@@ -180,6 +193,7 @@ export async function searchCiBills(rawQuery: string): Promise<CiSearchResult> {
       invoiceDate: true,
       orderDateTime: true,
       obdEmailDate: true,
+      shipToCustomerId: true,
       shipToCustomerName: true,
       ...ORDER_DEALER_SELECT,
     },
@@ -210,12 +224,17 @@ export async function searchCiBills(rawQuery: string): Promise<CiSearchResult> {
     agg.set(l.obdNumber, cur);
   }
 
+  // LIVE bill-to for every hit, ONE query (2026-10-17 owner ruling) — so the
+  // card names the same bill-to the create path will snapshot.
+  const billTos = await loadBillToByObd(orders.map((o) => o.obdNumber));
+
   const hits: CiSearchHit[] = orders.map((o) => {
     const a = agg.get(o.obdNumber) ?? { n: 0, litres: 0 };
     return {
       orderId: o.id,
       obdNumber: o.obdNumber,
       customerName: resolveCiDealer(o),
+      party: liveParty(o, billTos.get(o.obdNumber)),
       invoiceNo: o.invoiceNo,
       invoiceDate: o.invoiceDate ? isoDate(o.invoiceDate) : null,
       obdDateTime: (o.orderDateTime ?? o.obdEmailDate)?.toISOString() ?? null,
@@ -299,11 +318,15 @@ export async function getCiBill(orderId: number): Promise<CiBillResult | null> {
   });
 
   const totals = billTotals(lines);
+  // LIVE bill-to (2026-10-17 owner ruling): the header names exactly what the
+  // create path will write onto the CI.
+  const billTo = (await loadBillToByObd([order.obdNumber])).get(order.obdNumber);
 
   return {
     orderId: order.id,
     obdNumber: order.obdNumber,
     customerName: resolveCiDealer(order),
+    party: liveParty(order, billTo),
     invoiceNo: order.invoiceNo,
     invoiceDate: order.invoiceDate ? isoDate(order.invoiceDate) : null,
     obdDateTime: (order.orderDateTime ?? order.obdEmailDate)?.toISOString() ?? null,
@@ -314,6 +337,55 @@ export async function getCiBill(orderId: number): Promise<CiBillResult | null> {
     lines,
   };
 }
+
+/**
+ * The New screens' party, LIVE off the order — the same values the create paths
+ * write (ciPartyColumns): bill-to from the raw summary, ship-to from SAP's own
+ * columns, and the effective dealer + SAP ship-to code as the fallback pair.
+ */
+function liveParty(
+  o: {
+    shipToCustomerId: string | null;
+    shipToCustomerName: string | null;
+    shipToOverrideCustomer: { customerName: string } | null;
+    customer: { customerName: string } | null;
+  },
+  billTo: { code: string | null; name: string | null } | undefined,
+): CiPartyDisplay {
+  return ciPartyDisplay({
+    billToCustomerName: billTo?.name ?? null,
+    billToCustomerCode: billTo?.code ?? null,
+    shipToCustomerName: o.shipToCustomerName,
+    shipToCustomerCode: o.shipToCustomerId,
+    customerName: resolveCiDealer(o),
+    customerCode: o.shipToCustomerId,
+  });
+}
+
+/** Register columns A/B — bill-to, else the old pair, as a PAIR (a bill-to code
+ *  never sits beside an old dealer name). Null stays null: an empty cell. */
+function registerDealer(r: {
+  billToCustomerCode: string | null;
+  billToCustomerName: string | null;
+  customerCode: string | null;
+  customerName: string | null;
+}): { dealerCode: string | null; dealerName: string | null } {
+  const hasBillTo = r.billToCustomerName !== null && r.billToCustomerName.trim() !== "";
+  return hasBillTo
+    ? { dealerCode: r.billToCustomerCode, dealerName: r.billToCustomerName }
+    : { dealerCode: r.customerCode, dealerName: r.customerName };
+}
+
+/** The four display snapshots + the old pair they fall back to. Spread into
+ *  every ci_returns select that feeds a screen or the register. */
+const CI_PARTY_SELECT = {
+  customerCode: true,
+  customerName: true,
+  billToCustomerCode: true,
+  billToCustomerName: true,
+  shipToCustomerCode: true,
+  shipToCustomerName: true,
+} as const;
 
 // ── The shared predicates ────────────────────────────────────────────────────
 
@@ -416,7 +488,8 @@ const BOARD_SELECT = {
   ciNumber: true,
   status: true,
   obdNumber: true,
-  customerName: true,
+  // customerName (the old dealer snapshot) + the four display columns.
+  ...CI_PARTY_SELECT,
   returnType: true,
   submittedAt: true,
   closedAt: true,
@@ -447,6 +520,7 @@ function toBoardRow(r: BoardRow): CiBoardRow {
     ciNumber: r.ciNumber ?? "",
     status: asCiStatus(r.status),
     customerName: r.customerName ?? "(Unmatched)",
+    party: ciPartyDisplay(r),
     obdNumber: r.obdNumber,
     // Live first, snapshot second. Never the reverse.
     invoiceNo: r.order?.invoiceNo ?? r.invoiceNo,
@@ -580,8 +654,7 @@ export async function getCiDetail(ciId: number): Promise<CiDetail | null> {
       soNumber: true,
       source: true,
       customerId: true,
-      customerCode: true,
-      customerName: true,
+      ...CI_PARTY_SELECT,
       // ⚠ THE ROUTE, DERIVED AT READ TIME — one nested include off the CI's own
       // customer relation, no extra query and no route column on ci_returns.
       // customerId → delivery_point_master → area_master → route_master.name,
@@ -719,6 +792,7 @@ export async function getCiDetail(ciId: number): Promise<CiDetail | null> {
     soNumber: row.soNumber,
     customerCode: row.customerCode,
     customerName: row.customerName,
+    party: ciPartyDisplay(row),
     area: order?.customer?.area?.name ?? null,
     // The division NUMBER, derived from the name in memory — one line, the same
     // one lib/floor/queries.ts:779 runs. `?? null` covers a name the map does
@@ -802,12 +876,13 @@ export async function getCiRegisterRows(
     select: {
       ciNumber: true,
       // 🔴 THE CI'S OWN SNAPSHOTS for the dealer (owner ruling, 2026-09-03) —
-      // never delivery_point_master. A register records what was FILED; the
-      // snapshot honours the ship-to override (goods come back from where they
-      // were delivered) and it is the only source that survives an unmastered
-      // dealer, where the master has no row at all.
-      customerCode: true,
-      customerName: true,
+      // never delivery_point_master. A register records what was FILED, and a
+      // snapshot is the only source that survives an unmastered dealer.
+      // ⚠ SUPERSEDED IN PART 2026-10-17: the 2026-09-03 text said the register
+      // shows the ship-to-override dealer; it now shows the BILL-TO snapshot.
+      // 🔴 2026-10-17 owner ruling: columns A/B are the BILL-TO snapshot,
+      // falling back to the old dealer pair when bill-to is NULL (see below).
+      ...CI_PARTY_SELECT,
       // The FALLBACK half of the invoice rule — the live half rides on `order`.
       invoiceNo: true,
       invoiceDate: true,
@@ -834,8 +909,12 @@ export async function getCiRegisterRows(
     // anyone should ever see, and it never reaches the sheet (no column holds
     // OrbitOMS's own reference; it is the sort tiebreak only).
     ciNumber: r.ciNumber ?? "",
-    dealerCode: r.customerCode,
-    dealerName: r.customerName,
+    // A = code, B = DELAR NAME — the BILL-TO (owner ruling 2026-10-17), by the
+    // same rule every screen uses, so the register and the desk agree. Bill-to
+    // name missing ⇒ the old customerCode/customerName pair.
+    // ⚠ NOT ciPartyDisplay: the register writes an EMPTY CELL for an unknown
+    // name (CLAUDE_CI.md §10), never the screens' "(Unmatched)".
+    ...registerDealer(r),
     // Live first, snapshot second. NEVER the reverse — the rule written on
     // ci_returns.invoiceNo itself, and the same one toBoardRow and getCiDetail
     // apply. A number SAP sends after the CI was raised simply appears.

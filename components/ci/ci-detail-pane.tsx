@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { ciSourceTag, type CiDetail } from "@/lib/ci/types";
+import { ciShipToLabel } from "@/lib/ci/derive";
 import { cleanDigitId, cleanMoney } from "@/lib/paste-clean";
 
 // Billing's right-hand pane — frames 1-3 of docs/mockups/ci/billing.html.
@@ -178,7 +179,8 @@ export function CiDetailPane({
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <h2 className="text-[17px] font-bold text-gray-900 truncate">
-                {detail.customerName ?? "(Unmatched)"}
+                {/* 2026-10-17 owner ruling: the BILL-TO is the main name. */}
+                {detail.party.name}
               </h2>
               {/* 🔴 FULL BILL IS SAID THREE TIMES — here, on the rail card, and
                   in the table header. Not redundancy: each one answers the
@@ -186,15 +188,23 @@ export function CiDetailPane({
                   one where a wrong assumption costs most. */}
               <ReturnTypeTag full={isFull} />
             </div>
-            {/* code · OBD · AREA. The area is read LIVE via customerId and is
-                NOT a column — blank for an unmastered dealer, which is a normal
-                state. No invented fallback: the parts that exist are joined and
-                the rest is simply absent. */}
+            {/* code · OBD — the code is the BILL-TO's (or the old snapshot's
+                when bill-to is unknown, as a pair with the name above). */}
             <div className="text-[12px] text-gray-500 mt-1 truncate">
-              {[detail.customerCode, `OBD ${detail.obdNumber}`, detail.area]
+              {[detail.party.code, `OBD ${detail.obdNumber}`, detail.party.shipTo ? null : detail.area]
                 .filter((p): p is string => Boolean(p))
                 .join(" · ")}
             </div>
+            {/* Ship to · name · code · AREA. The area BELONGS TO THE SHIP-TO:
+                it is read LIVE via customerId (SAP's ship-to master row) and is
+                NOT a column — blank for an unmastered dealer, a normal state.
+                SAP's ship-to, never the override (2026-10-17 owner ruling).
+                With no ship-to the line is hidden and the area stays above. */}
+            {detail.party.shipTo && (
+              <div className="text-[11.5px] text-gray-400 mt-0.5 truncate">
+                {ciShipToLabel(detail.party.shipTo, detail.area)}
+              </div>
+            )}
           </div>
           <div className="text-right shrink-0">
             {/* OrbitOMS's own reference — NOT SAP's. The two are separate columns

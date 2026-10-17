@@ -3467,6 +3467,21 @@ model ci_returns {
   customer     delivery_point_master? @relation("CiReturnCustomer", fields: [customerId], references: [id], onDelete: SetNull)
   customerCode String?
   customerName String?
+  // ── display snapshots (Schema v27.70, 2026-10-17 owner ruling) ────────────
+  // Every CI surface and the register DISPLAY these, not customerName above:
+  // the main name is the BILL-TO, and a small "Ship to" line under it is SAP's
+  // OWN ship-to — never the ship-to override dealer. customerName still
+  // snapshots the effective dealer (resolveCiDealer) for history.
+  //   billTo*  ← newest import_raw_summary row per obdNumber
+  //              (billToCustomerId / billToCustomerName)
+  //   shipTo*  ← orders.shipToCustomerId / orders.shipToCustomerName
+  // Live: four nullable `text` columns, no default. Backfilled 2026-10-17 by
+  // Smart Flow on every row; NULL is still possible on a bill with no raw
+  // summary — readers then fall back to customerCode/customerName.
+  billToCustomerCode String?
+  billToCustomerName String?
+  shipToCustomerCode String?
+  shipToCustomerName String?
 
   // ── stage 1 (floor supervisor, phone) ─────────────────────────────────────
   // `returnType` is answered on the FIRST screen (Full bill / Part), so it is

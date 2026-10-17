@@ -90,6 +90,10 @@ export const STRIP_VALUE = "text-[16px] font-semibold text-[#1d2939]";
 /** The unit after a number — always a size down and grey, never the same weight
  *  as the figure it qualifies (picking-board-mobile.tsx:3561). */
 export const UNIT_SUFFIX = "text-[11px] font-medium text-[#8a929c]";
+/** The "Ship to · name · code" line under a CI's bill-to name (2026-10-17 owner
+ *  ruling) — small and grey, the caption grey of UI §60 (#98a2b3). Every PHONE
+ *  surface takes it from here; the desk pane keeps its own (CI-12). */
+export const SHIP_TO_LINE = "text-[11.5px] font-medium text-[#98a2b3] truncate";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 🔴 THE SELECTED CHIP IS PICKING'S TypeFilterPills TOKEN, VERBATIM

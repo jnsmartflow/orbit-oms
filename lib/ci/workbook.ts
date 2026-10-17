@@ -50,9 +50,11 @@ export interface CiRegisterRow {
    *  unmastered dealer, where delivery_point_master has no row at all — 1 of
    *  the 13 closed CIs live (KRISHNA TRADING). */
   dealerCode: string | null;
-  /** Snapshot too, and for a second reason: it was resolved through
-   *  resolveCiDealer(), which prefers the SHIP-TO OVERRIDE. Goods come back
-   *  from where they were delivered, not from whoever the master names today. */
+  /** 🔴 THE BILL-TO SNAPSHOT since 2026-10-17 (owner ruling) —
+   *  ci_returns.billToCustomerName, falling back to the old customerName (the
+   *  effective-dealer snapshot) when it is NULL; dealerCode above follows as a
+   *  pair. Chosen in lib/ci/queries.ts registerDealer(). The column header stays
+   *  "DELAR NAME" (sic) — their named table keys off it. */
   dealerName: string | null;
   /** 🔴 LIVE OFF THE ORDER, snapshot only as fallback — the rule written on
    *  ci_returns.invoiceNo itself. 5% of bills have no invoice number when the

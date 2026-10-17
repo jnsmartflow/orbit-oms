@@ -6,6 +6,7 @@ import { ModuleMobileHeader } from "@/components/shared/module-mobile-header";
 import { useMobileShell } from "@/components/shared/mobile-shell-context";
 import { MOBILE_NAV_CLEARANCE } from "@/components/shared/mobile-shell";
 import { CiResultCard } from "./result-card";
+import { ciShipToLabel } from "@/lib/ci/derive";
 import { CiSubmittedDetail } from "./submitted-detail";
 import { CiQtySheet } from "./qty-sheet";
 import { CiMaterialSheet, CiReasonSheet } from "./details-step";
@@ -705,7 +706,9 @@ function CiCard({
       identifier={row.ciNumber}
       caption={formatIstTime(done ? row.closedAt : row.submittedAt)}
       // Row 2 — the dealer, with the return's size on the right.
-      name={row.customerName}
+      // 2026-10-17 owner ruling: BILL-TO, with SAP's ship-to under it.
+      name={row.party.name}
+      subName={row.party.shipTo ? ciShipToLabel(row.party.shipTo) : null}
       value={`${row.totalLitres} L`}
       // Row 3 — DATE FIRST, THEN THE INVOICE NUMBER (step 10). The OBD used to
       // hold this slot and is GONE from the card: he matches a CI against a
