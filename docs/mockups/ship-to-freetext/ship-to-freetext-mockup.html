@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ship-to Modal Mockup</title>
+<style>
+:root{
+  --brand-50:#F5F3FF;--brand-600:#7C3AED;--brand-700:#6D28D9;
+  --ink-25:#FAFAFC;--ink-50:#F4F3F8;--ink-100:#E9E7F0;--ink-400:#9C99AC;--ink-600:#5B5870;--ink-900:#1B1826;
+  --warn:#D97706;--warn-bg:#FFFBEB;--danger:#E11D48;--blue:#2563EB;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--ink-25);color:var(--ink-900);font:13px/1.45 -apple-system,"Segoe UI",Inter,Roboto,sans-serif;padding:24px 16px 60px}
+h1{font-size:18px;margin:0 0 4px}
+.sub{color:var(--ink-600);margin:0 0 20px}
+.wrap{max-width:1100px;margin:0 auto}
+.tag{display:inline-block;font-size:10px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--ink-600);background:var(--ink-50);border-radius:4px;padding:2px 6px;margin:28px 0 8px}
+.stage{background:rgba(27,24,38,.5);border-radius:12px;padding:40px 16px;display:flex;justify-content:center;min-height:640px;align-items:flex-start}
+.modal{background:#fff;border-radius:16px;width:100%;max-width:720px;box-shadow:0 24px 60px rgba(0,0,0,.3);overflow:hidden;display:flex;flex-direction:column}
+.mh{display:flex;align-items:center;padding:18px 24px;border-bottom:1px solid var(--ink-100)}
+.mh b{font-size:17px}
+.mh .mono{margin-left:10px;font-size:12px}
+.mh .x{margin-left:auto;color:var(--ink-400);font-size:18px;cursor:pointer}
+.mb{padding:20px 24px}
+.cur{background:var(--ink-25);border:1px solid var(--ink-100);border-radius:12px;padding:14px 16px;display:flex;align-items:center;gap:12px}
+.cur .k{font-size:10px;font-weight:700;letter-spacing:.05em;color:var(--ink-400);text-transform:uppercase}
+.cur .n{font-weight:700;font-size:15px}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--blue);display:inline-block;margin-right:6px}
+.meta{font-size:12px;color:var(--ink-600);margin-top:3px}
+.code{font-family:"SF Mono",Consolas,monospace;font-size:11px;background:var(--ink-50);border:1px solid var(--ink-100);border-radius:4px;padding:1px 6px}
+.reset{margin-left:auto;font-size:12px;font-weight:600;color:var(--ink-600);border:1px solid var(--ink-100);background:#fff;border-radius:8px;padding:7px 12px;cursor:pointer;white-space:nowrap}
+.reset[disabled]{opacity:.45;cursor:default}
+.seg{display:flex;background:var(--ink-50);border-radius:10px;padding:4px;gap:4px;margin-top:18px}
+.seg button{flex:1;border:0;background:transparent;padding:9px;border-radius:8px;font:inherit;font-size:14px;font-weight:600;color:var(--ink-600);cursor:pointer}
+.seg button.on{background:#fff;color:var(--ink-900);box-shadow:0 1px 3px rgba(0,0,0,.08)}
+.lbl{font-size:12px;font-weight:600;color:var(--ink-600);margin:18px 0 6px;display:block}
+.req{color:var(--danger)}
+.opt{font-weight:400;color:var(--ink-400)}
+.in{width:100%;border:1px solid var(--ink-100);border-radius:10px;padding:11px 12px;font:inherit;font-size:14px;background:#fff}
+.in.focus{border-color:var(--brand-600);box-shadow:0 0 0 3px rgba(124,58,237,.1)}
+.res{border:1px solid var(--ink-100);border-radius:10px;margin-top:8px;height:300px;overflow:auto}
+.res .r{display:flex;align-items:center;gap:12px;padding:11px 14px;border-bottom:1px solid var(--ink-50);cursor:pointer}
+.res .r:last-child{border-bottom:0}
+.res .r.sel{background:var(--brand-50);box-shadow:inset 3px 0 0 var(--brand-600)}
+.res .r .nm{font-weight:600}
+.res .r .ar{margin-left:auto;font-size:12px;color:var(--ink-600);text-align:right}
+.mono{font-family:"SF Mono",Consolas,monospace;font-size:11px;color:var(--ink-600)}
+.chip{display:inline-flex;font-size:12px;padding:5px 11px;border-radius:999px;border:1px solid var(--ink-100);background:#fff;cursor:pointer}
+.chip.on{border-color:var(--brand-600);background:var(--brand-50);color:var(--brand-700);font-weight:600}
+.hint{font-size:11px;color:var(--ink-400);margin-top:5px}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.drop{border:1.5px dashed var(--ink-100);border-radius:10px;padding:22px;text-align:center;color:var(--ink-600);background:var(--ink-25)}
+.drop.err{border-color:var(--danger);color:var(--danger)}
+.files{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:8px}
+.file{display:flex;align-items:center;gap:8px;border:1px solid var(--ink-100);border-radius:8px;padding:8px 10px}
+.file .x{margin-left:auto;color:var(--ink-400)}
+.scope{margin-top:18px;font-size:13px;border-radius:10px;padding:10px 12px;background:var(--brand-50);color:var(--brand-700)}
+.mf{display:flex;justify-content:flex-end;gap:10px;padding:14px 24px;border-top:1px solid var(--ink-100);background:var(--ink-25)}
+.btn{border:1px solid var(--ink-100);background:#fff;border-radius:10px;padding:10px 18px;font:inherit;font-size:14px;font-weight:600;cursor:pointer}
+.btn.pri{background:var(--brand-600);border-color:var(--brand-600);color:#fff}
+.btn[disabled]{opacity:.45}
+.typed{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--warn);background:var(--warn-bg);border-radius:4px;padding:2px 6px;margin-left:8px;vertical-align:middle}
+.card{background:#fff;border:1px solid var(--ink-100);border-radius:12px;padding:16px}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-600);background:var(--ink-25);border-bottom:1px solid var(--ink-100);padding:8px}
+td{border-bottom:1px solid var(--ink-50);padding:8px}
+.dc{display:flex;gap:10px}
+.pin{display:flex;flex-direction:column;align-items:center;color:var(--ink-600)}
+.pin span{font-size:9px;font-weight:700}
+.pin.copy{color:var(--brand-700)}
+.pin svg{width:15px;height:15px}
+.area{font-size:11px;color:var(--ink-600)}
+ul{margin:6px 0 0 18px;padding:0}
+li{margin:4px 0}
+@media(max-width:640px){.two,.files{grid-template-columns:1fr}.stage{padding:16px 8px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>Ship-to modal: Billing + Floor</h1>
+<p class="sub">One shared modal, about 720px wide, centred on a dark screen. It opens from the Billing ✎ pencil and from Floor's "Ship-to" button. The challan copy is only on <b>Type name</b>.</p>
+
+<!-- 1. SEARCH DEALER -->
+<div class="tag">1 · Search dealer (opens here by default) · Billing</div>
+<div class="stage"><div class="modal">
+  <div class="mh"><b>Change ship-to</b><span class="mono">SO 4500123456</span><span class="x">✕</span></div>
+  <div class="mb">
+    <div class="cur">
+      <div><div class="k">Current ship-to</div><div class="n"><span class="dot"></span>Mohan Colour Co</div><div class="meta"><span class="code">102425</span> · Adajan · Local</div></div>
+      <button class="reset" disabled>↺ Reset to customer</button>
+    </div>
+    <div class="seg"><button class="on">Search dealer</button><button>Type name</button></div>
+    <input class="in focus" style="margin-top:14px" placeholder="Search dealer or site by name or code…" value="ghansh">
+    <div class="res">
+      <div class="r sel"><div><div class="nm">Ghanshyam Roadways</div><span class="mono">ORB-00004</span></div><div class="ar">Kadodara<br>Upcountry</div></div>
+      <div class="r"><div><div class="nm">Ghanshyam Roadways</div><span class="mono">ORB-00006</span></div><div class="ar">Palsana<br>Upcountry</div></div>
+      <div class="r"><div><div class="nm">Ghanshyam Paints</div><span class="mono">447102</span></div><div class="ar">Varachha<br>Local</div></div>
+      <div class="r"><div><div class="nm">Ghanshyam Hardware &amp; Paints</div><span class="mono">3184455</span></div><div class="ar">Kamrej<br>Cross</div></div>
+      <div class="r"><div><div class="nm">Shree Ghanshyam Colours</div><span class="mono">450918</span></div><div class="ar">Katargam<br>Local</div></div>
+    </div>
+    <div class="hint">Dealer not in the list? Use <b>Type name</b>.</div>
+    <div class="scope">Applies to <b>all bills of this SO</b>, including ones that import later.</div>
+  </div>
+  <div class="mf"><button class="btn">Cancel</button><button class="btn pri">Save ship-to</button></div>
+</div></div>
+
+<!-- 2. TYPE NAME -->
+<div class="tag">2 · Type name · Billing</div>
+<div class="stage"><div class="modal">
+  <div class="mh"><b>Change ship-to</b><span class="mono">SO 4500123456</span><span class="x">✕</span></div>
+  <div class="mb">
+    <div class="cur">
+      <div><div class="k">Current ship-to</div><div class="n"><span class="dot"></span>Mohan Colour Co</div><div class="meta"><span class="code">102425</span> · Adajan · Local</div></div>
+      <button class="reset" disabled>↺ Reset to customer</button>
+    </div>
+    <div class="seg"><button>Search dealer</button><button class="on">Type name</button></div>
+    <div class="two">
+      <div>
+        <label class="lbl">Ship-to name</label>
+        <input class="in focus" value="Mohan Godown, near Adajan Patiya">
+        <div style="margin-top:8px"><span class="chip">As per challan</span></div>
+      </div>
+      <div>
+        <label class="lbl">Area <span class="req">*</span></label>
+        <select class="in"><option>Adajan · Local (customer's area)</option><option>Udhna · Local</option><option>Pal · Local</option></select>
+        <div class="hint">Starts at the customer's area. Decides route tab + trip stop.</div>
+      </div>
+    </div>
+    <label class="lbl">Dealer / SO challan copy <span class="opt">(optional · up to 3 · JPG, PNG, PDF)</span></label>
+    <div class="drop">📎 Drop files here or tap to choose</div>
+    <div class="files">
+      <div class="file">📄 <span>challan_mohan.pdf</span><span class="x">✕</span></div>
+    </div>
+    <div class="scope">Applies to <b>all bills of this SO</b>, including ones that import later.</div>
+  </div>
+  <div class="mf"><button class="btn">Cancel</button><button class="btn pri">Save ship-to</button></div>
+</div></div>
+
+<!-- 3. AS PER CHALLAN · FLOOR -->
+<div class="tag">3 · Type name · "As per challan" · Floor (copy required)</div>
+<div class="stage"><div class="modal">
+  <div class="mh"><b>Change ship-to</b><span class="mono">OBD 9110143195</span><span class="x">✕</span></div>
+  <div class="mb">
+    <div class="cur">
+      <div><div class="k">Current ship-to</div><div class="n"><span class="dot"></span>Aashvi Paints and Colours</div><div class="meta"><span class="code">3579102</span> · Adajan · Local</div></div>
+      <button class="reset" disabled>↺ Reset to customer</button>
+    </div>
+    <div class="seg"><button>Search dealer</button><button class="on">Type name</button></div>
+    <div class="two">
+      <div>
+        <label class="lbl">Ship-to name</label>
+        <input class="in" value="As per challan" disabled style="background:var(--ink-25)">
+        <div style="margin-top:8px"><span class="chip on">✓ As per challan</span></div>
+      </div>
+      <div>
+        <label class="lbl">Area <span class="req">*</span></label>
+        <select class="in focus"><option>Udhna · Local</option><option>Adajan · Local (customer's area)</option><option>Pal · Local</option></select>
+        <div class="hint">Pick the area from the challan. Decides route tab + trip stop.</div>
+      </div>
+    </div>
+    <label class="lbl">Dealer / SO challan copy <span class="req">* required</span></label>
+    <div class="drop err">📎 Attach the challan to save</div>
+    <div class="scope">Applies to <b>this bill only</b>. Other bills of the SO keep their ship-to.</div>
+  </div>
+  <div class="mf"><button class="btn">Cancel</button><button class="btn pri" disabled>Save</button></div>
+</div></div>
+
+<!-- 4. FLOOR · ALREADY TYPED -->
+<div class="tag">4 · Floor · bill already has a typed ship-to</div>
+<div class="stage" style="min-height:0"><div class="modal">
+  <div class="mh"><b>Change ship-to</b><span class="mono">OBD 9110143195</span><span class="x">✕</span></div>
+  <div class="mb">
+    <div class="cur">
+      <div><div class="k">Current ship-to</div><div class="n">Site — Pal Gam, Tower B<span class="typed">↪ Ship-to changed</span></div><div class="meta">Pal · Local · billed to Aashvi Paints and Colours <span class="code">3579102</span> · 📄 1 copy</div></div>
+      <button class="reset">↺ Reset to customer</button>
+    </div>
+    <div class="seg"><button>Search dealer</button><button class="on">Type name</button></div>
+    <div class="two">
+      <div><label class="lbl">Ship-to name</label><input class="in" value="Site — Pal Gam, Tower B"><div style="margin-top:8px"><span class="chip">As per challan</span></div></div>
+      <div><label class="lbl">Area <span class="req">*</span></label><select class="in"><option>Pal · Local</option></select></div>
+    </div>
+    <label class="lbl">Dealer / SO challan copy <span class="opt">(optional · up to 3)</span></label>
+    <div class="files"><div class="file">📄 <span>site_pal_dc.jpg</span><span class="x">✕</span></div></div>
+    <div class="drop" style="margin-top:8px;padding:12px">📎 Add another</div>
+    <div class="scope">Applies to <b>this bill only</b>.</div>
+  </div>
+  <div class="mf"><button class="btn">Cancel</button><button class="btn pri">Save</button></div>
+</div></div>
+
+<!-- TABLE -->
+<div class="tag">Floor table · SHIP TO + DC column</div>
+<div class="card">
+  <table>
+    <thead><tr><th>OBD</th><th>Ship to</th><th>Area</th><th>Kg</th><th>DC</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">9110143195</td><td><b>Site — Pal Gam, Tower B</b><span class="typed">↪ Ship-to changed</span><div class="area">billed to Aashvi Paints and Colours</div></td><td>Pal</td><td>94</td>
+        <td><div class="dc"><span class="pin copy"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m21.4 11-8.5 8.6a6 6 0 0 1-8.5-8.5l8.5-8.5a4 4 0 0 1 5.7 5.6l-8.6 8.5a2 2 0 0 1-2.8-2.8l7.8-7.8"/></svg></span></div></td></tr>
+      <tr><td class="mono">9110143210</td><td><b>As per challan</b><span class="typed">↪ Ship-to changed</span><div class="area">billed to Krishna Hardware</div></td><td>Adajan</td><td>180</td>
+        <td><div class="dc"><span class="pin"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m21.4 11-8.5 8.6a6 6 0 0 1-8.5-8.5l8.5-8.5a4 4 0 0 1 5.7 5.6l-8.6 8.5a2 2 0 0 1-2.8-2.8l7.8-7.8"/></svg></span><span class="pin copy"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m21.4 11-8.5 8.6a6 6 0 0 1-8.5-8.5l8.5-8.5a4 4 0 0 1 5.7 5.6l-8.6 8.5a2 2 0 0 1-2.8-2.8l7.8-7.8"/></svg></span></div></td></tr>
+      <tr><td class="mono">9110143222</td><td><b>Mohan Colour Co</b></td><td>Adajan</td><td>30</td><td></td></tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="tag">Rules shown</div>
+<div class="card">
+  <ul>
+    <li>Big centred modal (~720px). Opens on <b>Search dealer</b> with the current ship-to on top.</li>
+    <li><b>Search dealer</b> = dealer list only (incl. ORB). No challan upload there.</li>
+    <li><b>Type name</b> = name (or "As per challan") + Area (required, starts at customer's area) + optional copy, up to 3.</li>
+    <li>"As per challan" → name box locks, <b>area still required</b> (decides the route), copy becomes required, Save is off until a file is attached.</li>
+    <li>Every typed ship-to carries the normal <b>↪ Ship-to changed</b> tag (same as a dealer redirect).</li>
+    <li>Billing + Floor show "As per challan" as the name. <b>Picking (supervisor, picker, push) and the trip sheet show the dealer name</b> + tag; a named site shows as a small "→ site" line.</li>
+    <li>Picking a dealer or <b>Reset to customer</b> clears the typed name and hides its copy (the file stays stored, not deleted).</li>
+    <li>Scope line: Billing = all bills of the SO · Floor = this bill only. Floor refuses a bill already on a trip.</li>
+  </ul>
+</div>
+</div>
+</body>
+</html>
