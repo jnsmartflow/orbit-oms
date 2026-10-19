@@ -5,7 +5,7 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { activityForInvoice, detailWalk, otherInvoices, resolveScope, scopeItems, walkIndex } from "./detail-scope";
+import { activityForInvoice, detailWalk, otherInvoices, resolveScope, scopedHoldBody, scopedInvoiceRowId, scopeItems, walkIndex } from "./detail-scope";
 
 const SPLIT = [
   { seq: 1, invoiceNo: "I536230716" },
@@ -86,4 +86,24 @@ test("walk: a NARROWED row walks its drawn invoices only, still per invoice with
   const held = { orderId: 18648, invoiceRows: [all[2]], invoiceRowsAll: all };
   assert.deepEqual(detailWalk([held]), [{ orderId: 18648, invoiceSeq: 3 }]);
   assert.deepEqual(detailWalk([{ orderId: 18648, invoiceRows: [], invoiceRowsAll: all }]), [{ orderId: 18648, invoiceSeq: null }]);
+});
+
+// ── the panel's scoped Hold / Release (6.1 fix) ─────────────────────────────
+
+test("panel scope → action: a scoped invoice of a split OBD acts on that row; otherwise the whole OBD", () => {
+  const rows = [
+    { id: 17010, seq: 1 },
+    { id: 36798, seq: 2 },
+    { id: 36799, seq: 3 },
+    { id: 36800, seq: 4 },
+  ];
+  assert.equal(scopedInvoiceRowId(3, rows), 36799);
+  assert.equal(scopedInvoiceRowId(null, rows), null); // OBD view
+  assert.equal(scopedInvoiceRowId(9, rows), null); // the invoice is gone
+  assert.equal(scopedInvoiceRowId(1, [{ id: 500, seq: 1 }]), null); // unsplit
+  assert.deepEqual(scopedHoldBody("unhold", 18648, 36799), {
+    action: "unhold",
+    orderIds: [18648],
+    invoiceRowIds: { 18648: [36799] },
+  });
 });

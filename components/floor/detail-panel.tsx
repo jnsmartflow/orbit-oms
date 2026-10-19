@@ -803,7 +803,23 @@ function PanelBody({
           {/* Release (rail / hold) — teal primary; opens the reused picker and only
               then releases (a held/rail bill has no slot, so this is the slot step
               too). Wiring unchanged. */}
-          {(source === "rail" || source === "hold") && (
+          {/* 6.1 fix — scoped to a HELD invoice of a split OBD (On hold): its
+              Release takes THAT invoice off hold (floor-page → releaseRows); the
+              OBD keeps its slot, so there is no slot step. */}
+          {source === "hold" && scope !== null && invoiceRows.length >= 2 && (
+            <button
+              type="button"
+              onClick={() => run(() => actions.onRelease(d.orderId, "", 0))}
+              title={`Take ${scope.invoiceNo ?? "this invoice"} off hold — the other invoices stay as they are`}
+              className="inline-flex h-[34px] items-center gap-1.5 rounded-md border border-brand-600 bg-brand-600 px-3.5 text-[12px] font-semibold text-white enabled:hover:bg-brand-700 disabled:cursor-not-allowed disabled:border-gray-200 disabled:bg-gray-100 disabled:text-gray-400"
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7">
+                <path d="M5 12h14M13 6l6 6-6 6" />
+              </svg>
+              Release invoice
+            </button>
+          )}
+          {(source === "rail" || (source === "hold" && !(scope !== null && invoiceRows.length >= 2))) && (
             <div className="flex items-center gap-1.5">
               <SlotPickerButton
                 value={null}

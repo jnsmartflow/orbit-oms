@@ -110,3 +110,28 @@ export function scopeItems<L extends ScopableLine>(
 export function activityForInvoice<E extends { orderInvoiceIds?: readonly number[] }>(entries: readonly E[], invoiceRowId: number): E[] {
   return entries.filter((e) => (e.orderInvoiceIds?.length ?? 0) === 0 || e.orderInvoiceIds!.includes(invoiceRowId));
 }
+
+// ── THE PANEL'S HOLD / RELEASE, SCOPED (Add invoices 6.1 fix, 2026-10-19) ───
+//
+// A panel scoped to ONE invoice of a SPLIT OBD holds / releases THAT invoice
+// row only — POST /api/floor/actions hold | unhold with invoiceRowIds
+// (lib/order-invoices/hold.ts), the bottom bar's rules, refusals and log. An
+// unscoped or unsplit panel acts on the whole OBD exactly as before.
+
+/** The invoice row the panel acts on, or null = the whole OBD. */
+export function scopedInvoiceRowId(
+  invoiceSeq: number | null,
+  invoiceRows: ReadonlyArray<{ id: number; seq: number }>,
+): number | null {
+  if (invoiceSeq === null || invoiceRows.length < 2) return null;
+  return invoiceRows.find((r) => r.seq === invoiceSeq)?.id ?? null;
+}
+
+/** The actions-route body for the panel's Hold / Release of a scoped invoice. */
+export function scopedHoldBody(
+  action: "hold" | "unhold",
+  orderId: number,
+  invoiceRowId: number,
+): { action: "hold" | "unhold"; orderIds: number[]; invoiceRowIds: Record<number, number[]> } {
+  return { action, orderIds: [orderId], invoiceRowIds: { [orderId]: [invoiceRowId] } };
+}

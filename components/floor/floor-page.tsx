@@ -65,7 +65,7 @@ import { DetailPanel, type DetailActions } from "./detail-panel";
 import { OffFloorDialog, type OffFloorFormBill, type CiReasonOption } from "./off-floor-dialog";
 import { AddInvoicesDialog } from "./add-invoices-dialog";
 // Add invoices Phase 4 commit 3 — the detail panel scoped to one invoice.
-import { detailWalk, resolveScope, type DetailKey } from "@/lib/floor/detail-scope";
+import { detailWalk, resolveScope, scopedHoldBody, scopedInvoiceRowId, type DetailKey } from "@/lib/floor/detail-scope";
 import { offFloorRefusal } from "@/lib/floor/off-floor";
 import { SearchBox, SearchHits } from "./search-box";
 import { FilterSheet } from "./filter-sheet";
@@ -402,7 +402,9 @@ async function postJson(url: string, payload: unknown, method: "POST" | "PATCH" 
 function reportWrite(label: string, r: { ok: boolean; body: WriteBody }): boolean {
   const failed = Array.isArray(r.body.failed) ? r.body.failed : [];
   if (!r.ok) {
-    toast.error(r.body.error ? `${label} failed — ${r.body.error}` : `${label} failed.`);
+    // The route's own words when it sent any (a 422 carries them in failed[]).
+    const why = r.body.error ?? failed[0]?.error;
+    toast.error(why ? `${label} failed — ${why}` : `${label} failed.`);
     return false;
   }
   if (failed.length > 0) {
@@ -2713,9 +2715,24 @@ export function FloorPage({
     return r?.action === "ci" ? r.ciNumber ?? "a CI" : null;
   }, [detail, cancelledRows]);
 
+  // 6.1 fix — the invoice row a SCOPED panel acts on (a split OBD's invoice),
+  // null = the whole OBD. lib/floor/detail-scope.ts scopedInvoiceRowId.
+  const detailScopeRowId = detail ? scopedInvoiceRowId(detailScopeSeq, detailInvoiceRows) : null;
+  const detailScopeLabel = detailInvoiceRows.find((r) => r.id === detailScopeRowId)?.invoiceNo ?? "Invoice";
+
   const detailActions: DetailActions = useMemo(
     () => ({
       onRelease: async (orderId, date, windowId) => {
+        // SCOPED to an invoice of a split OBD: release THAT row only (releaseRows)
+        // — the slot is not used, the OBD keeps its own. Else the slot release.
+        if (detailScopeRowId !== null && detail?.orderId === orderId) {
+          const r = await postJson("/api/floor/actions", scopedHoldBody("unhold", orderId, detailScopeRowId));
+          if (reportWrite("Release", r)) {
+            toast.success((r.body.done ?? []).length > 0 ? `${detailScopeLabel} released` : `${detailScopeLabel} is not on hold — nothing changed.`);
+          }
+          await load();
+          return;
+        }
         const r = await postJson("/api/floor/release", { releases: [{ orderId, dispatchTargetDate: date, dispatchWindowId: windowId }] });
         reportRelease(r);
         await load();
@@ -2753,6 +2770,26 @@ export function FloorPage({
         await load();
       },
       onHold: async (orderId) => {
+        // SCOPED to an invoice of a split OBD: hold THAT row only (holdRows) —
+        // the bottom bar's refusals ("… on L-02 — remove it from the trip
+        // first"), log and 8 s Undo of exactly the row it held.
+        if (detailScopeRowId !== null && detail?.orderId === orderId) {
+          const r = await postJson("/api/floor/actions", scopedHoldBody("hold", orderId, detailScopeRowId));
+          if (reportWrite("Hold", r)) {
+            const done = r.body.done ?? [];
+            const doneRows = r.body.doneRows ?? {};
+            if (done.length > 0) {
+              toast.success(`${detailScopeLabel} put on hold`, {
+                duration: 8_000,
+                action: { label: "Undo", onClick: () => void undoHold(done, doneRows) },
+              });
+            } else {
+              toast(`${detailScopeLabel} is already on hold — nothing changed.`);
+            }
+          }
+          await load();
+          return;
+        }
         reportWrite("Hold", await postJson("/api/floor/actions", { action: "hold", orderIds: [orderId] }));
         await load();
       },
@@ -2788,7 +2825,7 @@ export function FloorPage({
         await load();
       },
     }),
-    [load, data, holdRows, openOffFloor, closeDetail],
+    [load, data, holdRows, openOffFloor, closeDetail, detail, detailScopeRowId, detailScopeLabel, undoHold],
   );
 
   // ── History navigation ────────────────────────────────────────────────────
