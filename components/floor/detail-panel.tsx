@@ -9,11 +9,11 @@
 // move so his hand learns one place.
 //
 // REUSE, never fork:
-//   - Change ship-to → components/floor/ship-to-editor.tsx (GET
-//     /api/floor/ship-to-search, its default) + the override write on POST
-//     /api/floor/ship-to. Both are Floor's own as of the Support retirement
-//     step 2/8; neither uses $transaction. The editor is shared with the Tint
-//     Manager since 2026-10-01 (it passes its own search route).
+//   - Change ship-to → components/shared/ship-to-modal.tsx (2026-10-19, the
+//     shared Billing + Floor modal: GET /api/floor/ship-to-search, POST
+//     /api/floor/ship-to multipart). Replaced the inline
+//     components/floor/ship-to-editor.tsx HERE only — the Tint Manager still
+//     uses that editor.
 //   - Update slot / release → components/floor/dispatch-slot-picker.tsx +
 //     the existing /api/floor routes.
 // Every write goes through floor-page's reportWrite() handlers, so a failure
@@ -28,7 +28,8 @@ import { ChallanBadge } from "@/components/shared/challan-badge";
 import { ObdBadge } from "@/components/shared/obd-badge";
 import type { DispatchWindow } from "@/components/floor/dispatch-slot-picker";
 import { SlotPickerButton } from "@/components/floor/slot-picker-button";
-import { ShipToEditor } from "@/components/floor/ship-to-editor";
+import { ShipToModal } from "@/components/shared/ship-to-modal";
+import { ShipToCopiesPin } from "@/components/shared/ship-to-copies-pin";
 import { TINT_ROOM_REFUSAL } from "@/lib/floor/off-floor";
 import { DetailItems } from "./detail-items";
 // The Items tab's old "Invoices" section (detail-invoices.tsx, c7fef916) is no
@@ -76,7 +77,9 @@ type Tab = "items" | "details" | "activity";
 // floor-page; the panel just calls the right one per source, then refetches.
 export interface DetailActions {
   onRelease: (orderId: number, date: string, windowId: number) => Promise<void>;
-  onChangeShipTo: (orderId: number, customerId: number) => Promise<void>;
+  /** After the shared ship-to modal saved (it does the write itself, for
+   *  dealer / typed / reset) — floor-page reloads the board. */
+  onShipToSaved: () => Promise<void>;
   onUpdateSlot: (orderId: number, date: string, windowId: number) => Promise<void>;
   onReassign: (orderId: number, pickerId: number) => Promise<void>;
   onRestore: (orderId: number) => Promise<void>;
@@ -262,7 +265,7 @@ export function DetailPanel({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("items");
-  const [editingShipTo, setEditingShipTo] = useState(false);
+  const [shipToOpen, setShipToOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [pickerId, setPickerId] = useState<number | "">("");
@@ -350,7 +353,7 @@ export function DetailPanel({
   // Reset per-bill UI when the panel walks to another bill.
   useEffect(() => {
     setTab("items");
-    setEditingShipTo(false);
+    setShipToOpen(false);
     setMenuOpen(false);
     setPickerId("");
   }, [orderId]);
@@ -429,8 +432,8 @@ export function DetailPanel({
             actions={actions}
             busy={busy}
             run={run}
-            editingShipTo={editingShipTo}
-            setEditingShipTo={setEditingShipTo}
+            shipToOpen={shipToOpen}
+            setShipToOpen={setShipToOpen}
             menuOpen={menuOpen}
             setMenuOpen={setMenuOpen}
             pickerId={pickerId}
@@ -492,8 +495,8 @@ function PanelBody({
   actions,
   busy,
   run,
-  editingShipTo,
-  setEditingShipTo,
+  shipToOpen,
+  setShipToOpen,
   menuOpen,
   setMenuOpen,
   pickerId,
@@ -522,8 +525,8 @@ function PanelBody({
   actions: DetailActions;
   busy: boolean;
   run: (fn: () => Promise<void>) => Promise<void>;
-  editingShipTo: boolean;
-  setEditingShipTo: (v: boolean) => void;
+  shipToOpen: boolean;
+  setShipToOpen: (v: boolean) => void;
   menuOpen: boolean;
   setMenuOpen: (v: boolean) => void;
   pickerId: number | "";
@@ -729,20 +732,46 @@ function PanelBody({
             <span className="text-[11px] tabular-nums text-gray-400">{fmtDateTime(d.obdDateTime)}</span>
           </div>
         )}
-        <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1">
-          <span
-            className={"text-[16px] font-bold " + "text-gray-900"}
-          >
-            {d.shipToName}
-          </span>
-          {d.shipToCode && (
+        {d.shipToText !== null ? (
+          // TYPED SHIP-TO (v27.73, 2026-10-19) — the desk may show "As per
+          // challan" as the name (design §5). No code: it is not a dealer. The
+          // second line carries Floor's own ship-to-changed wording (the
+          // board's "→ ship-to changed", brand-800), the TYPED area, who it is
+          // billed to, and the violet 📎 when copies show on this bill.
+          <>
+            <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1">
+              <span className="text-[16px] font-bold text-gray-900">{d.shipToText}</span>
+            </div>
+            <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-[11.5px]">
+              <span className="text-brand-800">→ ship-to changed</span>
+              {d.typedAreaName && (
+                <span className="text-gray-500">
+                  · {d.typedAreaName}
+                  {d.typedAreaDeliveryType ? ` · ${d.typedAreaDeliveryType}` : ""}
+                </span>
+              )}
+              {(d.billToName ?? d.customerName) && (
+                <span className="text-gray-500">· billed to {d.billToName ?? d.customerName}</span>
+              )}
+              <ShipToCopiesPin orderId={d.orderId} count={d.shipToCopyCount} />
+            </div>
+          </>
+        ) : (
+          <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1">
             <span
-              className={"font-mono text-[11.5px] " + "text-gray-400"}
+              className={"text-[16px] font-bold " + "text-gray-900"}
             >
-              {d.shipToCode}
+              {d.shipToName}
             </span>
-          )}
-        </div>
+            {d.shipToCode && (
+              <span
+                className={"font-mono text-[11.5px] " + "text-gray-400"}
+              >
+                {d.shipToCode}
+              </span>
+            )}
+          </div>
+        )}
         {/* Tags carry treatment facts only (design §10.2): status, key, urgent, site, tint.
             All five are ordinary light pills and render unchanged on the soft
             wash — no flipping, no special case — only the duplicate tag is
@@ -777,29 +806,46 @@ function PanelBody({
         </div>
       </div>
 
-      {/* ── Action row (fixed) — or the ship-to editor when editing ────────────
+      {/* ── Action row (fixed) ───────────────────────────────────────────────
           SUPPRESSED WHOLESALE on a history-sourced panel. One gate rather than
           five: the row is the only host of Release, Restore, Ship-to,
           Assign/Reassign and the ⋯ (Hold / Cancel / Unassign) menu, and
-          `setEditingShipTo(true)` — the ONLY trigger for the ShipToEditor — is
-          a button inside it, so the editor branch above becomes unreachable
-          too. Removing the container is what makes the zero-write claim hold by
-          construction; gating each control would leave the next control added
-          here silently reachable from a past day. The panel keeps its header,
-          tabs, Details / Items / Activity and Prev/Next. */}
-      {readOnly ? null : editingShipTo ? (
-        <ShipToEditor
-          busy={busy}
-          onCancel={() => setEditingShipTo(false)}
-          onPick={(customerId) =>
-            run(async () => {
-              await actions.onChangeShipTo(d.orderId, customerId);
-              setEditingShipTo(false);
-            })
-          }
-        />
-      ) : (
+          `setShipToOpen(true)` — the ONLY trigger for the ship-to modal — is a
+          button inside it, and the modal itself is mounted inside it, so both
+          become unreachable too. Removing the container is what makes the
+          zero-write claim hold by construction; gating each control would leave
+          the next control added here silently reachable from a past day. The
+          panel keeps its header, tabs, Details / Items / Activity and Prev/Next. */}
+      {readOnly ? null : (
         <div className="flex items-center gap-2 border-y border-gray-200 bg-gray-50 px-4 py-2.5">
+          {/* THE SHARED SHIP-TO MODAL (free-text ship-to P3, 2026-10-19) —
+              replaced the inline ShipToEditor here (the Tint Manager keeps that
+              one). Dealer / typed name / As per challan / Reset all save inside
+              the modal (POST /api/floor/ship-to, multipart) for THIS BILL ONLY;
+              a refusal (on a trip, a Billing copy) is shown in the modal. It is
+              portalled at z-[120], above this z-[110] panel, and its Esc stops
+              at the modal. After a save: board reload + this panel's refetch. */}
+          {shipToOpen && (
+            <ShipToModal
+              desk="floor"
+              ownerId={d.orderId}
+              refLabel={`OBD ${d.obdNumber}`}
+              current={{
+                name: d.shipToText ?? d.shipToName,
+                code: d.shipToText !== null ? null : d.shipToCode,
+                area: d.shipToText !== null ? d.typedAreaName : d.area,
+                deliveryType: d.shipToText !== null ? d.typedAreaDeliveryType : d.deliveryType,
+                isChanged: d.isShipToOverride || d.shipToText !== null,
+                typedText: d.shipToText,
+                typedAreaId: d.shipToAreaId,
+                billedToName: d.billToName ?? d.customerName,
+                billedToCode: d.billToCode ?? d.customerCode,
+              }}
+              customerAreaId={d.customerAreaId}
+              onClose={() => setShipToOpen(false)}
+              onSaved={() => void run(() => actions.onShipToSaved())}
+            />
+          )}
           {/* Release (rail / hold) — teal primary; opens the reused picker and only
               then releases (a held/rail bill has no slot, so this is the slot step
               too). Wiring unchanged. */}
@@ -858,11 +904,11 @@ function PanelBody({
           )}
 
           {/* Change ship-to — teal on floor (its real job there), neutral elsewhere
-              (Release/Restore own the teal). Never disappears. Search + PATCH owned
-              by Support (§4.18); caller only. */}
+              (Release/Restore own the teal). Never disappears. Opens the shared
+              ship-to modal (mounted at the top of this row). */}
           <button
             type="button"
-            onClick={() => setEditingShipTo(true)}
+            onClick={() => setShipToOpen(true)}
             className={
               source === "floor"
                 ? "inline-flex h-[34px] items-center gap-1.5 whitespace-nowrap rounded-md border border-brand-600 bg-brand-600 px-3.5 text-[12px] font-semibold text-white hover:bg-brand-700"

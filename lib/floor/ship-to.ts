@@ -239,15 +239,21 @@ export interface ShipToSearchHit {
   id: number;
   customerName: string;
   area: string | null;
+  /** Added 2026-10-19 for the shared ship-to modal (tells two same-name ORB
+   *  customers apart). The Tint Manager editor ignores both. */
+  customerCode: string | null;
+  deliveryType: string | null;
 }
 
 /**
  * Customer lookup for a "Change ship-to" picker. READ-ONLY. Under 2 characters
  * → []. Active delivery points whose name OR code contains `q`,
  * case-insensitive (code added 2026-10-05 so an Orbit customer's ORB- code can
- * be typed), first 8 by name.
+ * be typed), first `take` by name — 8 by default (the Tint Manager's inline
+ * editor); Floor's route asks for 20 since the shared ship-to modal's taller
+ * list (2026-10-19), the same cap as Billing's search.
  */
-export async function searchShipTo(rawQ: string | null): Promise<ShipToSearchHit[]> {
+export async function searchShipTo(rawQ: string | null, take = 8): Promise<ShipToSearchHit[]> {
   const q = rawQ?.trim() ?? "";
   if (q.length < 2) return [];
 
@@ -259,10 +265,21 @@ export async function searchShipTo(rawQ: string | null): Promise<ShipToSearchHit
       ],
       isActive: true,
     },
-    select: { id: true, customerName: true, area: { select: { name: true } } },
-    take: 8,
+    select: {
+      id: true,
+      customerName: true,
+      customerCode: true,
+      area: { select: { name: true, deliveryType: { select: { name: true } } } },
+    },
+    take,
     orderBy: { customerName: "asc" },
   });
 
-  return matches.map((m) => ({ id: m.id, customerName: m.customerName, area: m.area?.name ?? null }));
+  return matches.map((m) => ({
+    id: m.id,
+    customerName: m.customerName,
+    area: m.area?.name ?? null,
+    customerCode: m.customerCode,
+    deliveryType: m.area?.deliveryType?.name ?? null,
+  }));
 }

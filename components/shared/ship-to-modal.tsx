@@ -33,6 +33,7 @@ import {
   type ShipToCopyOwner,
 } from "@/lib/ship-to/copy";
 import { shrinkCopyFile } from "@/lib/ship-to/shrink";
+import { openShipToCopy } from "@/lib/ship-to/view-copy";
 
 /** What the card at the top shows — the bill's / mail order's ship-to now. */
 export interface ShipToCurrent {
@@ -267,18 +268,8 @@ export function ShipToModal({
   }
 
   async function viewCopy(id: number) {
-    // Opened BEFORE the await so a popup blocker sees the click.
-    const w = window.open("", "_blank");
-    try {
-      const res = await fetch(`/api/ship-to/copy/${id}`, { cache: "no-store" });
-      const body = (await res.json().catch(() => null)) as { signedUrl?: string; error?: string } | null;
-      if (!res.ok || !body?.signedUrl) throw new Error(body?.error ?? "Could not open the copy");
-      if (w) w.location.href = body.signedUrl;
-      else window.open(body.signedUrl, "_blank");
-    } catch (e) {
-      w?.close();
-      setErr(e instanceof Error ? e.message : "Could not open the copy");
-    }
+    const problem = await openShipToCopy(id);
+    if (problem !== null) setErr(problem);
   }
 
   // ── Save ──────────────────────────────────────────────────────────────────

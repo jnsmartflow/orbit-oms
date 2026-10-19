@@ -18,6 +18,7 @@ import { formatPack } from "@/lib/place-order/pack";
 import { getColourWorkByOrder } from "@/lib/picking/colour-work-query";
 // The Sales Officer — the board's own resolver, so the row and the panel agree.
 import { salesOfficerByOrder } from "@/lib/floor/queries";
+import { countActiveOwnCopies, countBillingCopiesVisible } from "@/lib/ship-to/copies-server";
 import type { FloorDetail, FloorActivityEntry, FloorDetailLine, FloorDetailTint } from "@/lib/floor/types";
 
 const PROJECT_SMUS = new Set(["Retail Offtake", "Decorative Projects"]);
@@ -40,8 +41,11 @@ export async function getOrderDetail(orderId: number): Promise<FloorDetail | nul
   const order = await prisma.orders.findFirst({
     where: { id: orderId, isRemoved: false },
     include: {
-      customer: { select: DEALER_SELECT },
+      // areaId (2026-10-19) — the ship-to modal's default area for a typed ship-to.
+      customer: { select: { ...DEALER_SELECT, areaId: true } },
       shipToOverrideCustomer: { select: DEALER_SELECT },
+      // Typed ship-to area (v27.73) — relation "OrderShipToArea".
+      shipToArea: { select: { name: true, deliveryType: { select: { name: true } } } },
       dispatchWindow: { select: { id: true, windowTime: true } },
       pickAssignment: {
         select: { picker: { select: { name: true } }, checkedBy: { select: { name: true } } },
@@ -180,6 +184,13 @@ export async function getOrderDetail(orderId: number): Promise<FloorDetail | nul
   // challan cascade, mail-order name), for one bill. At most one read.
   const salesOfficer = (await salesOfficerByOrder([order])).get(order.id) ?? null;
 
+  // Challan copies this bill shows (v27.73): its own Floor copies + the SO's
+  // Billing copies still visible by THE rule (lib/ship-to/copies-server.ts).
+  // The own count is one read on the orderId index; the Billing count reads
+  // nothing unless the bill has a typed ship-to. On click only, like the tint block.
+  const ownCopies = await countActiveOwnCopies("floor", order.id);
+  const billingCopies = await countBillingCopiesVisible(order);
+
   const tint: FloorDetailTint | null =
     order.orderType === "tint"
       ? {
@@ -245,6 +256,16 @@ export async function getOrderDetail(orderId: number): Promise<FloorDetail | nul
     overrideCode: order.shipToOverrideCustomer?.customerCode ?? null,
     customerName: order.customer?.customerName ?? order.shipToCustomerName ?? null,
     customerCode: order.customer?.customerCode ?? order.shipToCustomerId ?? null,
+
+    // Typed ship-to (v27.73) — ADDITIVE: shipToName / isShipToOverride above
+    // are unchanged (their readers move in step 7). Bill-to for "billed to" is
+    // billToName / billToCode above.
+    shipToText: order.shipToText,
+    shipToAreaId: order.shipToAreaId,
+    typedAreaName: order.shipToArea?.name ?? null,
+    typedAreaDeliveryType: order.shipToArea?.deliveryType?.name ?? null,
+    customerAreaId: order.customer?.areaId ?? null,
+    shipToCopyCount: ownCopies + billingCopies,
 
     soNumber: order.soNumber,
     salesOfficerName: salesOfficer?.name ?? null,

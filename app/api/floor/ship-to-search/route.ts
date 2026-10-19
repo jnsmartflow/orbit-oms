@@ -25,6 +25,8 @@ export async function GET(req: Request): Promise<NextResponse> {
 
   // The query lives in lib/floor/ship-to.ts searchShipTo since 2026-10-01 —
   // shared with the Tint Manager's search route. Same rule, same bare array.
+  // 20 hits (2026-10-19) for the shared ship-to modal's taller list — Billing's
+  // cap; the Tint Manager's route keeps the default 8.
   const { searchParams } = new URL(req.url);
-  return NextResponse.json(await searchShipTo(searchParams.get("q")));
+  return NextResponse.json(await searchShipTo(searchParams.get("q"), 20));
 }

@@ -855,6 +855,21 @@ export interface FloorDetail {
   customerName: string | null; // the resolved ship-to customer (pre-override)
   customerCode: string | null;
 
+  /**
+   * TYPED SHIP-TO (v27.73, 2026-10-19) — a typed name or "As per challan" with
+   * its own area, no dealer id. `shipToName` above still names the dealer
+   * (step 7 moves its readers); the detail panel shows these instead.
+   */
+  shipToText: string | null;
+  shipToAreaId: number | null;
+  typedAreaName: string | null;
+  typedAreaDeliveryType: string | null;
+  /** The bill's own dealer's area — the ship-to modal's default area. */
+  customerAreaId: number | null;
+  /** Active challan copies this bill shows: its own + the SO's Billing copies
+   *  still visible by the one rule (lib/ship-to/copies-server.ts). */
+  shipToCopyCount: number;
+
   // Details — Reference
   soNumber: string | null;
   /** Whose bill it is — same resolver and meaning as FloorBoardRow's three. */

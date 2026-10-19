@@ -2765,12 +2765,13 @@ export function FloorPage({
         reportRelease(r);
         await load();
       },
-      // Ship-to change → Floor's OWN thin route (step 2/8 of the Support
-      // retirement). One job, sequential awaits, no $transaction, and an
-      // unchanged value writes nothing so the live-sync marker stays honest.
-      onChangeShipTo: async (orderId, customerId) => {
-        const r = await postJson("/api/floor/ship-to", { orderId, customerId });
-        reportWrite("Change ship-to", r);
+      // Ship-to → the shared modal saves itself (POST /api/floor/ship-to,
+      // multipart; dealer / typed / reset — free-text ship-to P3, 2026-10-19)
+      // and shows any refusal in place. This only reloads the board after a
+      // save landed; the panel refetches itself. The route's JSON form stays
+      // for any other caller.
+      onShipToSaved: async () => {
+        toast.success("Ship-to saved");
         await load();
       },
       onUpdateSlot: async (orderId, date, windowId) => {
