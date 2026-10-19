@@ -58,6 +58,8 @@ export async function loadSplitInvoiceRows(
       isHeld: true,
       heldAt: true,
       heldById: true,
+      // 6.4 — the row has shipped.
+      isDispatched: true,
       // 6.3 — the row's own CI, if any (not voided; newest first).
       ciReturns: { where: { isVoided: false }, orderBy: { id: "desc" }, take: 1, select: { ciNumber: true, status: true } },
       lines: { select: { rawLineItemId: true, qty: true } },

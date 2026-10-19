@@ -70,6 +70,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { DISPATCHED, PICK_CHECKED } from "@/lib/workflow-stages";
+import { markRowsDispatched, mirrorObdDispatchedSafe } from "@/lib/order-invoices/dispatch";
 
 export interface DispatchFailure {
   orderId: number;
@@ -131,8 +132,17 @@ export async function markBillsDispatched(opts: {
   /** The real session user. Never a body claim. */
   actorId: number;
   noteLabel: string;
+  /**
+   * PER INVOICE (Add invoices 6.4, 2026-10-19): a SPLIT OBD → the invoice rows
+   * of it that are on the dispatched trip. Those rows ship
+   * (lib/order-invoices/dispatch.ts markRowsDispatched); the OBD becomes
+   * dispatched only with its last open invoice (the done rule). An OBD absent
+   * here is dispatched whole, exactly as before.
+   */
+  rowsByOrder?: ReadonlyMap<number, readonly number[]>;
 }): Promise<DispatchOutcome> {
   const { orderIds, actorId, noteLabel } = opts;
+  const at = new Date();
 
   const dispatched: number[] = [];
   const alreadyDispatched: number[] = [];
@@ -141,6 +151,22 @@ export async function markBillsDispatched(opts: {
   const failed: DispatchFailure[] = [];
 
   for (const orderId of orderIds) {
+    const rowIds = opts.rowsByOrder?.get(orderId);
+    if (rowIds !== undefined) {
+      // A SPLIT OBD — its invoices on this trip. Same buckets: a held OBD /
+      // not checked are left alone; "dispatched" = at least one invoice moved.
+      try {
+        const r = await markRowsDispatched({ orderId, rowIds, actorId, at, noteLabel });
+        if (r.kind === "dispatched") dispatched.push(orderId);
+        else if (r.kind === "already") alreadyDispatched.push(orderId);
+        else if (r.kind === "held") held.push(orderId);
+        else if (r.kind === "notChecked") notChecked.push({ orderId, workflowStage: r.workflowStage });
+        else failed.push({ orderId, error: r.error });
+      } catch (err) {
+        failed.push({ orderId, error: err instanceof Error ? err.message : "Unexpected error" });
+      }
+      continue;
+    }
     try {
       const order = await prisma.orders.findUnique({
         where: { id: orderId },
@@ -191,6 +217,8 @@ export async function markBillsDispatched(opts: {
           note: noteLabel,
         },
       });
+      // 6.4 — the unsplit row follows its OBD (row == OBD). Last; never throws.
+      await mirrorObdDispatchedSafe(orderId, actorId, at);
 
       dispatched.push(orderId);
     } catch (err) {

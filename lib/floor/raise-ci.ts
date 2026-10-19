@@ -69,6 +69,7 @@ import { ciInvoiceLabel, invoiceCiDuplicate, invoiceCiPicks, invoiceCiRefusal } 
 import { offFloorRefusal } from "@/lib/floor/off-floor";
 import { INVOICE_TRIPS_SELECT, invoiceTripsOf } from "@/lib/order-invoices/trip-refusal";
 import { mirrorObdHoldSafe } from "@/lib/order-invoices/hold";
+import { settleObdDone } from "@/lib/order-invoices/dispatch";
 
 export interface CiReasonOption {
   id: number;
@@ -349,7 +350,8 @@ export async function raiseFullBillCi(args: {
 //   e. ONE nested create at 'submitted', returnType 'full' (the whole
 //      INVOICE), orderInvoiceId = the row, invoiceNo / invoiceDate = the row's.
 //   f. NO orders write — the OBD is not cancelled (Cancel stays per OBD); its
-//      other invoices stay where they are. ONE order_status_logs row (the
+//      other invoices stay where they are. (6.4: unless this CI finishes the
+//      OBD under the done rule — settleObdDone writes dispatched then.) ONE order_status_logs row (the
 //      stage unchanged) "CI raised — {ciNumber} · {reason} · {invoice}" with
 //      "orderInvoiceIds" = [row] (v27.72), so the per-invoice Activity shows it.
 //      The ci_returns live triggers tell the board (entity 'order').
@@ -503,6 +505,10 @@ export async function raiseInvoiceCi(args: {
         orderInvoiceIds: [row.id],
       },
     });
+    // 6.4 — THE DONE RULE: if this was the OBD's last open invoice and the
+    // others shipped, the OBD is dispatched now (lib/order-invoices/dispatch.ts;
+    // ONE orders write, ONE log, only then; never throws).
+    await settleObdDone(orderId, userId, `Dispatched — last open invoice returned on ${ciNumber}`);
     return { ok: true, orderId, obdNumber, ciNumber, invoiceRowId, invoiceNo };
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unexpected error";

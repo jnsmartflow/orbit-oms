@@ -62,6 +62,9 @@ export interface FloorInvoiceRow {
    *  voided, draft included): the invoice is finished — never in To plan / On
    *  hold, drawn on the Cancel & CI tab. null / absent = none. */
   ci?: { ciNumber: string | null; status: string } | null;
+  /** 6.4 — THIS invoice has shipped (order_invoices."isDispatched"). Never in
+   *  To plan. Absent = not dispatched. */
+  isDispatched?: boolean;
 }
 
 /** One order_invoices row with its lines, as the board's read returns it. */
@@ -81,6 +84,8 @@ export interface InvoiceRowSource {
   heldById?: number | null;
   /** The row's own CI (6.3). Omitted = none. */
   ci?: { ciNumber: string | null; status: string } | null;
+  /** The row has shipped (6.4). Omitted = no. */
+  isDispatched?: boolean;
 }
 
 /** One ACTIVE raw line of the OBD (import_raw_line_items, lineStatus 'active'). */
@@ -145,6 +150,7 @@ export function buildInvoiceRows(input: {
       heldAt: iso(r.heldAt ?? null),
       heldById: r.heldById ?? null,
       ci: r.ci ?? null,
+      isDispatched: r.isDispatched ?? false,
     };
   });
 }
@@ -251,9 +257,10 @@ export function narrowToPlace<T extends Narrowable>(row: T, inPlace: (tripDropId
  * TO PLAN (6.1): an invoice is in the pool when it is on no trip AND not held.
  * A held invoice of a split OBD is drawn on the On hold tab instead.
  */
-export function inPool(r: Pick<FloorInvoiceRow, "tripDropId" | "isHeld" | "ci">): boolean {
-  // 6.3: …and has no CI of its own (it is on the Cancel & CI tab).
-  return r.tripDropId === null && r.isHeld !== true && !r.ci;
+export function inPool(r: Pick<FloorInvoiceRow, "tripDropId" | "isHeld" | "ci" | "isDispatched">): boolean {
+  // 6.3: …and has no CI of its own (it is on the Cancel & CI tab). 6.4: …and
+  // has not shipped.
+  return r.tripDropId === null && r.isHeld !== true && !r.ci && r.isDispatched !== true;
 }
 
 /** A board row narrowed to To plan — its off-trip, NOT-held invoices (6.1). */

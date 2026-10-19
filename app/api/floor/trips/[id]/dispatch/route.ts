@@ -139,10 +139,35 @@ export async function POST(
     );
   }
 
+  // PER INVOICE (Add invoices 6.4, 2026-10-19): a SPLIT OBD ships only its
+  // invoices on THIS trip's stops (lib/order-invoices/dispatch.ts); ONE read of
+  // those rows, index on order_invoices."tripDropId". Unsplit OBDs are absent
+  // from the map and dispatch whole, as before.
+  const dropIds = drops.map((d) => d.id);
+  const splitIds = new Set(
+    (
+      await prisma.order_invoices.findMany({
+        where: { orderId: { in: orders.map((o) => o.id) }, seq: { gt: 1 } },
+        select: { orderId: true },
+        distinct: ["orderId"],
+      })
+    ).map((r) => r.orderId),
+  );
+  const rowsOnTrip =
+    splitIds.size > 0
+      ? await prisma.order_invoices.findMany({
+          where: { orderId: { in: Array.from(splitIds) }, tripDropId: { in: dropIds } },
+          select: { id: true, orderId: true, isDispatched: true },
+        })
+      : [];
+  const rowsByOrder = new Map<number, number[]>();
+  for (const r of rowsOnTrip) rowsByOrder.set(r.orderId, [...(rowsByOrder.get(r.orderId) ?? []), r.id]);
+
   const disp = await markBillsDispatched({
     orderIds: orders.map((o) => o.id),
     actorId,
     noteLabel: `Dispatched with trip ${trip.tripNumber}`,
+    rowsByOrder,
   });
 
   // ── CLOSE THE TRIP WHEN NOTHING IS LEFT TO SEND ──────────────────────────
@@ -162,7 +187,29 @@ export async function POST(
         dispatchStatus: { not: "hold" },
       },
     });
-    if (outstanding === 0) {
+    // 6.4 — a SPLIT OBD whose invoices on THIS trip have all shipped is settled
+    // for this trip, even while its other invoices (held, elsewhere) keep the
+    // OBD short of 'dispatched'. Counted by its rows, not its stage.
+    let splitSettled = 0;
+    if (outstanding > 0 && splitIds.size > 0) {
+      const open = await prisma.orders.findMany({
+        where: {
+          ...onStopsWhere(dropIds),
+          isRemoved: false,
+          workflowStage: { not: DISPATCHED },
+          dispatchStatus: { not: "hold" },
+          id: { in: Array.from(splitIds) },
+        },
+        select: { id: true },
+      });
+      for (const o of open) {
+        const left = await prisma.order_invoices.count({
+          where: { orderId: o.id, tripDropId: { in: dropIds }, isDispatched: false },
+        });
+        if (left === 0) splitSettled += 1;
+      }
+    }
+    if (outstanding - splitSettled === 0) {
       await prisma.trips.update({
         where: { id: tripId },
         // All three together — the CHECK constraint refuses anything less.
