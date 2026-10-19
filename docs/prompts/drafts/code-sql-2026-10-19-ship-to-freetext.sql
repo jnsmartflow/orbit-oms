@@ -39,7 +39,10 @@
 --   1. mo_orders."shipToText" text NULL, "shipToAreaId" integer NULL → area_master
 --   2. orders."shipToText"    text NULL, "shipToAreaId" integer NULL → area_master
 --      + chk_*_ship_to_text: NULL or holds at least one non-space character.
---      shipToAreaId is NULL for "As per challan" (the bill keeps the dealer's area).
+--      + chk_*_ship_to_text_area: typed text ⇒ an area. Area is REQUIRED for
+--        every typed ship-to, named or "As per challan" (owner, 2026-10-19:
+--        the earlier "As per challan keeps the dealer's area" rule is reversed).
+--        Gate: 0 live rows can fail it. Both columns are new, so every row is NULL.
 --   3. trip_drops."shipToText" text NULL + chk_trip_drops_key rewritten with the
 --      t: branch FIRST. c:/s: branches unchanged.
 --   4. New table ship_to_copies (+ indexes, live-feed triggers).
@@ -114,6 +117,11 @@ BEGIN
   END IF;
 END $$;
 
+-- Typed text ⇒ area (named or As per challan). ONE statement: drop if exists, then add.
+ALTER TABLE mo_orders
+  DROP CONSTRAINT IF EXISTS chk_mo_orders_ship_to_text_area,
+  ADD CONSTRAINT chk_mo_orders_ship_to_text_area CHECK ("shipToText" IS NULL OR "shipToAreaId" IS NOT NULL);
+
 
 -- ── PART 2. orders ─────────────────────────────────────────────────────────
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS "shipToText"   text    NULL;
@@ -134,6 +142,11 @@ BEGIN
       CHECK ("shipToText" IS NULL OR "shipToText" ~ '\S');
   END IF;
 END $$;
+
+-- Typed text ⇒ area (named or As per challan). ONE statement: drop if exists, then add.
+ALTER TABLE orders
+  DROP CONSTRAINT IF EXISTS chk_orders_ship_to_text_area,
+  ADD CONSTRAINT chk_orders_ship_to_text_area CHECK ("shipToText" IS NULL OR "shipToAreaId" IS NOT NULL);
 
 
 -- ── PART 3. trip_drops."shipToText" + chk_trip_drops_key (t: branch first) ──
@@ -223,7 +236,7 @@ CREATE TRIGGER trg_live_changes_ship_to_copies_mo_del AFTER DELETE ON ship_to_co
 
 
 -- ── PART 5. Read-back (read-only, last statement) ──────────────────────────
--- Expect: 5 rows in section 1 (one per new column) · 15 rows in section 2
+-- Expect: 5 rows in section 1 (one per new column) · 17 rows in section 2
 -- (one per new or rewritten constraint, with its live text) · 5 rows in
 -- section 3 (pkey, storagePath unique, 3 indexes) · 6 rows in section 4 (one per trigger, all 'O' =
 -- enabled) · section 5: column count 11, rows 0 · section 6: trip_drops rows,
@@ -242,7 +255,9 @@ SELECT * FROM (
          pg_get_constraintdef(con.oid)::text
     FROM pg_constraint con
    WHERE con.conname IN ('mo_orders_shipToAreaId_fkey', 'chk_mo_orders_ship_to_text',
+                         'chk_mo_orders_ship_to_text_area',
                          'orders_shipToAreaId_fkey', 'chk_orders_ship_to_text',
+                         'chk_orders_ship_to_text_area',
                          'chk_trip_drops_key', 'chk_trip_drops_ship_to_text',
                          'ship_to_copies_storagePath_key',
                          'ship_to_copies_orderId_fkey', 'ship_to_copies_moOrderId_fkey',
