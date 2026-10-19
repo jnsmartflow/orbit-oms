@@ -29,7 +29,6 @@ import {
   isPartialUnit,
   toggleAllHoldKeys,
   toggleKey,
-  wholeObdReason,
   type FloorDeskKey,
   type SelectionUnit,
 } from "@/lib/floor/selection";
@@ -72,7 +71,7 @@ export function HoldTab({
    * once a request goes through, with the bills that did NOT go — the only ones
    * left ticked. The selection is this tab's own, which is why it is handed in.
    */
-  onOpenOffFloor: (rows: FloorHoldRow[], keepTicked: (orderIds: number[]) => void) => void;
+  onOpenOffFloor: (rows: FloorHoldRow[], keepTicked: (orderIds: number[]) => void, units?: SelectionUnit[]) => void;
 }) {
   const [oldestFirst, setOldestFirst] = useState(false);
   // orderIds, plus `inv:<id>` for a split OBD's held invoices (6.1).
@@ -90,13 +89,6 @@ export function HoldTab({
   const unitIds = new Set(units.map((u) => u.orderId));
   const selectedRows = list.filter((r) => unitIds.has(r.orderId));
   const selectedIds = selectedRows.map((r) => r.orderId);
-  const partial = units.filter(isPartialUnit);
-  // Cancel / Raise CI act on the whole OBD — grey while one is partly ticked.
-  const offFloorBlock = wholeObdReason(
-    selectedRows
-      .filter((r) => partial.some((u) => u.orderId === r.orderId))
-      .map((r) => ({ obdNumber: r.obdNumber, invoiceCount: (r.invoiceRowsAll ?? r.invoiceRows).length })),
-  );
   // The bar's figures — the same two helpers' meaning as the Floor tab's bar.
   const selectedArticles = countArticles(selectedRows.map((r) => r.articleTag)).pieces;
   const selectedRoutes = new Set(selectedRows.map((r) => r.route ?? "\u0000unrouted")).size;
@@ -199,13 +191,15 @@ export function HoldTab({
           menuOpen={menuOpen}
           onMenuOpenChange={onMenuOpenChange}
           slotOptional={units.length > 0 && units.every(isPartialUnit)}
-          offFloorBlock={offFloorBlock}
-          onOffFloor={() => {
-            if (offFloorBlock !== null) return;
-            onOpenOffFloor(selectedRows, (ids) =>
-              setSelection(new Set(list.filter((r) => ids.includes(r.orderId)).flatMap(holdKeysOf))),
-            );
-          }}
+          // 6.3: a partial tick raises a CI per held invoice (the form offers
+          // no Cancel), so the item is no longer greyed.
+          onOffFloor={() =>
+            onOpenOffFloor(
+              selectedRows,
+              (ids) => setSelection(new Set(list.filter((r) => ids.includes(r.orderId)).flatMap(holdKeysOf))),
+              units,
+            )
+          }
         />
       )}
 

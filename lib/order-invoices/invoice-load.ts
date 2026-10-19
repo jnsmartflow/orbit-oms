@@ -58,6 +58,8 @@ export async function loadSplitInvoiceRows(
       isHeld: true,
       heldAt: true,
       heldById: true,
+      // 6.3 — the row's own CI, if any (not voided; newest first).
+      ciReturns: { where: { isVoided: false }, orderBy: { id: "desc" }, take: 1, select: { ciNumber: true, status: true } },
       lines: { select: { rawLineItemId: true, qty: true } },
     },
   });
@@ -76,7 +78,12 @@ export async function loadSplitInvoiceRows(
     const built = buildInvoiceRows({
       rows: rows
         .filter((r) => r.orderId === id)
-        .map((r) => ({ ...r, tripNumber: r.tripDrop?.trip.tripNumber ?? null, tripStatus: r.tripDrop?.trip.status ?? null })),
+        .map((r) => ({
+          ...r,
+          tripNumber: r.tripDrop?.trip.tripNumber ?? null,
+          tripStatus: r.tripDrop?.trip.status ?? null,
+          ci: r.ciReturns[0] ?? null,
+        })),
       activeLines: lines
         .filter((l) => l.obdNumber === obd)
         .map((l) => ({ rawLineItemId: l.id, lineId: l.lineId, skuCodeRaw: l.skuCodeRaw, unitQty: l.unitQty, volumeLine: l.volumeLine, totalWeight: l.totalWeight })),

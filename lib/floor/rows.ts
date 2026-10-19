@@ -92,6 +92,12 @@ export async function getFloorRowsByIds(ids: number[]): Promise<FloorRowsResult>
   // (mergeFloorRows removes an id from every list once, then places each patch).
   const onBoard = new Set(board.rows.map((r) => r.orderId));
   for (const r of hold) if (onBoard.has(r.orderId)) rows.push({ id: r.orderId, tab: "hold", row: r });
+  // 6.3 — a split OBD with a PER-INVOICE CI is on the Cancel & CI tab too
+  // (its CI'd invoices) while its other invoices stay on the board / On hold.
+  const onHold = new Set(hold.map((r) => r.orderId));
+  for (const r of cancelled) {
+    if (onBoard.has(r.orderId) || onHold.has(r.orderId)) rows.push({ id: r.orderId, tab: "cancelled", row: r });
+  }
 
   // The asked-for bills' SO, trip pointer and invoice — one small read,
   // whatever tab (or none) each is on now. No isRemoved / hide filter: a bill

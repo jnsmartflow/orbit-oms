@@ -46,6 +46,69 @@ export interface OffFloorFormBill {
   invoiceNo?: string | null;
   /** offFloorRefusal()'s answer, or null when the bill may go (or is unknown). */
   refusal: string | null;
+  /**
+   * 6.3 (2026-10-19) — TICKED INVOICES of a split OBD (a partial tick): Raise
+   * CI raises ONE CI PER INVOICE (POST /api/floor/ci invoiceRowIds) and the OBD
+   * stays; Cancel is not offered (it acts on the whole OBD). Absent = the bill.
+   */
+  invoiceRowIds?: number[];
+  /** The ticked invoices, for the form's line list ("I536230713 · 2/4"). */
+  invoices?: Array<{ id: number; seq: number; label: string; k: number; n: number }>;
+}
+
+/** 6.3 — one invoice's lines, read off GET /api/floor/orders/[id]/invoices
+ *  (the Add invoices view: each invoice's raw lines + tins, the OBD's active
+ *  lines). Read-only — nothing is written until Raise CI is pressed. */
+function InvoiceLinesPreview({ bill }: { bill: OffFloorFormBill }) {
+  const [view, setView] = useState<{
+    invoices: Array<{ seq: number; lines: Array<{ rawLineItemId: number; qty: number }> }>;
+    activeLines: Array<{ rawLineItemId: number; skuCodeRaw: string; description: string | null }>;
+  } | null>(null);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    let off = false;
+    void (async () => {
+      try {
+        const res = await fetch(`/api/floor/orders/${bill.orderId}/invoices`, { cache: "no-store" });
+        const body = await res.json().catch(() => null);
+        if (!off) {
+          if (res.ok && body && Array.isArray(body.invoices)) setView(body);
+          else setFailed(true);
+        }
+      } catch {
+        if (!off) setFailed(true);
+      }
+    })();
+    return () => {
+      off = true;
+    };
+  }, [bill.orderId]);
+  if (failed) return <div className="px-3 pb-2 text-[11.5px] text-ink-500">Couldn&rsquo;t load the invoice lines.</div>;
+  if (view === null) return <div className="px-3 pb-2 text-[11.5px] text-ink-400">Loading lines…</div>;
+  const nameOf = (id: number) => {
+    const l = view.activeLines.find((a) => a.rawLineItemId === id);
+    return l ? (l.description ?? l.skuCodeRaw) : `line #${id}`;
+  };
+  return (
+    <div className="px-3 pb-2">
+      {(bill.invoices ?? []).map((inv) => {
+        const lines = view.invoices.find((v) => v.seq === inv.seq)?.lines ?? [];
+        return (
+          <div key={inv.id} className="mt-1 text-[12px]" data-invoice-lines={inv.label}>
+            <div className="font-mono font-semibold text-ink-700">
+              {inv.label} <span className="font-sans text-[11px] font-semibold text-ink-500">· {inv.k}/{inv.n}</span>
+            </div>
+            {lines.map((l) => (
+              <div key={l.rawLineItemId} className="flex justify-between gap-3 pl-3 text-ink-600">
+                <span className="min-w-0 truncate">{nameOf(l.rawLineItemId)}</span>
+                <span className="shrink-0 tabular-nums">{l.qty} tins</span>
+              </div>
+            ))}
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 export interface CiReasonOption {
@@ -120,7 +183,10 @@ export function OffFloorDialog({
 }) {
   // 🔴 RAISE CI IS THE DEFAULT TAB, EVERY TIME THE FORM OPENS (owner) — for
   // Floor. A caller may open on another tab it offers (initialTab).
-  const [tab, setTab] = useState<Tab>(tabs.includes(initialTab) ? initialTab : tabs[0]);
+  // 6.3 — any ticked INVOICES (a partial tick of a split OBD): a CI per
+  // invoice only. Cancel acts on the whole OBD, so it is not offered.
+  const invoiceMode = bills.some((b) => b.invoiceRowIds !== undefined);
+  const [tab, setTab] = useState<Tab>(invoiceMode ? "ci" : tabs.includes(initialTab) ? initialTab : tabs[0]);
   // Each tab keeps its own answers — switching tabs loses nothing typed.
   const [ciReasonId, setCiReasonId] = useState<number | null>(null);
   const [ciRemark, setCiRemark] = useState("");
@@ -174,12 +240,24 @@ export function OffFloorDialog({
         const res = await fetch(endpoints.ci, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ orderIds, reasonId: ciReasonId, remark: trimmed === "" ? undefined : trimmed }),
+          body: JSON.stringify({
+            orderIds,
+            reasonId: ciReasonId,
+            remark: trimmed === "" ? undefined : trimmed,
+            // 6.3 — one CI per ticked invoice of a split OBD.
+            ...(eligible.some((b) => b.invoiceRowIds !== undefined)
+              ? {
+                  invoiceRowIds: Object.fromEntries(
+                    eligible.filter((b) => b.invoiceRowIds !== undefined).map((b) => [b.orderId, b.invoiceRowIds as number[]]),
+                  ),
+                }
+              : {}),
+          }),
         });
         const body = (await res.json().catch(() => ({}))) as {
           error?: string;
-          raised?: Array<{ orderId: number; obdNumber: string; ciNumber: string }>;
-          skipped?: Array<{ orderId: number; obdNumber: string | null; reason: string }>;
+          raised?: Array<{ orderId: number; obdNumber: string; ciNumber: string; invoiceNo?: string | null }>;
+          skipped?: Array<{ orderId: number; obdNumber: string | null; reason: string; invoiceNo?: string | null }>;
         };
         if (!Array.isArray(body.raised) || !Array.isArray(body.skipped)) {
           // The whole request failed — nothing was written. Keep everything.
@@ -187,7 +265,11 @@ export function OffFloorDialog({
           return;
         }
         const notDone = [
-          ...body.skipped.map((s) => ({ orderId: s.orderId, obdNumber: s.obdNumber ?? obdOf(s.orderId), reason: s.reason })),
+          ...body.skipped.map((s) => ({
+            orderId: s.orderId,
+            obdNumber: `${s.obdNumber ?? obdOf(s.orderId)}${s.invoiceNo ? ` · ${s.invoiceNo}` : ""}`,
+            reason: s.reason,
+          })),
           ...preRefused,
         ];
         onApplied(body.raised.map((r) => r.orderId), [...notDone.map((x) => x.orderId), ...untickedIds]);
@@ -300,7 +382,8 @@ export function OffFloorDialog({
                       setTab(t.key);
                       setError(null);
                     }}
-                    disabled={busy}
+                    disabled={busy || (invoiceMode && t.key === "cancel")}
+                    title={invoiceMode && t.key === "cancel" ? "Cancel acts on the whole OBD — tick all its invoices" : undefined}
                     className={`rounded-lg border px-3 py-2.5 text-left ${
                       tab === t.key ? "border-ink-200 bg-white shadow-sm" : "border-transparent hover:bg-ink-100"
                     }`}
@@ -313,7 +396,9 @@ export function OffFloorDialog({
 
               {/* ── What it does, in one line ──────────────────────────────── */}
               <p className="mt-4 rounded-[9px] border border-ink-100 bg-ink-25 px-3 py-2.5 text-[13px] leading-relaxed text-ink-700">
-                {tab === "ci"
+                {tab === "ci" && invoiceMode
+                  ? "A CI is raised for each ticked invoice, with that invoice's lines only, and lands on the billing CI desk. The OBD's other invoices stay where they are."
+                  : tab === "ci"
                   ? "A CI is raised for each bill and lands on the billing CI desk. These bills also leave the floor."
                   : "These bills leave the floor and do not move ahead. You can Restore them from the Cancel & CI tab."}
               </p>
@@ -372,6 +457,17 @@ export function OffFloorDialog({
                   );
                 })}
               </div>
+              {/* 6.3 — the lines each ticked invoice returns (read-only). */}
+              {bills.some((b) => b.invoices && b.invoices.length > 0) && (
+                <div className="mt-2 overflow-hidden rounded-[10px] border border-ink-100 bg-ink-25">
+                  <div className="px-3 pt-2 text-[11px] font-semibold uppercase tracking-[0.05em] text-ink-500">Lines on the CI</div>
+                  {bills
+                    .filter((b) => b.invoices && b.invoices.length > 0)
+                    .map((b) => (
+                      <InvoiceLinesPreview key={b.orderId} bill={b} />
+                    ))}
+                </div>
+              )}
 
               {/* ── The reason ─────────────────────────────────────────────── */}
               <div className="mb-2 mt-4 text-[12px] font-semibold uppercase tracking-[0.05em] text-ink-500">

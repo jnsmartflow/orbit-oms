@@ -103,3 +103,28 @@ test("chosen ids that are not this OBD's rows are reported", () => {
   assert.deepEqual(foreignRowIds(r18648([OFF, OFF, OFF, OFF]), [36798, 99]), [99]);
   assert.deepEqual(foreignRowIds(r18648([OFF, OFF, OFF, OFF]), "all"), []);
 });
+
+// ── 6.3: a held / CI'd invoice never joins a trip ───────────────────────────
+
+test("add: a HELD invoice of a split OBD is refused for that invoice only; the rest attach", () => {
+  const rows = r18648([OFF, OFF, OFF, OFF]).map((r) => ({ ...r, isHeld: r.id === 17010 || r.id === 36799 }));
+  const plan = planAddRows(rows, "all", 668, KEY, OBD);
+  assert.deepEqual(plan.attach, [36798, 36800]);
+  assert.deepEqual(
+    plan.refused.map((x) => x.error),
+    ["I536230716 is on hold — release it first", "I536230714 is on hold — release it first"],
+  );
+  // Ticking only 716 writes nothing.
+  const one = planAddRows(rows, [17010], 668, KEY, OBD);
+  assert.deepEqual(one.attach, []);
+  assert.deepEqual(one.refused.map((x) => x.rowId), [17010]);
+});
+
+test("add: an invoice with its own CI is refused; an unsplit held bill keeps today's rule", () => {
+  const rows = r18648([OFF, OFF, OFF, OFF]).map((r) => ({ ...r, ciNumber: r.id === 36798 ? "CI-2026-00700" : null }));
+  const plan = planAddRows(rows, [36798, 36800], 668, KEY, OBD);
+  assert.deepEqual(plan.attach, [36800]);
+  assert.deepEqual(plan.refused.map((x) => x.error), ["I536230713 is returned on CI-2026-00700 — it does not go out"]);
+  const held = unsplit(OFF).map((r) => ({ ...r, isHeld: true }));
+  assert.deepEqual(planAddRows(held, "all", 668, KEY, "X").attach, [500]);
+});

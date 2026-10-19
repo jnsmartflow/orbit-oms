@@ -644,6 +644,21 @@ export interface FloorCancelledRow extends FloorPartyFields {
   /** How many SAP invoices the OBD carries (1 = unsplit) — "n invoices" on the
    *  ONE row a split OBD keeps here (Add invoices Phase 4). */
   invoiceCount: number;
+  /** 6.3 (2026-10-19) — a SPLIT OBD with PER-INVOICE CIs (not cancelled): its
+   *  CI'd invoices (narrowed; every one in invoiceRowsAll) and one line each,
+   *  drawn one row per invoice (cancelled-tab.tsx). Absent on every other row. */
+  invoiceRows?: FloorInvoiceRow[];
+  invoiceRowsAll?: FloorInvoiceRow[];
+  invoiceCis?: Array<{
+    invoiceRowId: number;
+    ciNumber: string | null;
+    ciStatus: "with_billing" | "closed";
+    ciSourceLabel: CiSourceLabel | null;
+    reason: string | null;
+    remark: string | null;
+    byName: string | null;
+    at: string | null;
+  }>;
 }
 
 // ── Floor search — GET /api/floor/search (2026-10-06, owner) ─────────────────

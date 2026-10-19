@@ -25,6 +25,16 @@
 --   catch-up, re-runnable, and harmless to re-run later.
 --   split OBDs drifted: 0.
 --
+-- ✅ RUN LIVE 2026-10-19 by the owner, after 6.1 deployed:
+--   PART 1: 73 · 121 · 39 · 123 · 2 (row 5 = order 18648's 716 + 714, held on
+--   purpose while the OBD stays 'dispatch' — expected since 6.1, not drift).
+--   PART 2 as first written FAILED: chk_order_invoices_held_not_dispatched —
+--   row 12932 / order 14607 was still "isHeld" (a STALE hold: the OBD is no
+--   longer 'hold') and is now dispatched, so marking it dispatched broke the
+--   CHECK. Fixed by running STEP A (PART 1b below) FIRST — clear the stale
+--   holds — then PART 2, then PART 3. PART 4: 0 · 0 · 0 · 0 · 2.
+--   Order for any re-run: PART 1 → 1b → 2 → 3 → 4.
+--
 -- HOW TO RUN (Smart Flow, Supabase SQL Editor): each PART on its own, in order.
 -- No BEGIN/COMMIT. Every write is an IS DISTINCT FROM mirror → re-running is a
 -- no-op. The order_invoices live triggers fire one 'order' line per changed row
@@ -38,7 +48,8 @@
 -- ============================================================================
 -- PART 1 — READ-ONLY PRE-CHECK. Expect (moves with use): hold to_true ~75 ·
 -- to_false ~121 · blocked_by_dispatched ~40 · dispatched_drift ~123 ·
--- split_hold_drift 0.
+-- split_hold_drift = the split invoices held on purpose (2 on 2026-10-19: 716 +
+-- 714 of order 18648 — since 6.1 a partly-held split OBD shows here by design).
 -- ============================================================================
 SELECT 1 AS k, 'hold to_true (OBD hold, row not held)'::text AS what, count(*)::text AS value
   FROM order_invoices oi JOIN orders o ON o.id = oi."orderId"
@@ -75,6 +86,26 @@ SELECT 5, 'split_hold_drift (never touched here; info)', count(*)::text
         OR EXISTS (SELECT 1 FROM order_invoice_lines l WHERE l."orderInvoiceId" = oi.id))
    AND oi."isHeld" IS DISTINCT FROM (o."dispatchStatus" IS NOT DISTINCT FROM 'hold')
 ORDER BY 1;
+
+
+-- ============================================================================
+-- PART 1b — STEP A, THE FIRST WRITE (added 2026-10-19 after the live run).
+-- Clear STALE holds on unsplit rows: the OBD is not 'hold', the row still says
+-- held. WHY FIRST: PART 2 marks rows dispatched, and a row that is still held
+-- AND dispatched violates chk_order_invoices_held_not_dispatched — exactly what
+-- stopped PART 2 on row 12932 / order 14607 on 2026-10-19. This is the
+-- "to_false" half of PART 3, run early; PART 3 then finds it already done.
+-- Expect ≈ PART 1 row 2 (~121). Re-runnable (a no-op once done).
+-- ============================================================================
+UPDATE order_invoices oi
+   SET "isHeld" = false, "heldAt" = NULL, "heldById" = NULL, "updatedAt" = now()
+  FROM orders o
+ WHERE oi."orderId" = o.id
+   AND oi.seq = 1
+   AND NOT EXISTS (SELECT 1 FROM order_invoices x WHERE x."orderId" = oi."orderId" AND x.seq <> 1)
+   AND NOT EXISTS (SELECT 1 FROM order_invoice_lines l WHERE l."orderInvoiceId" = oi.id)
+   AND oi."isHeld"
+   AND o."dispatchStatus" IS DISTINCT FROM 'hold';
 
 
 -- ============================================================================

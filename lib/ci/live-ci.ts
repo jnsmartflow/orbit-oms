@@ -30,10 +30,24 @@ export interface LiveCi {
   ciNumber: string | null;
 }
 
-/** The earliest live FULL CI on the bill, or null. */
-export async function findLiveCi(orderId: number): Promise<LiveCi | null> {
+/**
+ * The earliest live FULL CI on the bill, or null.
+ *
+ * PER INVOICE (Add invoices 6.3, 2026-10-19): with `invoiceRowIds`, only a CI
+ * that covers one of THOSE rows counts — its own ("orderInvoiceId" in the list)
+ * or a whole-OBD one ("orderInvoiceId" NULL). So a CI on invoice 713 never
+ * stops 714 being released (lib/order-invoices/hold.ts releaseRows). Omitted =
+ * any CI of the bill, exactly as before (every whole-OBD guard).
+ */
+export async function findLiveCi(orderId: number, invoiceRowIds?: readonly number[]): Promise<LiveCi | null> {
   return prisma.ci_returns.findFirst({
-    where: { orderId, isVoided: false, status: { not: "draft" }, returnType: "full" },
+    where: {
+      orderId,
+      isVoided: false,
+      status: { not: "draft" },
+      returnType: "full",
+      ...(invoiceRowIds ? { OR: [{ orderInvoiceId: null }, { orderInvoiceId: { in: [...invoiceRowIds] } }] } : {}),
+    },
     orderBy: { id: "asc" },
     select: { id: true, ciNumber: true },
   });

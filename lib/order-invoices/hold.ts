@@ -183,7 +183,8 @@ async function setRowsHeld(orderId: number, rowIds: readonly number[], hold: boo
   }
   // 🔴 A bill carrying a LIVE CI stays held (bill-actions "unhold", 2026-09-24).
   if (!hold) {
-    const liveCi = await findLiveCi(orderId);
+    // Only a CI covering THESE rows (6.3: its own, or a whole-OBD one).
+    const liveCi = await findLiveCi(orderId, plan.rowIdsToUpdate.length > 0 ? plan.rowIdsToUpdate : rowIds);
     if (liveCi !== null) return { kind: "failed", error: liveCiRefusal(liveCi, "released"), refused: [] };
   }
 

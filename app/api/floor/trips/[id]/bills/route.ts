@@ -241,6 +241,9 @@ export async function POST(
           invoiceNo: true,
           tripDropId: true,
           tripDrop: { select: { tripId: true, dropKey: true, trip: { select: { tripNumber: true } } } },
+          // 6.3 — a split OBD's held / CI'd invoice never joins a trip (planAddRows).
+          isHeld: true,
+          ciReturns: { where: { isVoided: false }, orderBy: { id: "desc" }, take: 1, select: { ciNumber: true } },
         },
       });
       const rows: TripBillRow[] = rowRecs.map((r) => ({
@@ -251,6 +254,8 @@ export async function POST(
         tripId: r.tripDrop?.tripId ?? null,
         dropKey: r.tripDrop?.dropKey ?? null,
         tripNumber: r.tripDrop?.trip.tripNumber ?? null,
+        isHeld: r.isHeld,
+        ciNumber: r.ciReturns.length > 0 ? r.ciReturns[0].ciNumber ?? "" : null,
       }));
       const chosen = chosenRows.get(orderId) ?? "all";
       const foreign = foreignRowIds(rows, chosen);

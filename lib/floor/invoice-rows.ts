@@ -58,6 +58,10 @@ export interface FloorInvoiceRow {
   heldAt?: string | null;
   heldById?: number | null;
   heldByName?: string | null;
+  /** 6.3 — THIS invoice's own CI (ci_returns."orderInvoiceId" = the row, not
+   *  voided, draft included): the invoice is finished — never in To plan / On
+   *  hold, drawn on the Cancel & CI tab. null / absent = none. */
+  ci?: { ciNumber: string | null; status: string } | null;
 }
 
 /** One order_invoices row with its lines, as the board's read returns it. */
@@ -75,6 +79,8 @@ export interface InvoiceRowSource {
   isHeld?: boolean;
   heldAt?: Date | string | null;
   heldById?: number | null;
+  /** The row's own CI (6.3). Omitted = none. */
+  ci?: { ciNumber: string | null; status: string } | null;
 }
 
 /** One ACTIVE raw line of the OBD (import_raw_line_items, lineStatus 'active'). */
@@ -138,6 +144,7 @@ export function buildInvoiceRows(input: {
       isHeld: r.isHeld ?? false,
       heldAt: iso(r.heldAt ?? null),
       heldById: r.heldById ?? null,
+      ci: r.ci ?? null,
     };
   });
 }
@@ -244,8 +251,9 @@ export function narrowToPlace<T extends Narrowable>(row: T, inPlace: (tripDropId
  * TO PLAN (6.1): an invoice is in the pool when it is on no trip AND not held.
  * A held invoice of a split OBD is drawn on the On hold tab instead.
  */
-export function inPool(r: Pick<FloorInvoiceRow, "tripDropId" | "isHeld">): boolean {
-  return r.tripDropId === null && r.isHeld !== true;
+export function inPool(r: Pick<FloorInvoiceRow, "tripDropId" | "isHeld" | "ci">): boolean {
+  // 6.3: …and has no CI of its own (it is on the Cancel & CI tab).
+  return r.tripDropId === null && r.isHeld !== true && !r.ci;
 }
 
 /** A board row narrowed to To plan — its off-trip, NOT-held invoices (6.1). */
@@ -255,7 +263,8 @@ export function narrowToPool<T extends Narrowable>(row: T): T {
 
 /** A hold row narrowed to its HELD invoices (the On hold tab, 6.1). */
 export function narrowToHeld<T extends Narrowable>(row: T): T {
-  return narrowWhere(row, (r) => r.isHeld === true);
+  // 6.3: a held invoice with its own CI is on the Cancel & CI tab instead.
+  return narrowWhere(row, (r) => r.isHeld === true && !r.ci);
 }
 
 /**
@@ -292,7 +301,7 @@ function narrowWhere<T extends Narrowable>(row: T, keep: (r: FloorInvoiceRow) =>
 
 /** The chip for the invoices of `all` that are not in `drawn`, or null when none are away. */
 export function awayChipOf(
-  all: readonly Pick<FloorInvoiceRow, "id" | "tripDropId" | "tripNumber" | "isHeld">[],
+  all: readonly Pick<FloorInvoiceRow, "id" | "tripDropId" | "tripNumber" | "isHeld" | "ci">[],
   drawn: readonly Pick<FloorInvoiceRow, "id">[],
   shortTrip: (tripNumber: string) => string = (t) => t,
 ): { text: string; title: string } | null {
@@ -301,10 +310,13 @@ export function awayChipOf(
   for (const r of all) {
     if (here.has(r.id)) continue;
     // 6.1: a held invoice is its own place — "2 on hold" (never on a trip).
-    const key = r.isHeld === true ? "hold" : r.tripDropId === null ? "plan" : `t:${r.tripNumber ?? r.tripDropId}`;
+    // 6.3: an invoice with its own CI is its own place — "1 with CI".
+    const key = r.ci ? "ci" : r.isHeld === true ? "hold" : r.tripDropId === null ? "plan" : `t:${r.tripNumber ?? r.tripDropId}`;
     const e =
       byPlace.get(key) ??
-      (r.isHeld === true
+      (r.ci
+        ? { label: "with CI", long: "returned on a CI", k: 0 }
+        : r.isHeld === true
         ? { label: "on hold", long: "on hold", k: 0 }
         : r.tripDropId === null
         ? { label: "in To plan", long: "in To plan", k: 0 }

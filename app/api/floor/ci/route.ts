@@ -3,7 +3,7 @@ import { auth } from "@/lib/auth";
 import { isSuperuser } from "@/lib/rbac";
 import { checkAnyPermission } from "@/lib/permissions";
 import { FLOOR_REMARK_MAX } from "@/lib/floor/off-floor";
-import { findActiveCiReason, listActiveCiReasons, raiseFullBillCi } from "@/lib/floor/raise-ci";
+import { findActiveCiReason, listActiveCiReasons, raiseFullBillCi, raiseInvoiceCi } from "@/lib/floor/raise-ci";
 
 export const dynamic = "force-dynamic";
 
@@ -92,18 +92,27 @@ interface Body {
   orderIds?: unknown;
   reasonId?: unknown;
   remark?: unknown;
+  /** 6.3 — orderId → the ticked invoice rows of a SPLIT OBD: ONE CI per row
+   *  (lib/floor/raise-ci.ts raiseInvoiceCi), the OBD is not cancelled. An OBD
+   *  absent here is the whole-bill CI exactly as before. */
+  invoiceRowIds?: unknown;
 }
 
 interface Raised {
   orderId: number;
   obdNumber: string;
   ciNumber: string;
+  /** 6.3 — the invoice a per-invoice CI returned. */
+  invoiceRowId?: number;
+  invoiceNo?: string | null;
 }
 
 interface Skipped {
   orderId: number;
   obdNumber: string | null;
   reason: string;
+  invoiceRowId?: number;
+  invoiceNo?: string | null;
 }
 
 export async function POST(req: Request): Promise<NextResponse> {
@@ -158,10 +167,35 @@ export async function POST(req: Request): Promise<NextResponse> {
     remark = trimmed === "" ? null : trimmed;
   }
 
+  // 6.3 — per-invoice rows, validated up front.
+  const rowIdsByOrder = new Map<number, number[]>();
+  if (body.invoiceRowIds !== undefined && body.invoiceRowIds !== null) {
+    if (typeof body.invoiceRowIds !== "object") {
+      return NextResponse.json({ error: "invoiceRowIds must map an orderId to invoice row ids" }, { status: 400 });
+    }
+    for (const [k, v] of Object.entries(body.invoiceRowIds as Record<string, unknown>)) {
+      const id = Number(k);
+      if (!orderIds.includes(id) || !Array.isArray(v) || v.length === 0 || !v.every((x) => typeof x === "number" && Number.isInteger(x) && x > 0)) {
+        return NextResponse.json({ error: `invoiceRowIds[${k}] must be a non-empty array of row ids of a listed order` }, { status: 400 });
+      }
+      rowIdsByOrder.set(id, Array.from(new Set(v as number[])));
+    }
+  }
+
   const raised: Raised[] = [];
   const skipped: Skipped[] = [];
 
   for (const orderId of orderIds) {
+    const rowIds = rowIdsByOrder.get(orderId);
+    if (rowIds !== undefined) {
+      // ONE CI PER INVOICE ROW, one at a time. Never throws.
+      for (const invoiceRowId of rowIds) {
+        const r = await raiseInvoiceCi({ orderId, invoiceRowId, reason, remark, userId, actorIsAdmin: isSuperuser(session) });
+        if (r.ok) raised.push({ orderId: r.orderId, obdNumber: r.obdNumber, ciNumber: r.ciNumber, invoiceRowId, invoiceNo: r.invoiceNo });
+        else skipped.push({ orderId: r.orderId, obdNumber: r.obdNumber, reason: r.reason, invoiceRowId, invoiceNo: r.invoiceNo });
+      }
+      continue;
+    }
     // Never throws — every failure, with Floor's wording, comes back as a skip.
     // actorIsAdmin: a challan (ORB) order is admin-only (S5-4).
     const r = await raiseFullBillCi({ orderId, reason, remark, userId, allowTintRoom: false, actorIsAdmin: isSuperuser(session) });

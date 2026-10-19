@@ -100,7 +100,7 @@ import { resolveSoNames } from "@/lib/sales-officer/resolve";
 import { divisionOf } from "./division-blocks";
 // One invoice, several OBDs (2026-10-08) — pure, no prisma.
 import { buildPartnerMap, partnersOf, type InvoicePartner } from "./invoice-pairs";
-import { addedInvoiceNosOf, narrowToHeld, type FloorInvoiceRow } from "./invoice-rows";
+import { addedInvoiceNosOf, narrowToHeld, narrowToInvoiceIds, type FloorInvoiceRow } from "./invoice-rows";
 import { loadSplitInvoiceRows } from "@/lib/order-invoices/invoice-load";
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
@@ -1655,7 +1655,11 @@ export function floorHoldWhere(): Prisma.ordersWhereInput {
       { dispatchStatus: "hold" },
       {
         workflowStage: { not: "cancelled" },
-        AND: [{ invoices: { some: { isHeld: true } } }, { invoices: { some: { seq: { gt: 1 } } } }],
+        // 6.3 — a held invoice with its own CI is on the Cancel & CI tab, not here.
+        AND: [
+          { invoices: { some: { isHeld: true, ciReturns: { none: { isVoided: false } } } } },
+          { invoices: { some: { seq: { gt: 1 } } } },
+        ],
       },
     ],
   };
@@ -1995,6 +1999,42 @@ export async function getFloorCancelled(
   const ciByOrder = new Map<number, (typeof cis)[number]>();
   for (const c of cis) if (!ciByOrder.has(c.orderId)) ciByOrder.set(c.orderId, c);
 
+  // ── a2) PER-INVOICE CIs (Add invoices 6.3, 2026-10-19) ───────────────────
+  // A CI on ONE invoice of a SPLIT OBD (orderInvoiceId set, the OBD has a seq > 1
+  // row) does not cancel the OBD, so (a) — cancelled bills only — never sees it.
+  // Today's, not voided, not a draft, the OBD not cancelled. Drawn as the OBD's
+  // row with ONE line PER CI'd INVOICE (components/floor/cancelled-tab.tsx).
+  // An OBD (a) already lists keeps (a)'s row. Unsplit: never matches.
+  const invCis = await prisma.ci_returns.findMany({
+    where: {
+      ...idFilter,
+      isVoided: false,
+      status: { not: "draft" },
+      ...dayFence,
+      orderInvoiceId: { not: null },
+      order: { isRemoved: false, workflowStage: { not: "cancelled" }, invoices: { some: { seq: { gt: 1 } } } },
+    },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    select: {
+      orderId: true,
+      orderInvoiceId: true,
+      ciNumber: true,
+      status: true,
+      source: true,
+      reasonLabel: true,
+      reasonRemark: true,
+      createdAt: true,
+      supervisor: { select: { name: true } },
+    },
+  });
+  const invCisByOrder = new Map<number, (typeof invCis)[number][]>();
+  for (const c of invCis) {
+    if (ciByOrder.has(c.orderId)) continue;
+    const list = invCisByOrder.get(c.orderId) ?? [];
+    list.push(c);
+    invCisByOrder.set(c.orderId, list);
+  }
+
   // auto_bill_only is shared by two raisers: Billing (a mail order's CI mark —
   // the matching tag has fromMailOrder) and Telephonic. ONE batched read tells
   // them apart: the match rows for these bills, with their tag's flag.
@@ -2029,7 +2069,9 @@ export async function getFloorCancelled(
   // still gets its row (the no-log fallback below).
   const ids = allDates
     ? Array.from(new Set(onlyIds ?? []))
-    : Array.from(new Set([...Array.from(ciByOrder.keys()), ...Array.from(cancelByOrder.keys())]));
+    : Array.from(
+        new Set([...Array.from(ciByOrder.keys()), ...Array.from(cancelByOrder.keys()), ...Array.from(invCisByOrder.keys())]),
+      );
   if (ids.length === 0) return [];
   const orders = await prisma.orders.findMany({
     where: { AND: extraWhere ? [{ id: { in: ids }, isRemoved: false }, hide, extraWhere] : [{ id: { in: ids }, isRemoved: false }, hide] },
@@ -2049,6 +2091,15 @@ export async function getFloorCancelled(
   const billTo = await billToByObd(orders.map((o) => o.obdNumber));
   // Add invoices Phase 4 — "n invoices" on a split OBD's one row.
   const invoiceCounts = await getInvoiceCounts(orders.map((o) => o.id));
+  // 6.3 — the invoices of the OBDs with a per-invoice CI (no read when none).
+  const ciSplitOrders = orders.filter((o) => invCisByOrder.has(o.id));
+  const ciSplitRows =
+    ciSplitOrders.length > 0
+      ? await loadSplitInvoiceRows(
+          ciSplitOrders,
+          new Map(ciSplitOrders.map((o) => [o.id, o.querySnapshot?.totalWeight ?? null] as const)),
+        )
+      : new Map<number, FloorInvoiceRow[]>();
 
   const rows: FloorCancelledRow[] = [];
   for (const order of orders) {
@@ -2057,10 +2108,12 @@ export async function getFloorCancelled(
     if (cancel === null && ci === null && allDates && order.workflowStage === "cancelled") {
       cancel = { createdAt: order.updatedAt, note: null, name: null };
     }
-    if (ci === null && cancel === null) continue;
+    // 6.3 — the OBD's per-invoice CIs (only when (a) has no row for it).
+    const invList = ci === null ? invCisByOrder.get(order.id) ?? [] : [];
     // A cancel row is a bill that is STILL cancelled — one cancelled and then
     // restored today has a log today but is back on the board.
-    if (cancel !== null && order.workflowStage !== "cancelled") continue;
+    if (cancel !== null && order.workflowStage !== "cancelled") cancel = null;
+    if (ci === null && cancel === null && invList.length === 0) continue;
 
     const dealer = order.shipToOverrideCustomer ?? order.customer;
     const deliveryType = dealer?.area?.deliveryType?.name ?? null;
@@ -2115,6 +2168,35 @@ export async function getFloorCancelled(
         byName: ci.supervisor?.name ?? null,
         at: ci.createdAt.toISOString(),
       });
+    } else if (invList.length > 0) {
+      // 6.3 — ONE line per CI'd invoice: newest CI per invoice row.
+      const all = ciSplitRows.get(order.id) ?? [];
+      const byRow = new Map<number, (typeof invList)[number]>();
+      for (const c of invList) if (c.orderInvoiceId !== null && !byRow.has(c.orderInvoiceId)) byRow.set(c.orderInvoiceId, c);
+      const ciRows = all.filter((r) => byRow.has(r.id));
+      const lineOf = (c: (typeof invList)[number]) => ({
+        ciNumber: c.ciNumber,
+        ciStatus: (asCiStatus(c.status) === "closed" ? "closed" : "with_billing") as "closed" | "with_billing",
+        ciSourceLabel: ciSourceLabelOf(asCiSource(c.source), false),
+        reason: c.reasonLabel,
+        remark: c.reasonRemark,
+        byName: c.supervisor?.name ?? null,
+        at: c.createdAt.toISOString(),
+      });
+      const first = invList[0];
+      const head = lineOf(first);
+      const firstRow = all.find((r) => r.id === first.orderInvoiceId) ?? null;
+      const withInvoices = {
+        ...party,
+        action: "ci" as const,
+        invoiceNo: firstRow?.invoiceNo ?? order.invoiceNo,
+        ...head,
+        invoiceRows: all,
+        invoiceCis: ciRows.map((r) => ({ invoiceRowId: r.id, ...lineOf(byRow.get(r.id)!) })),
+      };
+      // Narrowed to the CI'd invoices: their litres / kg, every invoice kept
+      // in invoiceRowsAll for "k/n".
+      rows.push(narrowToInvoiceIds(withInvoices, ciRows.map((r) => r.id)));
     } else if (cancel !== null) {
       const { reason, remark } = parseCancelNote(cancel.note);
       rows.push({

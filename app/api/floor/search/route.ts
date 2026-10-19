@@ -83,10 +83,27 @@ export async function GET(req: Request): Promise<NextResponse> {
   const cis = await prisma.ci_returns.findMany({
     where: { orderId: { in: ids }, isVoided: false, status: { not: "draft" } },
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-    select: { id: true, orderId: true, ciNumber: true, status: true },
+    select: { id: true, orderId: true, ciNumber: true, status: true, orderInvoiceId: true },
   });
+  // 6.3 — a CI on ONE invoice of a SPLIT OBD does not move the OBD to Cancel &
+  // CI: its other invoices are still on the floor. Only a CI covering the bill
+  // (unsplit, or orderInvoiceId NULL) does. One index-only read, skipped when no
+  // hit has a CI with a row key.
+  const keyed = Array.from(new Set(cis.filter((c) => c.orderInvoiceId !== null).map((c) => c.orderId)));
+  const splitIds = new Set(
+    keyed.length > 0
+      ? (
+          await prisma.order_invoices.findMany({
+            where: { orderId: { in: keyed }, seq: { gt: 1 } },
+            select: { orderId: true },
+            distinct: ["orderId"],
+          })
+        ).map((r) => r.orderId)
+      : [],
+  );
   const cisByOrder = new Map<number, Array<{ id: number; ciNumber: string | null; status: string }>>();
   for (const c of cis) {
+    if (c.orderInvoiceId !== null && splitIds.has(c.orderId)) continue;
     const list = cisByOrder.get(c.orderId) ?? [];
     list.push({ id: c.id, ciNumber: c.ciNumber, status: c.status });
     cisByOrder.set(c.orderId, list);

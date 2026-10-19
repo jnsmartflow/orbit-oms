@@ -64,7 +64,8 @@ import { allocateCiNumber } from "@/lib/ci/number";
 import { ciPartyColumns, resolveCiDealer } from "@/lib/ci/derive";
 import { loadBillToByObd } from "@/lib/reports/bill-facts";
 import { linkRowForOrder } from "@/lib/order-invoices/links";
-import { computeFullBillLines } from "@/lib/ci/full-bill";
+import { computeFullBillLines, deriveCiLineRows, readActiveBillLines } from "@/lib/ci/full-bill";
+import { ciInvoiceLabel, invoiceCiDuplicate, invoiceCiPicks, invoiceCiRefusal } from "@/lib/order-invoices/ci-plan";
 import { offFloorRefusal } from "@/lib/floor/off-floor";
 import { INVOICE_TRIPS_SELECT, invoiceTripsOf } from "@/lib/order-invoices/trip-refusal";
 import { mirrorObdHoldSafe } from "@/lib/order-invoices/hold";
@@ -327,5 +328,185 @@ export async function raiseFullBillCi(args: {
           ? `${ciNumber} was raised but the bill could not be taken off the floor — try again (${message})`
           : message,
     };
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// A CI PER INVOICE (Add invoices 6.3, 2026-10-19) — a SPLIT OBD's invoice row
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// Floor's Raise CI on ticked invoices of a split OBD (partial selection): ONE
+// CI per invoice row. Rules: lib/order-invoices/ci-plan.ts (tested).
+//   a. the order (not removed); b0 challan admin-only; b. the STAGE refusals
+//      of offFloorRefusal (cancelled / dispatched / tint room — never its trip
+//      arm: the invoice's own trip decides, below)
+//   b2. the invoice: on a trip → "… — remove it from the trip first";
+//       dispatched → refused. HELD is allowed (a CI from On hold is real).
+//   c. duplicate guard per (orderId, orderInvoiceId): a live CI on this row or
+//      a whole-OBD CI (orderInvoiceId NULL) → skipped; a draft → skipped.
+//   d. the lines: the invoice's order_invoice_lines at its tins, active raw
+//      lines only (invoiceCiPicks) → deriveCiLineRows, as a manual CI stores.
+//   e. ONE nested create at 'submitted', returnType 'full' (the whole
+//      INVOICE), orderInvoiceId = the row, invoiceNo / invoiceDate = the row's.
+//   f. NO orders write — the OBD is not cancelled (Cancel stays per OBD); its
+//      other invoices stay where they are. ONE order_status_logs row (the
+//      stage unchanged) "CI raised — {ciNumber} · {reason} · {invoice}" with
+//      "orderInvoiceIds" = [row] (v27.72), so the per-invoice Activity shows it.
+//      The ci_returns live triggers tell the board (entity 'order').
+// A retry after a press died between e and f finds its CI in (c) and is
+// skipped "Already has CI-…" — the CI stands; only its log line is missing.
+// Never throws. Sequential awaits, never prisma.$transaction (CORE §3).
+
+export type RaiseInvoiceCiResult =
+  | { ok: true; orderId: number; obdNumber: string; ciNumber: string; invoiceRowId: number; invoiceNo: string | null }
+  | { ok: false; orderId: number; obdNumber: string | null; reason: string; invoiceRowId: number; invoiceNo: string | null };
+
+export async function raiseInvoiceCi(args: {
+  orderId: number;
+  invoiceRowId: number;
+  reason: { id: number; label: string };
+  remark: string | null;
+  userId: number;
+  actorIsAdmin?: boolean;
+}): Promise<RaiseInvoiceCiResult> {
+  const { orderId, invoiceRowId, reason, remark, userId } = args;
+  let obdNumber: string | null = null;
+  let invoiceNo: string | null = null;
+  let ciNumber: string | null = null;
+  const fail = (why: string): RaiseInvoiceCiResult => ({ ok: false, orderId, obdNumber, reason: why, invoiceRowId, invoiceNo });
+  try {
+    // ── a. The order and its invoice rows ─────────────────────────────────
+    const order = await prisma.orders.findFirst({
+      where: { id: orderId, isRemoved: false },
+      select: {
+        id: true,
+        obdNumber: true,
+        invoiceNo: true,
+        invoiceDate: true,
+        customerId: true,
+        shipToCustomerId: true,
+        shipToCustomerName: true,
+        shipToOverrideCustomer: { select: { customerName: true } },
+        customer: { select: { customerName: true } },
+        soNumber: true,
+        workflowStage: true,
+        isChallanOrder: true,
+        invoices: {
+          orderBy: { seq: "asc" },
+          select: {
+            id: true,
+            seq: true,
+            invoiceNo: true,
+            invoiceDate: true,
+            tripDropId: true,
+            isDispatched: true,
+            tripDrop: { select: { trip: { select: { tripNumber: true } } } },
+            lines: { select: { rawLineItemId: true, qty: true } },
+          },
+        },
+      },
+    });
+    if (order === null) return fail("Order not found");
+    obdNumber = order.obdNumber;
+
+    // ── b0 / b. The OBD's own refusals ────────────────────────────────────
+    const challanRefusal = challanCancelRefusal(order.isChallanOrder, args.actorIsAdmin === true);
+    if (challanRefusal !== null) return fail(challanRefusal);
+    const stage = offFloorRefusal({ workflowStage: order.workflowStage, tripDropId: null, tripNumber: null });
+    if (stage !== null) return fail(stage);
+    if (order.invoices.length < 2) return fail("Not a split OBD — raise the CI on the whole bill");
+    const found = order.invoices.find((r) => r.id === invoiceRowId);
+    if (!found) return fail(`Invoice row ${invoiceRowId} is not an invoice of ${order.obdNumber}`);
+    const row = {
+      id: found.id,
+      seq: found.seq,
+      invoiceNo: found.invoiceNo,
+      tripDropId: found.tripDropId,
+      tripNumber: found.tripDrop?.trip.tripNumber ?? null,
+      isDispatched: found.isDispatched,
+      lines: found.lines,
+    };
+    invoiceNo = row.invoiceNo;
+
+    // ── b2. The invoice's own refusals ─────────────────────────────────────
+    const refusal = invoiceCiRefusal(row);
+    if (refusal !== null) return fail(refusal);
+
+    // ── c. Duplicate guard per (orderId, orderInvoiceId) ──────────────────
+    const cis = await prisma.ci_returns.findMany({
+      where: { orderId, isVoided: false },
+      orderBy: { id: "asc" },
+      select: { id: true, ciNumber: true, status: true, orderInvoiceId: true },
+    });
+    const dup = invoiceCiDuplicate(cis, row.id);
+    if (dup !== null) return fail(dup);
+
+    // ── d. The invoice's lines ────────────────────────────────────────────
+    const picks = invoiceCiPicks(row, await readActiveBillLines(order.obdNumber));
+    if (!picks.ok) return fail(picks.reason);
+    const lines = await deriveCiLineRows(picks.picks);
+
+    // ── e. ONE nested create at 'submitted' ───────────────────────────────
+    const now = new Date();
+    const istDay = now.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+    const materialReceivedDate = new Date(`${istDay}T00:00:00Z`);
+    const billTo = (await loadBillToByObd([order.obdNumber])).get(order.obdNumber);
+    const MAX_ATTEMPTS = 2;
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS && ciNumber === null; attempt += 1) {
+      const identity = await allocateCiNumber(now);
+      try {
+        const created = await prisma.ci_returns.create({
+          data: {
+            orderId: order.id,
+            orderInvoiceId: row.id,
+            obdNumber: order.obdNumber,
+            // THIS invoice's number and date (seq 1's is the OBD's own).
+            invoiceNo: row.invoiceNo ?? (row.seq === 1 ? order.invoiceNo : null),
+            invoiceDate: found.invoiceDate ?? (row.seq === 1 ? order.invoiceDate : null),
+            soNumber: order.soNumber,
+            customerId: order.customerId,
+            customerCode: order.shipToCustomerId,
+            customerName: resolveCiDealer(order),
+            ...ciPartyColumns(billTo, order),
+            returnType: "full",
+            materialMoved: "not_moved",
+            materialReceivedDate,
+            reasonId: reason.id,
+            reasonLabel: reason.label,
+            reasonRemark: remark,
+            supervisorId: userId,
+            ciNumber: identity.ciNumber,
+            status: "submitted",
+            submittedAt: now,
+            source: "floor",
+            lines: { create: lines },
+          },
+          select: { ciNumber: true },
+        });
+        ciNumber = created.ciNumber ?? identity.ciNumber;
+      } catch (err) {
+        const collided = err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002";
+        if (collided && attempt < MAX_ATTEMPTS) continue;
+        throw err;
+      }
+    }
+    if (ciNumber === null) return fail("Could not allocate a CI number — try again");
+
+    // ── f. ONE log, about THIS invoice — no orders write ───────────────────
+    await prisma.order_status_logs.create({
+      data: {
+        orderId,
+        fromStage: order.workflowStage,
+        toStage: order.workflowStage,
+        changedById: userId,
+        note: `CI raised — ${ciNumber} · ${reason.label} · ${ciInvoiceLabel(row)}`,
+        orderInvoiceIds: [row.id],
+      },
+    });
+    return { ok: true, orderId, obdNumber, ciNumber, invoiceRowId, invoiceNo };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Unexpected error";
+    console.error(`[floor/ci] order #${orderId} invoice row ${invoiceRowId}${ciNumber ? ` (${ciNumber})` : ""} failed:`, err);
+    return fail(ciNumber !== null ? `${ciNumber} was raised but its log line failed (${message})` : message);
   }
 }

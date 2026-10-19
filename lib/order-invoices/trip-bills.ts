@@ -31,6 +31,11 @@ export interface TripBillRow {
   tripId: number | null;
   dropKey: string | null;
   tripNumber: string | null;
+  /** 6.3 — the row's own hold (6.1) and its own CI number (any non-voided CI on
+   *  THIS row; "" = a draft with no number yet). Read for a SPLIT OBD only:
+   *  an unsplit row's isHeld drifted and is never read. Omitted = neither. */
+  isHeld?: boolean;
+  ciNumber?: string | null;
 }
 
 export interface RowRefusal {
@@ -80,7 +85,19 @@ export function planAddRows(
   const split = rows.length >= 2;
   const plan: AddRowsPlan = { attach: [], here: [], refused: [] };
   for (const r of targetsOf(rows, chosen)) {
-    if (r.tripDropId === null) {
+    // 6.3 (owner, 2026-10-19) — a SPLIT OBD's HELD invoice never joins a trip:
+    // release it first. One with its own CI is finished. That invoice only;
+    // the rest still attach. An unsplit bill keeps today's rule (a held bill
+    // may sit on a trip).
+    if (split && r.tripDropId === null && r.isHeld === true) {
+      plan.refused.push({ rowId: r.id, invoiceNo: r.invoiceNo, error: `${invoiceLabel(r, obdNumber)} is on hold — release it first` });
+    } else if (split && r.tripDropId === null && r.ciNumber !== undefined && r.ciNumber !== null) {
+      plan.refused.push({
+        rowId: r.id,
+        invoiceNo: r.invoiceNo,
+        error: `${invoiceLabel(r, obdNumber)} is returned on ${r.ciNumber === "" ? "a CI" : r.ciNumber} — it does not go out`,
+      });
+    } else if (r.tripDropId === null) {
       plan.attach.push(r.id);
     } else if (r.tripId === tripId) {
       if (r.dropKey === dropKey) plan.here.push(r.id);

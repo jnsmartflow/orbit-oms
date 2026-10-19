@@ -32,12 +32,50 @@ import { HandBadge } from "@/components/shared/hand-badge";
 import { ChallanBadge } from "@/components/shared/challan-badge";
 import { ObdBadge } from "@/components/shared/obd-badge";
 import { shipMarkers, SEARCH_HIT_ROW_CLS } from "./floor-table";
-import { InvoiceCountChip } from "./bill-ref-cells";
+import { InvoiceCountChip, InvoicePartChip } from "./bill-ref-cells";
 import { formatLitres, formatWeightKg } from "./status-pill";
 import { FloorActionBar, BAR_PRIMARY, type BarFigure } from "./floor-action-bar";
 import { countArticles } from "@/lib/floor/format";
 import { toggleOne, toggleAllIds, isAllIdsSelected, type FloorSelection } from "@/lib/floor/selection";
 import type { FloorCancelledRow } from "@/lib/floor/types";
+
+/**
+ * PER-INVOICE CIs (Add invoices 6.3, 2026-10-19): a split OBD whose invoices
+ * were returned one by one draws ONE ROW PER CI'D INVOICE — the OBD repeated,
+ * the invoice's own number + "k/n", its litres / kg, its CI, reason and who.
+ * Every other row draws once, exactly as before.
+ */
+function drawCancelled(
+  r: FloorCancelledRow,
+): Array<{ key: string; row: FloorCancelledRow; part: { k: number; n: number } | null }> {
+  const cis = r.invoiceCis ?? [];
+  const all = r.invoiceRowsAll ?? r.invoiceRows ?? [];
+  if (cis.length === 0 || all.length < 2) return [{ key: String(r.orderId), row: r, part: null }];
+  return cis.flatMap((c) => {
+    const k = all.findIndex((i) => i.id === c.invoiceRowId);
+    if (k < 0) return [];
+    const inv = all[k];
+    return [
+      {
+        key: `${r.orderId}:${c.invoiceRowId}`,
+        row: {
+          ...r,
+          invoiceNo: inv.invoiceNo,
+          volumeLitres: inv.litres,
+          weightKg: inv.kg,
+          reason: c.reason,
+          remark: c.remark,
+          ciNumber: c.ciNumber,
+          ciStatus: c.ciStatus,
+          ciSourceLabel: c.ciSourceLabel,
+          byName: c.byName,
+          at: c.at,
+        },
+        part: { k: k + 1, n: all.length },
+      },
+    ];
+  });
+}
 
 function fmtDateTime(iso: string | null): string {
   if (!iso) return "";
@@ -221,12 +259,12 @@ export function CancelledTab({
               </tr>
             </thead>
             <tbody>
-              {list.map((row) => {
+              {list.flatMap(drawCancelled).map(({ key, row, part }) => {
                 const { isSite, isRedirect } = shipMarkers(row);
                 const weightStr = formatWeightKg(row.weightKg);
                 return (
                   <tr
-                    key={row.orderId}
+                    key={key}
                     data-order-id={row.orderId}
                     className={`cursor-pointer hover:bg-[#fafafa] ${SEARCH_HIT_ROW_CLS}`}
                     onClick={() => onOpenDetail(row.orderId)}
@@ -273,8 +311,9 @@ export function CancelledTab({
                       {row.invoiceNo ? (
                         <span className="font-mono text-[11.5px] text-[#111827]">
                           {row.invoiceNo}
-                          {/* A split OBD stays ONE row here (Add invoices Phase 4). */}
-                          {row.invoiceCount > 1 && <InvoiceCountChip n={row.invoiceCount} />}
+                          {/* A split OBD stays ONE row here (Add invoices Phase 4) —
+                              except one returned invoice by invoice (6.3): "k/n". */}
+                          {part ? <InvoicePartChip k={part.k} n={part.n} /> : row.invoiceCount > 1 && <InvoiceCountChip n={row.invoiceCount} />}
                         </span>
                       ) : (
                         <span className="text-[#9ca3af]">—</span>

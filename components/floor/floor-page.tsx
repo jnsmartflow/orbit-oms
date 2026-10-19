@@ -66,6 +66,7 @@ import { OffFloorDialog, type OffFloorFormBill, type CiReasonOption } from "./of
 import { AddInvoicesDialog } from "./add-invoices-dialog";
 // Add invoices Phase 4 commit 3 — the detail panel scoped to one invoice.
 import { detailWalk, resolveScope, scopedHoldBody, scopedInvoiceRowId, type DetailKey } from "@/lib/floor/detail-scope";
+import { invoiceCiRefusal } from "@/lib/order-invoices/ci-plan";
 import { offFloorRefusal } from "@/lib/floor/off-floor";
 import { SearchBox, SearchHits } from "./search-box";
 import { FilterSheet } from "./filter-sheet";
@@ -110,7 +111,7 @@ import {
   type FloorDeskSelection,
   type SelectionUnit,
 } from "@/lib/floor/selection";
-import { narrowToInvoiceIds, narrowToPlace, narrowToPool } from "@/lib/floor/invoice-rows";
+import { narrowToInvoiceIds, narrowToPlace, narrowToPool, type FloorInvoiceRow } from "@/lib/floor/invoice-rows";
 import { rowsInScope, scopeBoard } from "@/lib/floor/scope";
 import { parseSearch, applySearch, searchReport, lookupTermOf, matchedInvoiceIdsOf, type Searchable, type ParsedSearch } from "@/lib/floor/search";
 import { applyFloorFilters, applyFlagFilters, EMPTY_FILTERS, type FloorFilters } from "@/lib/floor/filter";
@@ -462,6 +463,33 @@ function boardRowToOffFloorBill(r: FloorBoardRow): OffFloorFormBill {
     // invoiceTrips: a split OBD's own invoices and their trips (Phase 5), so
     // the greyed reason says "2 of 4 invoices on L-02" exactly as the server will.
     refusal: offFloorRefusal({ workflowStage: stage, tripDropId: r.tripDropId, tripNumber: r.tripNumber, invoiceTrips: r.invoiceRows }),
+  };
+}
+
+/**
+ * 6.3 (2026-10-19) — the form's line for the TICKED INVOICES of a split OBD:
+ * one CI per invoice (POST /api/floor/ci invoiceRowIds), the OBD stays. The
+ * invoice pre-check is the server's own words (lib/order-invoices/ci-plan.ts):
+ * greyed only when EVERY ticked invoice would be refused (on a trip).
+ */
+function invoiceBillOf(
+  r: { orderId: number; obdNumber: string; dealerName: string; invoiceRows: FloorInvoiceRow[]; invoiceRowsAll?: FloorInvoiceRow[] },
+  rowIds: readonly number[],
+): OffFloorFormBill {
+  const all = r.invoiceRowsAll ?? r.invoiceRows;
+  const ticked = all.filter((i) => rowIds.includes(i.id));
+  const refusals = ticked
+    .map((i) => invoiceCiRefusal({ ...i, isDispatched: false, lines: [] }))
+    .filter((x): x is string => x !== null);
+  return {
+    orderId: r.orderId,
+    obdNumber: r.obdNumber,
+    dealerName: r.dealerName,
+    litres: ticked.reduce((s, i) => s + i.litres, 0),
+    invoiceNo: ticked[0]?.invoiceNo ?? null,
+    refusal: ticked.length > 0 && refusals.length === ticked.length ? refusals[0] : null,
+    invoiceRowIds: ticked.map((i) => i.id),
+    invoices: ticked.map((i) => ({ id: i.id, seq: i.seq, label: i.invoiceNo ?? `Invoice ${i.seq}`, k: all.indexOf(i) + 1, n: all.length })),
   };
 }
 
@@ -2800,7 +2828,12 @@ export function FloorPage({
       onCancel: async (orderId) => {
         const row = (data?.floor.rows ?? []).find((x) => x.orderId === orderId);
         const held = (holdRows ?? []).find((x) => x.orderId === orderId);
-        const bill: OffFloorFormBill = row
+        // 6.3 — a panel scoped to an invoice of a split OBD raises a CI for
+        // THAT invoice only (the form offers no Cancel).
+        const scopedRow = detailScopeRowId !== null && detail?.orderId === orderId ? row ?? held ?? null : null;
+        const bill: OffFloorFormBill = scopedRow !== null && detailScopeRowId !== null
+          ? invoiceBillOf(scopedRow, [detailScopeRowId])
+          : row
           ? boardRowToOffFloorBill(row)
           : held
             ? holdRowToOffFloorBill(held)
@@ -4229,8 +4262,15 @@ export function FloorPage({
                     onOpenDetail={(id, invoiceSeq) => openDetail(id, "hold", invoiceSeq ?? null)}
                     menuOpen={holdMoreOpen}
                     onMenuOpenChange={setHoldMoreOpen}
-                    onOpenOffFloor={(rows, keepTicked) =>
-                      openOffFloor(rows.map(holdRowToOffFloorBill), (_done, notDone) => keepTicked(notDone))
+                    onOpenOffFloor={(rows, keepTicked, units) =>
+                      openOffFloor(
+                        rows.map((r) => {
+                          // 6.3: part of a split OBD's held invoices → a CI per invoice.
+                          const ids = units?.find((u) => u.orderId === r.orderId)?.invoiceRowIds ?? null;
+                          return ids !== null ? invoiceBillOf(r, ids) : holdRowToOffFloorBill(r);
+                        }),
+                        (_done, notDone) => keepTicked(notDone),
+                      )
                     }
                   />
                 ) : topTab === "challan" && canViewChallan ? (
@@ -4339,9 +4379,13 @@ export function FloorPage({
                       // One tick per OBD in the form, all pre-ticked — an invoice
                       // pair's members arrive as two lines and either can be
                       // unticked (owner, 2026-10-08). Unticked ones stay selected.
-                      wholeObdBlock === null &&
+                      // 6.3: a PARTLY ticked split OBD comes as its ticked
+                      // invoices (a CI per invoice; the form offers no Cancel).
                       openOffFloor(
-                        selectedRows.map(boardRowToOffFloorBill),
+                        selectedRows.map((r) => {
+                          const ids = unitByOrder.get(r.orderId)?.invoiceRowIds ?? null;
+                          return ids !== null ? invoiceBillOf(r, ids) : boardRowToOffFloorBill(r);
+                        }),
                         (_done, notDone) => setSelection(new Set(keysForOrders(notDone, rows))),
                         { perBillTicks: true },
                       )

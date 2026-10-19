@@ -142,6 +142,20 @@ const ORDER_DEALER_SELECT = {
  *
  * Sequential awaits, never prisma.$transaction (CORE §3).
  */
+/**
+ * THE LIVE INVOICE A CI SHOWS (Add invoices 6.3, 2026-10-19). A CI on ONE
+ * invoice of a split OBD whose row is seq 2..n (ci_returns."orderInvoiceId")
+ * reads THAT invoice live — orders.invoiceNo is seq 1's number, not its own.
+ * Every other CI reads the order live, exactly as before (seq 1 = the OBD's own).
+ */
+export function liveInvoiceOf(
+  order: { invoiceNo: string | null; invoiceDate: Date | null } | null,
+  orderInvoice: { seq: number; invoiceNo: string | null; invoiceDate: Date | null } | null,
+): { invoiceNo: string | null; invoiceDate: Date | null } | null {
+  if (orderInvoice !== null && orderInvoice.seq > 1) return { invoiceNo: orderInvoice.invoiceNo, invoiceDate: orderInvoice.invoiceDate };
+  return order;
+}
+
 export async function searchCiBills(rawQuery: string): Promise<CiSearchResult> {
   const query = normaliseCiSearchTerm(rawQuery);
   if (query === "") return { query, hits: [] };
@@ -506,12 +520,15 @@ const BOARD_SELECT = {
   // on an indexed FK across a board that holds a day's work; a per-row lookup
   // would be the N+1 the batch-and-match shape everywhere else exists to avoid.
   order: { select: { invoiceNo: true, invoiceDate: true } },
+  // 6.3 — a per-invoice CI on a seq 2..n invoice shows THAT invoice (liveInvoiceOf).
+  orderInvoice: { select: { seq: true, invoiceNo: true, invoiceDate: true } },
   lines: { select: { returnedQty: true, returnedQtyLitres: true } },
 } as const;
 
 type BoardRow = Prisma.ci_returnsGetPayload<{ select: typeof BOARD_SELECT }>;
 
 function toBoardRow(r: BoardRow): CiBoardRow {
+  const live = liveInvoiceOf(r.order, r.orderInvoice);
   return {
     id: r.id,
     // Non-null by construction: every board filters `status <> 'draft'`, and a
@@ -523,14 +540,14 @@ function toBoardRow(r: BoardRow): CiBoardRow {
     party: ciPartyDisplay(r),
     obdNumber: r.obdNumber,
     // Live first, snapshot second. Never the reverse.
-    invoiceNo: r.order?.invoiceNo ?? r.invoiceNo,
-    invoiceDate: (r.order?.invoiceDate ?? r.invoiceDate)
+    invoiceNo: live?.invoiceNo ?? r.invoiceNo,
+    invoiceDate: (live?.invoiceDate ?? r.invoiceDate)
       // ⚠ NO IST SHIFT. `invoiceDate` is `@db.Date` — a calendar day stored at
       // UTC midnight, not an instant — so shifting it would move some dates a
       // day forward. getCiDetail formats the SAME column the same way (its
       // `isoDate(...)` call takes no shift either), and the card and the detail
       // screen must never disagree about what day a bill is from.
-      ? isoDate((r.order?.invoiceDate ?? r.invoiceDate) as Date)
+      ? isoDate((live?.invoiceDate ?? r.invoiceDate) as Date)
       : null,
     returnType: r.returnType as CiReturnType,
     // Narrowed by asCiSource: chk_ci_returns_source permits exactly the four
@@ -651,6 +668,8 @@ export async function getCiDetail(ciId: number): Promise<CiDetail | null> {
       obdNumber: true,
       invoiceNo: true,
       invoiceDate: true,
+      // 6.3 — a per-invoice CI shows its own invoice (liveInvoiceOf).
+      orderInvoice: { select: { seq: true, invoiceNo: true, invoiceDate: true } },
       soNumber: true,
       source: true,
       customerId: true,
@@ -785,9 +804,9 @@ export async function getCiDetail(ciId: number): Promise<CiDetail | null> {
 
     orderId: row.orderId,
     obdNumber: row.obdNumber,
-    invoiceNo: order?.invoiceNo ?? row.invoiceNo,
-    invoiceDate: (order?.invoiceDate ?? row.invoiceDate)
-      ? isoDate((order?.invoiceDate ?? row.invoiceDate) as Date)
+    invoiceNo: liveInvoiceOf(order, row.orderInvoice)?.invoiceNo ?? row.invoiceNo,
+    invoiceDate: (liveInvoiceOf(order, row.orderInvoice)?.invoiceDate ?? row.invoiceDate)
+      ? isoDate((liveInvoiceOf(order, row.orderInvoice)?.invoiceDate ?? row.invoiceDate) as Date)
       : null,
     soNumber: row.soNumber,
     customerCode: row.customerCode,
@@ -896,6 +915,8 @@ export async function getCiRegisterRows(
       // carries BOTH the live invoice pair and `smu`, from which the division
       // number is derived below.
       order: { select: { invoiceNo: true, invoiceDate: true, smu: true } },
+      // 6.3 — a per-invoice CI registers its own invoice (liveInvoiceOf).
+      orderInvoice: { select: { seq: true, invoiceNo: true, invoiceDate: true } },
       lines: { select: { returnedQtyLitres: true } },
     },
     // Their register's own order. `ciNumber` is the tiebreak within a day and
@@ -918,8 +939,8 @@ export async function getCiRegisterRows(
     // Live first, snapshot second. NEVER the reverse — the rule written on
     // ci_returns.invoiceNo itself, and the same one toBoardRow and getCiDetail
     // apply. A number SAP sends after the CI was raised simply appears.
-    invoiceNo: r.order?.invoiceNo ?? r.invoiceNo,
-    invoiceDate: r.order?.invoiceDate ?? r.invoiceDate,
+    invoiceNo: liveInvoiceOf(r.order, r.orderInvoice)?.invoiceNo ?? r.invoiceNo,
+    invoiceDate: liveInvoiceOf(r.order, r.orderInvoice)?.invoiceDate ?? r.invoiceDate,
     sapCiNumber: r.sapCiNumber,
     ciDate: r.ciDate,
     // 🔴 THE SAME sumLitres() BOTH DETAIL PANES TOTAL WITH (via ciTotals), so

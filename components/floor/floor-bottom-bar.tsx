@@ -18,9 +18,9 @@
 //                              · Add invoices / Edit invoices (2026-10-10) —
 //                                exactly ONE OBD ticked + the floor_add_invoices
 //                                tick; floor-page decides (`addInvoices` prop)
-//                              — the last two GREY while an OBD is only partly
-//                                ticked (P5-3, `wholeObdBlock`); Hold acts on
-//                                the ticked invoices (6.1)
+//                              — Add invoices GREY while an OBD is only partly
+//                                ticked (P5-3, `wholeObdBlock`); Hold (6.1) and
+//                                Raise CI (6.3) act on the ticked invoices
 //
 // 🔴 IT RENDERS INSIDE THE BILLS COLUMN (2026-09-22). floor-page builds it and
 // TripDesk places it in its `relative` bills column, so it never runs under the
@@ -248,13 +248,17 @@ export function FloorBottomBar({
           {
             key: "off-floor",
             label: "Cancel / Raise CI…",
-            hint:
-              wholeObdBlock ??
-              (onTripSelection ? "Remove from trip first" : "Opens a form · choose Cancel or Raise CI"),
+            // 6.3: a PARTLY ticked split OBD raises a CI per ticked invoice (the
+            // form offers no Cancel — that still acts on the whole OBD).
+            hint: onTripSelection
+              ? "Remove from trip first"
+              : wholeObdBlock !== null
+                ? "Raise CI per ticked invoice · Cancel needs every invoice ticked"
+                : "Opens a form · choose Cancel or Raise CI",
             icon: <X size={15} strokeWidth={2.2} />,
             danger: true,
             dividerBefore: true,
-            disabled: onTripSelection || wholeObdBlock !== null,
+            disabled: onTripSelection,
             onSelect: onOffFloor,
           },
         ]}
