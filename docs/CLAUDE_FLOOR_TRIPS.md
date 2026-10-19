@@ -1,5 +1,5 @@
 # CLAUDE_FLOOR_TRIPS.md — Floor Trips (Orbit's own truck plan)
-# v1.2 · Schema v27.24 · October 2026 · updated 2026-10-09 · Lives in: orbit-oms/docs/
+# v1.3 · Schema v27.24 · October 2026 · updated 2026-10-19 · Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md + docs/CLAUDE_FLOOR.md
 
 Trip tables / new columns are live-verified 2026-09-18; their schema version numbers are assigned in the CORE pass (batch C2).
@@ -145,11 +145,14 @@ One row per stop (customer) on a trip.
 | `dropSeq` | Stop order. MAX+1 at creation. Gaps allowed (§7) |
 | `customerId` → `delivery_point_master` | Null for an unmatched bill |
 | `shipToCode` | Always SAP's own ship-to code, NOT NULL |
-| `dropKey` | `c:<customerId>` or `s:<shipToCode>` (§7). No default |
+| `shipToText` | v27.73 (2026-10-19). A typed ship-to's stop text; NULL = today's `c:`/`s:` key. **Column live, app writes no t: key yet (build step 6)** |
+| `dropKey` | `t:<shipToText>`, `c:<customerId>` or `s:<shipToCode>` (§7). No default |
 | `customerName`, `areaName`, `routeName` | Snapshot taken when the stop is created |
 | `note`, `createdAt` | |
 
-Live: `chk_trip_drops_key` (`dropKey = CASE WHEN customerId NOT NULL THEN 'c:'||customerId ELSE 's:'||shipToCode END`),
+Live: `chk_trip_drops_key` (rewritten v27.73, 2026-10-19: `dropKey = CASE WHEN shipToText NOT NULL THEN 't:'||shipToText
+WHEN customerId NOT NULL THEN 'c:'||customerId ELSE 's:'||shipToCode END` — column live, app writes no t: key yet,
+build step 6), `chk_trip_drops_ship_to_text` (`shipToText` NULL or non-blank),
 `chk_trip_drops_seq_positive` (`dropSeq >= 1`), UNIQUE `trip_drops_trip_key_key` (`tripId`, `dropKey`),
 UNIQUE `trip_drops_trip_seq_key` (`tripId`, `dropSeq`), indexes `trip_drops_trip_idx` and
 `trip_drops_customer_idx`, `customerId` FK default rule.
@@ -324,6 +327,10 @@ type unioned with the bills' own types (effective dealer → area → delivery t
 - `c:<customerId>` when the **effective** customer resolves: `shipToOverrideCustomerId ?? customerId`
   (`effectiveCustomerId`, `:61-63`; `computeDropKey`, `:86-91`).
 - `s:<shipToCustomerId>` otherwise: SAP's own code.
+- `t:<shipToText>` — a typed ship-to (free-text site or "As per challan"), FIRST in the live
+  `chk_trip_drops_key` since v27.73 (2026-10-19). **Column live, app writes no t: key yet (build
+  step 6)**: `lib/trips/drop-key.ts` still computes only `c:`/`s:`, so `shipToText` is NULL on every
+  row. Shape the app must store: `docs/prompts/drafts/code-sql-2026-10-19-ship-to-freetext.sql` header.
 - The prefixes keep two id spaces from colliding onto one stop (`:19-24`). `chk_trip_drops_key`
   rejects a wrong value (§3.2).
 - Known limit: a free-text ship-to redirect that never resolved to a master row groups under the
@@ -704,4 +711,4 @@ a trip never closes (`dispatch` unreachable); `isReady` and the carry rule treat
 
 ---
 
-*CLAUDE_FLOOR_TRIPS.md v1.2 · Schema v27.24 · OrbitOMS · updated 2026-10-09 — §1 notes the reports that read `trips` (NTS Trips added); §17 data-quality note on typed "HAND"/"CI" plates. Schema stamp not bumped — no reconciliation pass. Prior, v1.1 (2026-10-03) — §2 and landmine 1: THREE trip systems (Freight trips added, owned by `CLAUDE_FREIGHT_TRIPS.md`); wording only. Prior, v1.0 (2026-09-18) — first canonical file for Orbit's own trips (trips / trip_drops / trip_activity, lib/trips, /api/floor/trips, the pick visibility gate, Send to billing). Written from the code at ec6343ba and the live results of 2026-09-18; drafts are history.*
+*CLAUDE_FLOOR_TRIPS.md v1.3 · Schema v27.24 · OrbitOMS · updated 2026-10-19 — §3.2 and §7: `trip_drops."shipToText"` and the `t:` branch of `chk_trip_drops_key` (CORE v27.73) — column live, app writes no t: key yet (build step 6). The schema stamp stays v27.24: only the drop-key text was reconciled, not the whole file. Prior, v1.2 (2026-10-09) — §1 notes the reports that read `trips` (NTS Trips added); §17 data-quality note on typed "HAND"/"CI" plates. Schema stamp not bumped — no reconciliation pass. Prior, v1.1 (2026-10-03) — §2 and landmine 1: THREE trip systems (Freight trips added, owned by `CLAUDE_FREIGHT_TRIPS.md`); wording only. Prior, v1.0 (2026-09-18) — first canonical file for Orbit's own trips (trips / trip_drops / trip_activity, lib/trips, /api/floor/trips, the pick visibility gate, Send to billing). Written from the code at ec6343ba and the live results of 2026-09-18; drafts are history.*

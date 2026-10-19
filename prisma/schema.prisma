@@ -350,6 +350,10 @@ model users {
   orderInvoicesDispatched     order_invoices[]         @relation("OrderInvoiceDispatchedBy")
   // Trip Sheets share log (v27.71) — one FK from trip_share_log, unnamed.
   tripSharesLogged            TripShareLog[]
+  // Ship-to challan copies (v27.73) — TWO FKs from ship_to_copies to `users`
+  // (uploadedById / removedById), so BOTH are named on both sides (CORE §7.3).
+  shipToCopiesUploaded        ship_to_copies[]         @relation("ShipToCopyUploadedBy")
+  shipToCopiesRemoved         ship_to_copies[]         @relation("ShipToCopyRemovedBy")
 }
 
 // Per-user page permissions — the table the role→user access conversion is
@@ -752,6 +756,9 @@ model area_master {
   areaRoutes     area_route_map[]
   subAreas       sub_area_master[]
   deliveryPoints delivery_point_master[]
+  // Typed ship-to area (v27.73) — one FK each from mo_orders and orders, named.
+  moOrdersShipTo mo_orders[]             @relation("MoOrderShipToArea")
+  ordersShipTo   orders[]                @relation("OrderShipToArea")
 }
 
 model area_route_map {
@@ -1139,7 +1146,19 @@ model orders {
   shipToCustomerName       String?
   shipToOverrideCustomerId Int?
   shipToOverrideCustomer   delivery_point_master?    @relation("OrderShipToOverride", fields: [shipToOverrideCustomerId], references: [id])
-  orderType                String
+  // Typed ship-to (2026-10-19, Schema v27.73) — same pair as mo_orders. Floor
+  // writes it for ONE bill; Billing writes it to every bill of the SO. Live FK
+  // orders_shipToAreaId_fkey → area_master(id) ON DELETE NO ACTION.
+  // 🔴 TWO LIVE CHECKs — NOT EXPRESSIBLE IN PRISMA, live text 2026-10-19:
+  //   chk_orders_ship_to_text:      CHECK ((("shipToText" IS NULL) OR ("shipToText" ~ '\S'::text)))
+  //   chk_orders_ship_to_text_area: CHECK ((("shipToText" IS NULL) OR ("shipToAreaId" IS NOT NULL)))
+  // The second: Area is REQUIRED for every typed ship-to, "As per challan" included.
+  shipToText               String?
+  shipToAreaId             Int?
+  shipToArea               area_master?              @relation("OrderShipToArea", fields: [shipToAreaId], references: [id], onDelete: NoAction)
+  // Uploaded challan copies (v27.73) — Floor copies carry orderId (this bill only).
+  shipToCopies             ship_to_copies[]          @relation("ShipToCopyOrder")
+  orderType              String
   workflowStage            String                    @default("order_created")
   dispatchSlot             String?
   dispatchSlotDeadline     DateTime?
@@ -1435,6 +1454,57 @@ model orders {
   // Challan orders (2026-10-06, v27.60) — orders_challanOrderId_idx, Prisma's
   // default name, so no `map:`. Backs the FK and "the SAP bills of this challan".
   @@index([challanOrderId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SHIP-TO CHALLAN COPIES (2026-10-19, Schema v27.73)
+//
+// One row per dealer / SO challan copy uploaded with a typed ship-to. SQL:
+// docs/prompts/drafts/code-sql-2026-10-19-ship-to-freetext.sql, run live by the
+// owner 2026-10-19. Design: web-update-2026-10-19-ship-to-freetext.md §4.
+// Files live in the PRIVATE bucket `ship-to-challans` (no RLS policies; the
+// server mints 300 s signed URLs). Never `attendance-photos` — its purge cron
+// deletes objects, and these copies are never purged.
+//
+// OWNER: a Billing copy sets moOrderId (orderId NULL) and shows on every bill
+// of that mail order's SO; a Floor copy sets orderId (that bill only).
+// soNumber is a NULL-able SNAPSHOT (Billing can save before the SO is punched,
+// and a re-punch can change it) — readers go moOrderId → mo_orders.soNumber.
+// Soft-remove only (removedAt / removedById); the file stays in storage.
+//
+// 🔴 FOUR LIVE CHECKs — NOT EXPRESSIBLE IN PRISMA, live text 2026-10-19:
+//   chk_ship_to_copies_content_type:     CHECK (("contentType" = ANY (ARRAY['image/jpeg'::text, 'image/png'::text, 'application/pdf'::text])))
+//   chk_ship_to_copies_size_positive:    CHECK (("sizeBytes" > 0))
+//   chk_ship_to_copies_owner:            CHECK ((("orderId" IS NOT NULL) OR ("moOrderId" IS NOT NULL)))
+//   chk_ship_to_copies_removed_complete: CHECK ((("removedAt" IS NULL) = ("removedById" IS NULL)))
+//
+// Every FK is ON DELETE NO ACTION live, spelled out below (Prisma's defaults
+// would be SetNull / Restrict). Every constraint and index name is Prisma's
+// default, so no `map:`. Live feed: trg_live_changes_ship_to_copies_{ins,upd,del}
+// ('order','parent','orderId') and trg_live_changes_ship_to_copies_mo_{ins,upd,del}
+// ('mail_order','parent','moOrderId') on the existing child functions.
+// ─────────────────────────────────────────────────────────────────────────────
+model ship_to_copies {
+  id           Int        @id @default(autoincrement())
+  soNumber     String?
+  orderId      Int?
+  order        orders?    @relation("ShipToCopyOrder", fields: [orderId], references: [id], onDelete: NoAction)
+  moOrderId    Int?
+  moOrder      mo_orders? @relation("ShipToCopyMoOrder", fields: [moOrderId], references: [id], onDelete: NoAction)
+  // A path INSIDE the bucket, never a URL (mrn_photos.storagePath rule).
+  storagePath  String     @unique
+  contentType  String
+  sizeBytes    Int
+  uploadedById Int
+  uploadedBy   users      @relation("ShipToCopyUploadedBy", fields: [uploadedById], references: [id], onDelete: NoAction)
+  createdAt    DateTime   @default(now()) @db.Timestamptz(6)
+  removedAt    DateTime?  @db.Timestamptz(6)
+  removedById  Int?
+  removedBy    users?     @relation("ShipToCopyRemovedBy", fields: [removedById], references: [id], onDelete: NoAction)
+
+  @@index([soNumber])
+  @@index([orderId])
+  @@index([moOrderId])
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2448,6 +2518,22 @@ model mo_orders {
   slotToOverride           Boolean?               @default(false)
   shipToOverrideCustomerId Int?
   shipToOverrideCustomer   delivery_point_master? @relation("MoOrderShipToOverride", fields: [shipToOverrideCustomerId], references: [id])
+  // Typed ship-to (2026-10-19, Schema v27.73,
+  // docs/prompts/drafts/code-sql-2026-10-19-ship-to-freetext.sql). A one-off
+  // place NOT in delivery_point_master: a site name, or "As per challan".
+  // Design: docs/prompts/drafts/web-update-2026-10-19-ship-to-freetext.md §4.
+  // Typed text set ⇒ shipToOverrideCustomerId null + shipToOverride true; a
+  // dealer pick clears both of these. Live FK mo_orders_shipToAreaId_fkey →
+  // area_master(id) ON DELETE NO ACTION.
+  // 🔴 TWO LIVE CHECKs — NOT EXPRESSIBLE IN PRISMA, live text 2026-10-19:
+  //   chk_mo_orders_ship_to_text:      CHECK ((("shipToText" IS NULL) OR ("shipToText" ~ '\S'::text)))
+  //   chk_mo_orders_ship_to_text_area: CHECK ((("shipToText" IS NULL) OR ("shipToAreaId" IS NOT NULL)))
+  // The second: Area is REQUIRED for every typed ship-to, "As per challan" included.
+  shipToText               String?
+  shipToAreaId             Int?
+  shipToArea               area_master?           @relation("MoOrderShipToArea", fields: [shipToAreaId], references: [id], onDelete: NoAction)
+  // Uploaded dealer / SO challan copies (v27.73) — Billing copies carry moOrderId.
+  shipToCopies             ship_to_copies[]       @relation("ShipToCopyMoOrder")
   // Slot INTENT (Phase 2, 2026-07-30). The operator's dispatch-slot DECISION,
   // taken on the mail order before any OBD exists. Enrichment copies these into
   // orders.dispatchTargetDate/dispatchWindowId with dispatchSlotSource='manual'
@@ -4159,12 +4245,19 @@ model trips {
 // Applied by hand 2026-09-09 and hand-mirrored here (CORE §3). DDL of record:
 // the trip-schema draft §D2.
 //
-// 🔴 TWO LIVE CHECK CONSTRAINTS — NOT EXPRESSIBLE IN PRISMA, recorded by hand:
+// 🔴 THREE LIVE CHECK CONSTRAINTS — NOT EXPRESSIBLE IN PRISMA, recorded by hand:
 //   chk_trip_drops_seq_positive  CHECK ("dropSeq" >= 1)
-//   chk_trip_drops_key
-//     CHECK ("dropKey" = CASE WHEN "customerId" IS NOT NULL
-//                             THEN 'c:' || "customerId"::text
-//                             ELSE 's:' || "shipToCode" END)
+//   chk_trip_drops_key — REWRITTEN 2026-10-19 (Schema v27.73), live text:
+//     CHECK (("dropKey" =
+//     CASE
+//         WHEN ("shipToText" IS NOT NULL) THEN ('t:'::text || "shipToText")
+//         WHEN ("customerId" IS NOT NULL) THEN ('c:'::text || ("customerId")::text)
+//         ELSE ('s:'::text || "shipToCode")
+//     END))
+//   chk_trip_drops_ship_to_text  CHECK ((("shipToText" IS NULL) OR ("shipToText" ~ '\S'::text)))
+//   The t: branch is a typed ship-to's stop. Column live; the app writes no
+//   t: key yet (build step 6, lib/trips/drop-key.ts) — until then shipToText is
+//   NULL on every row and the key is today's c:/s:.
 //
 // 🔴 `dropKey` IS THE GROUPING IDENTITY AND THE SECOND CHECK IS WHAT MAKES IT
 // TRUSTWORTHY. The grouping rule is COALESCE(shipToOverrideCustomerId,
@@ -4206,6 +4299,8 @@ model trip_drops {
   customerId   Int?
   customer     delivery_point_master? @relation(fields: [customerId], references: [id])
   shipToCode   String
+  // Typed ship-to stop text (v27.73) — '<scope>/<normalised text>', set ⇒ dropKey 't:'.
+  shipToText   String?
   dropKey      String
   customerName String
   areaName     String?

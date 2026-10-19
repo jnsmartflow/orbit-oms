@@ -7,7 +7,7 @@
 --   Not minted here. Step 4 mints the CORE entry together with the hand-edited
 --   prisma/schema.prisma, after the owner has run this file.
 --
--- RUN STATUS: NOT RUN. Written 2026-10-19.
+-- RUN STATUS: RUN 2026-10-19 by owner — read-back OK (5/17/5/6, 11·0, 4379·0·0)
 --   Run the whole file in ONE paste in the Supabase SQL Editor. No BEGIN/COMMIT.
 --   It is re-runnable: ADD COLUMN IF NOT EXISTS, CREATE ... IF NOT EXISTS,
 --   guarded constraint adds, DROP TRIGGER IF EXISTS, and the drop-key CHECK is
