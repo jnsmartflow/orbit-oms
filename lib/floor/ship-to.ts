@@ -30,48 +30,59 @@
 // in the extraction. Billing's own actions route does not call this function
 // (it writes per SO) and applies the same rule through billingRefusal.
 //
+// 🔴 TYPED SHIP-TO (v27.73, 2026-10-19 — design web-update-2026-10-19-ship-to-
+// freetext.md). A target is a dealer, a typed name + area, or Reset. Last save
+// wins: each kind clears the others' columns (shipToColumns). "Unchanged"
+// compares all four columns. setShipToOverride stays as the dealer-or-clear
+// wrapper its three older callers use.
+//
 // Server-only (Prisma).
 
 import { prisma } from "@/lib/prisma";
 import { onTripRefusal } from "@/lib/billing/refusal";
 import { INVOICE_TRIPS_SELECT, invoiceTripsOf } from "@/lib/order-invoices/trip-refusal";
+import { activeOwnCopiesWhere, softRemoveCopies } from "@/lib/ship-to/copies-server";
+
+/** What a ship-to write points the bill at (v27.73 free-text ship-to). */
+export type ShipToTarget =
+  | { kind: "dealer"; customerId: number }
+  /** A typed name or "As per challan" — area REQUIRED (chk_orders_ship_to_text_area). */
+  | { kind: "typed"; text: string; areaId: number }
+  | { kind: "reset" };
 
 export type ShipToResult =
-  | { ok: true; orderId: number; shipToOverrideCustomerId: number | null; changed: boolean }
+  | {
+      ok: true;
+      orderId: number;
+      shipToOverrideCustomerId: number | null;
+      shipToText: string | null;
+      shipToAreaId: number | null;
+      changed: boolean;
+    }
   | { ok: false; status: number; error: string };
 
+const BILL_SELECT = {
+  id: true,
+  soNumber: true,
+  shipToOverride: true,
+  shipToOverrideCustomerId: true,
+  shipToText: true,
+  shipToAreaId: true,
+  tripDropId: true,
+  tripDrop: { select: { trip: { select: { tripNumber: true } } } },
+  // Each invoice row's trip — the partly-on-a-trip message (Phase 5 commit 2).
+  invoices: INVOICE_TRIPS_SELECT,
+} as const;
+
 /**
- * Redirect ONE bill's ship-to to a different delivery point, or clear the
- * redirect (`customerId: null`). `customerId` must already be validated as a
- * positive integer or null by the caller. `orderId` is not re-checked for tint
- * or any other kind here — a caller that scopes (the Tint Manager) does that
- * before calling.
+ * Read ONE live bill and apply the on-a-trip refusal. Exported so Floor's
+ * multipart save can refuse BEFORE it uploads any copy; setShipTo re-runs it.
  */
-export async function setShipToOverride(args: {
-  orderId: number;
-  customerId: number | null;
-  changedById: number;
-  /** The log row's note. Omitted → null, exactly what Floor and the single-bill
-   *  Tint Manager route have always written. Shop delivery passes its own. */
-  note?: string | null;
-}): Promise<ShipToResult> {
-  const { orderId, customerId, changedById, note = null } = args;
-
-  const order = await prisma.orders.findFirst({
-    where: { id: orderId, isRemoved: false },
-    select: {
-      id: true,
-      shipToOverrideCustomerId: true,
-      tripDropId: true,
-      tripDrop: { select: { trip: { select: { tripNumber: true } } } },
-      // Each invoice row's trip — the partly-on-a-trip message (Phase 5 commit 2).
-      invoices: INVOICE_TRIPS_SELECT,
-    },
-  });
+export async function loadShipToBill(orderId: number) {
+  const order = await prisma.orders.findFirst({ where: { id: orderId, isRemoved: false }, select: BILL_SELECT });
   if (!order) {
-    return { ok: false, status: 404, error: "Order not found" };
+    return { ok: false as const, status: 404, error: "Order not found" };
   }
-
   // On a trip → refused (owner 2026-10-01). Before the target check, as
   // Billing refuses before anything else: the answer does not depend on which
   // site was asked for.
@@ -81,52 +92,146 @@ export async function setShipToOverride(args: {
     invoiceTrips: invoiceTripsOf(order.invoices),
   });
   if (onTrip !== null) {
-    return { ok: false, status: 409, error: onTrip };
+    return { ok: false as const, status: 409, error: onTrip };
   }
+  return { ok: true as const, order };
+}
 
-  // Validate the target up front rather than letting the FK surface as a 500 —
-  // Support's route relied on the database to reject a bad id.
-  if (customerId !== null) {
+/**
+ * Check a target against the masters — a dealer that exists, an area that is
+ * active. Returns the refusal, or null. Up front rather than letting the FK
+ * surface as a 500 (Support's route relied on the database to reject a bad id).
+ */
+export async function validateShipToTarget(target: ShipToTarget): Promise<{ status: number; error: string } | null> {
+  if (target.kind === "dealer") {
     const customer = await prisma.delivery_point_master.findUnique({
-      where: { id: customerId },
+      where: { id: target.customerId },
       select: { id: true },
     });
-    if (!customer) {
-      return { ok: false, status: 400, error: `No customer found for id ${customerId}` };
-    }
+    if (!customer) return { status: 400, error: `No customer found for id ${target.customerId}` };
+  } else if (target.kind === "typed") {
+    if (target.text.trim() === "") return { status: 400, error: "Ship-to name is blank" };
+    const area = await prisma.area_master.findFirst({ where: { id: target.areaId, isActive: true }, select: { id: true } });
+    if (!area) return { status: 400, error: "Unknown or inactive area" };
+  }
+  return null;
+}
+
+/**
+ * The four ship-to columns a target writes. LAST SAVE WINS (design §2): a typed
+ * name clears the dealer, a dealer clears the typed name, Reset clears both.
+ * The flag is true for both kinds of redirect. Shared with Billing's write
+ * (lib/billing/ship-to-write.ts) so the two desks cannot drift.
+ */
+export function shipToColumns(target: ShipToTarget): {
+  shipToOverride: boolean;
+  shipToOverrideCustomerId: number | null;
+  shipToText: string | null;
+  shipToAreaId: number | null;
+} {
+  if (target.kind === "dealer") {
+    return { shipToOverride: true, shipToOverrideCustomerId: target.customerId, shipToText: null, shipToAreaId: null };
+  }
+  if (target.kind === "typed") {
+    return { shipToOverride: true, shipToOverrideCustomerId: null, shipToText: target.text.trim(), shipToAreaId: target.areaId };
+  }
+  return { shipToOverride: false, shipToOverrideCustomerId: null, shipToText: null, shipToAreaId: null };
+}
+
+/** The log's from / to value: the dealer id (as before), "typed", or null. */
+function stateLabel(s: { shipToOverrideCustomerId: number | null; shipToText: string | null }): string | null {
+  if (s.shipToOverrideCustomerId !== null) return String(s.shipToOverrideCustomerId);
+  if (s.shipToText !== null) return "typed";
+  return null;
+}
+
+/**
+ * Point ONE bill's ship-to at a dealer, a typed name, or back at its own site.
+ * `target` must already be shape-checked by the caller; the masters are checked
+ * here. `orderId` is not re-checked for tint or any other kind — a caller that
+ * scopes (the Tint Manager) does that before calling.
+ *
+ * Dealer and Reset also SOFT-REMOVE the bill's own Floor copies (they belonged
+ * to the typed ship-to). Billing's SO copies are never touched from here.
+ */
+export async function setShipTo(args: {
+  orderId: number;
+  target: ShipToTarget;
+  changedById: number;
+  /** The log row's note. Omitted → null for dealer / reset, exactly what Floor
+   *  and the single-bill Tint Manager route have always written; a typed save
+   *  notes its text. Shop delivery passes its own. */
+  note?: string | null;
+}): Promise<ShipToResult> {
+  const { orderId, target, changedById } = args;
+
+  const loaded = await loadShipToBill(orderId);
+  if (!loaded.ok) return loaded;
+  const order = loaded.order;
+
+  const bad = await validateShipToTarget(target);
+  if (bad !== null) return { ok: false, ...bad };
+
+  const next = shipToColumns(target);
+
+  // Nothing changed → write NOTHING. Bumping updatedAt here would tell every
+  // open board that this bill moved when it did not (CLAUDE_FLOOR §5). All
+  // four columns are compared: a typed bill has no dealer id, so comparing the
+  // id alone would make Reset a silent no-op on it.
+  if (
+    order.shipToOverride === next.shipToOverride &&
+    order.shipToOverrideCustomerId === next.shipToOverrideCustomerId &&
+    order.shipToText === next.shipToText &&
+    order.shipToAreaId === next.shipToAreaId
+  ) {
+    return { ok: true, orderId, ...shownIds(next), changed: false };
   }
 
-  // Nothing changed → write NOTHING. Bumping updatedAt here would tell every open
-  // board that this bill moved when it did not (CLAUDE_FLOOR §5).
-  if (order.shipToOverrideCustomerId === customerId) {
-    return { ok: true, orderId, shipToOverrideCustomerId: customerId, changed: false };
-  }
+  // ONE orders.update. The flag moves with the id / text on this path (the flag
+  // CAN legitimately be true with a null id AND null text on legacy rows from
+  // mail-order enrichment — CLAUDE_SUPPORT.md §4.18 — only write paths pair them).
+  await prisma.orders.update({ where: { id: orderId }, data: next });
 
-  // ONE orders.update. `shipToOverride` is the legacy boolean flag; it is kept in
-  // step with the id so the two can never disagree (CLAUDE_SUPPORT.md §4.18 —
-  // note the flag CAN legitimately be true with a null id from mail-order
-  // enrichment, so only this write path pairs them).
-  await prisma.orders.update({
-    where: { id: orderId },
-    data: {
-      shipToOverrideCustomerId: customerId,
-      shipToOverride: customerId !== null,
-    },
-  });
-
-  // ONE log row. Same shape Support's route wrote, so the audit trail reads
-  // identically either side of the retirement.
+  // ONE log row. Same shape Support's route wrote for a dealer, so the audit
+  // trail reads identically either side of the retirement.
   await prisma.order_status_logs.create({
     data: {
       orderId,
-      fromStage: order.shipToOverrideCustomerId !== null ? String(order.shipToOverrideCustomerId) : null,
-      toStage: customerId !== null ? String(customerId) : "cleared",
+      fromStage: stateLabel(order),
+      toStage: stateLabel(next) ?? "cleared",
       changedById,
-      note,
+      note: args.note !== undefined ? args.note : target.kind === "typed" ? `Ship-to typed: ${next.shipToText}` : null,
     },
   });
 
-  return { ok: true, orderId, shipToOverrideCustomerId: customerId, changed: true };
+  if (target.kind !== "typed") {
+    await softRemoveCopies(activeOwnCopiesWhere("floor", orderId), changedById);
+  }
+
+  return { ok: true, orderId, ...shownIds(next), changed: true };
+}
+
+function shownIds(next: ReturnType<typeof shipToColumns>) {
+  return {
+    shipToOverrideCustomerId: next.shipToOverrideCustomerId,
+    shipToText: next.shipToText,
+    shipToAreaId: next.shipToAreaId,
+  };
+}
+
+/**
+ * The dealer-or-clear form every caller used before v27.73 — Floor's JSON
+ * route and both Tint Manager routes. `customerId: null` = Reset, which now
+ * also clears a typed name and hides the bill's own copies.
+ */
+export async function setShipToOverride(args: {
+  orderId: number;
+  customerId: number | null;
+  changedById: number;
+  note?: string | null;
+}): Promise<ShipToResult> {
+  const { customerId, ...rest } = args;
+  return setShipTo({ ...rest, target: customerId === null ? { kind: "reset" } : { kind: "dealer", customerId } });
 }
 
 /** One search hit — the bare-array element the detail panel reads. */

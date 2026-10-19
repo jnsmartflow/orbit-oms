@@ -12,6 +12,8 @@ import { findLiveCi, liveCiRefusal } from "@/lib/ci/live-ci";
 import { mirrorObdHoldSafe } from "@/lib/order-invoices/hold";
 import { onTripMessage } from "@/lib/order-invoices/trip-refusal";
 import { NOT_CHALLAN_LINKED } from "@/lib/workflow-stages";
+import { applyBillingShipTo } from "@/lib/billing/ship-to-write";
+import type { ShipToTarget } from "@/lib/floor/ship-to";
 
 export const dynamic = "force-dynamic";
 
@@ -66,7 +68,9 @@ interface BillOutcome {
  *        hold    → dispatchStatus 'hold' + heldAt (obdEmailDate ?? now) + BILLING_HOLD_NOTE
  *        release → FLOOR_CLEAR_HOLD_STAGES rule ('dispatch' or null) + BILLING_CLEAR_HOLD_NOTE;
  *                  refused on a bill with a live FULL CI (Floor's Release rule)
- *        urgent / slot / shipTo → the same values as before, now per bill
+ *        urgent / slot → the same values as before, now per bill
+ *        shipTo  → BOTH writes in lib/billing/ship-to-write.ts (2026-10-19,
+ *                  shared with POST /api/billing/mail-order/ship-to)
  *        hand    → handAt/handById (+ clear); newly marked bills → notifyHandSet
  *        ci      → NOTHING here: markMoOrderCi already applied the tag to the
  *                  bills on the SO (the CI + cancel happen in the tag hook)
@@ -169,7 +173,7 @@ export async function POST(req: Request): Promise<NextResponse> {
   let slotDate: Date | null = null;
   let slotWindowId: number | null = null;
   let slotWindowLabel = "";
-  let shipToCustomerId: number | null = null;
+  let shipToTarget: ShipToTarget | null = null;
 
   if (action === "slot") {
     // Both together or both cleared — a date with no window is not a slot.
@@ -201,18 +205,19 @@ export async function POST(req: Request): Promise<NextResponse> {
       data = { dispatchTargetDate: slotDate, dispatchWindowId };
     }
   } else if (action === "shipTo") {
+    // Dealer or clear only on this JSON path; a typed ship-to (with copies) goes
+    // to POST /api/billing/mail-order/ship-to. Both write through
+    // lib/billing/ship-to-write.ts — clear is Reset (also clears a typed name).
     const { customerId } = body;
     if (customerId === null) {
-      data = { shipToOverride: false, shipToOverrideCustomerId: null };
+      shipToTarget = { kind: "reset" };
     } else {
       if (typeof customerId !== "number" || !Number.isInteger(customerId) || customerId <= 0) {
         return NextResponse.json({ error: "customerId must be a positive integer, or null to clear" }, { status: 400 });
       }
       const dealer = await prisma.delivery_point_master.findUnique({ where: { id: customerId }, select: { id: true } });
       if (!dealer) return NextResponse.json({ error: "Unknown customer" }, { status: 400 });
-      shipToCustomerId = customerId;
-      // The boolean and the id move together (enrichment carries them as a pair).
-      data = { shipToOverride: true, shipToOverrideCustomerId: customerId };
+      shipToTarget = { kind: "dealer", customerId };
     }
   } else {
     if (typeof body.on !== "boolean") {
@@ -240,6 +245,20 @@ export async function POST(req: Request): Promise<NextResponse> {
   if (settingOther && mailOrder.billOnlyAt !== null) {
     const r = await unmarkMoOrderCi({ moOrderId, userId, now: new Date() });
     if (!r.ok) return NextResponse.json({ error: r.error }, { status: r.status });
+  }
+
+  // ── SHIP-TO — both writes live in lib/billing/ship-to-write.ts (2026-10-19),
+  // shared with the multipart save. Same response shape as every action.
+  if (action === "shipTo" && shipToTarget !== null) {
+    const r = await applyBillingShipTo({ moOrderId, soNumber: mailOrder.soNumber, target: shipToTarget, userId });
+    return NextResponse.json({
+      ok: true,
+      moOrder: r.moOrder,
+      updated: r.updated,
+      skipped: r.skipped,
+      failed: r.failed,
+      ordersUpdated: r.updated.length,
+    });
   }
 
   // ── WRITE 1 — the intent, on the mail order. ─────────────────────────────
@@ -312,8 +331,6 @@ export async function POST(req: Request): Promise<NextResponse> {
         dispatchTargetDate: true,
         dispatchWindowId: true,
         dispatchSlotSource: true,
-        shipToOverride: true,
-        shipToOverrideCustomerId: true,
         handAt: true,
         tripDropId: true,
         tripDrop: { select: { trip: { select: { tripNumber: true } } } },
@@ -386,16 +403,6 @@ export async function POST(req: Request): Promise<NextResponse> {
             update = { dispatchTargetDate: slotDate, dispatchWindowId: slotWindowId, dispatchSlotSource: "manual" };
             note = `Dispatch slot changed from billing to ${body.date as string} ${slotWindowLabel}`;
           }
-        } else if (action === "shipTo") {
-          const clearing = shipToCustomerId === null;
-          refusal = refuse("shipTo", clearing ? "clear" : "set");
-          isRepeat = clearing
-            ? bill.shipToOverrideCustomerId === null && !bill.shipToOverride
-            : bill.shipToOverrideCustomerId === shipToCustomerId && bill.shipToOverride;
-          update = clearing
-            ? { shipToOverride: false, shipToOverrideCustomerId: null }
-            : { shipToOverride: true, shipToOverrideCustomerId: shipToCustomerId };
-          note = clearing ? "Ship-to redirect cleared from billing" : "Ship-to changed from billing";
         } else if (action === "hand") {
           refusal = refuse("hand", on ? "set" : "clear");
           if (on) {

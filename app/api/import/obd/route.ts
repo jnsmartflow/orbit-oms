@@ -417,13 +417,33 @@ async function applyMailOrderEnrichment(soNumbers: (string | null)[]): Promise<v
     // order reaches bills imported later. FILL-ONLY: a bill that already has a
     // shipToOverrideCustomerId (e.g. set on Floor) is never overwritten. Ingest
     // no longer sets these, so only a pencil write (or a legacy row) gets here.
-    if (mailOrder.shipToOverride || mailOrder.shipToOverrideCustomerId != null) {
+    //
+    // 🔴 TYPED SHIP-TO (v27.73, 2026-10-19). A mail order with shipToText
+    // carries text + area, flag true, no dealer. FILL-ONLY BOTH WAYS: a bill
+    // that already has a dealer redirect OR a typed name is never overwritten,
+    // whichever kind the mail order holds — so a typed mail order never
+    // replaces Floor's dealer pick on a bill, and a dealer mail order never
+    // replaces a typed name. (CHECK chk_orders_ship_to_text_area: the area
+    // always rides with the text.)
+    if (mailOrder.shipToText != null && mailOrder.shipToAreaId != null) {
       await prisma.orders.updateMany({
         where: {
           soNumber: soNum,
           isRemoved: false,
           workflowStage: { notIn: ["cancelled", CHALLAN_LINKED] }, // slice 6 §B
           shipToOverrideCustomerId: null,
+          shipToText: null,
+        },
+        data: { shipToOverride: true, shipToText: mailOrder.shipToText, shipToAreaId: mailOrder.shipToAreaId },
+      });
+    } else if (mailOrder.shipToOverride || mailOrder.shipToOverrideCustomerId != null) {
+      await prisma.orders.updateMany({
+        where: {
+          soNumber: soNum,
+          isRemoved: false,
+          workflowStage: { notIn: ["cancelled", CHALLAN_LINKED] }, // slice 6 §B
+          shipToOverrideCustomerId: null,
+          shipToText: null,
         },
         data:
           mailOrder.shipToOverrideCustomerId != null

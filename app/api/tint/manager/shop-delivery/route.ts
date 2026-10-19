@@ -79,7 +79,7 @@ export async function POST(req: Request): Promise<NextResponse> {
     try {
       const order = await prisma.orders.findUnique({
         where: { id: orderId },
-        select: { obdNumber: true, orderType: true, smu: true, isRemoved: true, customerId: true, shipToOverrideCustomerId: true, shipToCustomerId: true },
+        select: { obdNumber: true, orderType: true, smu: true, isRemoved: true, customerId: true, shipToOverrideCustomerId: true, shipToCustomerId: true, shipToText: true },
       });
       const notTint = tintManagerBillRefusal(order, "shop-delivery");
       if (notTint !== null || order === null) {
@@ -99,6 +99,16 @@ export async function POST(req: Request): Promise<NextResponse> {
         : await prisma.delivery_point_master.findUnique({ where: { customerCode: code }, select: { id: true } });
       if (dealer === null) {
         failed.push({ orderId, error: "Dealer not in customer master" });
+        continue;
+      }
+
+      // 🔴 TYPED SHIP-TO (v27.73, owner 2026-10-19). A bill with a typed name
+      // has no dealer redirect, so effectiveCustomerId falls back to its own
+      // site and the check below would call it "already the dealer's shop" —
+      // and a write here would wipe the typed name. Neither: refused, with the
+      // reason, and left exactly as it is. Change it from Floor or Billing.
+      if (order.shipToText !== null) {
+        failed.push({ orderId, error: "Has a typed ship-to — change it from Floor or Billing" });
         continue;
       }
 
