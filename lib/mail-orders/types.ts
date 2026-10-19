@@ -108,6 +108,19 @@ export interface MoOrder {
       primaryRoute: { name: string } | null;
     } | null;
   } | null;
+  /**
+   * TYPED SHIP-TO (v27.73, 2026-10-19). A typed name or "As per challan" for a
+   * one-off place not in the dealer list; set with `shipToOverride` true and no
+   * dealer id. Area is required whenever the text is set. Scalars flow through
+   * the list route's `include`; `typedShipToArea` is the area's name + delivery
+   * type, read in a batch (the relation's own key `shipToArea` is taken by the
+   * parse-based string above).
+   */
+  shipToText?: string | null;
+  shipToAreaId?: number | null;
+  typedShipToArea?: { name: string; deliveryType: string | null } | null;
+  /** The bill-to dealer's area id — the ship-to modal's default area. */
+  customerAreaId?: number | null;
   splitFromId?: number | null;
   splitLabel?: string | null;
   isLocked?: boolean;

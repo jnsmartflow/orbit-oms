@@ -1682,7 +1682,18 @@ export function ReviewView({
     const overrideDealer =
       billingV2 && order.shipToOverride ? (order.shipToOverrideCustomer ?? null) : null;
 
-    const shipToName = order.shipToOverride
+    // TYPED SHIP-TO (v27.73, free-text ship-to P2, 2026-10-19) — a typed name
+    // or "As per challan" saved from the ship-to modal, with its own picked
+    // area. Billing face only (the same gate as overrideDealer): the Focus face
+    // and every other screen keep their reads until step 7. Shown exactly as
+    // typed — no smartTitleCase — with no code (it is not a dealer) and a
+    // "billed to {dealer}" line under it. The card's `changed` pill still comes
+    // from shipToOverride, which the save sets true.
+    const typedShipTo = billingV2 && order.shipToText ? order.shipToText : null;
+
+    const shipToName = typedShipTo !== null
+      ? typedShipTo
+      : order.shipToOverride
       ? smartTitleCase(
           overrideDealer?.customerName
             ?? parsed.shipToName
@@ -1691,17 +1702,23 @@ export function ReviewView({
             ?? "",
         )
       : billToName;
-    const shipToCode = order.shipToOverride
+    const shipToCode = typedShipTo !== null
+      ? null
+      : order.shipToOverride
       ? (overrideDealer?.customerCode ?? parsed.shipToCode)
       : (order.customerCode ?? null);
     // ⚠ Area/type come from a DIFFERENT SOURCE on each path and that is
     // intended. `order.shipToArea` is joined from mo_customer_keywords on the
     // PARSED code; the dealer's is master data (area_master → delivery_type_
     // master). With the flag off only the keywords value is ever read.
-    const shipToArea = order.shipToOverride
+    const shipToArea = typedShipTo !== null
+      ? (order.typedShipToArea?.name ?? null)
+      : order.shipToOverride
       ? (overrideDealer?.area?.name ?? order.shipToArea ?? null)
       : (order.customerArea ?? null);
-    const shipToDeliveryType = order.shipToOverride
+    const shipToDeliveryType = typedShipTo !== null
+      ? (order.typedShipToArea?.deliveryType ?? null)
+      : order.shipToOverride
       ? (overrideDealer?.area?.deliveryType?.name ?? order.shipToDeliveryType ?? null)
       : (order.customerDeliveryType ?? null);
 
@@ -2312,11 +2329,26 @@ export function ReviewView({
               billingV2 && billingActions.shipTo ? (
                 <BillingShipToPencil
                   moOrderId={order.id}
-                  hasOverride={order.shipToOverride ?? false}
+                  soNumber={order.soNumber ?? null}
+                  current={{
+                    name: shipToName,
+                    code: shipToCode,
+                    area: shipToArea,
+                    deliveryType: shipToDeliveryType,
+                    isChanged: order.shipToOverride ?? false,
+                    typedText: order.shipToText ?? null,
+                    typedAreaId: order.shipToAreaId ?? null,
+                    billedToName: order.customerName ?? null,
+                    billedToCode: order.customerCode ?? null,
+                  }}
+                  customerAreaId={order.customerAreaId ?? null}
                   onSaved={() => onBillingActionSaved?.()}
                 />
               ) : undefined
             }
+            // Typed ship-to only (billing face) — undefined otherwise, so every
+            // other card renders exactly as before (the prop's own contract).
+            footnote={typedShipTo !== null ? `billed to ${billToName}` : undefined}
             billToName={billToName}
             billToCode={order.customerCode}
             billToArea={order.customerArea ?? null}

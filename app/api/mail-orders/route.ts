@@ -226,14 +226,34 @@ export async function GET(req: Request): Promise<NextResponse> {
   // Reuses the SAME uniqueCodes array built for the bill-to batch above (no
   // new code-collection pass). Sequential await, no $transaction (CORE §3).
   const keyDealerMap = new Map<string, boolean>();
+  // The bill-to dealer's area id (2026-10-19, free-text ship-to P2) — the
+  // ship-to modal's Area dropdown defaults to it. Same read, one more column.
+  const customerAreaIdMap = new Map<string, number>();
   if (uniqueCodes.length > 0) {
     const keyDealerRows = await prisma.delivery_point_master.findMany({
       where: { customerCode: { in: uniqueCodes } },
-      select: { customerCode: true, isKeyCustomer: true },
+      select: { customerCode: true, isKeyCustomer: true, areaId: true },
     });
     for (const row of keyDealerRows) {
       keyDealerMap.set(row.customerCode, row.isKeyCustomer);
+      customerAreaIdMap.set(row.customerCode, row.areaId);
     }
+  }
+
+  // Typed ship-to area (v27.73) — name + delivery type for orders whose
+  // ship-to is a typed name. A batch read, NOT an `include` of the relation:
+  // the relation is named `shipToArea` and that key is already this payload's
+  // parse-based area STRING (below), so it ships as `typedShipToArea`.
+  const typedAreaIds = Array.from(
+    new Set(orders.map((o) => o.shipToAreaId).filter((id): id is number => id !== null)),
+  );
+  const typedAreaMap = new Map<number, { name: string; deliveryType: string | null }>();
+  if (typedAreaIds.length > 0) {
+    const areaRows = await prisma.area_master.findMany({
+      where: { id: { in: typedAreaIds } },
+      select: { id: true, name: true, deliveryType: { select: { name: true } } },
+    });
+    for (const a of areaRows) typedAreaMap.set(a.id, { name: a.name, deliveryType: a.deliveryType?.name ?? null });
   }
 
   // Alt-SKU twins — every v2 SKU sharing a line's product|baseColour|packCode
@@ -260,6 +280,8 @@ export async function GET(req: Request): Promise<NextResponse> {
       isKeyCustomer: keyDealerMap.get(o.customerCode ?? "") ?? false,
       shipToArea: shipToLookup?.area ?? null,
       shipToDeliveryType: shipToLookup?.deliveryType ?? null,
+      customerAreaId: customerAreaIdMap.get(o.customerCode ?? "") ?? null,
+      typedShipToArea: o.shipToAreaId !== null ? (typedAreaMap.get(o.shipToAreaId) ?? null) : null,
       // Additive: append altSkus per line; every existing line field preserved.
       lines: o.lines.map((l) => ({ ...l, altSkus: siblingsFor(l.skuCode) })),
     };

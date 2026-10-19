@@ -1,170 +1,66 @@
 "use client";
 
 // Billing v2 — the ✎ pencil on the Ship-To card (mockup billing-final-mockup.html
-// `.pencil`). Opens a dealer search; picking one records a ship-to override on
-// the MAIL ORDER, which enrichment carries to the OBD at import (:269-274).
+// `.pencil`). Opens the SHARED ship-to modal (components/shared/ship-to-modal.tsx,
+// free-text ship-to P2, 2026-10-19) — dealer search, a typed name / As per
+// challan with an area and challan copies, or Reset. Was a small dealer-search
+// popover until 2026-10-19.
 //
-// ⚠ RENDERS ONLY WHEN billingV2 IS ON. It reaches ShipToCard through a NEW
-// OPTIONAL `actionSlot` prop that defaults to `undefined` — so for every user
-// without the flag the card renders `{undefined}`, which React emits as nothing
-// at all: no element, no comment node, no layout shift. The card's existing
-// markup is untouched.
+// ⚠ RENDERS ONLY WHEN billingV2 IS ON AND THE billing_ship_to TICK IS HELD. It
+// reaches ShipToCard through the OPTIONAL `actionSlot` prop, which the call site
+// (review-view.tsx) leaves `undefined` otherwise — so the card renders nothing
+// extra. The tick gates drawing only; the save route is the lock.
 //
-// ALWAYS ACTIVE — punched or not (2026-07-31). The server dual-writes, so a
-// ship-to change after punch reaches the live OBD (orders WHERE soNumber) as
-// well as the mail order. Do not reintroduce a punch-based disable.
+// ALWAYS ACTIVE — punched or not (2026-07-31). The server writes the mail order
+// and every live bill on its SO (POST /api/billing/mail-order/ship-to), and
+// enrichment carries it to bills that import later. Do not reintroduce a
+// punch-based disable.
 //
 // Search hits /api/billing/ship-to-search (mail_orders/canView), NOT Floor's —
-// billing_operator has no `floor` permission and Floor's route would 403 for
-// the real end users. See that route's header.
+// billing_operator has no `floor` permission. See that route's header.
 
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { Pencil } from "lucide-react";
-import { postMailOrderAction } from "@/lib/billing/mo-actions";
-import { smartTitleCase } from "@/lib/mail-orders/utils";
-
-interface DealerHit {
-  id: number;
-  customerCode: string | null;
-  customerName: string;
-  area: string | null;
-  route: string | null;
-  deliveryType: string | null;
-}
+import { ShipToModal, type ShipToCurrent } from "@/components/shared/ship-to-modal";
 
 export function BillingShipToPencil({
   moOrderId,
-  hasOverride,
+  soNumber,
+  current,
+  customerAreaId,
   onSaved,
 }: {
   moOrderId: number;
-  hasOverride: boolean;
+  soNumber: string | null;
+  current: ShipToCurrent;
+  customerAreaId: number | null;
   onSaved: () => void;
 }) {
   const [open, setOpen] = useState(false);
-  const [q, setQ] = useState("");
-  const [hits, setHits] = useState<DealerHit[]>([]);
-  const [searching, setSearching] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-  const boxRef = useRef<HTMLDivElement>(null);
-  const seqRef = useRef(0);
-
-  // Close on outside click — same pattern as the existing customer popover in
-  // review-view.tsx.
-  useEffect(() => {
-    if (!open) return;
-    function onDown(e: MouseEvent) {
-      if (boxRef.current && !boxRef.current.contains(e.target as Node)) setOpen(false);
-    }
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, [open]);
-
-  // Debounced search. The route itself ignores anything under 2 chars.
-  useEffect(() => {
-    if (!open) return;
-    const term = q.trim();
-    if (term.length < 2) {
-      setHits([]);
-      return;
-    }
-    const seq = ++seqRef.current;
-    setSearching(true);
-    const t = window.setTimeout(async () => {
-      try {
-        const res = await fetch(`/api/billing/ship-to-search?q=${encodeURIComponent(term)}`, { cache: "no-store" });
-        if (!res.ok) return;
-        const body = (await res.json()) as { results?: DealerHit[] };
-        if (seq !== seqRef.current) return;
-        setHits(body.results ?? []);
-      } catch {
-        // Silent — a blocked search must not break the detail view.
-      } finally {
-        if (seq === seqRef.current) setSearching(false);
-      }
-    }, 250);
-    return () => window.clearTimeout(t);
-  }, [q, open]);
-
-  async function apply(customerId: number | null) {
-    setBusy(true);
-    setErr(null);
-    const res = await postMailOrderAction(moOrderId, { action: "shipTo", customerId });
-    setBusy(false);
-    if (!res.ok) {
-      setErr(res.error);
-      return;
-    }
-    setOpen(false);
-    setQ("");
-    onSaved();
-  }
 
   return (
-    <span ref={boxRef} className="mo-print-hide relative inline-flex">
+    <span className="mo-print-hide relative inline-flex">
       <button
         type="button"
-        disabled={busy}
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => setOpen(true)}
         title="Change ship-to"
         aria-label="Change ship-to"
-        className="flex h-[26px] w-[26px] items-center justify-center rounded-[7px] border border-gray-200 bg-white text-gray-500 transition-colors hover:bg-gray-50 hover:text-gray-700 disabled:cursor-not-allowed disabled:opacity-40"
+        className="flex h-[26px] w-[26px] items-center justify-center rounded-[7px] border border-gray-200 bg-white text-gray-500 transition-colors hover:bg-gray-50 hover:text-gray-700"
       >
         <Pencil size={12} />
       </button>
 
       {open && (
-        <div className="absolute right-0 top-[30px] z-40 w-[300px] rounded-lg border border-gray-200 bg-white p-2 shadow-lg">
-          <input
-            type="text"
-            autoFocus
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Search dealer by name or code…"
-            className="mb-1.5 h-[28px] w-full rounded-md border border-gray-200 px-2 text-[11px] outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/10"
-          />
-
-          {searching && <p className="px-1 py-2 text-[11px] text-gray-400">Searching…</p>}
-          {!searching && q.trim().length >= 2 && hits.length === 0 && (
-            <p className="px-1 py-2 text-[11px] text-gray-400">No dealers found</p>
-          )}
-
-          <div className="max-h-[240px] overflow-y-auto">
-            {hits.map((h) => (
-              <div
-                key={h.id}
-                onClick={() => void apply(h.id)}
-                className="flex cursor-pointer items-start gap-2 rounded px-2 py-1.5 hover:bg-gray-50"
-              >
-                <span className="flex-shrink-0 font-mono text-[11px] text-gray-800">{h.customerCode ?? "—"}</span>
-                <div className="min-w-0">
-                  <div className="truncate text-[11px] text-gray-600">{smartTitleCase(h.customerName)}</div>
-                  {(h.area || h.route) && (
-                    <div className="truncate text-[10px] text-gray-400">
-                      {[h.area, h.route].filter(Boolean).join(" · ")}
-                    </div>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {hasOverride && (
-            <div className="mt-1.5 border-t border-gray-100 pt-1.5">
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => void apply(null)}
-                className="text-[11px] font-medium text-gray-500 hover:text-gray-800 disabled:opacity-50"
-              >
-                Clear ship-to redirect
-              </button>
-            </div>
-          )}
-
-          {err && <p className="mt-1.5 px-1 text-[10.5px] font-medium text-red-600">{err}</p>}
-        </div>
+        <ShipToModal
+          desk="billing"
+          ownerId={moOrderId}
+          refLabel={soNumber?.trim() ? `SO ${soNumber.trim()}` : null}
+          current={current}
+          customerAreaId={customerAreaId}
+          searchUrl="/api/billing/ship-to-search"
+          onClose={() => setOpen(false)}
+          onSaved={onSaved}
+        />
       )}
     </span>
   );
