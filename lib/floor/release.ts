@@ -58,6 +58,7 @@ import { FLOOR_RELEASABLE_STAGES } from "./release-stages";
 import { FLOOR_CLEAR_HOLD_NOTE } from "./hold-log";
 import { findLiveCi, liveCiRefusal } from "@/lib/ci/live-ci";
 import { returnAssignedBillToQueue } from "@/lib/picking/unassign";
+import { mirrorObdHoldSafe } from "@/lib/order-invoices/hold";
 
 export interface ReleaseFailure {
   orderId: number;
@@ -203,6 +204,8 @@ export async function releaseBillsToFloor(opts: {
             note: `${noteLabel} · picker removed (${pa?.picker?.name ?? "none on record"}) · ${targetDate.toISOString().slice(0, 10)} ${windowLabel}`,
           },
         });
+        // 6.1 — a release clears every invoice row of the OBD (lib/order-invoices/hold.ts).
+        await mirrorObdHoldSafe(orderId, false);
         released.push(orderId);
         outcomes.push({ orderId, outcome: "picker_removed" });
         continue;
@@ -225,6 +228,7 @@ export async function releaseBillsToFloor(opts: {
             note: FLOOR_CLEAR_HOLD_NOTE,
           },
         });
+        await mirrorObdHoldSafe(orderId, false);
         released.push(orderId);
         outcomes.push({ orderId, outcome: "hold_cleared" });
         continue;
@@ -260,6 +264,9 @@ export async function releaseBillsToFloor(opts: {
         },
       });
 
+      // Only a bill that WAS held: the trip release writes here too, and a
+      // partly-held split OBD (status dispatch) must keep its held invoices.
+      if (isHeld) await mirrorObdHoldSafe(orderId, false);
       released.push(orderId);
       outcomes.push({ orderId, outcome: "released" });
     } catch (err) {

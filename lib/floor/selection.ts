@@ -241,8 +241,33 @@ export function billsBodyOf(
 }
 
 /**
- * Owner decision 3 (2026-10-13): Hold / Cancel / Raise CI / Add invoices act on
- * the WHOLE OBD, so they are disabled while any OBD is only partly ticked. The
+ * The Hold / Undo body (Add invoices 6.1): every unit's OBD, and for a SPLIT
+ * OBD — partial OR whole — the invoice rows it acts on, so the server holds
+ * rows (lib/order-invoices/hold.ts). An unsplit OBD sends no rows and acts
+ * whole, exactly as before. `rows` = the FULL board rows.
+ */
+export function holdBodyOf(
+  units: readonly SelectionUnit[],
+  rows: readonly UnitRow[],
+  action: "hold" | "unhold",
+): { action: "hold" | "unhold"; orderIds: number[]; invoiceRowIds?: Record<number, number[]> } {
+  const rowOf = new Map(rows.map((r) => [r.orderId, r]));
+  const perInvoice: Array<[number, number[]]> = [];
+  for (const u of units) {
+    const inv = rowOf.get(u.orderId)?.invoiceRows ?? [];
+    if (inv.length >= 2) perInvoice.push([u.orderId, u.invoiceRowIds ?? inv.map((i) => i.id)]);
+  }
+  return {
+    action,
+    orderIds: units.map((u) => u.orderId),
+    ...(perInvoice.length > 0 ? { invoiceRowIds: Object.fromEntries(perInvoice) } : {}),
+  };
+}
+
+/**
+ * Owner decision 3 (2026-10-13): Cancel / Raise CI / Add invoices act on the
+ * WHOLE OBD, so they are disabled while any OBD is only partly ticked. (Hold
+ * acts per invoice since 6.1, 2026-10-19 — holdBodyOf above.) The
  * reason, or null when nothing is partial. `invoiceCount` = that OBD's invoices.
  */
 export function wholeObdReason(partials: ReadonlyArray<{ obdNumber: string; invoiceCount: number }>): string | null {
@@ -440,4 +465,72 @@ export function selectionCountLabel(rows: readonly CountRow[]): string | null {
     (notInvoiced > 0 ? ` + ${notInvoiced} not invoiced` : "") +
     ` · ${obds}`
   );
+}
+
+// ── THE ON HOLD TAB, PER INVOICE (Add invoices 6.1, 2026-10-19) ─────────────
+//
+// A split OBD with held invoices draws one row per HELD invoice there
+// (getFloorHold: `invoiceRows` = the held ones, `invoiceRowsAll` = every one),
+// each ticked by its `inv:` key. Every other hold row is ticked by its orderId,
+// exactly as before.
+
+type HoldKeyRow = {
+  orderId: number;
+  invoiceRows?: ReadonlyArray<{ id: number }>;
+  invoiceRowsAll?: ReadonlyArray<{ id: number }>;
+};
+
+const isPerInvoiceHoldRow = (r: HoldKeyRow) =>
+  (r.invoiceRows?.length ?? 0) > 0 && (r.invoiceRowsAll ?? r.invoiceRows ?? []).length >= 2;
+
+/** The tick keys one hold row draws: its held invoices', or its orderId. */
+export function holdKeysOf(r: HoldKeyRow): FloorDeskKey[] {
+  return isPerInvoiceHoldRow(r) ? (r.invoiceRows ?? []).map((i) => invKey(i.id)) : [r.orderId];
+}
+
+/**
+ * The On hold tab's ticks as units, in `rows` order. `invoiceRowIds` null = the
+ * WHOLE OBD — an unsplit bill, or a split OBD whose every invoice is held and
+ * ticked (it releases through /api/floor/release with the slot, as before).
+ * Otherwise the ticked held invoices (released per invoice, no slot).
+ */
+export function holdUnits(sel: ReadonlySet<FloorDeskKey>, rows: readonly HoldKeyRow[]): SelectionUnit[] {
+  const out: SelectionUnit[] = [];
+  for (const r of rows) {
+    if (!isPerInvoiceHoldRow(r)) {
+      if (sel.has(r.orderId)) out.push({ orderId: r.orderId, invoiceRowIds: null });
+      continue;
+    }
+    const ticked = (r.invoiceRows ?? []).filter((i) => sel.has(invKey(i.id))).map((i) => i.id);
+    if (ticked.length === 0) continue;
+    const all = (r.invoiceRowsAll ?? r.invoiceRows ?? []).length;
+    out.push({ orderId: r.orderId, invoiceRowIds: ticked.length === all ? null : ticked });
+  }
+  return out;
+}
+
+/** Tick / untick every key of these hold rows (one band's header box). */
+export function toggleAllHoldKeys(sel: ReadonlySet<FloorDeskKey>, rows: readonly HoldKeyRow[]): Set<FloorDeskKey> {
+  const keys = rows.flatMap(holdKeysOf);
+  const next = new Set(sel);
+  const allOn = keys.length > 0 && keys.every((k) => sel.has(k));
+  for (const k of keys) {
+    if (allOn) next.delete(k);
+    else next.add(k);
+  }
+  return next;
+}
+
+/** Every key of these hold rows ticked? */
+export function isAllHoldKeysSelected(sel: ReadonlySet<FloorDeskKey>, rows: readonly HoldKeyRow[]): boolean {
+  const keys = rows.flatMap(holdKeysOf);
+  return keys.length > 0 && keys.every((k) => sel.has(k));
+}
+
+/** Toggle one desk key (an orderId or an `inv:` key). */
+export function toggleKey(sel: ReadonlySet<FloorDeskKey>, key: FloorDeskKey): Set<FloorDeskKey> {
+  const next = new Set(sel);
+  if (next.has(key)) next.delete(key);
+  else next.add(key);
+  return next;
 }

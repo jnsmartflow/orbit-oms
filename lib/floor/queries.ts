@@ -100,7 +100,7 @@ import { resolveSoNames } from "@/lib/sales-officer/resolve";
 import { divisionOf } from "./division-blocks";
 // One invoice, several OBDs (2026-10-08) — pure, no prisma.
 import { buildPartnerMap, partnersOf, type InvoicePartner } from "./invoice-pairs";
-import { addedInvoiceNosOf, type FloorInvoiceRow } from "./invoice-rows";
+import { addedInvoiceNosOf, narrowToHeld, type FloorInvoiceRow } from "./invoice-rows";
 import { loadSplitInvoiceRows } from "@/lib/order-invoices/invoice-load";
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
@@ -1640,7 +1640,25 @@ export function floorHoldWhere(): Prisma.ordersWhereInput {
   // The same term reaches every reader of this predicate: the tab, its count
   // (lib/floor/counts.ts), the Freight Trips pool and marker, and the Tint
   // Manager's hold arm. workflowStage is NOT NULL, so no null arm (CORE §13).
-  return { dispatchStatus: "hold", isRemoved: false, ...NOT_CHALLAN_LINKED };
+  //
+  // ARM 2 — PER INVOICE (Add invoices 6.1, 2026-10-19): a SPLIT OBD (it has a
+  // seq > 1 row) with at least one HELD invoice row is on the tab too, whatever
+  // its own status ('dispatch' while only partly held). Never a cancelled one.
+  // 🔴 SPLIT ONLY, by the seq > 1 term: an unsplit row's "isHeld" drifted after
+  // the v27.66 back-fill and is never read — orders."dispatchStatus" stays the
+  // truth there. The held term rides the partial index order_invoices_held_idx.
+  // Arm 1 is byte-for-byte what it was, so every unsplit answer is unchanged.
+  return {
+    isRemoved: false,
+    ...NOT_CHALLAN_LINKED,
+    OR: [
+      { dispatchStatus: "hold" },
+      {
+        workflowStage: { not: "cancelled" },
+        AND: [{ invoices: { some: { isHeld: true } } }, { invoices: { some: { seq: { gt: 1 } } } }],
+      },
+    ],
+  };
 }
 
 export async function getFloorHold(
@@ -1749,6 +1767,26 @@ export async function getFloorHold(
 
   // Add invoices Phase 4 — "n invoices" on a split OBD's one row.
   const invoiceCounts = await getInvoiceCounts(orders.map((o) => o.id));
+  // 6.1 — a SPLIT OBD's invoices (one index-only read when none is split), and
+  // the names of whoever held them. Its row carries the HELD ones (one drawn
+  // row per held invoice, components/floor/hold-table.tsx); unsplit: [].
+  const splitRows = await loadSplitInvoiceRows(
+    orders,
+    new Map(orders.map((o) => [o.id, o.querySnapshot?.totalWeight ?? null] as const)),
+  );
+  const rowHolderIds = Array.from(
+    new Set(
+      Array.from(splitRows.values())
+        .flat()
+        .map((r) => r.heldById)
+        .filter((id): id is number => typeof id === "number"),
+    ),
+  );
+  const rowHolders =
+    rowHolderIds.length > 0
+      ? await prisma.users.findMany({ where: { id: { in: rowHolderIds } }, select: { id: true, name: true } })
+      : [];
+  const rowHolderName = new Map(rowHolders.map((u) => [u.id, u.name]));
 
   const rows: FloorHoldRow[] = [];
   for (const order of orders) {
@@ -1788,7 +1826,23 @@ export async function getFloorHold(
       (heldFrom === "Auto (mail order)" ? "System" : null);
     const weight = order.querySnapshot?.totalWeight ?? null;
 
-    rows.push({
+    // 6.1 — a split OBD: its held invoices, each with its holder's name. Its
+    // "held since" / "held by" are the LATEST held invoice's own (the row's
+    // wall-clock heldAt), and "held from" is Floor while only partly held (only
+    // holdRows holds part of an OBD). No held row at all (an OBD held before
+    // 6.1 whose rows were never mirrored) → drawn as one OBD row, as before.
+    const all = (splitRows.get(order.id) ?? []).map((r) => ({
+      ...r,
+      heldByName: r.heldById !== null && r.heldById !== undefined ? rowHolderName.get(r.heldById) ?? null : null,
+    }));
+    const heldInv = all.filter((r) => r.isHeld === true);
+    const latestHeld = heldInv
+      .filter((r) => r.heldAt)
+      .sort((a, b) => (b.heldAt as string).localeCompare(a.heldAt as string))[0];
+    const perInvoice = heldInv.length > 0;
+    const partly = perInvoice && order.dispatchStatus !== "hold";
+
+    const holdRow: FloorHoldRow = {
       orderId: order.id,
       obdNumber: order.obdNumber,
       isHand: order.handAt !== null,
@@ -1811,8 +1865,8 @@ export async function getFloorHold(
       articleTag: order.querySnapshot?.articleTag ?? null,
       obdDateTime: (order.obdEmailDate ?? order.orderDateTime)?.toISOString() ?? null,
       heldAt: order.heldAt?.toISOString() ?? null,
-      heldSince,
-      heldSinceSource,
+      heldSince: latestHeld ? (latestHeld.heldAt as string) : heldSince,
+      heldSinceSource: latestHeld ? "log" : heldSinceSource,
       // Search-only (2026-09-29): scalars the `include` already brought.
       invoiceNo: order.invoiceNo ?? null,
       soNumber: order.soNumber ?? null,
@@ -1821,11 +1875,15 @@ export async function getFloorHold(
       invoiceDate: order.invoiceDate ? order.invoiceDate.toISOString() : null,
       weightKg: weight !== null && weight > 0 ? weight : null,
       isGift: isGiftBill(order.materialType),
-      heldFrom,
-      heldById: holdLog?.changedById ?? null,
-      heldByName,
+      heldFrom: partly ? "Floor" : heldFrom,
+      heldById: latestHeld ? (latestHeld.heldById ?? null) : (holdLog?.changedById ?? null),
+      heldByName: latestHeld ? latestHeld.heldByName : heldByName,
       invoiceCount: invoiceCounts.get(order.id) ?? 1,
-    });
+      invoiceRows: perInvoice ? all : [],
+    };
+    // Narrowed to the HELD invoices: their litres / kg, every invoice kept in
+    // invoiceRowsAll for "k/n" and the away chip. The same object when all are held.
+    rows.push(perInvoice ? narrowToHeld(holdRow) : holdRow);
   }
 
   // Recent first by default (design §8) — on heldSince, the real hold moment.

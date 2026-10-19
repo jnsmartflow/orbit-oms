@@ -13,9 +13,16 @@ export interface DetailKey {
   invoiceSeq: number | null;
 }
 
-type Walkable = { orderId: number; invoiceRows?: ReadonlyArray<{ seq: number }> };
+type Walkable = {
+  orderId: number;
+  invoiceRows?: ReadonlyArray<{ seq: number }>;
+  /** A NARROWED row's every invoice (the On hold tab's held ones, 6.1). */
+  invoiceRowsAll?: ReadonlyArray<{ seq: number }>;
+};
 
 const isSplit = (rows: ReadonlyArray<{ seq: number }> | undefined) => (rows?.length ?? 0) > 1;
+/** Split by the OBD's own count — a narrowed row with ONE invoice drawn is still split. */
+const isSplitRow = (r: Walkable) => isSplit(r.invoiceRowsAll ?? r.invoiceRows);
 
 /**
  * The list Prev / Next walks, in board order: a split OBD gives one key per
@@ -24,7 +31,7 @@ const isSplit = (rows: ReadonlyArray<{ seq: number }> | undefined) => (rows?.len
  */
 export function detailWalk(rows: readonly Walkable[], perInvoice = true): DetailKey[] {
   return rows.flatMap((r): DetailKey[] =>
-    perInvoice && isSplit(r.invoiceRows)
+    perInvoice && isSplitRow(r) && (r.invoiceRows?.length ?? 0) > 0
       ? (r.invoiceRows ?? []).map((i) => ({ orderId: r.orderId, invoiceSeq: i.seq }))
       : [{ orderId: r.orderId, invoiceSeq: null }],
   );
@@ -94,11 +101,12 @@ export function scopeItems<L extends ScopableLine>(
 }
 
 /**
- * The Activity rule (owner, 2026-10-13): an entry belongs to ONE invoice only
- * when it carries an invoice-row id in a STRUCTURED field (`orderInvoiceId`);
- * everything else is OBD-wide and shows on every invoice. Never a note match.
- * (No writer sets the field yet — every entry is OBD-wide today.)
+ * The Activity rule (owner, 2026-10-13): an entry belongs to SOME invoices only
+ * when it names their invoice-row ids in a STRUCTURED field (`orderInvoiceIds`,
+ * order_status_logs v27.72 — one press of 716 + 714 names both); an entry with
+ * none is OBD-wide and shows on every invoice. Never a note match. Writer:
+ * lib/order-invoices/hold.ts (6.1).
  */
-export function activityForInvoice<E extends { orderInvoiceId?: number | null }>(entries: readonly E[], invoiceRowId: number): E[] {
-  return entries.filter((e) => e.orderInvoiceId === undefined || e.orderInvoiceId === null || e.orderInvoiceId === invoiceRowId);
+export function activityForInvoice<E extends { orderInvoiceIds?: readonly number[] }>(entries: readonly E[], invoiceRowId: number): E[] {
+  return entries.filter((e) => (e.orderInvoiceIds?.length ?? 0) === 0 || e.orderInvoiceIds!.includes(invoiceRowId));
 }

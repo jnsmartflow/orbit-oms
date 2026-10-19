@@ -20,13 +20,22 @@ import { ColourWorkBadge } from "@/components/picking/card-atoms";
 import { HandBadge } from "@/components/shared/hand-badge";
 import { ChallanBadge } from "@/components/shared/challan-badge";
 import { ObdBadge } from "@/components/shared/obd-badge";
-import { shipMarkers, SEARCH_HIT_ROW_CLS } from "./floor-table";
+import { shipMarkers, shortTripNumber, SEARCH_HIT_ROW_CLS } from "./floor-table";
 import { InvoiceLines, ObdDateLine } from "./bill-ref-cells";
+import { PairPlaceChip, pairBarBorderCls, type PairBarKind } from "./pair-cells";
+import { awayChipOf, drawRowsOf, type FloorInvoiceRow } from "@/lib/floor/invoice-rows";
 import { formatLitres, formatWeightKg } from "./status-pill";
 import { formatArticleTag } from "@/lib/floor/format";
 import { loadKg, loadLitres } from "@/lib/orders/gift";
 import { heldSinceLabel, holdAgeDays } from "@/lib/floor/hold-log";
-import { isAllIdsSelected, type FloorSelection } from "@/lib/floor/selection";
+import {
+  holdKeysOf,
+  invKey,
+  isAllHoldKeysSelected,
+  isAllIdsSelected,
+  type FloorDeskKey,
+  type FloorSelection,
+} from "@/lib/floor/selection";
 import type { FloorHoldRow } from "@/lib/floor/types";
 
 export type HoldColumn =
@@ -90,7 +99,11 @@ const TD_R = `${TD} text-right tabular-nums`;
 const TD_C = "border-b border-[#f0f0f0] pl-[10px] pr-[4px] py-2 text-center text-[11px]";
 const DASH = <span className="text-ink-400">—</span>;
 
-function Cell({ col, row, now }: { col: HoldColumn; row: FloorHoldRow; now: Date }) {
+/** One drawn invoice row of a split OBD (6.1): "k/n" and, on the first drawn
+ *  row, where the OBD's other invoices are ("2 in To plan"). */
+type InvoicePart = { k: number; n: number; away: { text: string; title: string } | null; first: boolean };
+
+function Cell({ col, row, now, part = null }: { col: HoldColumn; row: FloorHoldRow; now: Date; part?: InvoicePart | null }) {
   switch (col) {
     case "obd":
       return (
@@ -103,9 +116,18 @@ function Cell({ col, row, now }: { col: HoldColumn; row: FloorHoldRow; now: Date
       return (
         <td className={TD}>
           {row.invoiceNo || row.invoiceDate ? (
-            <InvoiceLines invoiceNo={row.invoiceNo} invoiceDate={row.invoiceDate} invoiceCount={row.invoiceCount} />
+            part ? (
+              <InvoiceLines invoiceNo={row.invoiceNo} invoiceDate={row.invoiceDate} part={{ k: part.k, n: part.n }} />
+            ) : (
+              <InvoiceLines invoiceNo={row.invoiceNo} invoiceDate={row.invoiceDate} invoiceCount={row.invoiceCount} />
+            )
           ) : (
             DASH
+          )}
+          {part?.away && part.first && (
+            <div className="mt-0.5 overflow-hidden text-ellipsis">
+              <PairPlaceChip chip={{ text: part.away.text, warn: true, title: part.away.title }} />
+            </div>
           )}
         </td>
       );
@@ -203,6 +225,31 @@ function Cell({ col, row, now }: { col: HoldColumn; row: FloorHoldRow; now: Date
   }
 }
 
+/** A drawn invoice row's cells read the INVOICE's own number, date, litres,
+ *  kg and hold (6.1) — everything else is the OBD's. */
+function invoiceCellRow(row: FloorHoldRow, inv: FloorInvoiceRow): FloorHoldRow {
+  return {
+    ...row,
+    invoiceNo: inv.invoiceNo,
+    invoiceDate: inv.invoiceDate,
+    volumeLitres: inv.litres,
+    weightKg: inv.kg,
+    heldSince: inv.heldAt ?? row.heldSince,
+    heldSinceSource: inv.heldAt ? "log" : row.heldSinceSource,
+    heldByName: inv.heldAt ? (inv.heldByName ?? null) : row.heldByName,
+  };
+}
+
+type DrawnHoldRow = {
+  key: string;
+  tick: FloorDeskKey;
+  row: FloorHoldRow;
+  cellRow: FloorHoldRow;
+  part: InvoicePart | null;
+  seq: number | undefined;
+  last: boolean;
+};
+
 export function HoldTable({
   rows,
   now,
@@ -212,22 +259,52 @@ export function HoldTable({
   onOpenRow,
   selectable = true,
   columns = HOLD_COLUMNS,
+  perInvoice = false,
+  onToggleKey,
 }: {
   rows: FloorHoldRow[];
   /** One clock per render pass, so every age on screen agrees. */
   now: Date;
-  selection?: FloorSelection;
+  /** orderIds — plus `inv:` keys when `perInvoice`. */
+  selection?: FloorSelection | ReadonlySet<FloorDeskKey>;
   onToggleRow?: (orderId: number) => void;
   onToggleAll?: (rows: FloorHoldRow[]) => void;
-  /** Row click. Omit and rows are inert. */
-  onOpenRow?: (orderId: number) => void;
+  /** Row click — with the invoice's seq on a drawn invoice row. Omit and rows are inert. */
+  onOpenRow?: (orderId: number, invoiceSeq?: number) => void;
   /** Draw the tick column (default true). */
   selectable?: boolean;
   /** Which data columns, in display order (default all). */
   columns?: HoldColumn[];
+  /**
+   * 6.1 (2026-10-19) — FLOOR'S On hold tab only: a split OBD with held invoices
+   * draws ONE ROW PER HELD INVOICE (Floor's rules: OBD repeated, "k/n", the
+   * invoice's litres / kg / held since / held by, its own tick by `inv:<id>`,
+   * an amber bar + chip when its other invoices are elsewhere). Off (Freight
+   * Trips, the Tint Manager) = one row per OBD, exactly as before.
+   */
+  perInvoice?: boolean;
+  /** perInvoice: a tick by key (orderId or `inv:<id>`). */
+  onToggleKey?: (key: FloorDeskKey) => void;
 }) {
-  const sel = selection ?? new Set<number>();
-  const allOn = isAllIdsSelected(sel, rows);
+  const sel: ReadonlySet<FloorDeskKey> = selection ?? new Set<number>();
+  const allOn = perInvoice ? isAllHoldKeysSelected(sel, rows) : isAllIdsSelected(sel as FloorSelection, rows);
+  // The rows as DRAWN: per invoice where it applies, else one per OBD.
+  const drawn: DrawnHoldRow[] = rows.flatMap((row): DrawnHoldRow[] => {
+    const keys = perInvoice ? holdKeysOf(row) : [row.orderId];
+    if (typeof keys[0] === "number") {
+      return [{ key: String(row.orderId), tick: row.orderId, row, cellRow: row, part: null, seq: undefined, last: true }];
+    }
+    const away = awayChipOf(row.invoiceRowsAll ?? row.invoiceRows, row.invoiceRows, shortTripNumber);
+    return drawRowsOf(row).map((d) => ({
+      key: d.key,
+      tick: invKey(d.invoice!.id),
+      row,
+      cellRow: invoiceCellRow(row, d.invoice!),
+      part: { k: d.k, n: d.n, away, first: d.first },
+      seq: d.invoice!.seq,
+      last: d.last,
+    }));
+  });
   // Re-scale the chosen columns so the row always fills 100%.
   const dataShare = 100 - (selectable ? TICK_WIDTH : 0);
   const chosenTotal = columns.reduce((s, c) => s + COLUMN_WIDTH[c], 0) || 1;
@@ -262,31 +339,42 @@ export function HoldTable({
         </tr>
       </thead>
       <tbody>
-        {rows.map((row) => (
-          <tr
-            key={row.orderId}
-            // data-order-id + SEARCH_HIT_ROW_CLS: Floor search's row light
-            // (floor-table.tsx). Inert for Freight Trips, which never sets it.
-            data-order-id={row.orderId}
-            className={`${onOpenRow ? "cursor-pointer hover:bg-[#fafafa]" : "hover:bg-[#fafafa]"} ${SEARCH_HIT_ROW_CLS}`}
-            onClick={onOpenRow ? () => onOpenRow(row.orderId) : undefined}
-          >
-            {selectable && (
-              <td className={TD_C} onClick={(e) => e.stopPropagation()}>
-                <input
-                  type="checkbox"
-                  aria-label={`Select ${row.obdNumber}`}
-                  className="h-[13px] w-[13px] cursor-pointer align-middle accent-brand-600"
-                  checked={sel.has(row.orderId)}
-                  onChange={() => onToggleRow?.(row.orderId)}
-                />
-              </td>
-            )}
-            {columns.map((c) => (
-              <Cell key={c} col={c} row={row} now={now} />
-            ))}
-          </tr>
-        ))}
+        {drawn.map(({ key, tick, row, cellRow, part, seq, last }) => {
+          // 6.1 — a drawn invoice row: the bar (violet ticked, amber when its
+          // other invoices are elsewhere, else the pair token) and a faint
+          // dashed line between the OBD's invoices.
+          const bar: PairBarKind | null = part ? (sel.has(tick) ? "selected" : part.away ? "warn" : "ok") : null;
+          const dashed = part && !last ? " [&>td]:border-ink-100 [&>td]:[border-bottom-style:dashed]" : "";
+          return (
+            <tr
+              key={key}
+              // data-order-id + SEARCH_HIT_ROW_CLS: Floor search's row light
+              // (floor-table.tsx). Inert for Freight Trips, which never sets it.
+              data-order-id={row.orderId}
+              className={`${onOpenRow ? "cursor-pointer hover:bg-[#fafafa]" : "hover:bg-[#fafafa]"} ${SEARCH_HIT_ROW_CLS}${dashed}`}
+              onClick={onOpenRow ? () => (seq !== undefined ? onOpenRow(row.orderId, seq) : onOpenRow(row.orderId)) : undefined}
+            >
+              {selectable && (
+                <td className={`${TD_C}${pairBarBorderCls(bar)}`} onClick={(e) => e.stopPropagation()}>
+                  <input
+                    type="checkbox"
+                    aria-label={
+                      part
+                        ? `Select invoice ${part.k} of ${part.n} of ${row.obdNumber}${cellRow.invoiceNo ? ` (${cellRow.invoiceNo})` : ""}`
+                        : `Select ${row.obdNumber}`
+                    }
+                    className="h-[13px] w-[13px] cursor-pointer align-middle accent-brand-600"
+                    checked={sel.has(tick)}
+                    onChange={() => (perInvoice && onToggleKey ? onToggleKey(tick) : onToggleRow?.(row.orderId))}
+                  />
+                </td>
+              )}
+              {columns.map((c) => (
+                <Cell key={c} col={c} row={cellRow} now={now} part={part} />
+              ))}
+            </tr>
+          );
+        })}
       </tbody>
     </table>
   );

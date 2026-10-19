@@ -49,6 +49,15 @@ export interface FloorInvoiceRow {
   tripDropId: number | null;
   tripNumber: string | null;
   tripStatus: string | null;
+  /** THIS invoice's own hold (order_invoices."isHeld", 6.1). A held invoice is
+   *  never in To plan (inPool) — it is drawn on the On hold tab. Optional so a
+   *  fixture or an older payload without it reads "not held". */
+  isHeld?: boolean;
+  /** Its WALL-CLOCK hold moment (ISO) and who — the On hold tab's per-invoice
+   *  "Held since" / "Held by". heldByName is filled by getFloorHold only. */
+  heldAt?: string | null;
+  heldById?: number | null;
+  heldByName?: string | null;
 }
 
 /** One order_invoices row with its lines, as the board's read returns it. */
@@ -62,6 +71,10 @@ export interface InvoiceRowSource {
   tripDropId?: number | null;
   tripNumber?: string | null;
   tripStatus?: string | null;
+  /** The row's own hold (6.1). Omitted = not held. */
+  isHeld?: boolean;
+  heldAt?: Date | string | null;
+  heldById?: number | null;
 }
 
 /** One ACTIVE raw line of the OBD (import_raw_line_items, lineStatus 'active'). */
@@ -122,6 +135,9 @@ export function buildInvoiceRows(input: {
       tripDropId: r.tripDropId ?? null,
       tripNumber: r.tripNumber ?? null,
       tripStatus: r.tripStatus ?? null,
+      isHeld: r.isHeld ?? false,
+      heldAt: iso(r.heldAt ?? null),
+      heldById: r.heldById ?? null,
     };
   });
 }
@@ -225,6 +241,24 @@ export function narrowToPlace<T extends Narrowable>(row: T, inPlace: (tripDropId
 }
 
 /**
+ * TO PLAN (6.1): an invoice is in the pool when it is on no trip AND not held.
+ * A held invoice of a split OBD is drawn on the On hold tab instead.
+ */
+export function inPool(r: Pick<FloorInvoiceRow, "tripDropId" | "isHeld">): boolean {
+  return r.tripDropId === null && r.isHeld !== true;
+}
+
+/** A board row narrowed to To plan — its off-trip, NOT-held invoices (6.1). */
+export function narrowToPool<T extends Narrowable>(row: T): T {
+  return narrowWhere(row, inPool);
+}
+
+/** A hold row narrowed to its HELD invoices (the On hold tab, 6.1). */
+export function narrowToHeld<T extends Narrowable>(row: T): T {
+  return narrowWhere(row, (r) => r.isHeld === true);
+}
+
+/**
  * A board row narrowed to the TICKED invoices of a split OBD (P5-3) — the
  * bottom bar's litres / kg and its "2 of 4 invoices". `ids` null = the whole
  * OBD (the same row object back).
@@ -238,6 +272,7 @@ export function narrowToInvoiceIds<T extends Narrowable>(row: T, ids: readonly n
 function narrowWhere<T extends Narrowable>(row: T, keep: (r: FloorInvoiceRow) => boolean): T {
   const load = loadWhere(row.invoiceRows ?? [], keep);
   if (load === null) return row;
+  // ⚠ Narrowing an already-narrowed row keeps the OBD's ORIGINAL full list.
   return {
     ...row,
     invoiceRows: row.invoiceRows.filter(keep),
@@ -257,7 +292,7 @@ function narrowWhere<T extends Narrowable>(row: T, keep: (r: FloorInvoiceRow) =>
 
 /** The chip for the invoices of `all` that are not in `drawn`, or null when none are away. */
 export function awayChipOf(
-  all: readonly Pick<FloorInvoiceRow, "id" | "tripDropId" | "tripNumber">[],
+  all: readonly Pick<FloorInvoiceRow, "id" | "tripDropId" | "tripNumber" | "isHeld">[],
   drawn: readonly Pick<FloorInvoiceRow, "id">[],
   shortTrip: (tripNumber: string) => string = (t) => t,
 ): { text: string; title: string } | null {
@@ -265,10 +300,13 @@ export function awayChipOf(
   const byPlace = new Map<string, { label: string; long: string; k: number }>();
   for (const r of all) {
     if (here.has(r.id)) continue;
-    const key = r.tripDropId === null ? "plan" : `t:${r.tripNumber ?? r.tripDropId}`;
+    // 6.1: a held invoice is its own place — "2 on hold" (never on a trip).
+    const key = r.isHeld === true ? "hold" : r.tripDropId === null ? "plan" : `t:${r.tripNumber ?? r.tripDropId}`;
     const e =
       byPlace.get(key) ??
-      (r.tripDropId === null
+      (r.isHeld === true
+        ? { label: "on hold", long: "on hold", k: 0 }
+        : r.tripDropId === null
         ? { label: "in To plan", long: "in To plan", k: 0 }
         : r.tripNumber === null
           ? { label: "on a trip", long: "on a trip", k: 0 }

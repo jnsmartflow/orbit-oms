@@ -70,8 +70,20 @@ test("items: only the invoice's lines, by raw line id, its tins and litres pro r
   assert.equal(part.missing, 1);
 });
 
-test("activity: OBD-wide entries on every invoice; an entry with an invoice-row id only on that invoice", () => {
-  const e = [{ note: "Picked" }, { note: "Held", orderInvoiceId: 17011 }, { note: "Released", orderInvoiceId: null }];
-  assert.deepEqual(activityForInvoice(e, 17011).map((x) => x.note), ["Picked", "Held", "Released"]);
-  assert.deepEqual(activityForInvoice(e, 17010).map((x) => x.note), ["Picked", "Released"]);
+test("activity: OBD-wide entries on every invoice; an entry naming invoice rows only on those invoices", () => {
+  const e = [
+    { note: "Picked" },
+    { note: "Invoice held from floor · I536230716, I536230714", orderInvoiceIds: [17010, 36799] },
+    { note: "Released", orderInvoiceIds: [] },
+  ];
+  assert.deepEqual(activityForInvoice(e, 17010).map((x) => x.note), ["Picked", "Invoice held from floor · I536230716, I536230714", "Released"]);
+  assert.deepEqual(activityForInvoice(e, 36799).map((x) => x.note), ["Picked", "Invoice held from floor · I536230716, I536230714", "Released"]);
+  assert.deepEqual(activityForInvoice(e, 36798).map((x) => x.note), ["Picked", "Released"]);
+});
+
+test("walk: a NARROWED row walks its drawn invoices only, still per invoice with one drawn (6.1)", () => {
+  const all = SPLIT.map((s, i) => ({ ...s, id: i }));
+  const held = { orderId: 18648, invoiceRows: [all[2]], invoiceRowsAll: all };
+  assert.deepEqual(detailWalk([held]), [{ orderId: 18648, invoiceSeq: 3 }]);
+  assert.deepEqual(detailWalk([{ orderId: 18648, invoiceRows: [], invoiceRowsAll: all }]), [{ orderId: 18648, invoiceSeq: null }]);
 });

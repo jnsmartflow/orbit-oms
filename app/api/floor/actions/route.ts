@@ -14,6 +14,7 @@ import {
   type BillAction,
   type ResolvedSlot,
 } from "@/lib/floor/bill-actions";
+import { holdRows, releaseRows } from "@/lib/order-invoices/hold";
 
 export const dynamic = "force-dynamic";
 
@@ -42,11 +43,18 @@ interface Body {
   reason?: string; // cancel: legacy free-text note, used only when reasonKey is absent
   reasonKey?: string; // cancel: one of FLOOR_CANCEL_REASONS (lib/floor/off-floor.ts)
   remark?: string; // cancel: optional, ≤ FLOOR_REMARK_MAX, goes after the reason label
+  /** hold / unhold PER INVOICE (Add invoices 6.1): orderId → the split OBD's
+   *  ticked order_invoices ids (some or all). An OBD absent here acts whole,
+   *  exactly as before. */
+  invoiceRowIds?: Record<string, number[]>;
 }
 
 interface Failed {
   orderId: number;
   error: string;
+  /** A per-invoice refusal (6.1) — that invoice only; the rest of the OBD may be in `done`. */
+  invoiceRowId?: number;
+  invoiceNo?: string | null;
 }
 
 export async function POST(req: Request): Promise<NextResponse> {
@@ -110,13 +118,51 @@ export async function POST(req: Request): Promise<NextResponse> {
     }
   }
 
+  // 6.1 — validated up front: integer arrays, only for hold / unhold.
+  const rowIdsByOrder = new Map<number, number[]>();
+  if (body.invoiceRowIds !== undefined) {
+    if (action !== "hold" && action !== "unhold") {
+      return NextResponse.json({ error: "invoiceRowIds is for hold / unhold only" }, { status: 400 });
+    }
+    if (typeof body.invoiceRowIds !== "object" || body.invoiceRowIds === null) {
+      return NextResponse.json({ error: "invoiceRowIds must map an orderId to invoice row ids" }, { status: 400 });
+    }
+    for (const [k, v] of Object.entries(body.invoiceRowIds)) {
+      const id = Number(k);
+      if (!orderIds.includes(id) || !Array.isArray(v) || v.length === 0 || !v.every((x) => typeof x === "number" && Number.isInteger(x))) {
+        return NextResponse.json({ error: `invoiceRowIds[${k}] must be a non-empty array of row ids of a listed order` }, { status: 400 });
+      }
+      rowIdsByOrder.set(id, Array.from(new Set(v)));
+    }
+  }
+
   const done: number[] = [];
   const failed: Failed[] = [];
   // hand / unhand only: a repeat press (the mark is already as asked) writes
   // NOTHING — no update, no log — and is reported here, not as a failure.
+  // 6.1 per-invoice hold / unhold uses it too (nothing changed, nothing written).
   const skipped: number[] = [];
+  // 6.1 — orderId → the invoice rows a per-invoice press really changed (the
+  // 8 s Undo releases exactly these).
+  const doneRows: Record<number, number[]> = {};
 
   for (const orderId of orderIds) {
+    const rowIds = rowIdsByOrder.get(orderId);
+    if (rowIds !== undefined) {
+      // PER INVOICE — lib/order-invoices/hold.ts, the only row-hold writer.
+      try {
+        const r = action === "hold" ? await holdRows(orderId, rowIds, changedById) : await releaseRows(orderId, rowIds, changedById);
+        for (const x of r.refused) failed.push({ orderId, error: x.error, invoiceRowId: x.rowId, invoiceNo: x.invoiceNo });
+        if (r.kind === "done") {
+          done.push(orderId);
+          doneRows[orderId] = r.rowIds;
+        } else if (r.kind === "skipped") skipped.push(orderId);
+        else if (r.refused.length === 0) failed.push({ orderId, error: r.error });
+      } catch (err) {
+        failed.push({ orderId, error: err instanceof Error ? err.message : "Unexpected error" });
+      }
+      continue;
+    }
     try {
       const order = await prisma.orders.findUnique({
         where: { id: orderId },
@@ -153,5 +199,13 @@ export async function POST(req: Request): Promise<NextResponse> {
   }
 
   const status = done.length === 0 && failed.length > 0 ? 422 : 200;
-  return NextResponse.json({ done, failed, ...(skipped.length > 0 ? { skipped } : {}) }, { status });
+  return NextResponse.json(
+    {
+      done,
+      failed,
+      ...(skipped.length > 0 ? { skipped } : {}),
+      ...(Object.keys(doneRows).length > 0 ? { doneRows } : {}),
+    },
+    { status },
+  );
 }

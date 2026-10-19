@@ -68,6 +68,7 @@ import { TELEPHONIC_HOLD_NOTE } from "@/lib/floor/hold-log";
 import { billingRefusal } from "@/lib/billing/refusal";
 import { INVOICE_TRIPS_SELECT, invoiceTripsOf, type InvoiceTrip } from "@/lib/order-invoices/trip-refusal";
 import { CHALLAN_LINKED } from "@/lib/workflow-stages";
+import { mirrorObdHoldSafe } from "@/lib/order-invoices/hold";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -251,6 +252,8 @@ async function writeHold(order: HookOrder, byId: number, now: Date): Promise<voi
     where: { id: order.id },
     data: { dispatchStatus: "hold", heldAt: order.obdEmailDate ?? now },
   });
+  // 6.1 — every invoice row follows the whole-OBD hold (lib/order-invoices/hold.ts; never throws).
+  await mirrorObdHoldSafe(order.id, true, byId);
   // toStage stays the unchanged workflowStage — a hold does not advance a bill;
   // the NOTE identifies the hold event (lib/floor/hold-log.ts).
   await prisma.order_status_logs.create({
@@ -440,6 +443,8 @@ export async function applySoTagHolds(
                 data: { workflowStage: "cancelled", dispatchStatus: null },
               });
               updateLanded = true;
+              // 6.1 — a cancel clears every invoice row's hold (never throws).
+              await mirrorObdHoldSafe(order.id, false);
               // AFTER the stage write, never before (the floor cancel's orphan
               // fix). A late tag can meet a bill already with a picker.
               await prisma.pick_assignments.deleteMany({ where: { orderId: order.id } });

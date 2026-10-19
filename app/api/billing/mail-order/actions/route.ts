@@ -9,6 +9,8 @@ import { notifyHandSet } from "@/lib/push/hand";
 import { BILLING_CLEAR_HOLD_NOTE, BILLING_HOLD_NOTE } from "@/lib/floor/hold-log";
 import { FLOOR_CLEAR_HOLD_STAGES } from "@/lib/floor/release-stages";
 import { findLiveCi, liveCiRefusal } from "@/lib/ci/live-ci";
+import { mirrorObdHoldSafe } from "@/lib/order-invoices/hold";
+import { onTripMessage } from "@/lib/order-invoices/trip-refusal";
 import { NOT_CHALLAN_LINKED } from "@/lib/workflow-stages";
 
 export const dynamic = "force-dynamic";
@@ -339,6 +341,9 @@ export async function POST(req: Request): Promise<NextResponse> {
         if (action === "hold") {
           if (on) {
             refusal = refuse("hold", "set");
+            // 6.1 (owner, 2026-10-19): a SPLIT OBD is held whole only when none
+            // of its invoices is on a trip. Unsplit: unchanged (allowed on a trip).
+            if (refusal === null && refusalBill.invoiceTrips.length >= 2) refusal = onTripMessage(refusalBill);
             // One of three: clearing this bill's Hand follows Hand's refusals.
             if (refusal === null && bill.handAt !== null) refusal = refuse("hand", "clear");
             isRepeat = bill.dispatchStatus === "hold" && bill.handAt === null;
@@ -433,6 +438,9 @@ export async function POST(req: Request): Promise<NextResponse> {
             note,
           },
         });
+        // 6.1 — a whole-OBD hold / release (Hold, Release, a Hand press that
+        // releases) moves every invoice row with it (lib/order-invoices/hold.ts).
+        if ("dispatchStatus" in update) await mirrorObdHoldSafe(bill.id, update.dispatchStatus === "hold", userId);
         updatedIds.push(bill.id);
         if (action === "hand" && on && bill.handAt === null) newlyHand.push(bill.id);
       } catch (err) {

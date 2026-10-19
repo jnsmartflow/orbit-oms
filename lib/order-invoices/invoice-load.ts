@@ -53,6 +53,11 @@ export async function loadSplitInvoiceRows(
       // Phase 5 — the row's OWN stop, and that stop's trip.
       tripDropId: true,
       tripDrop: { select: { trip: { select: { tripNumber: true, status: true } } } },
+      // 6.1 — the row's own hold (split OBDs only reach here; an unsplit row's
+      // isHeld drifted and is never read).
+      isHeld: true,
+      heldAt: true,
+      heldById: true,
       lines: { select: { rawLineItemId: true, qty: true } },
     },
   });

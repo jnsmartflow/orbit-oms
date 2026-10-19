@@ -98,6 +98,7 @@ import {
   selectionCountLabel,
   selectionUnits,
   billsBodyOf,
+  holdBodyOf,
   isPartialUnit,
   wholeObdReason,
   reconcileTicks,
@@ -109,7 +110,7 @@ import {
   type FloorDeskSelection,
   type SelectionUnit,
 } from "@/lib/floor/selection";
-import { narrowToInvoiceIds, narrowToPlace } from "@/lib/floor/invoice-rows";
+import { narrowToInvoiceIds, narrowToPlace, narrowToPool } from "@/lib/floor/invoice-rows";
 import { rowsInScope, scopeBoard } from "@/lib/floor/scope";
 import { parseSearch, applySearch, searchReport, lookupTermOf, matchedInvoiceIdsOf, type Searchable, type ParsedSearch } from "@/lib/floor/search";
 import { applyFloorFilters, applyFlagFilters, EMPTY_FILTERS, type FloorFilters } from "@/lib/floor/filter";
@@ -369,9 +370,12 @@ interface WriteBody {
   error?: string;
   /** The batch routes' applied ids (POST /api/floor/actions returns them). */
   done?: number[];
-  failed?: Array<{ orderId?: number; error?: string }>;
+  /** `invoiceRowId` / `invoiceNo`: a per-invoice refusal (hold, 6.1). */
+  failed?: Array<{ orderId?: number; error?: string; invoiceRowId?: number; invoiceNo?: string | null }>;
   /** POST /api/floor/actions hand | unhand — repeat presses, nothing written. */
   skipped?: number[];
+  /** POST /api/floor/actions hold | unhold per invoice (6.1): orderId → the rows it changed. */
+  doneRows?: Record<number, number[]>;
   /** POST /api/floor/release — what Release did to each WRITTEN bill (2026-10-01). */
   outcomes?: Array<{ orderId: number; outcome: "released" | "picker_removed" | "hold_cleared" }>;
 }
@@ -1778,9 +1782,16 @@ export function FloorPage({
   // ⚠ THE UNDO IDS LIVE IN THE TOAST'S CLOSURE. The reload right after the hold
   // takes those bills off the board, so nothing on screen can be read back for
   // them eight seconds later.
+  // PER INVOICE (6.1): a split OBD's Undo releases exactly the invoice rows the
+  // Hold changed (`doneRows` from the route) — never the OBD's other held ones.
   const undoHold = useCallback(
-    async (orderIds: number[]) => {
-      const r = await postJson("/api/floor/actions", { action: "unhold", orderIds });
+    async (orderIds: number[], doneRows: Record<number, number[]> = {}) => {
+      const perInvoice = orderIds.filter((id) => (doneRows[id]?.length ?? 0) > 0);
+      const r = await postJson("/api/floor/actions", {
+        action: "unhold",
+        orderIds,
+        ...(perInvoice.length > 0 ? { invoiceRowIds: Object.fromEntries(perInvoice.map((id) => [id, doneRows[id]])) } : {}),
+      });
       if (reportWrite("Undo hold", r)) {
         const n = orderIds.length;
         toast.success(`${n} bill${n === 1 ? "" : "s"} back on the floor`);
@@ -1790,14 +1801,22 @@ export function FloorPage({
     [load],
   );
 
+  // PER INVOICE (6.1, owner 2026-10-19): Hold acts on the TICKED invoices of a
+  // split OBD — partial or whole — and is no longer greyed by a partial tick
+  // (Cancel / Raise CI / Add invoices still are). An invoice on a trip is
+  // refused one by one ("… — remove it from the trip first"); unsplit unchanged.
   const bulkHold = useCallback(
-    async (rowsToHold: FloorBoardRow[]) => {
-      if (rowsToHold.length === 0) return;
+    async (units: SelectionUnit[]) => {
+      if (units.length === 0) return;
+      const boardRows = dataRef.current?.floor.rows ?? [];
+      const rowById = new Map(boardRows.map((x) => [x.orderId, x]));
+      const rowsToHold = units.map((u) => rowById.get(u.orderId)).filter((x): x is FloorBoardRow => x !== undefined);
       setTripBarBusy(true);
-      const r = await postJson("/api/floor/actions", { action: "hold", orderIds: rowsToHold.map((x) => x.orderId) });
+      const r = await postJson("/api/floor/actions", holdBodyOf(units, boardRows, "hold"));
       setTripBarBusy(false);
       const done = Array.isArray(r.body.done) ? r.body.done : [];
       const failed = Array.isArray(r.body.failed) ? r.body.failed : [];
+      const doneRows: Record<number, number[]> = r.body.doneRows ?? {};
       if (done.length === 0) {
         // Nothing held — say why and keep every tick where it was.
         const why = r.body.error ?? failed[0]?.error;
@@ -1818,7 +1837,7 @@ export function FloorPage({
       const undo = {
         duration: 8_000,
         description: heldObds.join(", "),
-        action: { label: "Undo", onClick: () => void undoHold(done) },
+        action: { label: "Undo", onClick: () => void undoHold(done, doneRows) },
       };
       if (failed.length > 0) {
         toast.warning(
@@ -1830,9 +1849,16 @@ export function FloorPage({
       }
       // The failed ones stay ticked, so the planner can see which they were
       // (a split OBD by every invoice — Hold acts on the whole OBD).
-      setSelection(
-        new Set(keysForOrders(failed.map((f) => f.orderId).filter((id): id is number => typeof id === "number"), dataRef.current?.floor.rows ?? [])),
-      );
+      // A per-invoice refusal leaves THAT invoice ticked (6.1).
+      const failedInv = failed
+        .map((f) => f.invoiceRowId)
+        .filter((id): id is number => typeof id === "number")
+        .map(invKey);
+      const failedWhole = failed
+        .filter((f) => typeof f.invoiceRowId !== "number")
+        .map((f) => f.orderId)
+        .filter((id): id is number => typeof id === "number");
+      setSelection(new Set([...keysForOrders(failedWhole, boardRows), ...failedInv]));
       await load();
     },
     [load, undoHold],
@@ -1846,11 +1872,33 @@ export function FloorPage({
   // held while a picker had it (2026-10-01): pick_assigned → picker removed and
   // released fresh; pick_done / pick_checked → hold cleared only, slot ignored.
   // The server decides per bill; the toast says which (reportRelease).
+  //
+  // PER INVOICE (6.1): a split OBD's ticked HELD invoices (a part of it) are
+  // released per invoice — POST /api/floor/actions "unhold" with invoiceRowIds
+  // (lib/order-invoices/hold.ts releaseRows): no slot, no stage move; the OBD
+  // takes the unhold rule only if it was wholly held. A whole bill (unsplit, or
+  // every invoice of a split OBD held and ticked) goes through the slot release
+  // exactly as before.
   const holdRelease = useCallback(
-    async (orderIds: number[], date: string, windowId: number) => {
-      const releases = orderIds.map((orderId) => ({ orderId, dispatchTargetDate: date, dispatchWindowId: windowId }));
-      const r = await postJson("/api/floor/release", { releases });
-      reportRelease(r);
+    async (units: SelectionUnit[], date: string | null, windowId: number | null) => {
+      const whole = units.filter((u) => u.invoiceRowIds === null);
+      const part = units.filter((u) => u.invoiceRowIds !== null);
+      if (whole.length > 0 && date !== null && windowId !== null) {
+        const releases = whole.map((u) => ({ orderId: u.orderId, dispatchTargetDate: date, dispatchWindowId: windowId }));
+        const r = await postJson("/api/floor/release", { releases });
+        reportRelease(r);
+      }
+      if (part.length > 0) {
+        const r = await postJson("/api/floor/actions", {
+          action: "unhold",
+          orderIds: part.map((u) => u.orderId),
+          invoiceRowIds: Object.fromEntries(part.map((u) => [u.orderId, u.invoiceRowIds as number[]])),
+        });
+        if (reportWrite("Release", r)) {
+          const n = part.reduce((s, u) => s + (u.invoiceRowIds?.length ?? 0), 0);
+          toast.success(`${n} invoice${n === 1 ? "" : "s"} released`);
+        }
+      }
       await load();
     },
     [load],
@@ -2135,7 +2183,7 @@ export function FloorPage({
         // elsewhere ticks nothing here.
         let visible: FloorBoardRow[];
         if (railSelection.kind === "pool" || addingToTripId !== null) {
-          visible = scopedData.floor.rows.filter(isPoolRow).map((r) => narrowToPlace(r, (d) => d === null));
+          visible = scopedData.floor.rows.filter(isPoolRow).map((r) => narrowToPool(r));
         } else if (tripDetail !== null && tripDetail.id === railSelection.tripId) {
           const onTrip = new Set(tripDetail.drops.flatMap((d) => d.orderIds));
           const dropIds = new Set(tripDetail.drops.map((d) => d.id));
@@ -2426,7 +2474,8 @@ export function FloorPage({
         // OBD: its invoices, 716 → 713 → 714 → 715, then the next bill.
         return detailWalk(filteredFloor?.rows ?? []);
       case "hold":
-        return detailWalk(filteredHold ?? [], false);
+        // 6.1 — a split OBD with held invoices walks its HELD invoices.
+        return detailWalk(filteredHold ?? []);
       case "cancelled":
         return detailWalk(filteredCancelled ?? [], false);
       // "rail" — no list. Its feed and its only opener are gone (above); the
@@ -2441,8 +2490,18 @@ export function FloorPage({
   // source and only while the invoice still exists (resolveScope) — an undo or
   // an edit that removes it drops the panel back to the OBD view.
   const detailBoardRow = detail ? (data?.floor.rows ?? []).find((r) => r.orderId === detail.orderId) ?? null : null;
+  // 6.1 — opened from On hold, the panel scopes to a HELD invoice too; its
+  // invoices come off the hold row (a wholly held OBD is not on the board).
+  const detailHoldRow = detail?.source === "hold" ? (holdRows ?? []).find((r) => r.orderId === detail.orderId) ?? null : null;
+  const detailInvoiceRows = detailHoldRow
+    ? detailHoldRow.invoiceRowsAll ?? detailHoldRow.invoiceRows
+    : detailBoardRow?.invoiceRows ?? [];
   const detailScopeSeq = detail
-    ? resolveScope({ orderId: detail.orderId, invoiceSeq: detail.invoiceSeq }, detailBoardRow?.invoiceRows, detail.source === "floor").invoiceSeq
+    ? resolveScope(
+        { orderId: detail.orderId, invoiceSeq: detail.invoiceSeq },
+        detailInvoiceRows,
+        detail.source === "floor" || (detail.source === "hold" && detailHoldRow !== null && detailHoldRow.invoiceRows.length > 0),
+      ).invoiceSeq
     : null;
   const detailInvoiceCount = !detail
     ? 1
@@ -4130,7 +4189,7 @@ export function FloorPage({
                     scope={scope}
                     windows={dispatchWindows}
                     onRelease={holdRelease}
-                    onOpenDetail={(id) => openDetail(id, "hold")}
+                    onOpenDetail={(id, invoiceSeq) => openDetail(id, "hold", invoiceSeq ?? null)}
                     menuOpen={holdMoreOpen}
                     onMenuOpenChange={setHoldMoreOpen}
                     onOpenOffFloor={(rows, keepTicked) =>
@@ -4230,10 +4289,10 @@ export function FloorPage({
                     contextLabel={barContextLabel}
                     menuOpen={moreOpen}
                     onMenuOpenChange={setMoreOpen}
-                    onHold={() => { if (wholeObdBlock === null) void bulkHold(selectedRows); }}
-                    // Owner decision 3 (P5-3): Hold / Cancel / Raise CI / Add
-                    // invoices act on the WHOLE OBD — grey with this reason
-                    // while an OBD is only partly ticked.
+                    onHold={() => void bulkHold(selectedUnits)}
+                    // Owner decision 3 (P5-3): Cancel / Raise CI / Add invoices
+                    // act on the WHOLE OBD — grey with this reason while an OBD
+                    // is only partly ticked. Hold acts per invoice (6.1).
                     wholeObdBlock={wholeObdBlock}
                     addInvoices={addInvMenuItem}
                     onAddInvoices={() => {
@@ -4331,7 +4390,7 @@ export function FloorPage({
           onEditInvoices={openAddInvoices}
           // Phase 4 commit 3 — scoped to one invoice of a split OBD (resolved).
           invoiceSeq={detailScopeSeq}
-          invoiceRows={detailBoardRow?.invoiceRows ?? []}
+          invoiceRows={detailInvoiceRows}
           invoiceCount={detailInvoiceCount}
           onScopeInvoice={scopeDetailInvoice}
           list={detailList}

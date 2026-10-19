@@ -292,6 +292,8 @@ async function plainRows(orderIds: number[]): Promise<Map<number, FloorHoldRow>>
       heldById: null,
       heldByName: null,
       invoiceCount: invoiceCounts.get(o.id) ?? 1,
+      // 6.1 — Freight is per OBD: never drawn per invoice.
+      invoiceRows: [],
     });
   }
   return out;

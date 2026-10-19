@@ -35,6 +35,7 @@ import { CHALLAN_LINKED } from "@/lib/workflow-stages";
 import { CHALLAN_DEALER_HOLD_NOTE } from "@/lib/floor/hold-log";
 import { TINT_ASSIGNMENT_ACTIVE_STATUSES } from "@/lib/tint/assignment-status";
 import { challanCheckForcedToFail } from "./check-failed";
+import { mirrorObdHoldSafe } from "@/lib/order-invoices/hold";
 
 const CANCELLED = "cancelled";
 const LIVE_LINK = ["waiting", "linked"];
@@ -208,6 +209,8 @@ export async function reconcileSo(
               result.failed.push({ obdNumber: o.obdNumber, error: "changed while being held — Retry" });
               continue;
             }
+            // 6.1 — every invoice row follows the whole-OBD hold (never throws).
+            await mirrorObdHoldSafe(o.id, true, actorId);
             await prisma.order_status_logs.create({
               data: {
                 orderId: o.id,

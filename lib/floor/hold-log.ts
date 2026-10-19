@@ -94,6 +94,17 @@ export const TINT_HOLD_NOTE = "Held from Tint Manager";
  *  FLOOR_CLEAR_HOLD_NOTE above. */
 export const TINT_CLEAR_HOLD_NOTE = "Hold cleared from Tint Manager";
 
+/** PER-INVOICE hold / release of a split OBD (Add invoices 6.1, 2026-10-19) —
+ *  written by lib/order-invoices/hold.ts holdRows / releaseRows, followed by
+ *  " · I536230716, I536230714". The rows themselves are in the log's
+ *  STRUCTURED "orderInvoiceIds" (v27.72), never read off this note.
+ *
+ *  ⚠ BOTH ARE OUT OF HOLD_LOG_NOTES, ON PURPOSE: a split OBD's "held since" /
+ *  "held by" on the On hold tab are each invoice row's own heldAt / heldById
+ *  (getFloorHold), not a log row. */
+export const INVOICE_HOLD_NOTE = "Invoice held from floor";
+export const INVOICE_CLEAR_HOLD_NOTE = "Invoice hold cleared on floor";
+
 /** The import's mail-order hold, PARSER-set (2026-10-01, F1): applyMailOrderEnrichment
  *  carried a 'Hold' mail order with no `mo_orders.heldById` onto the bill. changedById = 1 (system). */
 export const MAIL_ORDER_AUTO_HOLD_NOTE = "Held on import (mail order)";

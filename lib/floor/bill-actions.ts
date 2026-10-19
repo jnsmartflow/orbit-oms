@@ -33,7 +33,8 @@ import {
 import { FLOOR_CLEAR_HOLD_STAGES } from "@/lib/floor/release-stages";
 import { buildDeskCancelNote, type DeskCancelReason } from "@/lib/floor/desk-cancel-reasons";
 import { offFloorRefusal } from "@/lib/floor/off-floor";
-import { INVOICE_TRIPS_SELECT, invoiceTripsOf } from "@/lib/order-invoices/trip-refusal";
+import { INVOICE_TRIPS_SELECT, invoiceTripsOf, onTripMessage } from "@/lib/order-invoices/trip-refusal";
+import { mirrorObdHoldSafe } from "@/lib/order-invoices/hold";
 import { findLiveCi, liveCiRefusal } from "@/lib/ci/live-ci";
 import { billingRefusal } from "@/lib/billing/refusal";
 import { stopTintWork } from "@/lib/tint/stop-work";
@@ -182,6 +183,14 @@ export async function applyBillAction(
   } else if (action === "hold") {
     if (order.workflowStage === "cancelled") {
       return { kind: "failed", error: "Cannot hold a cancelled bill" };
+    }
+    // 6.1 (owner, 2026-10-19): a SPLIT OBD holds WHOLE only when none of its
+    // invoices is on a trip — "2 of 4 invoices on L-02 — remove them from the
+    // trip first". An UNSPLIT bill keeps today's behaviour exactly (a hold on a
+    // trip is allowed and keeps its trip).
+    if (order.invoices.length >= 2) {
+      const onTrip = onTripMessage({ invoiceTrips: invoiceTripsOf(order.invoices) });
+      if (onTrip !== null) return { kind: "failed", error: onTrip };
     }
     // heldAt anchors the hold footprint to the ARRIVAL date, not wall-clock
     // (CLAUDE_FLOOR.md §4.5 — the read-side rule; convention inherited from
@@ -396,6 +405,11 @@ export async function applyBillAction(
   await prisma.order_status_logs.create({
     data: { orderId, fromStage: order.workflowStage, toStage, changedById, note },
   });
+  // 6.1 — EVERY invoice row of the OBD follows a whole-OBD hold / unhold /
+  // cancel (lib/order-invoices/hold.ts mirrorObdHold). Last, and never throws:
+  // the bill's own write and log already stand.
+  if (action === "hold") await mirrorObdHoldSafe(orderId, true, changedById);
+  else if (action === "unhold" || action === "cancel") await mirrorObdHoldSafe(orderId, false);
 
   return { kind: "done", toStage };
 }

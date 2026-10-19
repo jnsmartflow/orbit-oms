@@ -179,7 +179,7 @@ function shortElapsed(fromIso: string | null, nowMs: number): string | null {
  * the database, so the else branch should be unreachable — but a tag is not
  * worth throwing over, and printing the real value is the honest failure.
  */
-function shortTripNumber(tripNumber: string): string {
+export function shortTripNumber(tripNumber: string): string {
   const m = tripNumber.match(/^([A-Z])-\d{6}-(\d+)$/);
   return m ? `${m[1]}-${m[2]}` : tripNumber;
 }

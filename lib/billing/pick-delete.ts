@@ -57,6 +57,7 @@ import { groupPickingDetailLines } from "@/lib/picking/group-lines";
 import { sendToUser } from "@/lib/push/send";
 import { STAGE_LADDER, SUPPORT_DONE_OUTPUT } from "@/lib/workflow-stages";
 import { istMonthRange } from "@/lib/billing/telephonic";
+import { mirrorObdHoldSafe } from "@/lib/order-invoices/hold";
 import type {
   PickDeleteBill,
   PickDeleteBillLines,
@@ -769,6 +770,8 @@ export async function pickDelete(args: {
     await releaseClaim();
     return { ok: false, status: 409, error: "The bill changed — refresh" };
   }
+  // 6.1 — a cancel clears every invoice row's hold (lib/order-invoices/hold.ts; never throws).
+  await mirrorObdHoldSafe(order.id, false);
 
   // ── 3. CLEAN-UP — the bill is cancelled and recorded from here on ──
   let warning: string | undefined;

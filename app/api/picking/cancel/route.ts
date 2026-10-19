@@ -13,6 +13,7 @@ import {
 } from "@/lib/picking/cancel-reasons";
 import { sendToUser } from "@/lib/push/send";
 import { findLiveCi, liveCiRefusal } from "@/lib/ci/live-ci";
+import { mirrorObdHoldSafe } from "@/lib/order-invoices/hold";
 
 export const dynamic = "force-dynamic";
 
@@ -210,6 +211,8 @@ export async function POST(req: Request): Promise<NextResponse> {
     where: { id: orderId },
     data: { workflowStage: "cancelled", dispatchStatus: null },
   });
+  // 6.1 — a cancel clears every invoice row's hold (lib/order-invoices/hold.ts; never throws).
+  await mirrorObdHoldSafe(orderId, false);
 
   // d. SECOND write — clear the assignment, if any.
   //

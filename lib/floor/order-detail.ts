@@ -102,6 +102,9 @@ export async function getOrderDetail(orderId: number): Promise<FloorDetail | nul
   // ── Activity — real logs, newest first ─────────────────────────────────────
   const activity: FloorActivityEntry[] = order.statusLogs.map((log) => ({
     at: log.createdAt.toISOString(),
+    // v27.72 — the invoice rows a per-invoice hold / release named (empty =
+    // OBD-wide). The scoped panel shows the entry on those invoices only.
+    ...(log.orderInvoiceIds.length > 0 ? { orderInvoiceIds: log.orderInvoiceIds } : {}),
     note: log.note,
     fromStage: log.fromStage,
     toStage: log.toStage,

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { checkAnyPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
+import { mirrorObdHoldSafe } from "@/lib/order-invoices/hold";
 
 export const dynamic = "force-dynamic";
 
@@ -74,6 +75,12 @@ export async function PATCH(
         note:        `Tint Manager updated: ${Object.keys(updateData).join(", ")}`,
       },
     });
+
+    // 6.1 — when this write held or released the WHOLE OBD, every invoice row
+    // follows it (lib/order-invoices/hold.ts; never throws).
+    if (dispatchStatus !== undefined && (order.dispatchStatus === "hold") !== (dispatchStatus === "hold")) {
+      await mirrorObdHoldSafe(orderId, dispatchStatus === "hold", parseInt(session!.user.id, 10));
+    }
 
     return NextResponse.json({ success: true });
   } catch (err) {

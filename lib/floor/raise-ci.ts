@@ -67,6 +67,7 @@ import { linkRowForOrder } from "@/lib/order-invoices/links";
 import { computeFullBillLines } from "@/lib/ci/full-bill";
 import { offFloorRefusal } from "@/lib/floor/off-floor";
 import { INVOICE_TRIPS_SELECT, invoiceTripsOf } from "@/lib/order-invoices/trip-refusal";
+import { mirrorObdHoldSafe } from "@/lib/order-invoices/hold";
 
 export interface CiReasonOption {
   id: number;
@@ -294,6 +295,8 @@ export async function raiseFullBillCi(args: {
       where: { id: orderId },
       data: { workflowStage: "cancelled", dispatchStatus: null },
     });
+    // 6.1 — a cancel clears every invoice row's hold (lib/order-invoices/hold.ts; never throws).
+    await mirrorObdHoldSafe(orderId, false);
     // AFTER the stage write, never before — the ordering and the reason are
     // the floor cancel's (lib/floor/bill-actions.ts, the orphan fix).
     await prisma.pick_assignments.deleteMany({ where: { orderId } });

@@ -40,6 +40,8 @@ export function HoldBar({
   menuOpen,
   onMenuOpenChange,
   onOffFloor,
+  slotOptional = false,
+  offFloorBlock = null,
 }: {
   count: number;
   /** Physical pieces across the selection, from countArticles. */
@@ -48,13 +50,23 @@ export function HoldBar({
   routes: number;
   windows: DispatchWindow[];
   busy: boolean;
-  onRelease: (date: string, windowId: number) => void;
+  /** date / windowId null only when `slotOptional` and no slot was picked. */
+  onRelease: (date: string | null, windowId: number | null) => void;
   onClear: () => void;
   /** ··· More — owned by floor-page, the single Esc owner. */
   menuOpen: boolean;
   onMenuOpenChange: (open: boolean) => void;
   /** Open the Cancel / Raise CI form on the ticked held bills. */
   onOffFloor: () => void;
+  /**
+   * 6.1 — every tick is a PART of a split OBD's held invoices: Release takes
+   * them off hold (per invoice, lib/order-invoices/hold.ts) and needs no slot —
+   * the OBD keeps its own. A slot picked anyway is ignored for them.
+   */
+  slotOptional?: boolean;
+  /** 6.1 — Cancel / Raise CI act on the WHOLE OBD: grey with this reason while
+   *  an OBD's held invoices are only partly ticked (wholeObdReason). */
+  offFloorBlock?: string | null;
 }) {
   const [slot, setSlot] = useState<DispatchSlotValue | null>(null);
 
@@ -68,8 +80,8 @@ export function HoldBar({
       <DispatchSlotPicker value={slot} onChange={setSlot} windows={windows} popoverDir="up" popoverAlign="right" />
       <button
         type="button"
-        disabled={!slot || busy}
-        onClick={() => slot && onRelease(slot.date, slot.dispatchWindowId)}
+        disabled={(!slot && !slotOptional) || busy}
+        onClick={() => (slot ? onRelease(slot.date, slot.dispatchWindowId) : slotOptional && onRelease(null, null))}
         className={BAR_PRIMARY}
       >
         {busy ? "Releasing…" : "Release"}
@@ -84,9 +96,10 @@ export function HoldBar({
           {
             key: "off-floor",
             label: "Cancel / Raise CI…",
-            hint: "Opens a form · choose Cancel or Raise CI",
+            hint: offFloorBlock ?? "Opens a form · choose Cancel or Raise CI",
             icon: <X size={15} strokeWidth={2.2} />,
             danger: true,
+            disabled: offFloorBlock !== null,
             onSelect: onOffFloor,
           },
         ]}

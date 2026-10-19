@@ -55,7 +55,7 @@ import {
 } from "./status-pill";
 import { rdKey, type FloorDeskSelection } from "@/lib/floor/selection";
 import type { FloorBoardResult, FloorBoardRow, FloorRouteClub, FloorScope } from "@/lib/floor/types";
-import { narrowToPlace } from "@/lib/floor/invoice-rows";
+import { inPool, narrowToPlace, narrowToPool } from "@/lib/floor/invoice-rows";
 import type { TripSummary, TripDetail } from "@/lib/trips/queries";
 
 const WD = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -144,7 +144,8 @@ const sort = (rows: FloorBoardRow[]) => sortFloorRows(rows);
 export function isPoolRow(r: FloorBoardRow): boolean {
   if (isTintRoomRow(r)) return false;
   const inv = r.invoiceRows ?? [];
-  return inv.length >= 2 ? inv.some((i) => i.tripDropId === null) : r.tripDropId === null;
+  // 6.1: a HELD invoice is not in the pool (inPool — off trip AND not held).
+  return inv.length >= 2 ? inv.some(inPool) : r.tripDropId === null;
 }
 
 export function TripDesk({
@@ -499,8 +500,9 @@ export function TripDesk({
   // only its invoices on no trip, with their litres / kg (narrowToPlace — the
   // same row object when it is wholly in To plan, i.e. every row today). The
   // route cards, load plan and pool totals read these rows.
-  const poolRows = dueRows.filter(isPoolRow).map((r) => narrowToPlace(r, (d) => d === null));
-  const poolUpcoming = upcomingAll.filter(isPoolRow).map((r) => narrowToPlace(r, (d) => d === null));
+  // 6.1: …and not held (narrowToPool) — a held invoice is on the On hold tab.
+  const poolRows = dueRows.filter(isPoolRow).map((r) => narrowToPool(r));
+  const poolUpcoming = upcomingAll.filter(isPoolRow).map((r) => narrowToPool(r));
 
   // ── THE ROUTE CARDS (2026-09-19) ─────────────────────────────────────────
   //

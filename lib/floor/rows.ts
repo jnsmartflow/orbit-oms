@@ -86,6 +86,12 @@ export async function getFloorRowsByIds(ids: number[]): Promise<FloorRowsResult>
   for (const r of board.rows) found.set(r.orderId, { id: r.orderId, tab: "board", row: r });
 
   const rows: FloorRowPatch[] = unique.map((id) => found.get(id) ?? { id, tab: null, row: null });
+  // 6.1 — a PARTLY-HELD split OBD is on BOTH feeds: the board draws its other
+  // invoices, the On hold tab its held ones. Its board patch wins above, and a
+  // SECOND patch carries its hold row, so the On hold tab refreshes too
+  // (mergeFloorRows removes an id from every list once, then places each patch).
+  const onBoard = new Set(board.rows.map((r) => r.orderId));
+  for (const r of hold) if (onBoard.has(r.orderId)) rows.push({ id: r.orderId, tab: "hold", row: r });
 
   // The asked-for bills' SO, trip pointer and invoice — one small read,
   // whatever tab (or none) each is on now. No isRemoved / hide filter: a bill

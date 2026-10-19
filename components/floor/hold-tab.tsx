@@ -23,7 +23,16 @@ import { FloorSkeleton } from "./floor-skeleton";
 import { HoldBar } from "./hold-bar";
 import { HoldTable } from "./hold-table";
 import { PdfPreview } from "./pdf-preview";
-import { toggleOne, toggleAllIds, type FloorSelection } from "@/lib/floor/selection";
+import {
+  holdKeysOf,
+  holdUnits,
+  isPartialUnit,
+  toggleAllHoldKeys,
+  toggleKey,
+  wholeObdReason,
+  type FloorDeskKey,
+  type SelectionUnit,
+} from "@/lib/floor/selection";
 import { groupByHoldBand } from "@/lib/floor/hold-log";
 import { countArticles } from "@/lib/floor/format";
 import type { FloorHoldRow } from "@/lib/floor/types";
@@ -46,8 +55,15 @@ export function HoldTab({
   error: string | null;
   scope: string;
   windows: DispatchWindow[];
-  onRelease: (orderIds: number[], date: string, windowId: number) => Promise<void>;
-  onOpenDetail: (id: number) => void;
+  /**
+   * PER INVOICE (6.1): units, not ids — a split OBD's ticked held invoices
+   * (`invoiceRowIds`, released per invoice, no slot) or a whole bill
+   * (`invoiceRowIds` null — the slot release, as before). date / windowId are
+   * null only when every unit is per invoice and no slot was picked.
+   */
+  onRelease: (units: SelectionUnit[], date: string | null, windowId: number | null) => Promise<void>;
+  /** With the invoice's seq when a drawn invoice row of a split OBD was clicked (6.1). */
+  onOpenDetail: (id: number, invoiceSeq?: number) => void;
   /** The bar's ··· More — owned by floor-page, the single Esc owner. */
   menuOpen: boolean;
   onMenuOpenChange: (open: boolean) => void;
@@ -59,7 +75,8 @@ export function HoldTab({
   onOpenOffFloor: (rows: FloorHoldRow[], keepTicked: (orderIds: number[]) => void) => void;
 }) {
   const [oldestFirst, setOldestFirst] = useState(false);
-  const [selection, setSelection] = useState<FloorSelection>(new Set());
+  // orderIds, plus `inv:<id>` for a split OBD's held invoices (6.1).
+  const [selection, setSelection] = useState<Set<FloorDeskKey>>(new Set());
   const [busy, setBusy] = useState(false);
   const [pdfOpen, setPdfOpen] = useState(false);
 
@@ -68,8 +85,18 @@ export function HoldTab({
   const list = rows ?? [];
   const bands = useMemo(() => groupByHoldBand(list, now, oldestFirst), [list, now, oldestFirst]);
 
-  const selectedRows = list.filter((r) => selection.has(r.orderId));
+  // Counts stay in OBDs (owner, 2026-10-19): one unit per OBD, whole or part.
+  const units = holdUnits(selection, list);
+  const unitIds = new Set(units.map((u) => u.orderId));
+  const selectedRows = list.filter((r) => unitIds.has(r.orderId));
   const selectedIds = selectedRows.map((r) => r.orderId);
+  const partial = units.filter(isPartialUnit);
+  // Cancel / Raise CI act on the whole OBD — grey while one is partly ticked.
+  const offFloorBlock = wholeObdReason(
+    selectedRows
+      .filter((r) => partial.some((u) => u.orderId === r.orderId))
+      .map((r) => ({ obdNumber: r.obdNumber, invoiceCount: (r.invoiceRowsAll ?? r.invoiceRows).length })),
+  );
   // The bar's figures — the same two helpers' meaning as the Floor tab's bar.
   const selectedArticles = countArticles(selectedRows.map((r) => r.articleTag)).pieces;
   const selectedRoutes = new Set(selectedRows.map((r) => r.route ?? "\u0000unrouted")).size;
@@ -80,11 +107,11 @@ export function HoldTab({
     if (selectedIds.length === 0 && menuOpen) onMenuOpenChange(false);
   }, [selectedIds.length, menuOpen, onMenuOpenChange]);
 
-  const doRelease = async (date: string, windowId: number) => {
-    if (selectedIds.length === 0) return;
+  const doRelease = async (date: string | null, windowId: number | null) => {
+    if (units.length === 0) return;
     setBusy(true);
     try {
-      await onRelease(selectedIds, date, windowId);
+      await onRelease(units, date, windowId);
       clear();
     } finally {
       setBusy(false);
@@ -149,8 +176,10 @@ export function HoldTab({
                 rows={bandRows}
                 now={now}
                 selection={selection}
-                onToggleRow={(id) => setSelection((s) => toggleOne(s, id))}
-                onToggleAll={(rs) => setSelection((s) => toggleAllIds(s, rs))}
+                perInvoice
+                onToggleKey={(k) => setSelection((s) => toggleKey(s, k))}
+                onToggleRow={(id) => setSelection((s) => toggleKey(s, id))}
+                onToggleAll={(rs) => setSelection((s) => toggleAllHoldKeys(s, rs))}
                 onOpenRow={onOpenDetail}
               />
             </div>
@@ -169,7 +198,14 @@ export function HoldTab({
           onClear={clear}
           menuOpen={menuOpen}
           onMenuOpenChange={onMenuOpenChange}
-          onOffFloor={() => onOpenOffFloor(selectedRows, (ids) => setSelection(new Set(ids)))}
+          slotOptional={units.length > 0 && units.every(isPartialUnit)}
+          offFloorBlock={offFloorBlock}
+          onOffFloor={() => {
+            if (offFloorBlock !== null) return;
+            onOpenOffFloor(selectedRows, (ids) =>
+              setSelection(new Set(list.filter((r) => ids.includes(r.orderId)).flatMap(holdKeysOf))),
+            );
+          }}
         />
       )}
 

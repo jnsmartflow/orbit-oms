@@ -1810,6 +1810,12 @@ model order_status_logs {
   changedBy   users    @relation(fields: [changedById], references: [id])
   note        String?
   createdAt   DateTime @default(now())
+  // v27.72 (2026-10-19, sql/2026-10-19-v27.72-status-log-invoice-ids.sql) —
+  // the order_invoices ids this event is about; EMPTY = the whole OBD (every
+  // row before v27.72, every OBD-level action). NOT NULL DEFAULT '{}' live —
+  // Prisma cannot map a NULL-able list. No FK (array). Writer:
+  // lib/order-invoices/hold.ts. Reader: activityForInvoice (lib/floor/detail-scope.ts).
+  orderInvoiceIds Int[] @default([])
 }
 
 model manual_tint_entries {

@@ -50,6 +50,7 @@ import { CHALLAN_ELIGIBLE_SMU } from "@/lib/import-upsert/types";
 import { CHALLAN_CHECK_FAILED_STATUS, finalBatchStatus } from "@/lib/challan-orders/check-failed";
 import { CHALLAN_LINKED, NOT_CHALLAN_LINKED } from "@/lib/workflow-stages";
 import { BILLING_CI_HOLD_NOTE, MAIL_ORDER_AUTO_HOLD_NOTE, MAIL_ORDER_BILLING_HOLD_NOTE } from "@/lib/floor/hold-log";
+import { mirrorObdHoldSafe } from "@/lib/order-invoices/hold";
 
 export const dynamic = "force-dynamic";
 
@@ -367,9 +368,11 @@ async function applyMailOrderEnrichment(soNumbers: (string | null)[]): Promise<v
     // F1 (2026-10-01) — the status each bill had BEFORE the updateMany below,
     // read with the SAME where-clause, so the hold loop further down logs only a
     // real transition into 'hold' (a bill already held gets no second row).
-    // Read only when this run carries a hold; the updateMany itself is unchanged.
+    // Read only when this run carries a status (6.1: any status, not only a
+    // hold — the invoice-row mirror below needs who WAS held); the updateMany
+    // itself is unchanged, and the hold loop still reads it for a hold only.
     const priorStatus =
-      updateData.dispatchStatus === "hold"
+      typeof updateData.dispatchStatus === "string"
         ? new Map(
             (
               await prisma.orders.findMany({
@@ -395,6 +398,20 @@ async function applyMailOrderEnrichment(soNumbers: (string | null)[]): Promise<v
       where: { soNumber: soNum, isRemoved: false, workflowStage: { notIn: ["cancelled", CHALLAN_LINKED] } },
       data: updateData,
     });
+    // 6.1 — the invoice rows follow the carried status (lib/order-invoices/hold.ts,
+    // never throws): a carried HOLD holds every row of every bill it wrote; any
+    // other status RELEASES only the bills that were held before (a partly-held
+    // split OBD stays 'dispatch' and keeps its held invoices).
+    if (updateData.dispatchStatus === "hold") {
+      await mirrorObdHoldSafe(
+        { soNumber: soNum, isRemoved: false, workflowStage: { notIn: ["cancelled", CHALLAN_LINKED] } },
+        true,
+        mailOrder.heldById ?? null,
+      );
+    } else if (priorStatus !== null) {
+      const wasHeld = Array.from(priorStatus.values()).filter((o) => o.dispatchStatus === "hold").map((o) => o.id);
+      if (wasHeld.length > 0) await mirrorObdHoldSafe({ id: { in: wasHeld } }, false);
+    }
 
     // Ship-to carry (2026-09-29) — the billing ✎ pencil's choice on the mail
     // order reaches bills imported later. FILL-ONLY: a bill that already has a
@@ -438,6 +455,8 @@ async function applyMailOrderEnrichment(soNumbers: (string | null)[]): Promise<v
           where: { id: ord.id },
           data: { dispatchStatus: "hold", heldAt: ord.obdEmailDate ?? new Date() },
         });
+        // 6.1 — every invoice row follows the whole-OBD hold (never throws).
+        await mirrorObdHoldSafe(ord.id, true, billOnlyMark.billOnlyById ?? null);
         await prisma.order_status_logs.create({
           data: {
             orderId: ord.id,

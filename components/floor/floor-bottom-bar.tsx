@@ -18,8 +18,9 @@
 //                              · Add invoices / Edit invoices (2026-10-10) —
 //                                exactly ONE OBD ticked + the floor_add_invoices
 //                                tick; floor-page decides (`addInvoices` prop)
-//                              — all three GREY while an OBD is only partly
-//                                ticked (P5-3, `wholeObdBlock`)
+//                              — the last two GREY while an OBD is only partly
+//                                ticked (P5-3, `wholeObdBlock`); Hold acts on
+//                                the ticked invoices (6.1)
 //
 // 🔴 IT RENDERS INSIDE THE BILLS COLUMN (2026-09-22). floor-page builds it and
 // TripDesk places it in its `relative` bills column, so it never runs under the
@@ -140,8 +141,8 @@ export function FloorBottomBar({
   addInvoices?: { label: string; hint: string; disabled: boolean } | null;
   onAddInvoices?: () => void;
   /**
-   * 🔴 OWNER DECISION 3 (Add invoices P5-3, 2026-10-17). Hold, Cancel / Raise CI
-   * and Add invoices act on the WHOLE OBD; with only some invoices of a split
+   * 🔴 OWNER DECISION 3 (Add invoices P5-3, 2026-10-17). Cancel / Raise CI and
+   * Add invoices act on the WHOLE OBD (Hold per invoice since 6.1, 2026-10-19); with only some invoices of a split
    * OBD ticked they are GREY with this reason — "Acts on the whole OBD — tick
    * all 4 invoices" (lib/floor/selection.ts wholeObdReason). null = nothing is
    * partly ticked, and the menu is exactly as before. The trip CTA is never
@@ -228,7 +229,8 @@ export function FloorBottomBar({
             label: "Hold",
             hint: "Off the floor until released · Undo for 8s",
             icon: <Pause size={15} strokeWidth={2.2} />,
-            ...(wholeObdBlock !== null ? { hint: wholeObdBlock, disabled: true } : {}),
+            // 6.1: Hold acts on the ticked INVOICES of a split OBD, so a
+            // partial tick no longer greys it (the rest of this menu still is).
             onSelect: onHold,
           },
           ...(addInvoices !== null && onAddInvoices

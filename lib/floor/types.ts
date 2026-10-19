@@ -590,6 +590,14 @@ export interface FloorHoldRow extends FloorPartyFields {
    *  Add invoices Phase 4: a split OBD stays ONE row on On hold (per-invoice
    *  hold is Phase 6) and says "n invoices". */
   invoiceCount: number;
+  /** 6.1 (2026-10-19) — a SPLIT OBD with held invoices: the HELD ones (seq
+   *  order, each with heldAt / heldByName), one drawn row each on the On hold
+   *  tab (drawRowsOf). [] = drawn as one OBD row (unsplit, or a split OBD held
+   *  whole before 6.1). volumeLitres / weightKg are theirs when only some are
+   *  held (narrowToHeld). */
+  invoiceRows: FloorInvoiceRow[];
+  /** Every invoice of the OBD when invoiceRows is narrowed — k/n, the away chip. */
+  invoiceRowsAll?: FloorInvoiceRow[];
 }
 
 /** Cancel & CI source chip. auto_bill_only is Billing (mail-order CI mark) or
@@ -707,11 +715,12 @@ export interface FloorDetailLine {
 // from enrichment (design §10.4 — the engine writes no log).
 export interface FloorActivityEntry {
   at: string | null;     // ISO; null on the synthetic enrichment line (no log ts)
-  /** The ONE invoice this entry is about (order_invoices.id) — a STRUCTURED
-   *  field, never read off the note (Add invoices Phase 4, lib/floor/
-   *  detail-scope.ts activityForInvoice). Absent / null = OBD-wide, shown on
-   *  every invoice. No writer sets it yet. */
-  orderInvoiceId?: number | null;
+  /** The invoices this entry is about (order_invoices ids) — a STRUCTURED
+   *  field, never read off the note (lib/floor/detail-scope.ts
+   *  activityForInvoice). From order_status_logs."orderInvoiceIds" (v27.72;
+   *  writer lib/order-invoices/hold.ts). Absent / empty = OBD-wide, shown on
+   *  every invoice. */
+  orderInvoiceIds?: number[];
   note: string | null;
   fromStage: string | null;
   toStage: string | null;
