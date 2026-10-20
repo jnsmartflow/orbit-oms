@@ -13,11 +13,15 @@
 //   Local trip:
 //     SO shareGroup city1     → city1
 //     SO shareGroup city2     → city2
-//     SO shareGroup city_both → city1 + city2   (the telecaller, Kundan)
-//     Telecaller mailbox bill → city1 + city2
-//     no salesman at all      → city1 + city2
+//     SO shareGroup city_both → city1   (unused — no row carries it)
+//     Telecaller mailbox bill → city1
+//     no salesman at all      → city1
 //     anything else           → other   (shareGroup 'upc', or a named SO with
 //                                          no shareGroup / no master match)
+//
+// City 2 comes ONLY from SO shareGroup city2 (Rahul Pal 12, Nirav 26). Changed
+// 2026-10-20 by the owner: telecaller / no-salesman / city_both were city1 +
+// city2 until then — do not revert.
 //
 // The SO is Floor's salesOfficerByOrder (lib/floor/queries.ts) — not re-derived
 // here; shareGroup is sales_officer_master."shareGroup" by its id.
@@ -78,8 +82,8 @@ export function billShareGroups(kind: "local" | "upc" | null, bill: ShareGroupBi
   if (kind === "upc") return ["upc"];
   if (bill.shareGroup === "city1") return ["city1"];
   if (bill.shareGroup === "city2") return ["city2"];
-  if (bill.shareGroup === "city_both") return ["city1", "city2"];
-  if (bill.soSource === "telecaller" || bill.soSource === null) return ["city1", "city2"];
+  if (bill.shareGroup === "city_both") return ["city1"];
+  if (bill.soSource === "telecaller" || bill.soSource === null) return ["city1"];
   return ["other"];
 }
 

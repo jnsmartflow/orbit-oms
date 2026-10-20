@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Trip Sheets — share chips</title>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --brand:#7C3AED; --brand-tint:#F5F3FF; --brand-line:#DDD6FE;
+    --ink:#0F172A; --ink-2:#475569; --ink-3:#94A3B8;
+    --line:#E2E8F0; --page:#F6F7F9; --card:#FFFFFF; --foot:#F4F6F8;
+    --ok:#15803D; --ok-bg:#ECFDF3; --ok-line:#86EFAC;
+    --warn:#B45309; --warn-bg:#FFF8E6;
+    --wa:#25D366;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:#E5E7EB;font-family:"Plus Jakarta Sans",system-ui,sans-serif;color:var(--ink);display:flex;justify-content:center;min-height:100vh}
+  .phone{width:100%;max-width:420px;min-height:100vh;background:var(--page);display:flex;flex-direction:column;position:relative}
+  @media(min-width:500px){.phone{margin:24px 0;min-height:860px;border-radius:28px;overflow:hidden;border:1px solid #D1D5DB}}
+
+  .top{background:var(--brand-tint);padding:14px 16px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line)}
+  .av{width:42px;height:42px;border-radius:50%;background:#fff;border:1px solid var(--line);display:flex;align-items:center;justify-content:center;font-weight:600;font-size:14px}
+  .top h1{font-size:22px;font-weight:700;color:var(--brand);letter-spacing:-.3px}
+  .top .ic{display:flex;gap:16px;color:var(--ink-2)}
+  .date{background:#fff;display:flex;align-items:center;justify-content:space-between;padding:10px 16px;border-bottom:1px solid var(--line)}
+  .date b{display:block;text-align:center;font-size:18px}
+  .date span{display:block;text-align:center;font-size:13px;color:var(--ink-3)}
+  .date button{background:none;border:0;color:var(--ink-2);font-size:22px;width:32px}
+
+  main{flex:1;padding:18px 18px 110px;display:flex;flex-direction:column;gap:16px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:20px;overflow:hidden}
+  .body{padding:20px 20px 18px}
+  .row1{display:flex;justify-content:space-between;align-items:center}
+  .tno{font-family:"JetBrains Mono",monospace;font-size:13px;color:var(--ink-3)}
+  .time{font-weight:600;font-size:17px;color:var(--ink-2)}
+  .row2{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:10px}
+  .drv{font-size:20px;font-weight:700;line-height:1.3}
+  .call{flex:none;width:44px;height:44px;border-radius:50%;background:var(--ok-bg);color:var(--ok);display:flex;align-items:center;justify-content:center;border:0}
+  .veh{margin-top:8px;font-size:15px;color:var(--ink-2)}
+  .veh .mono{font-family:"JetBrains Mono",monospace;font-size:13px}
+
+  .chips{display:flex;flex-wrap:wrap;gap:10px;margin-top:16px}
+  .chip{display:inline-flex;align-items:center;gap:6px;height:40px;padding:0 16px;border-radius:999px;font:600 14px "Plus Jakarta Sans",sans-serif;border:1.5px solid var(--brand-line);background:#fff;color:var(--brand);cursor:pointer;transition:transform .08s}
+  .chip:active{transform:scale(.96)}
+  .chip svg{width:16px;height:16px}
+  .chip.done{background:var(--ok-bg);border-color:var(--ok-line);color:var(--ok)}
+  .chip.busy{opacity:.6;pointer-events:none}
+
+  .foot{background:var(--foot);border-top:1px solid var(--line);padding:14px 20px;display:flex;align-items:center;gap:8px}
+  .st{font-size:13px;color:var(--ink-2);background:#EBEEF2;border-radius:8px;padding:5px 10px}
+  .badge{margin-left:auto;font-size:13px;font-weight:600;border-radius:999px;padding:4px 12px}
+  .b-pick{background:var(--warn-bg);color:var(--warn)}
+  .b-ready{background:var(--ok-bg);color:var(--ok)}
+
+  .nav{position:absolute;bottom:0;left:0;right:0;background:#fff;border-top:1px solid var(--line);display:flex;padding:8px 0 14px}
+  .nav button{flex:1;background:none;border:0;display:flex;flex-direction:column;align-items:center;gap:4px;font:500 13px "Plus Jakarta Sans",sans-serif;color:var(--ink-3);position:relative}
+  .nav button.on{color:var(--ink)}
+  .nav button.on::after{content:"";position:absolute;bottom:-8px;width:44px;height:3px;border-radius:2px;background:var(--brand)}
+  .nav .n{position:absolute;top:-4px;left:calc(50% + 6px);background:var(--ink);color:#fff;font-size:11px;border-radius:999px;min-width:18px;height:18px;display:flex;align-items:center;justify-content:center}
+
+  .toast{position:absolute;left:18px;right:18px;bottom:96px;background:var(--ink);color:#fff;font-size:14px;border-radius:12px;padding:12px 14px;display:flex;gap:8px;align-items:center;opacity:0;transform:translateY(8px);transition:.2s;pointer-events:none}
+  .toast.show{opacity:1;transform:none}
+  .toast i{width:10px;height:10px;border-radius:50%;background:var(--wa);flex:none}
+  .note{font-size:12px;color:var(--ink-3);text-align:center;padding:4px 20px 0}
+</style>
+</head>
+<body>
+<div class="phone">
+  <div class="top">
+    <div class="av">TS</div>
+    <h1>Trip Sheets</h1>
+    <div class="ic">
+      <svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+      <svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+    </div>
+  </div>
+  <div class="date">
+    <button aria-label="Previous day">‹</button>
+    <div><b>Today</b><span id="sub">3 trips · Local</span></div>
+    <button aria-label="Next day">›</button>
+  </div>
+
+  <main id="list"></main>
+  <p class="note">Mockup · tap a chip to share that division's sheet. Shared chips turn green with a tick.</p>
+
+  <div class="toast" id="toast"><i></i><span id="tmsg"></span></div>
+
+  <nav class="nav">
+    <button data-t="L" class="on"><span class="n" id="nL">3</span>
+      <svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21s-7-6.2-7-11a7 7 0 0 1 14 0c0 4.8-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>Local</button>
+    <button data-t="U"><span class="n" id="nU">2</span>
+      <svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h11v10H3zM14 9h4l3 3v4h-7"/><circle cx="7" cy="17" r="2"/><circle cx="17" cy="17" r="2"/></svg>UPC</button>
+    <button data-t="I">
+      <svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13 3 11l1-2 8 1 5-6h2l-2 7 3 1 1-2h1l-1 4-4 0-6 6H9l2-6z"/></svg>IGT / Cross</button>
+  </nav>
+</div>
+
+<script>
+const ICON_SHARE='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7M12 3v13M7 8l5-5 5 5"/></svg>';
+const ICON_TICK='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="m5 12 5 5 9-10"/></svg>';
+const ICON_CALL='<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2"/></svg>';
+
+const trips={
+  L:[
+    {no:'L-261017-03',time:'10:40',drv:'Rakesh Patil',veh:'GJ05BX2210',area:'Varachha +2',stops:5,bills:7,kg:'940',st:'Picking',div:{'City 1':0}},
+    {no:'L-261017-02',time:'10:25',drv:'Parshuram Somabhai Vansfoda',veh:'GJ19WB8841',area:'Adajan +3',stops:6,bills:9,kg:'1,100',st:'Picking',div:{'City 1':0,'City 2':0,'Project':0}},
+    {no:'L-261017-01',time:'10:25',drv:'Nilesh G Vasava',veh:'GJ19X8587',area:'Bamroli +3',stops:4,bills:9,kg:'3,076',st:'Ready',div:{'City 1':1,'City 2':0}}
+  ],
+  U:[
+    {no:'U-261017-02',time:'11:10',drv:'Mahesh Rathod',veh:'GJ15AT4471',area:'Navsari +4',stops:8,bills:12,kg:'2,480',st:'Picking',div:{'UPC':0,'Project':0}},
+    {no:'U-261017-01',time:'09:50',drv:'Suresh Chaudhari',veh:'GJ19Y1093',area:'Bardoli +2',stops:5,bills:6,kg:'1,320',st:'Ready',div:{'UPC':1}}
+  ],
+  I:[]
+};
+const label={L:'Local',U:'UPC',I:'IGT / Cross'};
+let tab='L';
+
+function render(){
+  const list=trips[tab];
+  document.getElementById('sub').textContent=list.length+' trips · '+label[tab];
+  document.getElementById('list').innerHTML=list.length?list.map((t,i)=>`
+    <div class="card">
+      <div class="body">
+        <div class="row1"><span class="tno">${t.no}</span><span class="time">${t.time}</span></div>
+        <div class="row2"><div class="drv">${t.drv}</div><button class="call" aria-label="Call driver">${ICON_CALL}</button></div>
+        <div class="veh"><span class="mono">${t.veh}</span> · ${t.area}</div>
+        <div class="chips">${Object.entries(t.div).map(([d,s])=>`
+          <button class="chip ${s?'done':''}" data-i="${i}" data-d="${d}">${s?ICON_TICK:ICON_SHARE}${d}</button>`).join('')}
+        </div>
+      </div>
+      <div class="foot">
+        <span class="st">${t.stops} stops</span><span class="st">${t.bills} bills</span><span class="st">${t.kg} kg</span>
+        <span class="badge ${t.st==='Ready'?'b-ready':'b-pick'}">${t.st}</span>
+      </div>
+    </div>`).join(''):'<p style="text-align:center;color:var(--ink-3);padding:40px 0">No trips today</p>';
+  document.querySelectorAll('.chip').forEach(c=>c.onclick=()=>share(c));
+}
+
+function share(c){
+  const t=trips[tab][c.dataset.i], d=c.dataset.d;
+  c.classList.add('busy');
+  toast('Opening WhatsApp · '+d+' sheet for '+t.no);
+  setTimeout(()=>{t.div[d]=1;render();},900);
+}
+
+let tt;
+function toast(m){
+  const el=document.getElementById('toast');
+  document.getElementById('tmsg').textContent=m;
+  el.classList.add('show');clearTimeout(tt);
+  tt=setTimeout(()=>el.classList.remove('show'),1800);
+}
+
+document.querySelectorAll('.nav button').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('.nav button').forEach(x=>x.classList.remove('on'));
+  b.classList.add('on');tab=b.dataset.t;render();
+});
+render();
+</script>
+</body>
+</html>
