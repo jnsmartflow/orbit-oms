@@ -24,8 +24,8 @@ Evidence: Claude Code read-only diagnosis, 2026-10-17 (file:line refs below are 
 | Top | **Current ship-to** card (name, code, area, delivery type; `typed` chip + "billed to …" when typed). **↺ Reset to customer** on the right, disabled when there is no change. |
 | Tabs | **Search dealer** (default) · **Type name**. |
 | Search dealer | Dealer list only (incl. ORB). **No upload on this tab.** Hint: "Dealer not in the list? Use Type name." |
-| Type name | Name box · **As per challan** chip · **Area dropdown, required, defaults to the customer's area** · challan copy upload. |
-| As per challan | Name box locks to "As per challan"; copy becomes **required**; Save disabled until a file is attached. **Area is still REQUIRED** (defaults to the customer's area) — it decides route / tab / trip. Expected to be the most-used path: tick As per challan → pick area → attach copy. *(Owner, 2026-10-19; an earlier same-day note hid the area for As per challan — reversed, do not re-hide it.)* |
+| Type name | Name box · **As per challan** chip · **Area dropdown, required, NO default** — starts empty ("Select area…"); the user must pick. Reopening a bill that already has a typed ship-to shows its saved area · challan copy upload. |
+| As per challan | Name box locks to "As per challan"; copy becomes **required**; Save disabled until a file is attached. **Area is still REQUIRED, with no default** — the user must pick; it decides route / tab / trip. Expected to be the most-used path: tick As per challan → pick area → attach copy. *(Owner, 2026-10-19; an earlier same-day note hid the area for As per challan — reversed, do not re-hide it.)* *(Owner 2026-10-20: area default to customer's area removed after hand test — do not re-add.)* |
 | Tag | Every typed ship-to (named or As per challan) carries the **existing ship-to-changed tag**, same as a dealer redirect — `isShipToOverride` true. No separate `typed` chip. *(Owner, 2026-10-19; replaces the `typed` chip in the mockup.)* |
 | Upload | Optional (unless As per challan). Up to 3 files, JPG / PNG / PDF. Images shrunk in the browser; server cap under Vercel's ~4.5 MB request limit; a PDF over the cap is refused with a clear message. |
 | Scope line | Billing: "Applies to all bills of this SO, including ones that import later." Floor: "Applies to this bill only." |
@@ -62,14 +62,14 @@ Two kinds of typed ship-to:
 - **Area is required for every typed ship-to.** DB: `shipToText` set ⇒ `shipToAreaId` NOT NULL (add as a CHECK).
 
 🔴 **Rule (owner, 2026-10-19):**
-- **Desk screens (Billing, Floor)** may show **"As per challan"** as the ship-to name, with "billed to {dealer}" underneath. Desk users know what it means.
+- **Desk screens (Billing, Floor)** may show **"As per challan"** as the ship-to name, with "billed to {dealer}" underneath — except the Billing Orders-tab ship-to card, which has no "billed to" line (the Bill To card beside it shows the dealer; owner, 2026-10-20). Desk users know what it means.
 - **Picking screens (supervisor board, picker card, queue, push) and the trip sheet** never show "As per challan" as a name. They show the **bill-to dealer name** first, plus a tag:
   - named typed ship-to → dealer name + ship-to-changed tag + small "→ {site name}" line
   - As per challan → dealer name + **As per challan** tag
 
 | Screen | Named typed ship-to | As per challan |
 |---|---|---|
-| Billing · Orders tab ship-to card | Site name · Pal · ship-to-changed tag | **As per challan** · Udhna · tag · billed to dealer |
+| Billing · Orders tab ship-to card | Same look as a dealer redirect: `changed` pill + site name, then Pal · type. No code, **no "billed to"** | Same look: `changed` pill + **As per challan**, then Udhna · type. No code, **no "billed to"** (the Bill To card shows the dealer) |
 | Billing · Picking list / Print tab / Telephonic | Site name | As per challan · billed to dealer |
 | Floor board, Hold, Cancelled | SHIP TO = site name + tag + "billed to {dealer}". Area = Pal. Sits on the **Pal route tab / card**. | SHIP TO = **As per challan** + tag + "billed to {dealer}". Area = **picked area (Udhna)**. Sits on the **Udhna route**. |
 | Floor DC column | Violet 📎 if a copy exists (grey 📎 as today for tint DC) | Violet 📎 always |

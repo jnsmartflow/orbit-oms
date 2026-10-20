@@ -52,13 +52,6 @@ interface ShipToCardProps {
    * were always violet would make "changed" mean nothing.
    */
   tone?: "default" | "notes";
-  /**
-   * A small muted line under the code / area line — the Billing face's
-   * "billed to {dealer}" under a TYPED ship-to (v27.73, 2026-10-19).
-   * ⚠ DEFAULTS TO `undefined` (React renders nothing), so every other caller's
-   * card is unchanged. Gated at the call site, like actionSlot.
-   */
-  footnote?: React.ReactNode;
 }
 
 function getDeliveryDotClass(type: string | null | undefined): string {
@@ -86,7 +79,6 @@ export function ShipToCard({
   billToDeliveryType,
   actionSlot,
   tone = "default",
-  footnote,
 }: ShipToCardProps): JSX.Element {
   const attention = tone === "notes";
   const capturedDisabled = disabledTagKeys?.has(MO_TAG.captured) ?? false;
@@ -187,10 +179,6 @@ export function ShipToCard({
           {(showCode || showArea) && showRegion && <span>·</span>}
           {showRegion && <span className="text-[11px]">{effectiveDeliveryType}</span>}
         </div>
-      )}
-
-      {footnote && !useBillToFallback && (
-        <div className="mt-[3px] truncate text-[11px] text-gray-500">{footnote}</div>
       )}
 
       {signals.length > 0 && (

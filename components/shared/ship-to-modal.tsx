@@ -118,7 +118,6 @@ export function ShipToModal({
   ownerId,
   refLabel,
   current,
-  customerAreaId,
   searchUrl,
   onClose,
   onSaved,
@@ -129,8 +128,10 @@ export function ShipToModal({
   /** Beside the title: "SO 4500123456" / "OBD 9110143195". */
   refLabel: string | null;
   current: ShipToCurrent;
-  /** The bill-to dealer's area — the Area dropdown's default. */
-  customerAreaId: number | null;
+  /** The bill-to dealer's area. NOT read: the Area dropdown has no default
+   *  (owner, 2026-10-20 — removed after hand test, do not re-add). Kept on the
+   *  props so the two call sites stay unchanged. */
+  customerAreaId?: number | null;
   /** Dealer search; `?q=` is appended. Default: the desk's own route. Reads
    *  either `{ results: [...] }` (Billing) or a bare array (Floor). */
   searchUrl?: string;
@@ -193,7 +194,7 @@ export function ShipToModal({
   const [text, setText] = useState(startTyped && !startApc ? (current.typedText ?? "") : "");
   const [asPerChallan, setAsPerChallan] = useState(startApc);
   const [areas, setAreas] = useState<AreaOption[] | null>(null);
-  const [areaId, setAreaId] = useState<number | "">(current.typedAreaId ?? customerAreaId ?? "");
+  const [areaId, setAreaId] = useState<number | "">(current.typedAreaId ?? "");
 
   useEffect(() => {
     let cancelled = false;
@@ -336,9 +337,7 @@ export function ShipToModal({
 
   const areaHint = asPerChallan
     ? "Pick the area from the challan. Decides route tab + trip stop."
-    : customerAreaId !== null
-      ? "Starts at the customer's area. Decides route tab + trip stop."
-      : "Decides route tab + trip stop.";
+    : "Decides route tab + trip stop.";
 
   const billedTo = current.billedToName ? smartTitleCase(current.billedToName) : null;
   const isTyped = current.typedText !== null;
@@ -590,12 +589,11 @@ export function ShipToModal({
                     onChange={(e) => setAreaId(e.target.value === "" ? "" : Number(e.target.value))}
                     className="w-full rounded-[10px] border border-ink-100 bg-white px-3 py-[11px] text-[16px] outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/10 sm:text-[14px]"
                   >
-                    <option value="">{areas === null ? "Loading areas…" : "Pick area…"}</option>
+                    <option value="">{areas === null ? "Loading areas…" : "Select area…"}</option>
                     {areaOptions.map((a) => (
                       <option key={a.id} value={a.id}>
                         {a.name}
                         {a.deliveryType ? ` · ${a.deliveryType}` : ""}
-                        {a.id === customerAreaId ? " (customer's area)" : ""}
                       </option>
                     ))}
                   </select>

@@ -1686,9 +1686,11 @@ export function ReviewView({
     // or "As per challan" saved from the ship-to modal, with its own picked
     // area. Billing face only (the same gate as overrideDealer): the Focus face
     // and every other screen keep their reads until step 7. Shown exactly as
-    // typed — no smartTitleCase — with no code (it is not a dealer) and a
-    // "billed to {dealer}" line under it. The card's `changed` pill still comes
-    // from shipToOverride, which the save sets true.
+    // typed — no smartTitleCase — with no code (it is not a dealer), so the
+    // card looks like a dealer redirect: `changed` pill, name, area · type. No
+    // "billed to" line — the Bill To card beside it already shows the dealer
+    // (owner, 2026-10-20). The pill comes from shipToOverride, which the save
+    // sets true.
     const typedShipTo = billingV2 && order.shipToText ? order.shipToText : null;
 
     const shipToName = typedShipTo !== null
@@ -2346,9 +2348,6 @@ export function ReviewView({
                 />
               ) : undefined
             }
-            // Typed ship-to only (billing face) — undefined otherwise, so every
-            // other card renders exactly as before (the prop's own contract).
-            footnote={typedShipTo !== null ? `billed to ${billToName}` : undefined}
             billToName={billToName}
             billToCode={order.customerCode}
             billToArea={order.customerArea ?? null}
