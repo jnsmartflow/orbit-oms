@@ -34,6 +34,7 @@ import { obdStopIds } from "@/lib/order-invoices/trip-read";
 
 // ── Vocabulary — lives in lib/trips/redelivery-reasons.ts (pure, client-safe) ──
 import { isRedeliveryReason, redeliveryReasonLabel, type RedeliveryReason } from "@/lib/trips/redelivery-reasons";
+import { effectiveArea } from "@/lib/ship-to/effective";
 export {
   REDELIVERY_REASONS,
   REDELIVERY_REASON_LABELS,
@@ -307,6 +308,10 @@ export async function searchForRedelivery(tripId: number, raw: string): Promise<
     shipToCustomerName: true,
     customer: { select: { customerName: true, area: { select: { name: true } } } },
     shipToOverrideCustomer: { select: { customerName: true, area: { select: { name: true } } } },
+    // A typed ship-to shows its PICKED area (step 7B) — a search of a few
+    // bills, so the relation select is fine here.
+    shipToText: true,
+    shipToArea: { select: { name: true } },
     querySnapshot: { select: { totalVolume: true } },
   });
   if (bills.length === 0) return { ok: true, q: term.q, trip: { id: trip.id, tripNumber: trip.tripNumber }, bills: [] };
@@ -337,7 +342,7 @@ export async function searchForRedelivery(tripId: number, raw: string): Promise<
       obdNumber: b.obdNumber,
       invoiceNo: b.invoiceNo ?? null,
       customerName: dealerDisplayName(dealer?.customerName, b.shipToCustomerName),
-      area: dealer?.area?.name ?? null,
+      area: effectiveArea(b, b.shipToArea, dealer?.area ?? null)?.name ?? null,
       workflowStage: b.workflowStage,
       volumeLitres: b.querySnapshot?.totalVolume ?? null,
       verdict: j.verdict,

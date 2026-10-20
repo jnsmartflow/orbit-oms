@@ -71,9 +71,17 @@ export interface TripSheetBill {
    * The billed dealer is not the place the truck delivers to — decided on CODES:
    * SAP's bill-to code vs the effective delivery point's code (drop-key's
    * effectiveCustomerId → delivery_point_master.customerCode, else SAP's ship-to
-   * code). False when the bill-to code is unknown.
+   * code). False when the bill-to code is unknown. Also true for a TYPED
+   * ship-to (v27.73, step 7B) — its point is its own dealer, so codes match.
    */
   shipToChanged: boolean;
+  /**
+   * A typed "As per challan" ship-to (v27.73, step 7B). PHONE ONLY, and only to
+   * HIDE the "Bill of {dealer}" line — the stop is already titled by the dealer
+   * (lib/trips/drop.ts). 🔴 Never printed: the words "As per challan" appear
+   * nowhere on the trip sheet, A4 or phone (owner, 2026-10-20).
+   */
+  asPerChallan: boolean;
   /** SAP's bill-to name (import_raw_summary), or null when the import has none. */
   billToName: string | null;
 

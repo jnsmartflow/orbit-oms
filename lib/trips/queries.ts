@@ -37,6 +37,7 @@ import { getTripActivity, type TripActivityRow } from "@/lib/trips/activity";
 import { getAttemptHistories, redeliveryReasonLabel, type AttemptHistoryEntry } from "@/lib/trips/redelivery";
 import { getFloorBoard } from "@/lib/floor/queries";
 import type { FloorBoardRow } from "@/lib/floor/types";
+import { isTypedShipTo } from "@/lib/ship-to/effective";
 import { isGiftBill, loadKg, loadLitres } from "@/lib/orders/gift";
 import { onStopsWhere, placeOnTrips, stopRowsSelect } from "@/lib/order-invoices/trip-read";
 import { loadSplitInvoiceRows } from "@/lib/order-invoices/invoice-load";
@@ -462,6 +463,9 @@ async function loadTripBills(drops: ReadonlyArray<{ id: number; tripId: number }
       // The effective dealer, for the delivery type — see TripBillRow.
       customerId: true,
       shipToOverrideCustomerId: true,
+      // A typed ship-to's picked area decides its type instead (step 7B).
+      shipToText: true,
+      shipToAreaId: true,
     },
     orderBy: { id: "asc" },
   });
@@ -483,7 +487,17 @@ async function loadTripBills(drops: ReadonlyArray<{ id: number; tripId: number }
         select: { id: true, areaId: true },
       })
     : [];
-  const areaIds = Array.from(new Set(dealers.map((d) => d.areaId)));
+  // TYPED SHIP-TO (v27.73, step 7B, 2026-10-20) — a typed bill's type is its
+  // PICKED area's, not the dealer's (routing follows the typed area, owner).
+  // Its area id rides the SAME area read below, so no extra statement.
+  const typedAreaIdOf = (o: { shipToText: string | null; shipToAreaId: number | null }): number | null =>
+    isTypedShipTo(o) ? o.shipToAreaId : null;
+  const areaIds = Array.from(
+    new Set([
+      ...dealers.map((d) => d.areaId),
+      ...orders.map(typedAreaIdOf).filter((id): id is number => id !== null),
+    ]),
+  );
   const areas = areaIds.length
     ? await prisma.area_master.findMany({
         where: { id: { in: areaIds } },
@@ -500,9 +514,16 @@ async function loadTripBills(drops: ReadonlyArray<{ id: number; tripId: number }
   const areaIdByDealer = new Map(dealers.map((d) => [d.id, d.areaId]));
   const typeIdByArea = new Map(areas.map((a) => [a.id, a.deliveryTypeId]));
   const typeNameById = new Map(types.map((t) => [t.id, t.name]));
-  const typeIdOf = (o: { customerId: number | null; shipToOverrideCustomerId: number | null }): number | null => {
+  const typeIdOf = (o: {
+    customerId: number | null;
+    shipToOverrideCustomerId: number | null;
+    shipToText: string | null;
+    shipToAreaId: number | null;
+  }): number | null => {
     const dealerId = dealerIdOf(o);
-    const areaId = dealerId !== null ? areaIdByDealer.get(dealerId) : undefined;
+    const typedAreaId = typedAreaIdOf(o);
+    const areaId =
+      typedAreaId !== null ? typedAreaId : dealerId !== null ? areaIdByDealer.get(dealerId) : undefined;
     const typeId = areaId !== undefined ? typeIdByArea.get(areaId) : undefined;
     return typeId !== undefined && typeNameById.has(typeId) ? typeId : null;
   };

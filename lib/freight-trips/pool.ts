@@ -23,6 +23,7 @@ import { getFloorHold } from "@/lib/floor/queries";
 import { applySearch, parseSearch } from "@/lib/floor/search";
 import { computeDropKey } from "@/lib/trips/drop-key";
 import type { FloorScope, FloorHoldRow } from "@/lib/floor/types";
+import { effectiveArea } from "@/lib/ship-to/effective";
 
 /** A pool row: Floor's hold row + the two facts the route cards need. */
 export interface FreightPoolRow extends FloorHoldRow {
@@ -57,15 +58,19 @@ export async function getFreightPoolRows(scope: FloorScope = "All", search?: str
       shipToAreaId: true,
       customer: DEALER,
       shipToOverrideCustomer: DEALER,
+      // A typed ship-to's PICKED area decides its route (step 7B).
+      shipToArea: { select: { primaryRouteId: true } },
     },
   });
   const byId = new Map(facts.map((f) => [f.id, f]));
   return rows.map((r) => {
     const f = byId.get(r.orderId);
     const dealer = f ? f.shipToOverrideCustomer ?? f.customer : null;
+    // Typed area first, else the effective dealer's (lib/ship-to/effective.ts).
+    const area = f ? effectiveArea(f, f.shipToArea, dealer?.area ?? null) : null;
     return {
       ...r,
-      routeId: dealer?.area?.primaryRouteId ?? null,
+      routeId: area?.primaryRouteId ?? null,
       stopKey: f ? computeDropKey(f) : `o:${r.orderId}`,
     };
   });

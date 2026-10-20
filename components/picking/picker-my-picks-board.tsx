@@ -17,7 +17,7 @@ import { FindingTriangleButton } from "./finding-recorder";
 import { useMobileShell } from "@/components/shared/mobile-shell-context";
 import { ModuleMobileHeader } from "@/components/shared/module-mobile-header";
 import { MOBILE_NAV_CLEARANCE } from "@/components/shared/mobile-shell";
-import { AgeBadge, CardShelf, CARD_SHADOW_V2, ColourWorkBadge, RouteDot, SmuBadge, isSmuBadged } from "./card-atoms";
+import { AgeBadge, CardShelf, CARD_SHADOW_V2, ColourWorkBadge, RouteDot, ShipToChangedTag, SmuBadge, isSmuBadged } from "./card-atoms";
 import { BillBand } from "./bill-band";
 // The detail header's symbol run — the five flags that used to be a chip row.
 import { BillSymbols, hasBillSymbols } from "./bill-symbols";
@@ -1687,6 +1687,16 @@ export function PickerMyPicksBoard({
                           the supervisor card; see the longer note there. */}
                       {row.route ?? "—"}
                     </span>
+                    {/* Ship-to changed (step 7B) — the same tag as the
+                        supervisor card, right after the route. */}
+                    {row.isShipToOverride && (
+                      <>
+                        <span className="shrink-0" style={{ color: dup ? DUP_SO_DIVIDER : "#d3d8de" }}>
+                          &middot;
+                        </span>
+                        <ShipToChangedTag onRed={dup} />
+                      </>
+                    )}
                     {row.articleTag !== null && (
                       <>
                         <span className="shrink-0" style={{ color: dup ? DUP_SO_DIVIDER : "#d3d8de" }}>

@@ -13,11 +13,11 @@ import { prisma } from "@/lib/prisma";
 import { getFloorHold, getInvoiceCounts } from "@/lib/floor/queries";
 import { computeDropKey } from "@/lib/trips/drop-key";
 import { formatRouteLabel, rankRouteName } from "@/lib/trips/route-label";
-import { dealerDisplayName } from "@/lib/orders/dealer-name";
 import { isGiftBill, loadKg, loadLitres } from "@/lib/orders/gift";
 import type { FloorHoldRow } from "@/lib/floor/types";
 import { getFreightActivity, type FreightActivityRow } from "./activity";
 import { FREIGHT_TRIP_STATUS } from "./status";
+import { deskShipToName, effectiveArea, isRedirected } from "@/lib/ship-to/effective";
 
 /** A bill on a freight trip: Floor's hold row shape + two freight facts. */
 export interface FreightBillRow extends FloorHoldRow {
@@ -136,6 +136,8 @@ async function activeMembership(tripIds: number[]) {
           materialType: true,
           customer: { select: { area: { select: { primaryRoute: { select: { name: true } } } } } },
           shipToOverrideCustomer: { select: { area: { select: { primaryRoute: { select: { name: true } } } } } },
+          // A typed ship-to's PICKED area names its route (step 7B).
+          shipToArea: { select: { primaryRoute: { select: { name: true } } } },
           querySnapshot: { select: { totalVolume: true, totalWeight: true } },
         },
       },
@@ -167,7 +169,8 @@ function countsOf(members: Membership[]): FreightTripCounts {
 function routeLabelOf(members: Membership[]): string | null {
   const items = members.map((m, i) => {
     const dealer = m.order.shipToOverrideCustomer ?? m.order.customer;
-    return { name: dealer?.area?.primaryRoute?.name ?? null, order: i, hasBills: true };
+    const area = effectiveArea(m.order, m.order.shipToArea, dealer?.area ?? null);
+    return { name: area?.primaryRoute?.name ?? null, order: i, hasBills: true };
   });
   return formatRouteLabel(rankRouteName(items));
 }
@@ -252,6 +255,8 @@ async function plainRows(orderIds: number[]): Promise<Map<number, FloorHoldRow>>
     include: {
       customer: { select: DEALER_SELECT },
       shipToOverrideCustomer: { select: DEALER_SELECT },
+      // A typed ship-to's PICKED area (step 7B) — same shape as the dealer's.
+      shipToArea: { select: DEALER_SELECT.area.select },
       querySnapshot: { select: { articleTag: true, totalVolume: true, totalWeight: true } },
     },
   });
@@ -259,6 +264,9 @@ async function plainRows(orderIds: number[]): Promise<Map<number, FloorHoldRow>>
   const invoiceCounts = await getInvoiceCounts(orders.map((o) => o.id));
   for (const o of orders) {
     const dealer = o.shipToOverrideCustomer ?? o.customer;
+    // Typed ship-to (step 7B): the same title / flag / area rules as
+    // getFloorHold, so a held row and a released row read alike in one table.
+    const area = effectiveArea(o, o.shipToArea, dealer?.area ?? null);
     const w = o.querySnapshot?.totalWeight ?? null;
     out.set(o.id, {
       orderId: o.id,
@@ -268,13 +276,13 @@ async function plainRows(orderIds: number[]): Promise<Map<number, FloorHoldRow>>
       isChallanOrder: o.isChallanOrder,
       // OBD pill (2026-10-16) — the shared Hold table shows it here too.
       isObdImport: o.isObdImport,
-      dealerName: dealerDisplayName(dealer?.customerName, o.shipToCustomerName),
+      dealerName: deskShipToName(o, { effectiveDealer: dealer?.customerName, sap: o.shipToCustomerName }),
       billToName: null,
-      isShipToOverride: o.shipToOverrideCustomerId !== null,
+      isShipToOverride: isRedirected(o),
       smu: o.smu,
-      route: dealer?.area?.primaryRoute?.name ?? null,
-      area: dealer?.area?.name ?? null,
-      deliveryType: dealer?.area?.deliveryType?.name ?? null,
+      route: area?.primaryRoute?.name ?? null,
+      area: area?.name ?? null,
+      deliveryType: area?.deliveryType?.name ?? null,
       isKeyCustomer: dealer?.isKeyCustomer ?? false,
       priorityLevel: o.priorityLevel,
       isTint: o.orderType === "tint",

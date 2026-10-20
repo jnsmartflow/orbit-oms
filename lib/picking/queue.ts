@@ -40,6 +40,7 @@ import { getDuplicateSoNumbers } from "./duplicate-so";
 // post-fetch, batched, predicate-free shape as getDuplicateSoNumbers above; the
 // rule lives in ./colour-work.ts and the read in ./colour-work-query.ts.
 import { getColourWorkByOrder } from "./colour-work-query";
+import { effectiveArea, isRedirected, isTypedShipTo } from "@/lib/ship-to/effective";
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
@@ -663,6 +664,24 @@ export async function getPickingQueue(
       : [];
   const dealerById = new Map(dealerRows.map((d) => [d.id, d]));
 
+  // ── TYPED SHIP-TO areas (v27.73, step 7B, 2026-10-20) ─────────────────────
+  // A typed ship-to routes on its PICKED area (orders.shipToAreaId) — route,
+  // bay, area and delivery type — never the dealer's (owner: routing follows
+  // the typed area everywhere). The card still names the DEALER (no site line,
+  // no "As per challan" — owner, 2026-10-20). Same area shape as DEALER_SELECT,
+  // ONE batched read, and none at all when no row is typed.
+  const typedAreaIds = Array.from(
+    new Set(orders.filter((o) => isTypedShipTo(o) && o.shipToAreaId !== null).map((o) => o.shipToAreaId as number)),
+  );
+  const typedAreaRows =
+    typedAreaIds.length > 0
+      ? await prisma.area_master.findMany({
+          where: { id: { in: typedAreaIds } },
+          select: { id: true, ...DEALER_SELECT.area.select },
+        })
+      : [];
+  const typedAreaById = new Map(typedAreaRows.map(({ id, ...a }) => [id, a]));
+
   // ── Actor names — ONE batched lookup for all FOUR user FKs ────────────────
   // picker / assignedBy / checkedBy (all on pick_assignments) plus the
   // early-release actor on the order itself. Prisma issued a separate query per
@@ -811,6 +830,12 @@ export async function getPickingQueue(
     const plainDealer =
       order.customerId !== null ? dealerById.get(order.customerId) : undefined;
     const effectiveDealer = overrideDealer ?? plainDealer ?? null;
+    // Where the bill GOES: the typed area when typed, else the dealer's (step 7B).
+    const place = effectiveArea(
+      order,
+      order.shipToAreaId !== null ? (typedAreaById.get(order.shipToAreaId) ?? null) : null,
+      effectiveDealer?.area ?? null,
+    );
 
     // Zone / age. Both dispatchTargetDate (@db.Date) and the `anchorMs` date
     // above are UTC-midnight anchored, so the millisecond delta is an exact
@@ -901,7 +926,9 @@ export async function getPickingQueue(
       // allows it); this flag answers "is this dealer in
       // delivery_point_master", which is the question the marker asks.
       dealerInMaster: effectiveDealer != null,
-      isShipToOverride: order.shipToOverrideCustomerId !== null,
+      // Dealer redirect OR typed ship-to (step 7B) — never the bare flag. The
+      // cards show the ship-to-changed tag off this.
+      isShipToOverride: isRedirected(order),
       isHand: order.handAt !== null,
       // CHALLAN pill (2026-10-07) — a scalar the `include` already brings.
       isChallanOrder: order.isChallanOrder,
@@ -910,14 +937,14 @@ export async function getPickingQueue(
       windowId: order.dispatchWindow?.id ?? null,
       windowTime: order.dispatchWindow?.windowTime ?? null,
       windowSortOrder: order.dispatchWindow?.sortOrder ?? null,
-      deliveryType: effectiveDealer?.area?.deliveryType?.name ?? null,
-      route: effectiveDealer?.area?.primaryRoute?.name ?? null,
+      deliveryType: place?.deliveryType?.name ?? null,
+      route: place?.primaryRoute?.name ?? null,
       // Same relation, same optional chain, one line apart — deliberately, so
       // the two can never be read off different routes. `?? null` covers both
       // "no route" and "route with no bay" (HAND, No Route); the UI treats them
       // identically and renders nothing.
-      bayNumber: effectiveDealer?.area?.primaryRoute?.bayNumber ?? null,
-      area: effectiveDealer?.area?.name ?? null,
+      bayNumber: place?.primaryRoute?.bayNumber ?? null,
+      area: place?.name ?? null,
       priorityLevel: order.priorityLevel,
       isKeyCustomer: effectiveDealer?.isKeyCustomer ?? false,
       articleTag: order.querySnapshot?.articleTag ?? null,

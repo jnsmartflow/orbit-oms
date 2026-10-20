@@ -409,6 +409,24 @@ export function RouteDot({
   );
 }
 
+// SHIP-TO CHANGED (free-text ship-to step 7B, 2026-10-20) — Floor's own
+// "→ ship-to changed" wording and violet (brand-800), shown when the bill goes
+// somewhere other than its dealer: a dealer redirect OR a typed ship-to
+// (row.isShipToOverride, lib/ship-to/effective.ts isRedirected — never the bare
+// flag). 🔴 A TAG ONLY (owner): the card keeps the dealer as its title — no
+// site line, never "As per challan". shrink-0 so the route beside it truncates
+// first. On a red duplicate card it takes the muted text colour.
+export function ShipToChangedTag({ onRed = false }: { onRed?: boolean }): React.JSX.Element {
+  return (
+    <span
+      className={`shrink-0 text-[11px] font-semibold ${onRed ? "" : "text-brand-800"}`}
+      style={onRed ? { color: DUP_SO_MUTED } : undefined}
+    >
+      → ship-to changed
+    </span>
+  );
+}
+
 // Rich-card shelf — the DIVIDER + the grey band + CHIPS, plus one optional
 // right-hand slot. Both boards render this; the band colour, the divider and
 // the fade gradient exist here and nowhere else.

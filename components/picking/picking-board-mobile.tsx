@@ -35,7 +35,7 @@ import { ModuleMobileHeader } from "@/components/shared/module-mobile-header";
 // FamilyChip joins the list 2026-08-22 — the picker card renders his ARTICLE
 // TOTALS in the same chip as a bill renders its own packs, so one man's
 // "12 Carton" and one bill's cannot drift apart in style.
-import { AgeBadge, CardShelf, CARD_SHADOW_V2, ColourWorkBadge, FamilyChip, RouteDot, SmuBadge, isSmuBadged } from "./card-atoms";
+import { AgeBadge, CardShelf, CARD_SHADOW_V2, ColourWorkBadge, FamilyChip, RouteDot, ShipToChangedTag, SmuBadge, isSmuBadged } from "./card-atoms";
 // Duplicate-SO red — tokens and tag from the ONE owner. Never re-type a hex.
 import {
   DuplicateSoTag,
@@ -948,6 +948,16 @@ function PickingCard({
                     docs/prompts/drafts/code-update-2026-08-31-picking-sap-name-fallback.md §9. */}
                 {row.route ?? "—"}
               </span>
+              {/* Ship-to changed (step 7B) — after the route: it says where the
+                  bill goes is not the dealer's own shop. */}
+              {row.isShipToOverride && (
+                <>
+                  <span className="shrink-0" style={{ color: dup ? DUP_SO_DIVIDER : "#d3d8de" }}>
+                    &middot;
+                  </span>
+                  <ShipToChangedTag onRed={dup} />
+                </>
+              )}
               {rich && volumeNode !== null && (
                 <>
                   <span className="shrink-0" style={{ color: dup ? DUP_SO_DIVIDER : "#d3d8de" }}>

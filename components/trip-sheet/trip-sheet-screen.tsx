@@ -158,7 +158,11 @@ export function TripSheetScreen({
 }
 
 function BillCard({ bill }: { bill: TripSheetBill }) {
-  const showBillTo = bill.shipToChanged && !!bill.billToName && bill.billToName.trim() !== "";
+  // A NAMED typed ship-to reads like a dealer redirect (the stop is the site,
+  // so "Bill of {dealer}" says whose bill it is). As per challan shows no line:
+  // its stop is already titled by the dealer (step 7B, owner 2026-10-20).
+  const showBillTo =
+    bill.shipToChanged && !bill.asPerChallan && !!bill.billToName && bill.billToName.trim() !== "";
   return (
     <CardShell>
       <div className="px-3.5 py-3">

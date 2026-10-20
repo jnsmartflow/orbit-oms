@@ -32,6 +32,7 @@ import { prisma } from "@/lib/prisma";
 import { getTodayIST } from "@/lib/dates";
 import { getTripsForDate, parseTripDate, type TripSummary } from "@/lib/trips/queries";
 import { effectiveCustomerId } from "@/lib/trips/drop-key";
+import { isAsPerChallanBill, isTypedShipTo } from "@/lib/ship-to/effective";
 import { tripMixLabel } from "@/lib/floor/scope";
 import { salesOfficerByOrder } from "@/lib/floor/queries";
 import { billQuantities, isSiteDelivery, loadBillToByObd, loadSnapshots } from "@/lib/reports/bill-facts";
@@ -316,7 +317,12 @@ async function loadSheetCore(trips: CoreTrip[]): Promise<Map<number, SheetCore>>
       articleSource: typed !== null ? "typed" : "sap",
       litres: q.litres,
       kg: q.kg,
-      shipToChanged: billToCode !== null && deliveryCode !== null && billToCode !== deliveryCode,
+      // Codes differ, OR a typed ship-to (v27.73, step 7B, owner 2026-10-20):
+      // a typed bill's effective point is its own dealer, so the codes match
+      // and alone would never say it.
+      shipToChanged:
+        (billToCode !== null && deliveryCode !== null && billToCode !== deliveryCode) || isTypedShipTo(o),
+      asPerChallan: isAsPerChallanBill(o),
       billToName: blank(billTo?.name),
       soName,
       soId: so?.salesOfficerId ?? null,
