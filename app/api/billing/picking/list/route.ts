@@ -4,6 +4,7 @@ import { checkAnyPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { getISTDayRange } from "@/lib/dates";
 import { getHideExclusion } from "@/lib/hide/visibility";
+import { isRedirected } from "@/lib/ship-to/effective";
 import {
   buildBillingPendingWhere,
   buildBillingInvoicedInfoWhere,
@@ -138,6 +139,8 @@ export async function GET(req: Request): Promise<NextResponse> {
       // flag can be true with a null id on free-text redirects (CORE §7.3),
       // where no dealer row exists and the displayed name does not change.
       shipToOverrideCustomerId: true,
+      // A typed ship-to (v27.73) also raises the ⚑ (step 7C); the name stays as today.
+      shipToText: true,
       shipToOverrideCustomer: { select: { customerName: true } },
       dispatchTargetDate: true,
       dispatchWindow: { select: { id: true, windowTime: true, label: true } },
@@ -192,7 +195,8 @@ export async function GET(req: Request): Promise<NextResponse> {
     id: o.id,
     obdNumber: o.obdNumber,
     shipToName: o.shipToOverrideCustomer?.customerName ?? o.shipToCustomerName,
-    shipToOverridden: o.shipToOverrideCustomerId !== null,
+    // Dealer redirect OR typed ship-to (step 7C) — lib/ship-to/effective.ts.
+    shipToOverridden: isRedirected(o),
     dispatchTargetDate: o.dispatchTargetDate,
     dispatchWindow: o.dispatchWindow,
     volume: o.volume,

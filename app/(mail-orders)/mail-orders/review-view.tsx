@@ -43,6 +43,7 @@ import { useBillingActionsAccess } from "@/components/billing/billing-actions-ac
 import type { DispatchWindow } from "@/components/floor/dispatch-slot-picker";
 import { BillToCard } from "@/components/mail-orders/bill-to-card";
 import { ShipToCard } from "@/components/mail-orders/ship-to-card";
+import { isRedirected } from "@/lib/ship-to/effective";
 import { MetaRibbon, getMatchChip } from "@/components/mail-orders/meta-ribbon";
 import { InstructionsStrip } from "@/components/mail-orders/instructions-strip";
 import {
@@ -1693,6 +1694,20 @@ export function ReviewView({
     // sets true.
     const typedShipTo = billingV2 && order.shipToText ? order.shipToText : null;
 
+    // THE "CHANGED" RULE ON THE BILLING FACE (step 7C, owner 2026-10-20): a
+    // dealer redirect OR a typed ship-to (lib/ship-to/effective.ts) — NEVER the
+    // bare shipToOverride flag, which ~393 mail orders carry with no id and no
+    // text (old email-remark captures). Drives the card's violet + `changed`
+    // pill and the pencil's "changed" state. The Focus face (billingV2 off)
+    // keeps the flag: its amber "⚑ captured" pill MEANS "captured from the
+    // email remark". Display (name / area) is unchanged on both faces.
+    const shipToChanged = billingV2
+      ? isRedirected({
+          shipToOverrideCustomerId: order.shipToOverrideCustomerId ?? null,
+          shipToText: order.shipToText ?? null,
+        })
+      : (order.shipToOverride ?? false);
+
     const shipToName = typedShipTo !== null
       ? typedShipTo
       : order.shipToOverride
@@ -2309,7 +2324,7 @@ export function ReviewView({
             shipToCode={shipToCode}
             shipToArea={shipToArea}
             shipToDeliveryType={shipToDeliveryType}
-            isOverride={order.shipToOverride ?? false}
+            isOverride={shipToChanged}
             signals={shipSignalsForCard}
             disabledTagKeys={disabledTagKeys}
             // Phase 2 — undefined unless the flag is on, so the card renders
@@ -2337,7 +2352,7 @@ export function ReviewView({
                     code: shipToCode,
                     area: shipToArea,
                     deliveryType: shipToDeliveryType,
-                    isChanged: order.shipToOverride ?? false,
+                    isChanged: shipToChanged,
                     typedText: order.shipToText ?? null,
                     typedAreaId: order.shipToAreaId ?? null,
                     billedToName: order.customerName ?? null,

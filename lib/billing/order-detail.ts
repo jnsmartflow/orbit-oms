@@ -19,6 +19,7 @@
 import { prisma } from "@/lib/prisma";
 import { resolveCatalogByCode } from "@/lib/picking/resolve-lines";
 import type { BillingDetailLine, BillingOrderDetail } from "@/lib/billing/types";
+import { isRedirected } from "@/lib/ship-to/effective";
 
 /** The panel payload minus the Picking tab's own `isPending` fact. */
 export type BillingOrderDetailBase = Omit<BillingOrderDetail, "isPending">;
@@ -51,6 +52,9 @@ export async function loadBillingOrderDetail(orderId: number): Promise<BillingOr
       // derived from the ID and not from the scalar `shipToOverride`, which can
       // be true with a null id on a free-text redirect (CORE §7.3).
       shipToOverrideCustomerId: true,
+      // A typed ship-to (v27.73) also counts as changed (step 7C) — the name
+      // shown below stays the dealer's, as today.
+      shipToText: true,
       shipToOverrideCustomer: { select: { customerName: true, customerCode: true } },
       customer: { select: { customerName: true, customerCode: true } },
     },
@@ -163,7 +167,9 @@ export async function loadBillingOrderDetail(orderId: number): Promise<BillingOr
     obdDateTime: (order.obdEmailDate ?? order.orderDateTime)?.toISOString() ?? null,
     customerName: dealer?.customerName ?? order.shipToCustomerName ?? null,
     customerCode: dealer?.customerCode ?? order.shipToCustomerId ?? null,
-    isShipToOverride: order.shipToOverrideCustomerId !== null,
+    // Dealer redirect OR typed ship-to (step 7C, draft §7 fix 4) — never the
+    // bare flag (lib/ship-to/effective.ts isRedirected).
+    isShipToOverride: isRedirected(order),
     lines,
     lineCount: lines.length,
     totalLitres,

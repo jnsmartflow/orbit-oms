@@ -102,6 +102,14 @@ export async function POST(
       dispatchStatus: order.dispatchStatus,
       dispatchPriority: order.dispatchPriority,
       shipToOverride: order.shipToOverride,
+      // The WHOLE ship-to travels with half B (draft §7 fix 1, step 7C): the
+      // dealer redirect and the typed ship-to (text + its required area — the
+      // CHECK needs the area whenever the text is set). Without these, half B
+      // carried the bare flag only and its bills imported with no ship-to.
+      // Challan copies stay on the original mail order (ship_to_copies.moOrderId).
+      shipToOverrideCustomerId: order.shipToOverrideCustomerId,
+      shipToText: order.shipToText,
+      shipToAreaId: order.shipToAreaId,
       slotToOverride: order.slotToOverride,
       emailEntryId: `${order.emailEntryId}__B`,
       status: "pending",
