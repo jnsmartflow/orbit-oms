@@ -79,6 +79,48 @@ export async function countBillingCopiesVisible(bill: BillShipToState): Promise<
   return where === null ? 0 : prisma.ship_to_copies.count({ where });
 }
 
+/**
+ * Active copies each bill SHOWS (its own Floor copies + the SO's Billing copies
+ * still visible on it), for a whole board at once — step 7A's DC column.
+ *
+ * Only a TYPED bill can show a copy: Floor copies exist only beside a typed
+ * ship-to (dealer pick / Reset soft-remove them) and the Billing rule above
+ * needs typed text. So the reads run over the typed bills only — 0 queries when
+ * none is typed, at most 2 otherwise (one groupBy, one findMany), never one per
+ * bill. Bills with no copy are absent from the map.
+ */
+export async function copyCountsForBills(
+  bills: Array<BillShipToState & { id: number }>,
+): Promise<Map<number, number>> {
+  const out = new Map<number, number>();
+  const typed = bills.filter((b) => b.shipToText !== null && b.shipToOverrideCustomerId === null);
+  if (typed.length === 0) return out;
+
+  // 1. Each bill's own (Floor) copies.
+  const own = await prisma.ship_to_copies.groupBy({
+    by: ["orderId"],
+    where: { orderId: { in: typed.map((b) => b.id) }, removedAt: null },
+    _count: { _all: true },
+  });
+  for (const g of own) if (g.orderId !== null) out.set(g.orderId, g._count._all);
+
+  // 2. The SOs' Billing copies, then billingCopyVisibleOnBill per bill — the
+  // same rule billingCopiesVisibleWhere spells as a WHERE.
+  const sos = Array.from(new Set(typed.map((b) => b.soNumber?.trim() ?? "").filter((s) => s !== "")));
+  if (sos.length === 0) return out;
+  const billing = await prisma.ship_to_copies.findMany({
+    where: { removedAt: null, moOrderId: { not: null }, moOrder: { soNumber: { in: sos } } },
+    select: { moOrder: { select: { soNumber: true, shipToText: true, shipToAreaId: true } } },
+  });
+  for (const b of typed) {
+    const so = b.soNumber?.trim() ?? "";
+    if (so === "") continue;
+    const n = billing.filter((c) => c.moOrder !== null && c.moOrder.soNumber === so && billingCopyVisibleOnBill(b, c.moOrder)).length;
+    if (n > 0) out.set(b.id, (out.get(b.id) ?? 0) + n);
+  }
+  return out;
+}
+
 // ── Owner-scoped reads ────────────────────────────────────────────────────
 
 /** The active copies an owner holds: a mail order's (Billing) or a bill's own (Floor). */

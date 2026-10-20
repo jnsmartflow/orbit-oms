@@ -23,10 +23,14 @@
 // records — never compare ids across spaces, and never let two spaces share a
 // key without a discriminator.
 
+import { typedDropText } from "@/lib/ship-to/effective";
+
 /** The prefix for a resolved `delivery_point_master` row. */
 const CUSTOMER_PREFIX = "c:";
 /** The prefix for an unmatched bill, keyed on SAP's own ship-to code. */
 const SHIP_TO_PREFIX = "s:";
+/** The prefix for a TYPED ship-to (v27.73) — checked FIRST by chk_trip_drops_key. */
+const TYPED_PREFIX = "t:";
 
 /**
  * The fields of an order this module needs. A structural subset, declared here
@@ -40,6 +44,10 @@ export interface DropKeyInput {
   shipToOverrideCustomerId: number | null;
   /** orders.shipToCustomerId — SAP's own ship-to code. String, NOT NULL live. */
   shipToCustomerId: string;
+  /** orders.shipToText — a typed ship-to (v27.73). Set → a `t:` stop of its own. */
+  shipToText: string | null;
+  /** orders.shipToAreaId — the typed ship-to's area; part of the `t:` key. */
+  shipToAreaId: number | null;
 }
 
 /**
@@ -84,6 +92,11 @@ export function effectiveCustomerId(order: DropKeyInput): number | null {
  * captured — do not invent an address here.
  */
 export function computeDropKey(order: DropKeyInput): string {
+  // TYPED SHIP-TO FIRST (v27.73, free-text step 7A, 2026-10-20) — the same
+  // order as the live CHECK. Its own stop, never the dealer's c: stop, and two
+  // areas never share one (lib/ship-to/effective.ts typedDropText).
+  const typed = typedDropText(order);
+  if (typed !== null) return `${TYPED_PREFIX}${typed}`;
   const customerId = effectiveCustomerId(order);
   return customerId !== null
     ? `${CUSTOMER_PREFIX}${customerId}`
@@ -100,4 +113,14 @@ export function computeDropKey(order: DropKeyInput): string {
  */
 export function dropShipToCode(order: DropKeyInput): string {
   return order.shipToCustomerId;
+}
+
+/**
+ * The `shipToText` to store on the drop row: the typed stop body, or null.
+ * 🔴 chk_trip_drops_key requires dropKey = 't:' || shipToText whenever this is
+ * set, and the c:/s: form whenever it is null — so it must come from the SAME
+ * function computeDropKey used, never be re-derived at a call site.
+ */
+export function dropShipToText(order: DropKeyInput): string | null {
+  return typedDropText(order);
 }

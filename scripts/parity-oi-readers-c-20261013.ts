@@ -214,7 +214,7 @@ interface Dump {
     where: { id: { in: sampleIds } },
     select: {
       id: true, obdNumber: true, workflowStage: true, dispatchStatus: true, isRemoved: true,
-      customerId: true, shipToOverrideCustomerId: true, shipToCustomerId: true,
+      customerId: true, shipToOverrideCustomerId: true, shipToCustomerId: true, shipToText: true, shipToAreaId: true,
       tripDropId: true, tripDrop: { select: { tripId: true, dropKey: true, trip: { select: { tripNumber: true } } } },
     },
   });

@@ -20,7 +20,8 @@
 // Sequential awaits, never prisma.$transaction (CORE §3).
 
 import { prisma } from "@/lib/prisma";
-import { computeDropKey, dropShipToCode, effectiveCustomerId, type DropKeyInput } from "@/lib/trips/drop-key";
+import { computeDropKey, dropShipToCode, dropShipToText, effectiveCustomerId, type DropKeyInput } from "@/lib/trips/drop-key";
+import { isAsPerChallanBill } from "@/lib/ship-to/effective";
 import { dealerDisplayName } from "@/lib/orders/dealer-name";
 
 /**
@@ -140,6 +141,10 @@ export async function findOrCreateTripDrop(tripId: number, order: TripDropInput)
   // customer — the same id `computeDropKey` keyed on, so the name and the
   // key can never describe different shops.
   const effectiveId = effectiveCustomerId(order);
+  // TYPED SHIP-TO (v27.73, step 7A, 2026-10-20) — its own stop. The key body
+  // and the column come from ONE function (dropShipToText), so the live CHECK
+  // dropKey = 't:' || shipToText always holds.
+  const typedText = dropShipToText(order);
   const customer =
     effectiveId !== null
       ? await prisma.delivery_point_master.findUnique({
@@ -151,6 +156,18 @@ export async function findOrCreateTripDrop(tripId: number, order: TripDropInput)
           },
         })
       : null;
+
+  // A typed stop's area and route are the PICKED area's (routing follows the
+  // typed area everywhere — owner, 2026-10-20), never the dealer's. One read,
+  // only for a typed stop.
+  const typedArea =
+    typedText !== null && order.shipToAreaId !== null
+      ? await prisma.area_master.findUnique({
+          where: { id: order.shipToAreaId },
+          select: { name: true, primaryRoute: { select: { name: true } } },
+        })
+      : null;
+  const dealerName = dealerDisplayName(customer?.customerName, order.shipToCustomerName);
 
   return prisma.trip_drops.create({
     data: {
@@ -164,6 +181,7 @@ export async function findOrCreateTripDrop(tripId: number, order: TripDropInput)
       // on this column; it is computed by the one module that owns the
       // rule (lib/trips/drop-key.ts) and never inline.
       dropKey,
+      shipToText: typedText,
       // The name that goes on the sheet. Master name first, then the name
       // SAP put on the bill, then the literal — the same fallback ladder
       // lib/picking/queue.ts uses for `dealerName`, so an unmatched bill
@@ -173,9 +191,15 @@ export async function findOrCreateTripDrop(tripId: number, order: TripDropInput)
       // `nonBlank` since 2026-09-29 (dealerDisplayName): a bare `??` let an
       // empty or whitespace-only SAP name through and made a BLANK stop.
       // Existing snapshots are not rewritten.
-      customerName: dealerDisplayName(customer?.customerName, order.shipToCustomerName),
-      areaName: customer?.area?.name ?? null,
-      routeName: customer?.area?.primaryRoute?.name ?? null,
+      //
+      // A TYPED stop (owner, 2026-10-20): the site name as typed; "As per
+      // challan" is never a stop name — the dealer's name stands instead.
+      // customerId above stays the bill's dealer (the CHECK does not read it on
+      // the t: branch); trip reports still find the dealer by it.
+      customerName:
+        typedText !== null && !isAsPerChallanBill(order) ? (order.shipToText as string).trim() : dealerName,
+      areaName: typedText !== null ? (typedArea?.name ?? null) : (customer?.area?.name ?? null),
+      routeName: typedText !== null ? (typedArea?.primaryRoute?.name ?? null) : (customer?.area?.primaryRoute?.name ?? null),
     },
     select: { id: true },
   });

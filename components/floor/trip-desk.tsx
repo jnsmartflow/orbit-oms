@@ -994,6 +994,18 @@ export function TripDesk({
     // the pool, never a rule about what a stop may contain.
     const rowById = new Map(unfilteredRows.map((r) => [r.orderId, r] as const));
     const drops = tripDetail?.id === trip.id ? tripDetail.drops : [];
+    // The DC column, decided ONCE for every stop table of this trip (step 7A):
+    // each stop is its own FloorTable with its own header, so a per-table
+    // choice would shift the columns between stops. On when any bill or
+    // re-delivery on the trip has a tint DC or a typed ship-to copy.
+    const tripShowDc = drops.some(
+      (d) =>
+        d.orderIds.some((id) => {
+          const r = rowById.get(id);
+          return r !== undefined && (r.challanNumber !== null || r.shipToCopyCount > 0);
+        }) ||
+        (d.redeliveries ?? []).some((x) => x.row !== null && (x.row.challanNumber !== null || x.row.shipToCopyCount > 0)),
+    );
     // ⚠ THE SAME FRESHNESS TEST AS `drops`. tripDetail lags the rail by one
     // fetch when the planner clicks between trips, and showing the PREVIOUS
     // trip's history under this trip's buttons would be worse than showing none
@@ -1107,6 +1119,7 @@ export function TripDesk({
                     hideTripTag
                     // Trip stops show Area, not Route (owner 2026-10-15). Pool/Tinting tables keep Route.
                     showArea
+                    showDc={tripShowDc}
                     selectionLocked={adding}
                     {...selProps}
                     // Re-delivery rows tick by their own id (never the History

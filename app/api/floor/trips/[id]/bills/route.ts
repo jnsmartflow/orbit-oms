@@ -219,6 +219,9 @@ export async function POST(
           shipToOverrideCustomerId: true,
           shipToCustomerId: true,
           shipToCustomerName: true,
+          // The typed ship-to (v27.73) — computeDropKey's t: branch needs both.
+          shipToText: true,
+          shipToAreaId: true,
           // The Hand mark — a Hand bill rides only a Hand trip (add branch).
           handAt: true,
           // The challan-link refusal (add branch, 2026-10-06).

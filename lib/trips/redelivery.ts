@@ -405,6 +405,9 @@ export async function addRedeliveries(
           shipToOverrideCustomerId: true,
           shipToCustomerId: true,
           shipToCustomerName: true,
+          // The typed ship-to (v27.73) — computeDropKey's t: branch needs both.
+          shipToText: true,
+          shipToAreaId: true,
         },
       });
       if (!order) {

@@ -79,7 +79,7 @@ export async function POST(req: Request): Promise<NextResponse> {
     try {
       const order = await prisma.orders.findUnique({
         where: { id: orderId },
-        select: { obdNumber: true, orderType: true, smu: true, isRemoved: true, customerId: true, shipToOverrideCustomerId: true, shipToCustomerId: true, shipToText: true },
+        select: { obdNumber: true, orderType: true, smu: true, isRemoved: true, customerId: true, shipToOverrideCustomerId: true, shipToCustomerId: true, shipToText: true, shipToAreaId: true },
       });
       const notTint = tintManagerBillRefusal(order, "shop-delivery");
       if (notTint !== null || order === null) {

@@ -61,26 +61,32 @@ Two kinds of typed ship-to:
 - **As per challan** — no name, but an **area is picked**; a copy is always attached.
 - **Area is required for every typed ship-to.** DB: `shipToText` set ⇒ `shipToAreaId` NOT NULL (add as a CHECK).
 
-🔴 **Rule (owner, 2026-10-19):**
-- **Desk screens (Billing, Floor)** may show **"As per challan"** as the ship-to name, with "billed to {dealer}" underneath — except the Billing Orders-tab ship-to card, which has no "billed to" line (the Bill To card beside it shows the dealer; owner, 2026-10-20). Desk users know what it means.
-- **Picking screens (supervisor board, picker card, queue, push) and the trip sheet** never show "As per challan" as a name. They show the **bill-to dealer name** first, plus a tag:
-  - named typed ship-to → dealer name + ship-to-changed tag + small "→ {site name}" line
-  - As per challan → dealer name + **As per challan** tag
+🔴 **Rule (owner, 2026-10-20 — final):**
+*(Owner 2026-10-20: detail only on Floor; picking = dealer + tag; trip sheet plain; area in stop key — replaces the 2026-10-19 table.)*
+
+- **Redirected / tag rule everywhere:** dealer id set **OR** `shipToText` set. Never the bare `shipToOverride` flag (~393 mail orders / ~174 open bills carry it with no id and no text).
+- **Routing follows the typed area EVERYWHERE** — a typed bill's area, route and delivery type come from `shipToAreaId`, not the dealer's.
+- **Floor — full detail.** Title = the typed name, or **As per challan** · the existing **"→ ship-to changed"** chip · **"billed to {dealer}"** · violet 📎. Reuses the dealer-redirect row exactly (`ShipToBlockHeader` / `buildBlock`, the "{dealer} → {target}" table line) — no new design. Hold and Cancelled show the same title + chip.
+- **Picking** (supervisor board, picker card, queue): **dealer name + the ship-to-changed tag only.** No site line, no "As per challan" text. **Push text unchanged.**
+- **Trip sheet, A4 and phone:** named → **site name · area**; As per challan → **dealer name · area**. No "As per challan", no "carry copy", no "billed to" on A4 (keeps the 2026-10-09 rule).
+- **Billing lists** (Picking list / Print tab / Telephonic): display unchanged. Billing's Orders-tab ship-to card keeps its 2026-10-20 look (`changed` pill + typed name, area · type, no code, no "billed to"); only its pill moves to "id or text" (step 7C).
 
 | Screen | Named typed ship-to | As per challan |
 |---|---|---|
-| Billing · Orders tab ship-to card | Same look as a dealer redirect: `changed` pill + site name, then Pal · type. No code, **no "billed to"** | Same look: `changed` pill + **As per challan**, then Udhna · type. No code, **no "billed to"** (the Bill To card shows the dealer) |
-| Billing · Picking list / Print tab / Telephonic | Site name | As per challan · billed to dealer |
-| Floor board, Hold, Cancelled | SHIP TO = site name + tag + "billed to {dealer}". Area = Pal. Sits on the **Pal route tab / card**. | SHIP TO = **As per challan** + tag + "billed to {dealer}". Area = **picked area (Udhna)**. Sits on the **Udhna route**. |
-| Floor DC column | Violet 📎 if a copy exists (grey 📎 as today for tint DC) | Violet 📎 always |
-| Floor detail panel | Site name, Pal, billed to, 📎 copy | As per challan, Udhna, billed to, 📎 copy |
+| Floor board / route cards / trip stops | Site name · "→ ship-to changed" · billed to {dealer} · violet 📎 | **As per challan** · chip · billed to {dealer} · violet 📎 |
+| Floor Hold / Cancelled | Site name + chip (no DC column) | As per challan + chip (no DC column) |
+| Floor DC column | Violet 📎 if a copy shows (grey 📎 = tint DC, as today) | Violet 📎 |
 | Floor search | Finds by site name or dealer name | Finds by dealer name |
-| Picking queue / picker card / supervisor board / push | **Dealer name** + ship-to tag + "→ Site, Pal Gam" (small) | **Dealer name** + As per challan tag |
-| Trips | Own stop (`t:` key), named by site name, Pal route | Own stop (`t:` key, text "as per challan", dealer-scoped), named by **dealer name** + tag, **Udhna route** |
-| Load plan, snapshot, day check, route-card kg/L | Counted under Pal | Counted under Udhna |
-| Trip sheet (driver A4) | Stop = **site name · Pal**, small "billed to {dealer}", 📄 if copy | Stop = **dealer name · Udhna**, "As per challan — carry dealer copy 📄" |
+| Picking queue / picker card / supervisor board | Dealer name + ship-to-changed tag | Dealer name + ship-to-changed tag |
+| Push | Unchanged (dealer name) | Unchanged (dealer name) |
+| Trips | Own stop (`t:` key), named by **site name**, typed area's route | Own stop (`t:` key), named by **dealer name**, typed area's route |
+| Load plan, snapshot, day check, route-card kg/L | Counted under the typed area | Counted under the typed area |
+| Trip sheet (A4 + phone) | Stop = **site name · area** | Stop = **dealer name · area** |
+| Billing lists | Unchanged | Unchanged |
 
-The **Floor DC column** is one column holding a **plain 📎 pin, no text label** (owner, 2026-10-19 — the ship-to cell's tag already says why). System tint challan pin = grey, prints as today. Uploaded copy pin = violet, opens the file to view/print. A row with both shows two pins. It shows on **every Floor tab incl. main** when a row has either.
+**Stop key (owner, 2026-10-20):** a typed bill is a stop of its own — `dropKey = 't:' || shipToText` (live `chk_trip_drops_key`), where `trip_drops.shipToText = '<scope>/<shipToAreaId>/<normalised text>'`. `scope` = the bill's `customerId`, else SAP's `shipToCustomerId`. Only the text part is normalised: lower-case, whitespace (newlines too) collapsed, `|` and `#` stripped, trimmed, capped at 80; empty → today's `c:` / `s:`. **The area is in the key: same text + different area = different stop.** A typed stop's snapshot: `customerName` = the site name (named) or the dealer name (As per challan); `areaName` / `routeName` from the typed area. Code: `lib/ship-to/effective.ts` `typedDropText` → `lib/trips/drop-key.ts` / `drop.ts` (step 7A).
+
+The **Floor DC column** is one column holding a **plain 📎 pin, no text label** (owner, 2026-10-19 — the ship-to cell's tag already says why). System tint challan pin = grey, prints as today. Uploaded copy pin = violet, opens the file to view/print. A row with both shows two pins. It shows on **every Floor tab incl. main** when a row has either — **except Hold and Cancelled** (owner, 2026-10-20 → §6).
 
 ## 6. Out of scope v1 (→ ROADMAP)
 
@@ -89,6 +95,7 @@ The **Floor DC column** is one column holding a **plain 📎 pin, no text label*
 - **Tint Manager** screens, shared order-detail panel, CI detail, Mail Orders Table view keep reading the dealer.
 - Printing the uploaded copy inside the trip sheet.
 - The stale `[→ …]` suffix in `deliveryRemarks`.
+- **DC column on Floor Hold and Cancelled** (their own tables, no DC column today) — owner, 2026-10-20.
 
 ## 7. Fixes in the same build
 

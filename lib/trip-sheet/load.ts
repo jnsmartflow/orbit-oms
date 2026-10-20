@@ -74,6 +74,9 @@ const BILL_SELECT = {
   customerId: true,
   shipToOverrideCustomerId: true,
   shipToCustomerId: true,
+  // The typed ship-to (v27.73) — computeDropKey's t: branch needs both.
+  shipToText: true,
+  shipToAreaId: true,
   // Phone-only facts (2026-10-10): the SO rule's inputs and Direct Loading.
   smu: true,
   soNumber: true,
@@ -92,6 +95,8 @@ type BillRow = {
   customerId: number | null;
   shipToOverrideCustomerId: number | null;
   shipToCustomerId: string;
+  shipToText: string | null;
+  shipToAreaId: number | null;
   smu: string | null;
   soNumber: string | null;
   directLoadedAt: Date | null;

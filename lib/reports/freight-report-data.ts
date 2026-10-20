@@ -136,6 +136,9 @@ const ORDER_SELECT = {
   shipToOverrideCustomerId: true,
   shipToCustomerId: true,
   shipToCustomerName: true,
+  // The typed ship-to (v27.73) — computeDropKey's t: branch needs both.
+  shipToText: true,
+  shipToAreaId: true,
   invoiceNo: true,
   smu: true,
   workflowStage: true,

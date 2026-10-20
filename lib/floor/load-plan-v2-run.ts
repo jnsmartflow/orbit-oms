@@ -15,6 +15,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { computeDropKey } from "@/lib/trips/drop-key";
+import { effectiveArea, isTypedShipTo } from "@/lib/ship-to/effective";
 import { isGiftBill, loadKg } from "@/lib/orders/gift";
 import { loadSplitInvoiceRows } from "@/lib/order-invoices/invoice-load";
 import { placeLoad } from "@/lib/floor/invoice-rows";
@@ -68,6 +69,9 @@ export async function runLoadPlanV2(req: LoadPlanV2Request): Promise<LoadPlanV2R
             customerId: true,
             shipToOverrideCustomerId: true,
             shipToCustomerId: true,
+            // The typed ship-to (v27.73) — computeDropKey's t: branch needs both.
+            shipToText: true,
+            shipToAreaId: true,
             dispatchTargetDate: true,
             materialType: true,
             querySnapshot: { select: { totalWeight: true } },
@@ -82,11 +86,30 @@ export async function runLoadPlanV2(req: LoadPlanV2Request): Promise<LoadPlanV2R
     orders,
     new Map(orders.map((o) => [o.id, o.querySnapshot?.totalWeight ?? null] as const)),
   );
+  // A TYPED ship-to (v27.73, step 7A) plans under its PICKED area — routing
+  // follows the typed area everywhere (owner, 2026-10-20). One read of those
+  // areas, none when no bill is typed.
+  const typedIds = Array.from(
+    new Set(orders.filter((o) => isTypedShipTo(o) && o.shipToAreaId !== null).map((o) => o.shipToAreaId as number)),
+  );
+  const typedAreas = typedIds.length
+    ? await prisma.area_master.findMany({
+        where: { id: { in: typedIds } },
+        select: { id: true, primaryRouteId: true, deliveryType: { select: { name: true } } },
+      })
+    : [];
+  const typedById = new Map(typedAreas.map((a) => [a.id, { areaId: a.id, area: a }]));
+
   const todayMs = istTodayDateOnly().getTime();
   const bills: V2Bill[] = [];
   for (const o of orders) {
-    const dealer = o.shipToOverrideCustomer ?? o.customer;
-    if (dealer?.area?.deliveryType?.name !== "Upcountry") continue;
+    // The place the bill goes: { areaId, area } of the typed area or the dealer.
+    const place = effectiveArea(
+      o,
+      o.shipToAreaId !== null ? (typedById.get(o.shipToAreaId) ?? null) : null,
+      o.shipToOverrideCustomer ?? o.customer,
+    );
+    if (place?.area?.deliveryType?.name !== "Upcountry") continue;
     const due = o.dispatchTargetDate;
     const ageDays = due === null ? 0 : Math.max(0, Math.floor((todayMs - due.getTime()) / MS_PER_DAY));
     bills.push({
@@ -101,8 +124,8 @@ export async function runLoadPlanV2(req: LoadPlanV2Request): Promise<LoadPlanV2R
         isGiftBill(o.materialType),
       ),
       stopKey: computeDropKey(o),
-      areaId: dealer.areaId,
-      routeId: dealer.area.primaryRouteId,
+      areaId: place.areaId,
+      routeId: place.area.primaryRouteId,
       overdue: ageDays > 0,
       ageDays,
     });

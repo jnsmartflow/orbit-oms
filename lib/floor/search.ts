@@ -65,6 +65,12 @@ export interface Searchable {
   /** The text that SO name came from (2026-10-10) — matched too, so a short
    *  name ("Roopesh") is still found by the long one ("Jha"). */
   salesOfficerRawName?: string | null;
+  /** The bill's own dealer (orders.customer) and SAP's bill-to name — matched
+   *  so a TYPED ship-to bill (v27.73, step 7A), whose `dealerName` is now the
+   *  site name or "As per challan", is still found by its dealer. Optional:
+   *  board and Cancelled rows carry customerName; board and Hold carry billToName. */
+  customerName?: string | null;
+  billToName?: string | null;
 }
 
 /** Invoice and SO need at least this many digits — a shorter tail is too
@@ -148,6 +154,8 @@ function matchesText(row: Searchable, text: string): boolean {
     (row.invoiceRows ?? []).some((r) => (r.invoiceNo ?? "").toLowerCase().includes(text)) ||
     (row.soNumber ?? "").toLowerCase().includes(text) ||
     row.dealerName.toLowerCase().includes(text) ||
+    (row.customerName ?? "").toLowerCase().includes(text) ||
+    (row.billToName ?? "").toLowerCase().includes(text) ||
     (row.route ?? "").toLowerCase().includes(text) ||
     (row.salesOfficerName ?? "").toLowerCase().includes(text) ||
     (row.salesOfficerRawName ?? "").toLowerCase().includes(text) ||

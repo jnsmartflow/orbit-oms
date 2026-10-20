@@ -6,7 +6,7 @@ import { parseBillLookupTerm, findBillsByNumber, invoiceRowMatches } from "@/lib
 import { tripsOnDeskWhere, TRIP_CANCELLED } from "@/lib/trips/live-trips";
 import { parseTripDate } from "@/lib/trips/queries";
 import { getFloorCancelled } from "@/lib/floor/queries";
-import { dealerDisplayName } from "@/lib/orders/dealer-name";
+import { deskShipToName } from "@/lib/ship-to/effective";
 import { getTodayIST } from "@/lib/dates";
 import type { FloorCancelledRow, FloorSearchHit, FloorSearchTarget } from "@/lib/floor/types";
 
@@ -66,6 +66,8 @@ export async function GET(req: Request): Promise<NextResponse> {
     workflowStage: true,
     dispatchStatus: true,
     shipToCustomerName: true,
+    // A typed ship-to (v27.73, step 7A) names the hit like the board row does.
+    shipToText: true,
     customer: { select: { customerName: true } },
     shipToOverrideCustomer: { select: { customerName: true } },
     // "Which trip is this bill on" — the DERIVED stop (lowest-seq invoice row),
@@ -147,10 +149,10 @@ export async function GET(req: Request): Promise<NextResponse> {
       invoiceNo: b.invoiceNo,
       matchedInvoiceSeq: invoiceMatches.get(b.id)?.seq ?? null,
       soNumber: b.soNumber,
-      dealer: dealerDisplayName(
-        b.shipToOverrideCustomer?.customerName ?? b.customer?.customerName,
-        b.shipToCustomerName,
-      ),
+      dealer: deskShipToName(b, {
+        effectiveDealer: b.shipToOverrideCustomer?.customerName ?? b.customer?.customerName,
+        sap: b.shipToCustomerName,
+      }),
       workflowStage: b.workflowStage,
       dispatchStatus: b.dispatchStatus,
       target,

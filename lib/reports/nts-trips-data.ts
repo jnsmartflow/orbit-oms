@@ -160,6 +160,9 @@ export async function getNtsTripsRows(params: NtsTripsParams): Promise<NtsTripRo
             shipToOverride: true,
             shipToOverrideCustomerId: true,
             shipToCustomerId: true,
+            // The typed ship-to (v27.73) — computeDropKey's t: branch needs both.
+            shipToText: true,
+            shipToAreaId: true,
             smu: true,
             grossWeight: true,
             volume: true,

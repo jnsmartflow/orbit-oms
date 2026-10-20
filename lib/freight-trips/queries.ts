@@ -130,6 +130,9 @@ async function activeMembership(tripIds: number[]) {
           customerId: true,
           shipToOverrideCustomerId: true,
           shipToCustomerId: true,
+          // The typed ship-to (v27.73) — computeDropKey's t: branch needs both.
+          shipToText: true,
+          shipToAreaId: true,
           materialType: true,
           customer: { select: { area: { select: { primaryRoute: { select: { name: true } } } } } },
           shipToOverrideCustomer: { select: { area: { select: { primaryRoute: { select: { name: true } } } } } },

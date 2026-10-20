@@ -366,8 +366,13 @@ export interface FloorBoardRow extends PickingQueueRow {
   // card and the trip those bills later join can never count stops differently.
   //
   // ⚠ OPAQUE. Compare it for equality only — never parse the `c:`/`s:` prefix
-  // or read an id out of it (drop-key.ts explains the two id spaces).
+  // or read an id out of it (drop-key.ts explains the two id spaces). A typed
+  // ship-to (v27.73) is a `t:` stop of its own — never the dealer's.
   stopKey: string;
+  /** Active typed-ship-to challan copies this bill shows — its own + the SO's
+   *  Billing copies still visible on it (lib/ship-to/copies-server.ts
+   *  copyCountsForBills). 0 on every non-typed bill. The DC column's violet 📎. */
+  shipToCopyCount: number;
   /** SAP's ship-to customer code (`orders.shipToCustomerId`), as SAP sent it.
    *  Display only — the All tab's Missing customer card (2026-10-02). */
   shipToCode: string;

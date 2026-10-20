@@ -52,6 +52,9 @@ export async function getFreightPoolRows(scope: FloorScope = "All", search?: str
       customerId: true,
       shipToOverrideCustomerId: true,
       shipToCustomerId: true,
+      // The typed ship-to (v27.73) — computeDropKey's t: branch needs both.
+      shipToText: true,
+      shipToAreaId: true,
       customer: DEALER,
       shipToOverrideCustomer: DEALER,
     },

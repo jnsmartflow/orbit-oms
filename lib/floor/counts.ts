@@ -25,6 +25,7 @@ import { floorHoldWhere, getFloorCancelled } from "@/lib/floor/queries";
 import { inScope } from "@/lib/floor/scope";
 import { getTodayIST } from "@/lib/dates";
 import type { FloorScope } from "@/lib/floor/types";
+import { effectiveArea, isTypedShipTo } from "@/lib/ship-to/effective";
 
 /** Every delivery-type scope the Floor chips offer (FloorScope, lib/floor/types.ts). */
 export const FLOOR_TAB_SCOPES: FloorScope[] = ["All", "Local", "Upcountry", "IGT / Cross"];
@@ -52,13 +53,31 @@ export async function getFloorTabCounts(): Promise<FloorTabCounts> {
   const held = await prisma.orders.findMany({
     where: { AND: [floorHoldWhere(), hide] },
     select: {
+      shipToText: true,
+      shipToAreaId: true,
       customer: { select: DELIVERY_TYPE_ONLY },
       shipToOverrideCustomer: { select: DELIVERY_TYPE_ONLY },
     },
   });
   // The feed's own rule (getFloorHold): the EFFECTIVE dealer is the ship-to
   // override when set, else the customer; its area's delivery type decides scope.
-  const holdTypes = held.map((o) => (o.shipToOverrideCustomer ?? o.customer)?.area?.deliveryType?.name ?? null);
+  // A TYPED ship-to (v27.73, step 7A) is scoped by its PICKED area instead —
+  // one read of those areas, none when no held bill is typed.
+  const typedIds = Array.from(
+    new Set(held.filter((o) => isTypedShipTo(o) && o.shipToAreaId !== null).map((o) => o.shipToAreaId as number)),
+  );
+  const typedAreas = typedIds.length
+    ? await prisma.area_master.findMany({ where: { id: { in: typedIds } }, select: { id: true, deliveryType: { select: { name: true } } } })
+    : [];
+  const typedById = new Map(typedAreas.map((a) => [a.id, a]));
+  const holdTypes = held.map(
+    (o) =>
+      effectiveArea(
+        o,
+        o.shipToAreaId !== null ? (typedById.get(o.shipToAreaId) ?? null) : null,
+        (o.shipToOverrideCustomer ?? o.customer)?.area ?? null,
+      )?.deliveryType?.name ?? null,
+  );
 
   const cancelled = await getFloorCancelled("All", hide);
 

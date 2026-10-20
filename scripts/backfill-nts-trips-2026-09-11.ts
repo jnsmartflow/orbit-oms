@@ -306,6 +306,9 @@ async function main() {
         customerId: r.customerId,
         shipToCustomerId: r.shipToCustomerId,
         shipToOverrideCustomerId: r.shipToOverrideCustomerId,
+        // A one-time run of 2026-09-11, before typed ship-tos existed (v27.73).
+        shipToText: null,
+        shipToAreaId: null,
       });
       const arr = dropsByKey.get(dropKey) ?? [];
       arr.push(r);

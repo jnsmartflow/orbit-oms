@@ -68,6 +68,8 @@ import { HAS_ROW_OFF_TRIP_WHERE, onTripsWhere } from "@/lib/order-invoices/trip-
 import { computeDropKey } from "@/lib/trips/drop-key";
 import { isGiftBill } from "@/lib/orders/gift";
 import { dealerDisplayName } from "@/lib/orders/dealer-name";
+import { deskShipToName, effectiveArea, isRedirected, isTypedShipTo } from "@/lib/ship-to/effective";
+import { copyCountsForBills } from "@/lib/ship-to/copies-server";
 import {
   HOLD_LOG_NOTES,
   HOLD_SOURCE_BY_NOTE,
@@ -380,22 +382,86 @@ const RULE2_ENABLED = true;
 
 // Shared dealer projection — route/area/delivery-type/key-customer all come
 // from the effective dealer's AREA (design §D3 / matches lib/picking/queue.ts).
+// The AREA half, on its own since step 7A (2026-10-20): a typed ship-to's
+// picked area (orders.shipToAreaId) is read with the SAME select, so a typed
+// bill's route / bay / type / area come out in exactly the dealer's shape.
+const FLOOR_AREA_SELECT = {
+  name: true,
+  // `bayNumber` rides the relation already being selected (2026-08-21) — no
+  // new query, no new join. FloorBoardRow extends PickingQueueRow, which now
+  // carries the field, so it has to be fetched here too.
+  // `id` added 2026-09-19 for the By route cards (FloorBoardRow.routeId).
+  primaryRoute: { select: { id: true, name: true, bayNumber: true } },
+  deliveryType: { select: { name: true } },
+} as const;
+type FloorArea = Prisma.area_masterGetPayload<{ select: typeof FLOOR_AREA_SELECT }>;
+
 const FLOOR_DEALER_SELECT = {
   id: true,
   customerName: true,
   isKeyCustomer: true,
-  area: {
-    select: {
-      name: true,
-      // `bayNumber` rides the relation already being selected (2026-08-21) — no
-      // new query, no new join. FloorBoardRow extends PickingQueueRow, which now
-      // carries the field, so it has to be fetched here too.
-      // `id` added 2026-09-19 for the By route cards (FloorBoardRow.routeId).
-      primaryRoute: { select: { id: true, name: true, bayNumber: true } },
-      deliveryType: { select: { name: true } },
-    },
-  },
+  area: { select: FLOOR_AREA_SELECT },
 } as const;
+type FloorDealer = Prisma.delivery_point_masterGetPayload<{ select: typeof FLOOR_DEALER_SELECT }>;
+
+/**
+ * TYPED SHIP-TO areas (v27.73, step 7A) — ONE batched read of the picked areas
+ * of the typed bills in `orders`, and NO read when none is typed (the normal
+ * case). Never an include: that would cost every board load up to three extra
+ * statements for a column almost always null.
+ */
+async function typedAreasById(
+  orders: Array<{ shipToText: string | null; shipToAreaId: number | null }>,
+): Promise<Map<number, FloorArea>> {
+  const ids = Array.from(
+    new Set(orders.filter((o) => isTypedShipTo(o) && o.shipToAreaId !== null).map((o) => o.shipToAreaId as number)),
+  );
+  if (ids.length === 0) return new Map();
+  const rows = await prisma.area_master.findMany({ where: { id: { in: ids } }, select: { id: true, ...FLOOR_AREA_SELECT } });
+  return new Map(rows.map(({ id, ...a }) => [id, a]));
+}
+
+/**
+ * Where one Floor bill goes — the board, Hold and Cancelled all ask THIS
+ * (lib/ship-to/effective.ts holds the rules):
+ *   dealer       the effective dealer (redirect ?? customer) — key customer,
+ *                dealerInMaster; for a typed bill that is the bill-to dealer
+ *   area         the typed area when typed, else the dealer's → route / bay /
+ *                type / scope (routing follows the typed area — owner, 2026-10-20)
+ *   dealerName   the typed text ("As per challan" included) or the dealer —
+ *                the row / block TITLE, so a typed bill draws exactly like a
+ *                dealer redirect (ShipToBlockHeader, owner check 2026-10-20)
+ *   isShipToOverride   dealer id OR typed text — never the bare flag
+ *   shipToOverrideName the redirect target's name, or the typed text — the
+ *                "{dealer} → {target}" line
+ */
+function floorShipTo(
+  order: {
+    shipToText: string | null;
+    shipToAreaId: number | null;
+    shipToOverrideCustomerId: number | null;
+    shipToCustomerName: string | null;
+    customer: FloorDealer | null;
+    shipToOverrideCustomer: FloorDealer | null;
+  },
+  typedAreas: Map<number, FloorArea>,
+) {
+  const dealer = order.shipToOverrideCustomer ?? order.customer;
+  const typed = isTypedShipTo(order);
+  const area = effectiveArea(
+    order,
+    order.shipToAreaId !== null ? (typedAreas.get(order.shipToAreaId) ?? null) : null,
+    dealer?.area ?? null,
+  );
+  return {
+    dealer,
+    area,
+    deliveryType: area?.deliveryType?.name ?? null,
+    dealerName: deskShipToName(order, { effectiveDealer: dealer?.customerName, sap: order.shipToCustomerName }),
+    isShipToOverride: isRedirected(order),
+    shipToOverrideName: typed ? (order.shipToText as string) : (order.shipToOverrideCustomer?.customerName ?? null),
+  };
+}
 
 // ── Date helpers (IST, UTC-midnight anchored — same basis as picking/queue) ──
 
@@ -1327,10 +1393,16 @@ export async function getFloorBoard(
       : [],
   );
 
+  // TYPED SHIP-TO (step 7A) — the picked areas, and the challan copies each
+  // typed bill shows (the violet 📎 in the DC column). Both skip all reads when
+  // no bill on the page is typed.
+  const typedAreas = await typedAreasById(orders);
+  const copyCounts = await copyCountsForBills(orders);
+
   let rows: FloorBoardRow[] = [];
   for (const order of orders) {
-    const dealer = order.shipToOverrideCustomer ?? order.customer;
-    const deliveryType = dealer?.area?.deliveryType?.name ?? null;
+    const ship = floorShipTo(order, typedAreas);
+    const { dealer, area, deliveryType } = ship;
     if (!inScope(deliveryType, scope)) continue;
 
     const targetDate = order.dispatchTargetDate;
@@ -1351,7 +1423,7 @@ export async function getFloorBoard(
     rows.push({
       orderId: order.id,
       obdNumber: order.obdNumber,
-      dealerName: dealerDisplayName(dealer?.customerName, order.shipToCustomerName),
+      dealerName: ship.dealerName,
       // ⚠ COMPILE-REQUIRED ONLY — NOT a Floor feature (2026-08-31).
       // `FloorBoardRow extends PickingQueueRow`, and Picking added
       // `dealerInMaster` alongside its SAP-name fallback (lib/picking/queue.ts).
@@ -1369,7 +1441,7 @@ export async function getFloorBoard(
       // Same expression as Picking's, so the flag cannot mean two things: it is
       // "did the effective dealer FK resolve", never `orders.customerMissing`.
       dealerInMaster: dealer != null,
-      isShipToOverride: order.shipToOverrideCustomerId !== null,
+      isShipToOverride: ship.isShipToOverride,
       // The ship-to PAIR — the ORIGINAL and the redirect target, kept apart from
       // `dealerName` above (the EFFECTIVE dealer, which IS the override on a
       // redirect and so cannot carry the original). Same two fields the rail has
@@ -1383,20 +1455,20 @@ export async function getFloorBoard(
       // two. No extra findMany, no extra await, and above all no write: the
       // live-sync marker keys on MAX(orders.updatedAt) (FLOOR §5/§10).
       customerName: order.customer?.customerName ?? null,
-      shipToOverrideName: order.shipToOverrideCustomer?.customerName ?? null,
+      shipToOverrideName: ship.shipToOverrideName,
       windowId: order.dispatchWindow?.id ?? null,
       windowTime: order.dispatchWindow?.windowTime ?? null,
       windowSortOrder: order.dispatchWindow?.sortOrder ?? null,
       deliveryType,
-      route: dealer?.area?.primaryRoute?.name ?? null,
+      route: area?.primaryRoute?.name ?? null,
       // Inherited from PickingQueueRow (2026-08-21) — FloorBoardRow extends it,
       // so this board has to FILL the field even though it renders nothing with
       // it today. Same rule and same source as Picking's own: `area.primaryRoute`
       // ONLY, never delivery_point_master.primaryRouteId (stale, never read), so
       // the bay can never describe a different route than `route` above.
       // Same shape as `smuCode` below, for the same reason.
-      bayNumber: dealer?.area?.primaryRoute?.bayNumber ?? null,
-      area: dealer?.area?.name ?? null,
+      bayNumber: area?.primaryRoute?.bayNumber ?? null,
+      area: area?.name ?? null,
       priorityLevel: order.priorityLevel,
       isKeyCustomer: dealer?.isKeyCustomer ?? false,
       articleTag: order.querySnapshot?.articleTag ?? null,
@@ -1527,7 +1599,7 @@ export async function getFloorBoard(
       // extra read. `routeId` is the route `route` above names; `stopKey` is the
       // trip module's own stop identity, so a card's "N stops" counts exactly
       // what trip_drops would (FloorBoardRow).
-      routeId: dealer?.area?.primaryRoute?.id ?? null,
+      routeId: area?.primaryRoute?.id ?? null,
       // Hand — the dealer collects (2026-09-24). A scalar the include already brings.
       isHand: order.handAt !== null,
       // CHALLAN pill (2026-10-07) — a scalar the `include` already brings.
@@ -1535,6 +1607,8 @@ export async function getFloorBoard(
       // OBD pill (2026-10-16) — a scalar the `include` already brings.
       isObdImport: order.isObdImport,
       stopKey: computeDropKey(order),
+      // Typed ship-to challan copies this bill shows (step 7A) — the DC column's violet 📎.
+      shipToCopyCount: copyCounts.get(order.id) ?? 0,
       shipToCode: order.shipToCustomerId,
       tripDropId: order.tripDropId,
       tripNumber:
@@ -1792,10 +1866,13 @@ export async function getFloorHold(
       : [];
   const rowHolderName = new Map(rowHolders.map((u) => [u.id, u.name]));
 
+  // Typed ship-to areas (step 7A) — no read when none is typed.
+  const typedAreas = await typedAreasById(orders);
+
   const rows: FloorHoldRow[] = [];
   for (const order of orders) {
-    const dealer = order.shipToOverrideCustomer ?? order.customer;
-    const deliveryType = dealer?.area?.deliveryType?.name ?? null;
+    const ship = floorShipTo(order, typedAreas);
+    const { dealer, area, deliveryType } = ship;
     if (!inScope(deliveryType, scope)) continue;
 
     // Fallback ladder. A bill with no hold log at all is almost always an
@@ -1854,12 +1931,12 @@ export async function getFloorHold(
       isChallanOrder: order.isChallanOrder,
       // OBD pill (2026-10-16) — a scalar the `include` already brings.
       isObdImport: order.isObdImport,
-      dealerName: dealerDisplayName(dealer?.customerName, order.shipToCustomerName),
+      dealerName: ship.dealerName,
       billToName: billTo.get(order.obdNumber) ?? null,
-      isShipToOverride: order.shipToOverrideCustomerId !== null,
+      isShipToOverride: ship.isShipToOverride,
       smu: order.smu,
-      route: dealer?.area?.primaryRoute?.name ?? null,
-      area: dealer?.area?.name ?? null,
+      route: area?.primaryRoute?.name ?? null,
+      area: area?.name ?? null,
       deliveryType,
       isKeyCustomer: dealer?.isKeyCustomer ?? false,
       priorityLevel: order.priorityLevel,
@@ -2101,6 +2178,9 @@ export async function getFloorCancelled(
         )
       : new Map<number, FloorInvoiceRow[]>();
 
+  // Typed ship-to areas (step 7A) — no read when none is typed.
+  const typedAreas = await typedAreasById(orders);
+
   const rows: FloorCancelledRow[] = [];
   for (const order of orders) {
     const ci = ciByOrder.get(order.id) ?? null;
@@ -2115,8 +2195,8 @@ export async function getFloorCancelled(
     if (cancel !== null && order.workflowStage !== "cancelled") cancel = null;
     if (ci === null && cancel === null && invList.length === 0) continue;
 
-    const dealer = order.shipToOverrideCustomer ?? order.customer;
-    const deliveryType = dealer?.area?.deliveryType?.name ?? null;
+    const ship = floorShipTo(order, typedAreas);
+    const { dealer, area, deliveryType } = ship;
     if (!inScope(deliveryType, scope)) continue;
 
     const party = {
@@ -2127,15 +2207,15 @@ export async function getFloorCancelled(
       isChallanOrder: order.isChallanOrder,
       // OBD pill (2026-10-16) — a scalar the `include` already brings.
       isObdImport: order.isObdImport,
-      dealerName: dealerDisplayName(dealer?.customerName, order.shipToCustomerName),
+      dealerName: ship.dealerName,
       billToName: billTo.get(order.obdNumber) ?? null,
-      isShipToOverride: order.shipToOverrideCustomerId !== null,
+      isShipToOverride: ship.isShipToOverride,
       // The ship-to PAIR, exactly as getFloorBoard fills it.
       customerName: order.customer?.customerName ?? null,
-      shipToOverrideName: order.shipToOverrideCustomer?.customerName ?? null,
+      shipToOverrideName: ship.shipToOverrideName,
       smu: order.smu,
-      route: dealer?.area?.primaryRoute?.name ?? null,
-      area: dealer?.area?.name ?? null,
+      route: area?.primaryRoute?.name ?? null,
+      area: area?.name ?? null,
       deliveryType,
       isKeyCustomer: dealer?.isKeyCustomer ?? false,
       priorityLevel: order.priorityLevel,

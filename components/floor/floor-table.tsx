@@ -88,6 +88,7 @@ import {
   type PairRender,
 } from "./pair-cells";
 import type { FloorBoardRow } from "@/lib/floor/types";
+import { ShipToCopiesPin } from "@/components/shared/ship-to-copies-pin";
 
 export type FloorTableVariant = "live" | "history" | "upcoming";
 
@@ -128,7 +129,38 @@ export function shipMarkers(row: { smu: string | null; isShipToOverride: boolean
   };
 }
 
-const WD = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+/** A row has something for the DC column: a tint delivery challan, or a typed
+ *  ship-to's challan copy (step 7A). */
+function rowsHaveDc(rows: FloorBoardRow[]): boolean {
+  return rows.some((r) => r.challanNumber !== null || r.shipToCopyCount > 0);
+}
+
+/**
+ * The DC cell (step 7A, 2026-10-20): plain 📎 pins, no labels (owner, design
+ * §5) — grey = the system tint DC (ChallanCell, prints as before), violet = the
+ * uploaded dealer / SO challan copy (ShipToCopiesPin, opens it). A row with
+ * both shows both; with neither, the dash ChallanCell always drew.
+ *
+ * 🔴 THE VIOLET PIN'S CLICKS STOP HERE, as ChallanCell's do: a ship-to block
+ * row is ticked by clicking it, so a bubbled click would also select the bill.
+ */
+function DcCell({ row }: { row: FloorBoardRow }) {
+  if (row.shipToCopyCount <= 0) {
+    return <ChallanCell orderId={row.orderId} challanNumber={row.challanNumber} voided={row.challanVoided} />;
+  }
+  return (
+    <span className="inline-flex items-center justify-center whitespace-nowrap">
+      {row.challanNumber !== null && (
+        <ChallanCell orderId={row.orderId} challanNumber={row.challanNumber} voided={row.challanVoided} />
+      )}
+      <span onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+        <ShipToCopiesPin orderId={row.orderId} count={row.shipToCopyCount} />
+      </span>
+    </span>
+  );
+}
+
+const WD =["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 function asStr(v: string | Date | null): string | null {
@@ -437,6 +469,7 @@ export function FloorTable({
   shipToBlock = false,
   part,
   billedToFor,
+  showDc,
 }: {
   rows: FloorBoardRow[];
   nowMs: number;
@@ -498,6 +531,13 @@ export function FloorTable({
    * Omitted = the whole table, as every other caller has it.
    */
   part?: "head" | "body";
+  /**
+   * Force the DC column on or off (step 7A, 2026-10-20). Omitted = this table
+   * decides from its own rows (`dcCol` below). A caller that STACKS tables
+   * with one header each — the trip panel's stops — decides once for the group
+   * and passes it, so the columns line up from stop to stop.
+   */
+  showDc?: boolean;
   /**
    * Per-row "billed to X" under the OBD date line — ONLY with `shipToBlock`,
    * and only passed when the bills in a block disagree about who they are
@@ -775,16 +815,31 @@ export function FloorTable({
   //   ship-to block          [18,14,7,8,13,10,8,6,16]      → [16,14,7,8,12,10,8,6,3,16]
   //   interactive + extra    [3,13,9,7,6,9,11,7,11,6,18]   → [3,12,9,7,6,9,10,7,10,6,3,18]
   //   read-only + extra      [14,10,8,7,9,11,7,11,6,17]    → [13,10,8,7,9,10,7,10,6,3,17]
-  const dcCol = hasExtra;
+  //
+  // ── 2026-10-20 — DC ON EVERY FLOOR TABLE THAT HAS ONE (step 7A, owner) ────
+  // The column also holds the violet 📎 of a typed ship-to's challan copies
+  // (ShipToCopiesPin), so it now shows on the no-extra arms too — the main
+  // tab's flat pool, the trip panel's stops, By route — whenever a row has a
+  // tint DC or a copy. Still ONE condition, `dcCol`, read by the colgroup, the
+  // <th> and the <td>. The two no-extra arms gain a DC entry; donors are
+  // Article tag and Status / Due. BEFORE → AFTER:
+  //   interactive, no extra  [3,14,10,7,9,12,7,12,6,20]   → [3,14,10,7,9,12,7,10,6,3,19]
+  //   read-only, no extra    [15,11,8,10,13,8,12,6,17]    → [15,11,8,10,12,8,10,6,3,17]
+  // Not on Hold / Cancelled (their own tables; owner → ROADMAP).
+  const dcCol = showDc ?? (hasExtra || rowsHaveDc(rows) || rowsHaveDc(upcoming));
   const widths = shipToBlock
     ? [16, 14, 7, 8, 12, 10, 8, 6, 3, 16] //   OBD INV SO Area Due V/KG Tag Art DC Status = 100
     : interactive
     ? hasExtra
       ? [3, 12, 9, 7, 6, 9, 10, 7, 10, 6, 3, 18] // ☐ OBD INV Ship SO Rt Due V/KG Tag Art DC Status = 100
-      : [3, 14, 10, 7, 9, 12, 7, 12, 6, 20] //   ☐ OBD Ship SO Rt Due V/KG Tag Art Status = 100
+      : dcCol
+        ? [3, 14, 10, 7, 9, 12, 7, 10, 6, 3, 19] // ☐ OBD Ship SO Rt Due V/KG Tag Art DC Status = 100
+        : [3, 14, 10, 7, 9, 12, 7, 12, 6, 20] //   ☐ OBD Ship SO Rt Due V/KG Tag Art Status = 100
     : hasExtra
       ? [13, 10, 8, 7, 9, 10, 7, 10, 6, 3, 17] //  OBD INV Ship SO Rt Due V/KG Tag Art DC Status = 100
-      : [15, 11, 8, 10, 13, 8, 12, 6, 17]; //    OBD Ship SO Rt Due V/KG Tag Art Status   = 100
+      : dcCol
+        ? [15, 11, 8, 10, 12, 8, 10, 6, 3, 17] //  OBD Ship SO Rt Due V/KG Tag Art DC Status = 100
+        : [15, 11, 8, 10, 13, 8, 12, 6, 17]; //    OBD Ship SO Rt Due V/KG Tag Art Status   = 100
   // ⚠ THE HEADER CHECKBOX COVERS BOTH HALVES OF THIS TABLE. Select-all is
   // per-TABLE (lib/floor/selection.ts documents it as per band), and the
   // upcoming rows are in this table — so a select-all that skipped them would
@@ -1943,7 +1998,7 @@ export function FloorTable({
             colgroup and the <th>. TDR keeps a merged block's dashed divider. */}
         {dcCol && (
           <td className={`${TDR.replace("px-3.5", "px-1")} text-center`}>
-            <ChallanCell orderId={row.orderId} challanNumber={row.challanNumber} voided={row.challanVoided} />
+            <DcCell row={row} />
           </td>
         )}
         <td className={TDR}>{statusCell}</td>

@@ -19,6 +19,7 @@ import { placeLoad } from "@/lib/floor/invoice-rows";
 import { isGiftBill, loadKg } from "@/lib/orders/gift";
 import { loadPlanV2Context } from "@/lib/floor/load-plan-v2-loader";
 import { makePricer, VEHICLE_TYPES, type LoadPlanV2Context, type VehicleType } from "@/lib/trips/load-plan-v2";
+import { effectiveArea } from "@/lib/ship-to/effective";
 import {
   actualTypeOf,
   compareDay,
@@ -89,11 +90,14 @@ export async function checkCards(dateIso: string, cards: SnapshotCard[], ctx: Lo
 
   // ── The snapshot's bills as they stand now ────────────────────────────────
   const areaSel = { select: { area: { select: { id: true, name: true } } } } as const;
+  // A TYPED ship-to (v27.73, step 7A) counts under its PICKED area (shipToArea),
+  // never the dealer's — routing follows the typed area (owner, 2026-10-20).
+  // A relation select here: a day-check is a once-a-day read, not a board.
   const ids = Array.from(new Set(cards.flatMap((c) => c.billIds)));
   const orders = ids.length
     ? await prisma.orders.findMany({
         where: { id: { in: ids } },
-        select: { id: true, tripDropId: true, materialType: true, querySnapshot: { select: { totalWeight: true } }, customer: areaSel, shipToOverrideCustomer: areaSel },
+        select: { id: true, tripDropId: true, materialType: true, querySnapshot: { select: { totalWeight: true } }, customer: areaSel, shipToOverrideCustomer: areaSel, shipToText: true, shipToArea: { select: { id: true, name: true } } },
       })
     : [];
   // "Which trip is each snapshot bill on" — the DERIVED stop, which
@@ -119,7 +123,7 @@ export async function checkCards(dateIso: string, cards: SnapshotCard[], ctx: Lo
 
   const bills = new Map<number, BillFact>();
   orders.forEach((o) => {
-    const area = (o.shipToOverrideCustomer ?? o.customer)?.area ?? null;
+    const area = effectiveArea(o, o.shipToArea, (o.shipToOverrideCustomer ?? o.customer)?.area ?? null);
     const tripId = o.tripDropId !== null ? tripIdOfDrop.get(o.tripDropId) ?? null : null;
     bills.set(o.id, {
       billId: o.id,
@@ -145,7 +149,7 @@ export async function checkCards(dateIso: string, cards: SnapshotCard[], ctx: Lo
     ? placeOnTrips(
         await prisma.orders.findMany({
           where: { ...onStopsWhere(tripDropIds), isRemoved: false },
-          select: { id: true, obdNumber: true, invoices: stopRowsSelect(tripDropIds), materialType: true, querySnapshot: { select: { totalWeight: true } }, customer: areaSel, shipToOverrideCustomer: areaSel },
+          select: { id: true, obdNumber: true, invoices: stopRowsSelect(tripDropIds), materialType: true, querySnapshot: { select: { totalWeight: true } }, customer: areaSel, shipToOverrideCustomer: areaSel, shipToText: true, shipToArea: { select: { id: true, name: true } } },
         }),
         tripOfDrop,
       )
@@ -162,7 +166,7 @@ export async function checkCards(dateIso: string, cards: SnapshotCard[], ctx: Lo
   tripOrders.forEach((o) => {
     const t = trips.get(tripOfDrop.get(o.tripDropId as number) ?? -1);
     if (!t) return;
-    const area = (o.shipToOverrideCustomer ?? o.customer)?.area ?? null;
+    const area = effectiveArea(o, o.shipToArea, (o.shipToOverrideCustomer ?? o.customer)?.area ?? null);
     // A GIFT adds 0 kg; the trip's stop count (trip_drops) is untouched.
     const rows = splitRows.get(o.id);
     const load = rows ? placeLoad(rows, (d) => d !== null && tripOfDrop.get(d) === o.tripId) : null;
