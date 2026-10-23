@@ -34,7 +34,12 @@ import {
 // disagree about it again — read that module's header before changing the rule.
 import { tripsOnDeskWhere } from "@/lib/trips/live-trips";
 import { getTripActivity, type TripActivityRow } from "@/lib/trips/activity";
-import { getAttemptHistories, redeliveryReasonLabel, type AttemptHistoryEntry } from "@/lib/trips/redelivery";
+import {
+  getAttemptHistories,
+  getInvoiceAttemptHistories,
+  redeliveryReasonLabel,
+  type AttemptHistoryEntry,
+} from "@/lib/trips/redelivery";
 import { getFloorBoard } from "@/lib/floor/queries";
 import type { FloorBoardRow } from "@/lib/floor/types";
 import { isTypedShipTo } from "@/lib/ship-to/effective";
@@ -42,7 +47,8 @@ import { isGiftBill, loadKg, loadLitres } from "@/lib/orders/gift";
 import { onStopsWhere, placeOnTrips, stopRowsSelect } from "@/lib/order-invoices/trip-read";
 import { loadSplitInvoiceRows } from "@/lib/order-invoices/invoice-load";
 import { RECORD_OBD_SELECT, recordObdOf } from "@/lib/order-invoices/links";
-import { placeLoad } from "@/lib/floor/invoice-rows";
+import { invoicesLoad, narrowToInvoiceIds, placeLoad } from "@/lib/floor/invoice-rows";
+import { groupRedeliveries, redeliveryCountsByTrip, type RedeliveryRecord } from "@/lib/order-invoices/redelivery-plan";
 // 🔴 THE ROUTE/AREA RANKING LIVES IN ONE PLACE (2026-09-16) — a pure module the
 // CLIENT can import too, so the rail card-s label and the pool-s add hint cannot
 // drift apart. PLACEHOLDER_ROUTE_IDS moved there with it.
@@ -134,8 +140,13 @@ export interface TripRedeliveryRow {
   /** trip_redeliveries.id — what the remove call takes. */
   id: number;
   orderId: number;
+  /** The invoice row it re-delivers (NOT NULL since v27.74). */
+  orderInvoiceId: number;
+  /** P5-5 — on a SPLIT bill, this re-delivery is ONE invoice: "2/4". null = unsplit (the whole bill). */
+  invoiceKN: { k: number; n: number } | null;
   obdNumber: string;
-  /** LIVE orders.invoiceNo (the row's snapshot only when the order cannot be read). */
+  /** LIVE invoice number — orders.invoiceNo on an unsplit bill, the invoice
+   *  row's own on a split one (the row's snapshot only when neither can be read). */
   invoiceNo: string | null;
   attemptNo: number;
   reason: string;
@@ -144,8 +155,10 @@ export interface TripRedeliveryRow {
   confirmedReturn: boolean;
   createdAt: string;
   createdByName: string | null;
-  /** The bill's OTHER Orbit attempts (this trip left out), non-cancelled trips, oldest first. */
+  /** The bill's OTHER Orbit attempts (this trip left out), non-cancelled trips,
+   *  oldest first — on a split bill, THIS INVOICE's attempts (P5-5). */
   history: AttemptHistoryEntry[];
+  /** On a split bill NARROWED to this invoice (litres / kg / invoiceNo its own). */
   row: FloorBoardRow | null;
 }
 
@@ -576,20 +589,29 @@ async function loadTripBills(drops: ReadonlyArray<{ id: number; tripId: number }
 type RedeliveryLoad = Pick<TripBillRow, "litres" | "weightKg" | "isGift">;
 
 /**
- * The litres / kg / gift flag of each re-delivered order, by order id
- * (2026-10-05). TWO batched reads — orders, then import_obd_query_summary — the
- * same source the re-delivery's own row shows (`volumeLitres` / `weightKg`
- * off the snapshot). Never per row.
+ * The physical load of each re-delivered BILL on a stop (2026-10-05): one entry
+ * per (trip, stop, OBD) — its records grouped (redelivery-plan.ts
+ * groupRedeliveries). TWO batched reads — orders, then import_obd_query_summary —
+ * the same source the re-delivery's own row shows (`volumeLitres` / `weightKg`
+ * off the snapshot), plus loadSplitInvoiceRows (one index-only read when none
+ * is split). Never per row.
+ *
+ * PER INVOICE (P5-5): a SPLIT bill carries only the invoices its records name —
+ * trip 668 carries 18648's 713 + 715 = 460 L, not the OBD's 1,000 L
+ * (invoicesLoad; all of them → the OBD's own totals). Unsplit: one record, the
+ * OBD's own totals, as before.
  *
  * ⚠ NO `isRemoved` / Hide FILTER. A re-delivery whose board row is null (an
  * admin Hide rule) is still on the truck, so its volume still counts. SELECT-only.
  */
-async function loadRedeliveryLoads(orderIds: number[]): Promise<Map<number, RedeliveryLoad>> {
-  const ids = Array.from(new Set(orderIds));
-  if (ids.length === 0) return new Map();
+async function loadRedeliveryLoads(
+  records: readonly RedeliveryRecord[],
+): Promise<Array<{ tripId: number; tripDropId: number; orderId: number; load: RedeliveryLoad }>> {
+  const ids = Array.from(new Set(records.map((r) => r.orderId)));
+  if (ids.length === 0) return [];
   const orders = await prisma.orders.findMany({
     where: { id: { in: ids } },
-    select: { id: true, materialType: true },
+    select: { id: true, obdNumber: true, materialType: true },
   });
   const snapshots = await prisma.import_obd_query_summary.findMany({
     where: { orderId: { in: ids } },
@@ -599,13 +621,31 @@ async function loadRedeliveryLoads(orderIds: number[]): Promise<Map<number, Rede
   for (const s of snapshots) {
     if (s.orderId !== null) snapByOrderId.set(s.orderId, s);
   }
-  return new Map(
+  const wholeByOrderId = new Map(
     orders.map((o) => {
       const snap = snapByOrderId.get(o.id);
       // Same choices as loadTripBills: no snapshot → 0 L, unknown (null) kg.
       return [o.id, { litres: snap?.totalVolume ?? 0, weightKg: snap?.totalWeight ?? null, isGift: isGiftBill(o.materialType) }];
     }),
   );
+  const splitRows = await loadSplitInvoiceRows(
+    orders,
+    new Map(orders.map((o) => [o.id, snapByOrderId.get(o.id)?.totalWeight ?? null] as const)),
+  );
+  const out: Array<{ tripId: number; tripDropId: number; orderId: number; load: RedeliveryLoad }> = [];
+  for (const g of groupRedeliveries(records)) {
+    const whole = wholeByOrderId.get(g.first.orderId);
+    if (!whole) continue;
+    const rows = splitRows.get(g.first.orderId);
+    const part = rows ? invoicesLoad(rows, g.rowIds) : null;
+    out.push({
+      tripId: g.first.tripId,
+      tripDropId: g.first.tripDropId,
+      orderId: g.first.orderId,
+      load: part ? { litres: part.litres, weightKg: part.kg, isGift: whole.isGift } : whole,
+    });
+  }
+  return out;
 }
 
 /** The trip row shape both readers select. Kept in one place so they cannot drift. */
@@ -1047,26 +1087,22 @@ async function summariesForTrips(trips: TripRow[]): Promise<TripSummary[]> {
   // Re-deliveries (2026-10-03): ONE batched read for the whole feed — the count
   // per trip, and which stops hold one (a re-delivery-only stop still names the
   // trip's area/route, plan rev 5 §2 #9).
-  // The OBD through the invoice row each re-delivery names (P5-4).
+  // The OBD through the invoice row each re-delivery names (P5-4). One row per
+  // INVOICE since v27.74 (P5-5): the count is per OBD (redeliveryCountsByTrip),
+  // the load per invoice (loadRedeliveryLoads).
   const redeliveryRows = (
     await prisma.trip_redeliveries.findMany({
       where: { tripId: { in: trips.map((t) => t.id) } },
-      select: { tripId: true, tripDropId: true, ...RECORD_OBD_SELECT },
+      select: { tripId: true, tripDropId: true, orderInvoiceId: true, ...RECORD_OBD_SELECT },
     })
   ).map((r) => ({ ...r, orderId: recordObdOf(r) }));
-  const redeliveryCountByTripId = new Map<number, number>();
-  for (const r of redeliveryRows) {
-    redeliveryCountByTripId.set(r.tripId, (redeliveryCountByTripId.get(r.tripId) ?? 0) + 1);
-  }
+  const redeliveryCountByTripId = redeliveryCountsByTrip(redeliveryRows);
   // Their physical load (2026-10-05) — one batched pair of reads for the feed.
-  const redeliveryLoadByOrderId = await loadRedeliveryLoads(redeliveryRows.map((r) => r.orderId));
   const redeliveryLoadsByTripId = new Map<number, RedeliveryLoad[]>();
-  for (const r of redeliveryRows) {
-    const load = redeliveryLoadByOrderId.get(r.orderId);
-    if (!load) continue;
-    const arr = redeliveryLoadsByTripId.get(r.tripId) ?? [];
-    arr.push(load);
-    redeliveryLoadsByTripId.set(r.tripId, arr);
+  for (const g of await loadRedeliveryLoads(redeliveryRows)) {
+    const arr = redeliveryLoadsByTripId.get(g.tripId) ?? [];
+    arr.push(g.load);
+    redeliveryLoadsByTripId.set(g.tripId, arr);
   }
   const dropIdsWithRedeliveries = new Set(redeliveryRows.map((r) => r.tripDropId));
 
@@ -1128,6 +1164,7 @@ async function loadTripRedeliveries(
       select: {
         id: true,
         tripDropId: true,
+        orderInvoiceId: true,
         ...RECORD_OBD_SELECT,
         obdNumber: true,
         invoiceNo: true,
@@ -1151,25 +1188,62 @@ async function loadTripRedeliveries(
   });
   const liveInvoiceById = new Map(live.map((o) => [o.id, o.invoiceNo]));
   const histories = await getAttemptHistories(orderIds);
+  // P5-5 — SPLIT bills: each record is ONE invoice. Their rows (number, k/n)
+  // and each invoice's own attempts; none read when no bill here is split.
+  const splitOrderIds = new Set(
+    (
+      await prisma.order_invoices.findMany({
+        where: { orderId: { in: orderIds }, seq: { gt: 1 } },
+        select: { orderId: true },
+        distinct: ["orderId"],
+      })
+    ).map((x) => x.orderId),
+  );
+  const splitAll = splitOrderIds.size
+    ? await prisma.order_invoices.findMany({
+        where: { orderId: { in: Array.from(splitOrderIds) } },
+        orderBy: [{ orderId: "asc" }, { seq: "asc" }],
+        select: { id: true, orderId: true, invoiceNo: true },
+      })
+    : [];
+  const splitRecordRowIds = rows.filter((r) => splitOrderIds.has(r.orderId)).map((r) => r.orderInvoiceId);
+  const rowHistories = await getInvoiceAttemptHistories(splitRecordRowIds);
 
-  return rows.map((r) => ({
-    tripDropId: r.tripDropId,
-    row: {
-      id: r.id,
-      orderId: r.orderId,
-      obdNumber: r.obdNumber,
-      invoiceNo: liveInvoiceById.has(r.orderId) ? (liveInvoiceById.get(r.orderId) ?? null) : r.invoiceNo,
-      attemptNo: r.attemptNo,
-      reason: r.reason,
-      reasonLabel: redeliveryReasonLabel(r.reason),
-      note: r.note,
-      confirmedReturn: r.confirmedReturn,
-      createdAt: r.createdAt.toISOString(),
-      createdByName: r.createdBy?.name ?? null,
-      history: (histories.get(r.orderId) ?? []).filter((h) => h.tripId !== tripId),
-      row: boardRowByOrderId.get(r.orderId) ?? null,
-    },
-  }));
+  return rows.map((r) => {
+    const split = splitOrderIds.has(r.orderId);
+    const all = split ? splitAll.filter((x) => x.orderId === r.orderId) : [];
+    const inv = split ? all.find((x) => x.id === r.orderInvoiceId) : undefined;
+    const board = boardRowByOrderId.get(r.orderId) ?? null;
+    const invoiceNo = inv
+      ? inv.invoiceNo
+      : liveInvoiceById.has(r.orderId)
+        ? (liveInvoiceById.get(r.orderId) ?? null)
+        : r.invoiceNo;
+    return {
+      tripDropId: r.tripDropId,
+      row: {
+        id: r.id,
+        orderId: r.orderId,
+        orderInvoiceId: r.orderInvoiceId,
+        invoiceKN: inv ? { k: all.indexOf(inv) + 1, n: all.length } : null,
+        obdNumber: r.obdNumber,
+        invoiceNo,
+        attemptNo: r.attemptNo,
+        reason: r.reason,
+        reasonLabel: redeliveryReasonLabel(r.reason),
+        note: r.note,
+        confirmedReturn: r.confirmedReturn,
+        createdAt: r.createdAt.toISOString(),
+        createdByName: r.createdBy?.name ?? null,
+        history: ((split ? rowHistories.get(r.orderInvoiceId) : histories.get(r.orderId)) ?? []).filter(
+          (h) => h.tripId !== tripId,
+        ),
+        // The desk draws a RE-DEL row from this — on a split bill narrowed to
+        // the one invoice (its litres / kg), and showing its number.
+        row: board && inv ? { ...narrowToInvoiceIds(board, [inv.id]), invoiceNo: inv.invoiceNo } : board,
+      },
+    };
+  });
 }
 
 /**
@@ -1218,12 +1292,14 @@ export async function getTripDetail(tripId: number): Promise<TripDetail | null> 
     arr.push(row);
     redeliveriesByDropId.set(tripDropId, arr);
   }
-  const redeliveryLoadByOrderId = await loadRedeliveryLoads(redeliveries.map((r) => r.row.orderId));
-  const redeliveryLitres = (rows: readonly TripRedeliveryRow[]) =>
-    rows.reduce((sum, r) => {
-      const load = redeliveryLoadByOrderId.get(r.orderId);
-      return load ? sum + loadLitres(load.litres, load.isGift) : sum;
-    }, 0);
+  // Per carried bill on a stop: a split one's invoices summed (P5-5).
+  const redeliveryLoads = await loadRedeliveryLoads(
+    redeliveries.map((r) => ({ tripId, tripDropId: r.tripDropId, orderId: r.row.orderId, orderInvoiceId: r.row.orderInvoiceId })),
+  );
+  const redeliveryLitres = (dropId: number) =>
+    redeliveryLoads
+      .filter((g) => g.tripDropId === dropId)
+      .reduce((sum, g) => sum + loadLitres(g.load.litres, g.load.isGift), 0);
 
   const billsByDropId = new Map<number, TripBillRow[]>();
   for (const b of bills) {
@@ -1251,7 +1327,7 @@ export async function getTripDetail(tripId: number): Promise<TripDetail | null> 
       invoiceCounts: Object.fromEntries(own.filter((b) => b.invoiceCount !== null).map((b) => [b.id, b.invoiceCount as number])),
       // `bills` above counts a gift; the litres leave it out (lib/orders/gift.ts).
       // Re-deliveries add their litres (owner, 2026-10-05) — never their count.
-      litres: own.reduce((sum, b) => sum + loadLitres(b.litres, b.isGift), 0) + redeliveryLitres(redel),
+      litres: own.reduce((sum, b) => sum + loadLitres(b.litres, b.isGift), 0) + redeliveryLitres(d.id),
       redeliveries: redel,
     };
   });
@@ -1270,10 +1346,9 @@ export async function getTripDetail(tripId: number): Promise<TripDetail | null> 
         hasBills:
           (billsByDropId.get(d.id)?.length ?? 0) > 0 || (redeliveriesByDropId.get(d.id)?.length ?? 0) > 0,
       })),
-      redeliveries.length,
-      redeliveries
-        .map((r) => redeliveryLoadByOrderId.get(r.row.orderId))
-        .filter((l): l is RedeliveryLoad => l !== undefined),
+      // Per OBD, like the feed's count (P5-5) — an unsplit bill has one record.
+      new Set(redeliveries.map((r) => r.row.orderId)).size,
+      redeliveryLoads.map((g) => g.load),
     ),
     drops: dropSummaries,
     activity,

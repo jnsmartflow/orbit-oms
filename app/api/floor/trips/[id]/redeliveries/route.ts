@@ -17,8 +17,11 @@ export const dynamic = "force-dynamic";
  *
  *   GET  ?q=<one full OBD / SO / invoice>               floor canView
  *        → { q, trip: { id, tripNumber }, bills: RedeliveryCandidate[] }
- *   POST { action: "add", orderIds, reason, note?, confirmedReturn? }   floor canEdit
- *        → { added: [{ id, orderId, obdNumber, attemptNo }], failed: [{ orderId, error }] }
+ *   POST { action: "add", orderIds?, invoiceRowIds?, reason, note?, confirmedReturn? }   floor canEdit
+ *        → { added: [{ id, orderId, obdNumber, attemptNo, orderInvoiceId?, invoiceNo? }],
+ *            failed: [{ orderId, orderInvoiceId?, error }] }
+ *        orderIds = unsplit bills, whole; invoiceRowIds = invoices of SPLIT
+ *        bills, one re-delivery each (P5-5, Schema v27.74). At least one.
  *   POST { action: "remove", redeliveryIds }                            floor canEdit
  *        → { removed: number[], failed: [{ redeliveryId, error }] }
  *
@@ -84,10 +87,12 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   }
 
   if (body.action === "add") {
-    const orderIds = intList(body.orderIds);
-    if (orderIds === null) {
+    // P5-5 — either list may be absent, never both; each, when sent, is 1–MAX_IDS.
+    const orderIds = body.orderIds === undefined ? [] : intList(body.orderIds);
+    const invoiceRowIds = body.invoiceRowIds === undefined ? [] : intList(body.invoiceRowIds);
+    if (orderIds === null || invoiceRowIds === null || orderIds.length + invoiceRowIds.length === 0) {
       return NextResponse.json(
-        { error: `orderIds is required: 1–${MAX_IDS} positive integers` },
+        { error: `orderIds and/or invoiceRowIds are required: 1–${MAX_IDS} positive integers each` },
         { status: 400 },
       );
     }
@@ -109,7 +114,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
 
     const out = await addRedeliveries(
       tripId,
-      { orderIds, reason: body.reason, note, confirmedReturn: body.confirmedReturn === true },
+      { orderIds, invoiceRowIds, reason: body.reason, note, confirmedReturn: body.confirmedReturn === true },
       actorId,
     );
     if (!out.ok) return NextResponse.json({ error: out.error }, { status: out.status });

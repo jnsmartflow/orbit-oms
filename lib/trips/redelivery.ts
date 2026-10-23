@@ -18,6 +18,13 @@
 // routes do (`parseTripDate(getTodayIST())`); trips.tripDate is a @db.Date at
 // UTC midnight, so its YYYY-MM-DD slice compares directly.
 //
+// PER INVOICE (Add invoices P5-5, 2026-10-23, Schema v27.74 — PART 7 dropped
+// the old per-OBD unique): an UNSPLIT bill is re-delivered whole, exactly as
+// before (one row, on seq 1). A SPLIT bill's invoices are picked ONE BY ONE —
+// one trip_redeliveries row per invoice, each with its own attempt no. and
+// prevTripId from ITS OWN attempts (its stop + the re-deliveries naming it).
+// Rules: lib/order-invoices/redelivery-plan.ts.
+//
 // Sequential awaits, never prisma.$transaction (CORE §3).
 
 import { Prisma } from "@prisma/client";
@@ -29,8 +36,11 @@ import { findBillsByNumber, parseBillLookupTerm } from "@/lib/trips/find-bill";
 import { deleteTripDropIfEmpty, findOrCreateTripDrop } from "@/lib/trips/drop";
 import { logTripRedeliveryAdded, logTripRedeliveryRemoved, type RedeliveryLogItem } from "@/lib/trips/activity";
 import { dealerDisplayName } from "@/lib/orders/dealer-name";
-import { linkRowForOrder, RECORD_OBD_SELECT, recordObdOf, recordsOfObds } from "@/lib/order-invoices/links";
+import { invoiceRowLinks, RECORD_OBD_SELECT, recordObdOf, recordsOfObds } from "@/lib/order-invoices/links";
 import { obdStopIds } from "@/lib/order-invoices/trip-read";
+import { invoiceRowMatches } from "@/lib/trips/find-bill";
+import { loadSplitInvoiceRows } from "@/lib/order-invoices/invoice-load";
+import { dedupeObdAttempts, invoiceRefusal, redeliveryTargetsOf } from "@/lib/order-invoices/redelivery-plan";
 
 // ── Vocabulary — lives in lib/trips/redelivery-reasons.ts (pure, client-safe) ──
 import { isRedeliveryReason, redeliveryReasonLabel, type RedeliveryReason } from "@/lib/trips/redelivery-reasons";
@@ -56,6 +66,7 @@ export const MSG_ALREADY_ON_TRIP = "Already on this trip";
 export const MSG_REMOVED = "This bill was removed — it cannot be re-delivered.";
 export const MSG_NEEDS_CONFIRM = "Tick Truck came back";
 export const MSG_NOT_ON_TRIP = "Not on this trip";
+export const MSG_PICK_INVOICES = "This bill has several invoices — tick the ones going back out.";
 
 function tripRefusal(trip: { status: string; isHand: boolean }): string | null {
   if (trip.status === TRIP_CANCELLED) return "This trip is cancelled — re-deliveries cannot be added.";
@@ -108,6 +119,8 @@ function sortHistory(entries: AttemptHistoryEntry[]): AttemptHistoryEntry[] {
  * since v27.66: the stop of the lowest-seq row on a trip, obdStopIds) plus
  * every trip_redeliveries row for it — on NON-CANCELLED trips only, ordered by
  * tripDate then createdAt. Batched: four reads for any number of bills.
+ * Several invoices of one OBD re-delivered on one trip are ONE attempt there
+ * (P5-5, dedupeObdAttempts) — an unsplit bill's list is unchanged.
  */
 export async function getAttemptHistories(orderIds: number[]): Promise<Map<number, AttemptHistoryEntry[]>> {
   const ids = Array.from(new Set(orderIds));
@@ -170,6 +183,79 @@ export async function getAttemptHistories(orderIds: number[]): Promise<Map<numbe
     const t = tripById.get(r.tripId);
     if (!t) continue; // a re-delivery on a cancelled trip is not an attempt
     out.get(r.orderId)!.push({
+      tripId: t.id,
+      tripNumber: t.tripNumber,
+      tripDate: t.tripDate.toISOString().slice(0, 10),
+      kind: "redelivery",
+      reason: r.reason,
+      reasonLabel: redeliveryReasonLabel(r.reason),
+      createdAt: r.createdAt.toISOString(),
+      ...crewOf(t),
+    });
+  }
+  for (const [id, list] of Array.from(out.entries())) out.set(id, dedupeObdAttempts(sortHistory(list)));
+  return out;
+}
+
+/**
+ * Every Orbit attempt for each INVOICE ROW of a split OBD (P5-5): the trip of
+ * the row's own stop plus every trip_redeliveries row naming it — non-cancelled
+ * trips only, same order and fields as getAttemptHistories. Three reads.
+ */
+export async function getInvoiceAttemptHistories(rowIds: number[]): Promise<Map<number, AttemptHistoryEntry[]>> {
+  const ids = Array.from(new Set(rowIds));
+  const out = new Map<number, AttemptHistoryEntry[]>(ids.map((id) => [id, []]));
+  if (ids.length === 0) return out;
+
+  const rows = await prisma.order_invoices.findMany({
+    where: { id: { in: ids } },
+    select: { id: true, tripDrop: { select: { tripId: true } } },
+  });
+  const redels = await prisma.trip_redeliveries.findMany({
+    where: { orderInvoiceId: { in: ids } },
+    select: { orderInvoiceId: true, tripId: true, reason: true, createdAt: true },
+  });
+  const tripIds = Array.from(
+    new Set([
+      ...rows.map((r) => r.tripDrop?.tripId).filter((t): t is number => t !== undefined),
+      ...redels.map((r) => r.tripId),
+    ]),
+  );
+  const trips = tripIds.length
+    ? await prisma.trips.findMany({
+        where: { id: { in: tripIds }, status: { not: TRIP_CANCELLED } },
+        select: {
+          id: true,
+          tripNumber: true,
+          tripDate: true,
+          createdAt: true,
+          adhocVehicleNo: true,
+          driverName: true,
+          driverPhone: true,
+          vehicle: { select: { vehicleNo: true } },
+        },
+      })
+    : [];
+  const tripById = new Map(trips.map((t) => [t.id, t]));
+
+  for (const r of rows) {
+    const t = r.tripDrop ? tripById.get(r.tripDrop.tripId) : undefined;
+    if (!t) continue;
+    out.get(r.id)!.push({
+      tripId: t.id,
+      tripNumber: t.tripNumber,
+      tripDate: t.tripDate.toISOString().slice(0, 10),
+      kind: "original",
+      reason: null,
+      reasonLabel: null,
+      createdAt: t.createdAt.toISOString(),
+      ...crewOf(t),
+    });
+  }
+  for (const r of redels) {
+    const t = tripById.get(r.tripId);
+    if (!t) continue;
+    out.get(r.orderInvoiceId)!.push({
       tripId: t.id,
       tripNumber: t.tripNumber,
       tripDate: t.tripDate.toISOString().slice(0, 10),
@@ -265,6 +351,14 @@ async function ownTripIds(bills: Array<{ id: number }>): Promise<Map<number, num
 
 export interface RedeliveryCandidate {
   orderId: number;
+  /**
+   * P5-5 — a SPLIT bill is offered ONE CANDIDATE PER INVOICE: this is the
+   * order_invoices row, and `invoiceNo` / `volumeLitres` / the verdict are
+   * that invoice's. null = an unsplit bill, re-delivered whole (as before).
+   */
+  orderInvoiceId: number | null;
+  /** "2/4" — the invoice's place among the OBD's invoices; null when unsplit. */
+  invoiceKN: { k: number; n: number } | null;
   obdNumber: string;
   invoiceNo: string | null;
   /** The effective ship-to name (override, then customer, then SAP's). */
@@ -299,6 +393,9 @@ export async function searchForRedelivery(tripId: number, raw: string): Promise<
   });
   if (!trip) return { ok: false, status: 404, error: "Trip not found" };
 
+  // Which invoice row an INVOICE number named (P5-5): a split bill found by
+  // one of its invoice numbers offers just that invoice.
+  const invoiceMatches = await invoiceRowMatches(term);
   const bills = await findBillsByNumber(term, {
     id: true,
     obdNumber: true,
@@ -313,10 +410,30 @@ export async function searchForRedelivery(tripId: number, raw: string): Promise<
     shipToText: true,
     shipToArea: { select: { name: true } },
     querySnapshot: { select: { totalVolume: true } },
-  });
+  }, { invoiceMatches });
   if (bills.length === 0) return { ok: true, q: term.q, trip: { id: trip.id, tripNumber: trip.tripNumber }, bills: [] };
 
   const ids = bills.map((b) => b.id);
+  // SPLIT bills — their invoices with litres, stop, hold (one index-only read
+  // when none is split), each invoice's own attempts, and the re-deliveries on
+  // THIS trip naming them.
+  const splitRows = await loadSplitInvoiceRows(bills, new Map());
+  const splitRowIds = Array.from(splitRows.values()).flatMap((rows) => rows.map((r) => r.id));
+  const rowHistories = await getInvoiceAttemptHistories(splitRowIds);
+  const rowTrips = splitRowIds.length
+    ? await prisma.order_invoices.findMany({
+        where: { id: { in: splitRowIds } },
+        select: { id: true, tripDrop: { select: { tripId: true } } },
+      })
+    : [];
+  const rowTripById = new Map(rowTrips.map((r) => [r.id, r.tripDrop?.tripId ?? null]));
+  const rowsHere = splitRowIds.length
+    ? await prisma.trip_redeliveries.findMany({
+        where: { tripId, orderInvoiceId: { in: splitRowIds } },
+        select: { orderInvoiceId: true },
+      })
+    : [];
+  const rowHereSet = new Set(rowsHere.map((r) => r.orderInvoiceId));
   const histories = await getAttemptHistories(ids);
   const own = await ownTripIds(bills);
   const here = await prisma.trip_redeliveries.findMany({
@@ -325,8 +442,51 @@ export async function searchForRedelivery(tripId: number, raw: string): Promise<
   });
   const hereSet = new Set(here.map(recordObdOf));
 
-  const out: RedeliveryCandidate[] = bills.map((b) => {
+  const out: RedeliveryCandidate[] = bills.flatMap((b): RedeliveryCandidate[] => {
     const dealer = b.shipToOverrideCustomer ?? b.customer;
+    const customerName = dealerDisplayName(dealer?.customerName, b.shipToCustomerName);
+    const area = effectiveArea(b, b.shipToArea, dealer?.area ?? null)?.name ?? null;
+    const all = splitRows.get(b.id);
+    const matched = invoiceMatches.get(b.id);
+    const targets = all
+      ? redeliveryTargetsOf(
+          { split: true, rows: all },
+          matched ? (all.find((r) => r.seq === matched.seq)?.id ?? null) : null,
+        )
+      : null;
+    if (all && targets) {
+      return targets.map((t) => {
+        const r = all.find((x) => x.id === t.id)!;
+        const history = rowHistories.get(r.id) ?? [];
+        const j = judgeBillForTrip(
+          trip,
+          {
+            isRemoved: b.isRemoved,
+            workflowStage: b.workflowStage,
+            ownTripId: rowTripById.get(r.id) ?? null,
+            hasRowOnThisTrip: rowHereSet.has(r.id),
+          },
+          history,
+        );
+        const own = j.verdict === "refused" ? null : invoiceRefusal({ isHeld: r.isHeld === true, isDispatched: r.isDispatched === true }, history);
+        return {
+          orderId: b.id,
+          orderInvoiceId: r.id,
+          invoiceKN: { k: all.findIndex((x) => x.id === r.id) + 1, n: all.length },
+          obdNumber: b.obdNumber,
+          invoiceNo: r.invoiceNo,
+          customerName,
+          area,
+          workflowStage: b.workflowStage,
+          volumeLitres: r.litres,
+          verdict: own ? "refused" : j.verdict,
+          message: own ?? j.message,
+          attemptNo: j.attemptNo,
+          history: j.history,
+          latestTripNumber: j.latestTripNumber,
+        };
+      });
+    }
     const j = judgeBillForTrip(
       trip,
       {
@@ -337,20 +497,24 @@ export async function searchForRedelivery(tripId: number, raw: string): Promise<
       },
       histories.get(b.id) ?? [],
     );
-    return {
-      orderId: b.id,
-      obdNumber: b.obdNumber,
-      invoiceNo: b.invoiceNo ?? null,
-      customerName: dealerDisplayName(dealer?.customerName, b.shipToCustomerName),
-      area: effectiveArea(b, b.shipToArea, dealer?.area ?? null)?.name ?? null,
-      workflowStage: b.workflowStage,
-      volumeLitres: b.querySnapshot?.totalVolume ?? null,
-      verdict: j.verdict,
-      message: j.message,
-      attemptNo: j.attemptNo,
-      history: j.history,
-      latestTripNumber: j.latestTripNumber,
-    };
+    return [
+      {
+        orderId: b.id,
+        orderInvoiceId: null,
+        invoiceKN: null,
+        obdNumber: b.obdNumber,
+        invoiceNo: b.invoiceNo ?? null,
+        customerName,
+        area,
+        workflowStage: b.workflowStage,
+        volumeLitres: b.querySnapshot?.totalVolume ?? null,
+        verdict: j.verdict,
+        message: j.message,
+        attemptNo: j.attemptNo,
+        history: j.history,
+        latestTripNumber: j.latestTripNumber,
+      },
+    ];
   });
   return { ok: true, q: term.q, trip: { id: trip.id, tripNumber: trip.tripNumber }, bills: out };
 }
@@ -359,11 +523,23 @@ export async function searchForRedelivery(tripId: number, raw: string): Promise<
 
 export interface RedeliveryFailure {
   orderId: number;
+  /** P5-5 — the invoice row that failed, on a split bill's invoice; absent otherwise. */
+  orderInvoiceId?: number;
   error: string;
 }
 
+export interface RedeliveryAdded {
+  id: number;
+  orderId: number;
+  obdNumber: string;
+  attemptNo: number;
+  /** P5-5 — a split bill's invoice; absent on an unsplit bill. */
+  orderInvoiceId?: number;
+  invoiceNo?: string | null;
+}
+
 export type AddOutcome =
-  | { ok: true; added: Array<{ id: number; orderId: number; obdNumber: string; attemptNo: number }>; failed: RedeliveryFailure[] }
+  | { ok: true; added: RedeliveryAdded[]; failed: RedeliveryFailure[] }
   | { ok: false; status: number; error: string };
 
 function isUniqueViolation(err: unknown): boolean {
@@ -376,10 +552,20 @@ function isUniqueViolation(err: unknown): boolean {
  * failed "Tick Truck came back"; else find-or-create its stop and write ONE
  * trip_redeliveries row. Then ONE redelivery_added activity row for the bills
  * that were added. No `orders` write.
+ *
+ * `orderIds` = UNSPLIT bills, whole (a split one there is refused: its
+ * invoices are picked one by one). `invoiceRowIds` = invoices of SPLIT bills
+ * (P5-5), each judged on its own attempts and written as its own row.
  */
 export async function addRedeliveries(
   tripId: number,
-  input: { orderIds: number[]; reason: RedeliveryReason; note: string | null; confirmedReturn: boolean },
+  input: {
+    orderIds: number[];
+    invoiceRowIds?: number[];
+    reason: RedeliveryReason;
+    note: string | null;
+    confirmedReturn: boolean;
+  },
   actorId: number,
 ): Promise<AddOutcome> {
   if (!isRedeliveryReason(input.reason)) return { ok: false, status: 400, error: "Unknown reason" };
@@ -392,7 +578,7 @@ export async function addRedeliveries(
   const tripMsg = tripRefusal(trip);
   if (tripMsg) return { ok: false, status: 409, error: tripMsg };
 
-  const added: Array<{ id: number; orderId: number; obdNumber: string; attemptNo: number }> = [];
+  const added: RedeliveryAdded[] = [];
   const logItems: RedeliveryLogItem[] = [];
   const failed: RedeliveryFailure[] = [];
 
@@ -447,13 +633,22 @@ export async function addRedeliveries(
         continue;
       }
 
+      // Which invoice row it re-delivers: seq 1 — the whole bill. A SPLIT bill
+      // has no whole row: its invoices come in invoiceRowIds (P5-5).
+      const link = (await invoiceRowLinks([orderId])).get(orderId)!;
+      if (link.split) {
+        failed.push({ orderId, error: MSG_PICK_INVOICES });
+        continue;
+      }
+      if (link.seq1Id === null) {
+        failed.push({ orderId, error: "This bill has no invoice row — it cannot be re-delivered. Tell the office." });
+        continue;
+      }
+      const orderInvoiceId = link.seq1Id;
+
       // The stop, by the shared drop-key rule. A lost race on its unique
       // throws into this bill's catch.
       const drop = await findOrCreateTripDrop(tripId, order);
-      // Which invoice row it re-delivers (lib/order-invoices/links.ts): seq 1 on
-      // an unsplit bill; on a split one the lowest-seq row on the trip it came
-      // back from (P5-4) — the whole OBD, until Phase 5 re-delivers single invoices.
-      const orderInvoiceId = await linkRowForOrder(orderId, "redelivery", prevTripIdFor(history));
 
       let row: { id: number };
       try {
@@ -489,6 +684,101 @@ export async function addRedeliveries(
       logItems.push({ orderId, obd: order.obdNumber, attemptNo: j.attemptNo, reason: input.reason });
     } catch (err) {
       failed.push({ orderId, error: err instanceof Error ? err.message : "Unexpected error" });
+    }
+  }
+
+  // ── SPLIT bills' invoices, one by one (P5-5) ──────────────────────────────
+  for (const rowId of input.invoiceRowIds ?? []) {
+    let orderId = 0;
+    try {
+      const row = await prisma.order_invoices.findUnique({
+        where: { id: rowId },
+        select: { id: true, orderId: true, seq: true, invoiceNo: true, isHeld: true, isDispatched: true, tripDrop: { select: { tripId: true } } },
+      });
+      if (!row) {
+        failed.push({ orderId: 0, orderInvoiceId: rowId, error: "Invoice not found" });
+        continue;
+      }
+      orderId = row.orderId;
+      const order = await prisma.orders.findUnique({
+        where: { id: row.orderId },
+        select: {
+          id: true,
+          obdNumber: true,
+          isRemoved: true,
+          workflowStage: true,
+          customerId: true,
+          shipToOverrideCustomerId: true,
+          shipToCustomerId: true,
+          shipToCustomerName: true,
+          shipToText: true,
+          shipToAreaId: true,
+        },
+      });
+      if (!order) {
+        failed.push({ orderId, orderInvoiceId: rowId, error: "Order not found" });
+        continue;
+      }
+      const history = (await getInvoiceAttemptHistories([rowId])).get(rowId) ?? [];
+      const existing = await prisma.trip_redeliveries.findFirst({
+        where: { tripId, orderInvoiceId: rowId },
+        select: { id: true },
+      });
+      const j = judgeBillForTrip(
+        trip,
+        {
+          isRemoved: order.isRemoved,
+          workflowStage: order.workflowStage,
+          ownTripId: row.tripDrop?.tripId ?? null,
+          hasRowOnThisTrip: existing !== null,
+        },
+        history,
+      );
+      const own = j.verdict === "refused" ? null : invoiceRefusal(row, history);
+      if (j.verdict === "refused" || own !== null) {
+        failed.push({ orderId, orderInvoiceId: rowId, error: own ?? j.message ?? "Refused" });
+        continue;
+      }
+      if (j.verdict === "warn" && input.confirmedReturn !== true) {
+        failed.push({ orderId, orderInvoiceId: rowId, error: MSG_NEEDS_CONFIRM });
+        continue;
+      }
+
+      // The OBD's stop on this trip — two invoices of one bill share it.
+      const drop = await findOrCreateTripDrop(tripId, order);
+      let created: { id: number };
+      try {
+        created = await prisma.trip_redeliveries.create({
+          data: {
+            tripId,
+            tripDropId: drop.id,
+            orderId,
+            orderInvoiceId: rowId,
+            obdNumber: order.obdNumber,
+            // The invoice's own number (screens read it live).
+            invoiceNo: row.invoiceNo,
+            attemptNo: j.attemptNo,
+            prevTripId: prevTripIdFor(history),
+            reason: input.reason,
+            note: input.note,
+            confirmedReturn: input.confirmedReturn === true,
+            createdById: actorId,
+          },
+          select: { id: true },
+        });
+      } catch (err) {
+        await deleteTripDropIfEmpty(drop.id).catch(() => false);
+        if (isUniqueViolation(err)) {
+          failed.push({ orderId, orderInvoiceId: rowId, error: MSG_ALREADY_ON_TRIP });
+          continue;
+        }
+        throw err;
+      }
+
+      added.push({ id: created.id, orderId, obdNumber: order.obdNumber, attemptNo: j.attemptNo, orderInvoiceId: rowId, invoiceNo: row.invoiceNo });
+      logItems.push({ orderId, obd: order.obdNumber, attemptNo: j.attemptNo, reason: input.reason, invoiceNo: row.invoiceNo });
+    } catch (err) {
+      failed.push({ orderId, orderInvoiceId: rowId, error: err instanceof Error ? err.message : "Unexpected error" });
     }
   }
 
@@ -540,7 +830,18 @@ export async function removeRedeliveries(
     try {
       const row = await prisma.trip_redeliveries.findUnique({
         where: { id: redeliveryId },
-        select: { id: true, tripId: true, tripDropId: true, orderId: true, obdNumber: true, attemptNo: true, reason: true },
+        select: {
+          id: true,
+          tripId: true,
+          tripDropId: true,
+          orderId: true,
+          obdNumber: true,
+          attemptNo: true,
+          reason: true,
+          // P5-5 — a split bill's invoice is named in the log; seq 1 of an
+          // unsplit bill is the bill itself and is not.
+          orderInvoice: { select: { seq: true, invoiceNo: true, order: { select: { _count: { select: { invoices: true } } } } } },
+        },
       });
       if (!row || row.tripId !== tripId) {
         failed.push({ redeliveryId, error: MSG_NOT_ON_TRIP });
@@ -548,7 +849,14 @@ export async function removeRedeliveries(
       }
       await prisma.trip_redeliveries.delete({ where: { id: row.id } });
       removed.push(row.id);
-      logItems.push({ orderId: row.orderId, obd: row.obdNumber, attemptNo: row.attemptNo, reason: row.reason });
+      const splitInvoice = row.orderInvoice.order._count.invoices > 1;
+      logItems.push({
+        orderId: row.orderId,
+        obd: row.obdNumber,
+        attemptNo: row.attemptNo,
+        reason: row.reason,
+        ...(splitInvoice ? { invoiceNo: row.orderInvoice.invoiceNo } : {}),
+      });
       // The removal stands even if tidying the stop fails — an empty stop is
       // visible and harmless; reporting the bill as failed would be untrue.
       await deleteTripDropIfEmpty(row.tripDropId).catch((err) => {

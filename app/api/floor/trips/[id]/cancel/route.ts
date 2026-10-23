@@ -206,10 +206,16 @@ export async function POST(
   // Re-deliveries planned on this trip (2026-10-03). Their rows are KEPT as the
   // record of the plan (plan rev 5 §2 #6), exactly like the drop rows; every
   // history and attempt count ignores a cancelled trip. Listed in the log only.
-  // The OBD through the invoice row each one names (P5-4).
+  // The OBD through the invoice row each one names (P5-4). One row per INVOICE
+  // since v27.74 (P5-5): a split bill's invoice is named, an unsplit bill's
+  // seq-1 row is the bill itself and is not.
   const redeliveries = await prisma.trip_redeliveries.findMany({
     where: { tripId },
-    select: { ...RECORD_OBD_SELECT, obdNumber: true },
+    select: {
+      ...RECORD_OBD_SELECT,
+      obdNumber: true,
+      orderInvoice: { select: { orderId: true, invoiceNo: true, order: { select: { _count: { select: { invoices: true } } } } } },
+    },
     orderBy: { id: "asc" },
   });
 
@@ -220,7 +226,11 @@ export async function POST(
     renamedTo,
     orderIds: orders.map((o) => o.id),
     obdNumbers: orders.map((o) => o.obdNumber),
-    redeliveries: redeliveries.map((r) => ({ orderId: recordObdOf(r), obd: r.obdNumber })),
+    redeliveries: redeliveries.map((r) => ({
+      orderId: recordObdOf(r),
+      obd: r.obdNumber,
+      ...(r.orderInvoice.order._count.invoices > 1 ? { invoiceNo: r.orderInvoice.invoiceNo } : {}),
+    })),
     // ⚠ NO REASON IS PASSED, because this route does not take one — it reads
     // `_req` and never parses a body. `logTripCancelled` accepts one so a later
     // slice can add the field without touching the writer; inventing a body

@@ -18,7 +18,10 @@ export const dynamic = "force-dynamic";
  *   invoice — "Copy inv" (v27.61, 2026-10-07): every bill with an invoice
  *             number and no copy row yet — any picking state, held included.
  *             `invoiceNos` is REQUIRED, parallel to `orderIds`: the number the
- *             screen showed per bill. A changed number is a 409.
+ *             screen showed per bill. A changed number is a 409. A SPLIT bill
+ *             is sent once PER INVOICE (its id repeated, each with that
+ *             invoice's number — P5-5, v27.74); every other kind writes a row
+ *             for each of a split bill's uncopied invoices on the trip.
  * The server re-derives each bill's state and records only if every one is
  * still what the kind needs (lib/billing/print.ts copyTripBills); otherwise 409
  * and nothing is written. A bill someone else copied first is skipped and

@@ -14,6 +14,8 @@
 
 import { prisma } from "@/lib/prisma";
 import { onStopsWhere, placeOnTrips, stopRowsSelect } from "@/lib/order-invoices/trip-read";
+import { loadSplitInvoiceRows } from "@/lib/order-invoices/invoice-load";
+import { placeLoad } from "@/lib/floor/invoice-rows";
 import {
   STAGE_LADDER,
   SUPPORT_DONE_OUTPUT,
@@ -247,6 +249,13 @@ export async function getTripDetailRows(params: TripDetailParams): Promise<TripD
 
   // ── 4. Quantities (the import's per-OBD snapshot) ────────────────────────
   const snapByOrder = await loadSnapshots(orders.map((o) => o.id));
+  // A SPLIT OBD carries only its invoices on THAT trip (Add invoices P5-5,
+  // the trip feed's rule — lib/order-invoices/invoice-load.ts placeLoad); one
+  // index-only read when none is split. Re-deliveries are not in this report.
+  const splitRows = await loadSplitInvoiceRows(
+    orders,
+    new Map(orders.map((o) => [o.id, snapByOrder.get(o.id)?.totalWeight ?? null] as const)),
+  );
 
   // ── 5. Bill-to, from SAP's raw summary — latest row wins ─────────────────
   const billToByObd = await loadBillToByObd(orders.map((o) => o.obdNumber));
@@ -288,7 +297,15 @@ export async function getTripDetailRows(params: TripDetailParams): Promise<TripD
 
     // KG / litres / articles — billQuantities (lib/reports/bill-facts.ts) holds
     // the rules: a stored 0 kg is UNKNOWN only when grossWeight is null.
-    const { kg, litres, articles } = billQuantities(snap, o);
+    const whole = billQuantities(snap, o);
+    const split = splitRows.get(o.id);
+    const inTrip = (d: number | null) => d !== null && dropById.get(d)?.tripId === drop.tripId;
+    const part = split ? placeLoad(split, inTrip) : null;
+    const { kg, litres, articles } = part ? { ...whole, kg: part.kg, litres: part.litres } : whole;
+    // …and its number is ITS invoices on this trip, seq order (not seq 1's).
+    const hereNos = split
+      ? split.filter((r) => inTrip(r.tripDropId)).map((r) => blank(r.invoiceNo)).filter((n): n is string => n !== null)
+      : [];
 
     // B — SAP's own ship-to point (orders.customerId), and whether it is a site.
     const sapShipTo = o.customerId !== null ? custById.get(o.customerId) : undefined;
@@ -328,7 +345,7 @@ export async function getTripDetailRows(params: TripDetailParams): Promise<TripD
       route: blank(cust?.primaryRoute?.name) ?? blank(drop.routeName),
       obdNo: o.obdNumber,
       soNo: blank(o.soNumber),
-      invoiceNo: blank(o.invoiceNo),
+      invoiceNo: hereNos.length > 0 ? hereNos.join(", ") : blank(o.invoiceNo),
       invoiceDate: istDay(o.invoiceDate),
       smu: blank(o.smu),
       tint: o.orderType === "tint" ? "Yes" : "No",

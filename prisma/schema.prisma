@@ -4482,15 +4482,15 @@ model trip_redeliveries {
   createdById     Int
   createdBy       users      @relation("TripRedeliveryCreatedBy", fields: [createdById], references: [id])
   updatedAt       DateTime   @default(now()) @updatedAt @db.Timestamptz(6)
-  // v27.66 — which invoice row was re-delivered. NULLABLE until the Phase 5 gate
-  // (PART 7 of sql/2026-10-12-order-invoices-dispatch-unit.sql). Live FK
-  // trip_redeliveries_order_invoice_fkey ON DELETE RESTRICT.
-  orderInvoiceId  Int?
-  orderInvoice    order_invoices? @relation(fields: [orderInvoiceId], references: [id], onDelete: Restrict, map: "trip_redeliveries_order_invoice_fkey")
+  // v27.66 — which invoice row was re-delivered. NOT NULL since v27.74 (PART 7
+  // of sql/2026-10-12-order-invoices-dispatch-unit.sql, run 23 Oct 2026): one
+  // row per INVOICE per trip (P5-5). Live FK trip_redeliveries_order_invoice_fkey
+  // ON DELETE RESTRICT.
+  orderInvoiceId  Int
+  orderInvoice    order_invoices @relation(fields: [orderInvoiceId], references: [id], onDelete: Restrict, map: "trip_redeliveries_order_invoice_fkey")
 
   // Hand-made names, so every one carries an explicit `map:`.
-  // ⚠ The OLD (tripId, orderId) unique stays until the Phase 5 gate (PART 7).
-  @@unique([tripId, orderId], map: "trip_redeliveries_trip_order_key")
+  // The OLD (tripId, orderId) unique was DROPPED by PART 7 (v27.74).
   @@unique([tripId, orderInvoiceId], map: "trip_redeliveries_trip_invoice_key")
   @@index([tripDropId], map: "trip_redeliveries_drop_idx")
   @@index([orderId], map: "trip_redeliveries_order_idx")
@@ -4519,9 +4519,10 @@ model trip_redeliveries {
 // Done like any copy; a held bill's row is outside every count while held.
 // A new kind = ALTER the CHECK first, then the vocabulary constant in code.
 //
-// 🔴 trip_bill_copies_trip_order_key UNIQUE ("tripId","orderId") IS THE RACE
-// GUARD: two presses on one bill → the second is skipped (createMany
-// skipDuplicates). Do not drop it.
+// 🔴 trip_bill_copies_trip_invoice_key UNIQUE ("tripId","orderInvoiceId") IS THE
+// RACE GUARD: two presses on one invoice → the second is skipped (createMany
+// skipDuplicates). Do not drop it. The old ("tripId","orderId") unique was
+// dropped by PART 7 (v27.74) — a split OBD has one copy row PER INVOICE (P5-5).
 //
 // ON DELETE RESTRICT on trip and order (trips and orders are never deleted);
 // copiedBy keeps the default rule, like trips.createdById. Three relations to
@@ -4547,15 +4548,15 @@ model trip_bill_copies {
   copiedById Int?
   copiedBy   users?   @relation("TripBillCopyCopiedBy", fields: [copiedById], references: [id], onDelete: NoAction)
   createdAt  DateTime @default(now()) @db.Timestamptz(6)
-  // v27.66 — which invoice row was copied. NULLABLE until the Phase 5 gate
-  // (PART 7 of sql/2026-10-12-order-invoices-dispatch-unit.sql). Live FK
-  // trip_bill_copies_order_invoice_fkey ON DELETE RESTRICT.
-  orderInvoiceId Int?
-  orderInvoice   order_invoices? @relation(fields: [orderInvoiceId], references: [id], onDelete: Restrict, map: "trip_bill_copies_order_invoice_fkey")
+  // v27.66 — which invoice row was copied. NOT NULL since v27.74 (PART 7 of
+  // sql/2026-10-12-order-invoices-dispatch-unit.sql, run 23 Oct 2026): one row
+  // per INVOICE per trip (P5-5). Live FK trip_bill_copies_order_invoice_fkey
+  // ON DELETE RESTRICT.
+  orderInvoiceId Int
+  orderInvoice   order_invoices @relation(fields: [orderInvoiceId], references: [id], onDelete: Restrict, map: "trip_bill_copies_order_invoice_fkey")
 
   // Hand-made names, so every one carries an explicit `map:`.
-  // ⚠ The OLD (tripId, orderId) unique stays until the Phase 5 gate (PART 7).
-  @@unique([tripId, orderId], map: "trip_bill_copies_trip_order_key")
+  // The OLD (tripId, orderId) unique was DROPPED by PART 7 (v27.74).
   @@unique([tripId, orderInvoiceId], map: "trip_bill_copies_trip_invoice_key")
   @@index([orderId], map: "trip_bill_copies_order_idx")
   @@index([orderInvoiceId], map: "trip_bill_copies_invoice_idx")

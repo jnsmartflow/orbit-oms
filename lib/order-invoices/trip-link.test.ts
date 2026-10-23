@@ -82,9 +82,9 @@ test("link: an unsplit OBD → seq 1 for copy, re-delivery and CI", () => {
   assert.equal(linkRowFor(UNSPLIT, "ci"), 500);
 });
 
-test("link: a split OBD → seq 1 for a copy or re-delivery (one row per trip + OBD until PART 7)", () => {
-  assert.equal(linkRowFor(SPLIT, "copy"), 17010);
-  assert.equal(linkRowFor(SPLIT, "redelivery"), 17010);
+test("link: a split OBD → NULL for a copy or re-delivery too (P5-5: the writers name each invoice; PART 7 ran)", () => {
+  assert.equal(linkRowFor(SPLIT, "copy"), null);
+  assert.equal(linkRowFor(SPLIT, "redelivery"), null);
 });
 
 test("link: a split OBD → NULL for a CI (a whole-OBD CI on seq 1 would mark the wrong row returned)", () => {
@@ -97,44 +97,10 @@ test("link: no seq-1 row → NULL for every kind", () => {
   }
 });
 
-// ── linkRowFor on a trip (P5-4) ──────────────────────────────────────────────
-
-// 18648 with 713 (36798) + 715 (36800) on trip 668, 716 + 714 off any trip.
-const SPLIT_ON = {
-  seq1Id: 17010,
-  split: true,
-  rows: [
-    { id: 36800, seq: 4, tripId: 668 },
-    { id: 17010, seq: 1, tripId: null },
-    { id: 36798, seq: 2, tripId: 668 },
-    { id: 36799, seq: 3, tripId: null },
-  ],
-};
-
-test("link on a trip: a split OBD → its LOWEST-seq row on that trip, whatever the list order", () => {
-  assert.equal(linkRowFor(SPLIT_ON, "copy", 668), 36798);
-  assert.equal(linkRowFor(SPLIT_ON, "redelivery", 668), 36798);
-});
-
-test("link on a trip: no row of a split OBD on that trip, or no trip → seq 1", () => {
-  assert.equal(linkRowFor(SPLIT_ON, "copy", 605), 17010);
-  assert.equal(linkRowFor(SPLIT_ON, "redelivery", null), 17010);
-  assert.equal(linkRowFor(SPLIT, "copy", 668), 17010); // rows unknown
-});
-
-test("link on a trip: unsplit is always seq 1, CI on a split OBD always NULL", () => {
-  const one = { seq1Id: 500, split: false, rows: [{ id: 500, seq: 1, tripId: 605 }] };
-  assert.equal(linkRowFor(one, "copy", 605), 500);
-  assert.equal(linkRowFor(one, "copy", 668), 500);
-  assert.equal(linkRowFor(SPLIT_ON, "ci", 668), null);
-});
-
 // ── recordObdOf / recordsOfObds (P5-4 readers) ──────────────────────────────
 
-test("record: the OBD comes through the invoice row; orderId only when the key is NULL", () => {
-  assert.equal(recordObdOf({ orderId: 18648, orderInvoice: { orderId: 18648 } }), 18648);
-  assert.equal(recordObdOf({ orderId: 1, orderInvoice: { orderId: 18648 } }), 18648);
-  assert.equal(recordObdOf({ orderId: 18648, orderInvoice: null }), 18648);
+test("record: the OBD comes through the invoice row (NOT NULL since PART 7)", () => {
+  assert.equal(recordObdOf({ orderInvoice: { orderId: 18648 } }), 18648);
 });
 
 test("record: the where reaches records through the invoice row, never orderId", () => {

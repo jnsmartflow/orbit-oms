@@ -1,4 +1,9 @@
 -- ============================================================================
+-- ✅ RUN by owner 23 Oct 2026: k 1–6 all 0 · copies 857 · re-deliveries 73 →
+--   PART 7 + 6c then ran (Schema v27.74, CORE v150). THE GATE IS CLOSED; kept
+--   as the record. After PART 7, k 20 lists 8 + 10 constraints (no
+--   _trip_order_key) and k 1–2 cannot be anything but 0.
+-- ============================================================================
 -- 2026-10-17 · PART 7 GATE CHECKS — READ-ONLY. Run BEFORE PART 7 of
 -- sql/2026-10-12-order-invoices-dispatch-unit.sql (SET NOT NULL on both
 -- "orderInvoiceId" columns + DROP the two old (tripId, orderId) uniques).

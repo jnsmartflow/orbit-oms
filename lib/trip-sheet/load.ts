@@ -40,7 +40,8 @@ import { isGiftBill } from "@/lib/orders/gift";
 import { onStopsWhere, placeOnTrips, stopRowsSelect } from "@/lib/order-invoices/trip-read";
 import { loadSplitInvoiceRows } from "@/lib/order-invoices/invoice-load";
 import { RECORD_OBD_SELECT, recordObdOf } from "@/lib/order-invoices/links";
-import { placeLoad } from "@/lib/floor/invoice-rows";
+import { invoicesLoad, placeLoad } from "@/lib/floor/invoice-rows";
+import { groupRedeliveries } from "@/lib/order-invoices/redelivery-plan";
 import { summariseStops } from "./totals";
 import {
   SHARE_GROUP_LABEL,
@@ -189,11 +190,13 @@ async function loadSheetCore(trips: CoreTrip[]): Promise<Map<number, SheetCore>>
 
   // 3–4. Re-deliveries carried on these trucks (Schema v27.53). The bill's own
   // tripDropId points at its FIRST trip, so the stop comes from the row.
-  // The OBD through the invoice row each re-delivery names (P5-4).
+  // The OBD through the invoice row each re-delivery names (P5-4). One row per
+  // INVOICE since v27.74 (P5-5): a split bill's records on one stop are ONE
+  // sheet bill carrying just those invoices.
   const redelRows = (
     await prisma.trip_redeliveries.findMany({
       where: { tripId: { in: tripIds } },
-      select: { tripId: true, tripDropId: true, ...RECORD_OBD_SELECT },
+      select: { tripId: true, tripDropId: true, orderInvoiceId: true, ...RECORD_OBD_SELECT },
     })
   ).map((r) => ({ ...r, orderId: recordObdOf(r) }));
   const redelOrders: BillRow[] = redelRows.length
@@ -204,16 +207,17 @@ async function loadSheetCore(trips: CoreTrip[]): Promise<Map<number, SheetCore>>
     : [];
   const redelOrderById = new Map(redelOrders.map((o) => [o.id, o]));
 
-  // Every bill that can appear, keyed to the stop it rides on THIS trip.
-  const placed: Array<{ order: BillRow; dropId: number; redel: boolean }> = [];
+  // Every bill that can appear, keyed to the stop it rides on THIS trip. A
+  // re-delivery carries the invoice rows it names (`rowIds`, P5-5).
+  const placed: Array<{ order: BillRow; dropId: number; redel: boolean; rowIds: number[] | null }> = [];
   for (const o of own) {
     if (o.dispatchStatus === HOLD) continue;
-    placed.push({ order: o, dropId: o.tripDropId, redel: false });
+    placed.push({ order: o, dropId: o.tripDropId, redel: false, rowIds: null });
   }
-  for (const r of redelRows) {
-    const o = redelOrderById.get(r.orderId);
+  for (const g of groupRedeliveries(redelRows)) {
+    const o = redelOrderById.get(g.first.orderId);
     if (!o || o.dispatchStatus === HOLD) continue;
-    placed.push({ order: o, dropId: r.tripDropId, redel: true });
+    placed.push({ order: o, dropId: g.first.tripDropId, redel: true, rowIds: g.rowIds });
   }
   const uniqueOrders = Array.from(new Map(placed.map((p) => [p.order.id, p.order])).values());
   const orderIds = uniqueOrders.map((o) => o.id);
@@ -222,11 +226,10 @@ async function loadSheetCore(trips: CoreTrip[]): Promise<Map<number, SheetCore>>
   const snapByOrder = await loadSnapshots(orderIds);
   // A SPLIT OBD carries only its invoices on THIS trip (Phase 5 commit 1) —
   // lib/order-invoices/invoice-load.ts; one index-only read when none is split.
-  // Its OWN rows only: a re-delivery is still the whole OBD until Phase 5
-  // commit 5 keys re-deliveries per invoice.
+  // A re-delivered split OBD carries only the invoices it names (P5-5).
   const splitRows = await loadSplitInvoiceRows(
-    own,
-    new Map(own.map((o) => [o.id, snapByOrder.get(o.id)?.totalWeight ?? null] as const)),
+    uniqueOrders,
+    new Map(uniqueOrders.map((o) => [o.id, snapByOrder.get(o.id)?.totalWeight ?? null] as const)),
   );
   const billToByObd = await loadBillToByObd(uniqueOrders.map((o) => o.obdNumber));
 
@@ -293,9 +296,21 @@ async function loadSheetCore(trips: CoreTrip[]): Promise<Map<number, SheetCore>>
     if (!drop) continue;
     const o = p.order;
     const whole = billQuantities(snapByOrder.get(o.id), o);
-    const rows = p.redel ? undefined : splitRows.get(o.id);
-    const load = rows ? placeLoad(rows, (d) => d !== null && dropById.get(d)?.tripId === drop.tripId) : null;
+    const rows = splitRows.get(o.id);
+    const inPlace = (r: { id: number; tripDropId: number | null }) =>
+      p.rowIds !== null ? p.rowIds.includes(r.id) : r.tripDropId !== null && dropById.get(r.tripDropId)?.tripId === drop.tripId;
+    const load = rows
+      ? p.rowIds !== null
+        ? invoicesLoad(rows, p.rowIds)
+        : placeLoad(rows, (d) => d !== null && dropById.get(d)?.tripId === drop.tripId)
+      : null;
     const q = load ? { ...whole, litres: load.litres, kg: load.kg } : whole;
+    // A SPLIT bill's number is ITS invoices here, seq order (P5-5) — not
+    // orders.invoiceNo, which is seq 1's.
+    const hereNos = rows
+      ? rows.filter(inPlace).map((r) => blank(r.invoiceNo)).filter((n): n is string => n !== null)
+      : [];
+    const shownNo = hereNos.length > 0 ? hereNos.join(", ") : blank(o.invoiceNo);
     const a = assignmentByOrder.get(o.id);
     const typed = a?.articleCount ?? null;
     const billTo = billToByObd.get(o.obdNumber);
@@ -308,9 +323,9 @@ async function loadSheetCore(trips: CoreTrip[]): Promise<Map<number, SheetCore>>
     const soName = blank(so?.name);
     const bill: TripSheetBill = {
       orderId: o.id,
-      number: blank(o.invoiceNo) ?? o.obdNumber,
+      number: shownNo ?? o.obdNumber,
       obd: o.obdNumber,
-      invoiceNo: blank(o.invoiceNo),
+      invoiceNo: shownNo,
       gift: isGiftBill(o.materialType),
       redel: p.redel,
       articles: typed ?? q.articles,

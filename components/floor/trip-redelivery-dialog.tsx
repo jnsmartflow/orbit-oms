@@ -15,6 +15,12 @@
 // trip_redeliveries row per bill and NOTHING on the bill itself. The server
 // re-judges every bill; whatever it refuses comes back per bill and is shown here.
 //
+// PER INVOICE (Add invoices P5-5, v27.74): a SPLIT bill comes back as ONE
+// CANDIDATE PER INVOICE (an invoice number finds just that one), each judged on
+// its own attempts and ticked on its own; the add sends them as
+// `invoiceRowIds`, unsplit bills as `orderIds` — one trip_redeliveries row
+// each. A line is keyed `inv:<order_invoices.id>` or the order id.
+//
 // ⚠ NO KEY LISTENER. floor-page.tsx is the single Esc owner (CLAUDE_FLOOR §4.6)
 // and closes this through `onClose` — even from inside the number box.
 // ⚠ A MODAL OVER THE WHOLE PAGE — the off-floor-dialog.tsx pattern (fixed,
@@ -132,7 +138,20 @@ function LatestTripLine({ history }: { history: AttemptHistoryEntry[] }) {
 
 interface AddFailure {
   orderId: number;
+  /** A split bill's invoice (P5-5); absent on an unsplit bill. */
+  orderInvoiceId?: number;
   error: string;
+}
+
+/** One dialog line's key — the invoice row on a split bill, else the order. */
+function keyOf(b: { orderId: number; orderInvoiceId?: number | null }): string {
+  return b.orderInvoiceId != null ? `inv:${b.orderInvoiceId}` : String(b.orderId);
+}
+
+/** "I536230713 · 2/4" on a split bill's invoice; the bill's own number otherwise. */
+function invoiceLabel(b: RedeliveryCandidate): string | null {
+  if (b.invoiceKN === null) return b.invoiceNo;
+  return `${b.invoiceNo ?? "—"} · ${b.invoiceKN.k}/${b.invoiceKN.n}`;
 }
 
 export function TripRedeliveryDialog({
@@ -154,7 +173,7 @@ export function TripRedeliveryDialog({
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [bills, setBills] = useState<RedeliveryCandidate[] | null>(null);
-  const [chosen, setChosen] = useState<Set<number>>(new Set());
+  const [chosen, setChosen] = useState<Set<string>>(new Set());
   const [reason, setReason] = useState<RedeliveryReason | null>(null);
   const [note, setNote] = useState("");
   const [truckBack, setTruckBack] = useState(false);
@@ -186,7 +205,7 @@ export function TripRedeliveryDialog({
       setBills(body.bills);
       // One bill that may go → it is chosen at once. Several → the planner ticks.
       const goable = body.bills.filter((b) => b.verdict !== "refused");
-      setChosen(body.bills.length === 1 && goable.length === 1 ? new Set([goable[0].orderId]) : new Set());
+      setChosen(body.bills.length === 1 && goable.length === 1 ? new Set([keyOf(goable[0])]) : new Set());
       setTruckBack(false);
     } catch {
       setBills(null);
@@ -196,17 +215,17 @@ export function TripRedeliveryDialog({
     }
   }
 
-  const chosenBills = useMemo(() => (bills ?? []).filter((b) => chosen.has(b.orderId)), [bills, chosen]);
+  const chosenBills = useMemo(() => (bills ?? []).filter((b) => chosen.has(keyOf(b))), [bills, chosen]);
   const warned = chosenBills.filter((b) => b.verdict === "warn");
   const noteTooLong = note.trim().length > 500;
   const canAdd = !busy && chosenBills.length > 0 && reason !== null && (warned.length === 0 || truckBack) && !noteTooLong;
   const n = chosenBills.length;
 
-  function toggle(orderId: number) {
+  function toggle(key: string) {
     setChosen((prev) => {
       const next = new Set(prev);
-      if (next.has(orderId)) next.delete(orderId);
-      else next.add(orderId);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
       return next;
     });
   }
@@ -217,31 +236,36 @@ export function TripRedeliveryDialog({
     setFailures([]);
     try {
       const trimmed = note.trim();
+      const wholeIds = chosenBills.filter((b) => b.orderInvoiceId === null).map((b) => b.orderId);
+      const rowIds = chosenBills.map((b) => b.orderInvoiceId).filter((id): id is number => id !== null);
       const res = await fetch(`/api/floor/trips/${tripId}/redeliveries`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "add",
-          orderIds: chosenBills.map((b) => b.orderId),
+          ...(wholeIds.length > 0 ? { orderIds: wholeIds } : {}),
+          ...(rowIds.length > 0 ? { invoiceRowIds: rowIds } : {}),
           reason,
           ...(trimmed !== "" ? { note: trimmed } : {}),
           ...(warned.length > 0 ? { confirmedReturn: truckBack } : {}),
         }),
       });
       const body = (await res.json().catch(() => ({}))) as {
-        added?: Array<{ orderId: number; obdNumber: string; attemptNo: number }>;
+        added?: Array<{ orderId: number; obdNumber: string; attemptNo: number; orderInvoiceId?: number; invoiceNo?: string | null }>;
         failed?: AddFailure[];
         error?: string;
       };
       if (!Array.isArray(body.added) || !Array.isArray(body.failed)) {
-        setFailures(chosenBills.map((b) => ({ orderId: b.orderId, error: body.error ?? `HTTP ${res.status}` })));
+        setFailures(
+          chosenBills.map((b) => ({ orderId: b.orderId, orderInvoiceId: b.orderInvoiceId ?? undefined, error: body.error ?? `HTTP ${res.status}` })),
+        );
         return;
       }
       const added = body.added;
       if (added.length > 0) {
         toast.success(
           added.length === 1
-            ? `${added[0].obdNumber} added to ${tripNumber} · attempt ${added[0].attemptNo}`
+            ? `${added[0].obdNumber}${added[0].invoiceNo ? ` · ${added[0].invoiceNo}` : ""} added to ${tripNumber} · attempt ${added[0].attemptNo}`
             : `${added.length} re-deliveries added to ${tripNumber}`,
         );
         onAdded();
@@ -251,19 +275,29 @@ export function TripRedeliveryDialog({
         return;
       }
       // Some did not go — keep the dialog, untick what went, say why per bill.
-      const addedIds = new Set(added.map((a) => a.orderId));
-      setChosen((prev) => new Set(Array.from(prev).filter((id) => !addedIds.has(id))));
-      setBills((prev) => (prev ?? []).filter((b) => !addedIds.has(b.orderId)));
+      const addedKeys = new Set(added.map(keyOf));
+      setChosen((prev) => new Set(Array.from(prev).filter((k) => !addedKeys.has(k))));
+      setBills((prev) => (prev ?? []).filter((b) => !addedKeys.has(keyOf(b))));
       setFailures(body.failed);
     } catch {
-      setFailures(chosenBills.map((b) => ({ orderId: b.orderId, error: "Could not reach the server — nothing was changed." })));
+      setFailures(
+        chosenBills.map((b) => ({
+          orderId: b.orderId,
+          orderInvoiceId: b.orderInvoiceId ?? undefined,
+          error: "Could not reach the server — nothing was changed.",
+        })),
+      );
     } finally {
       setBusy(false);
     }
   }
 
-  const failureFor = (orderId: number) => failures.find((f) => f.orderId === orderId)?.error ?? null;
+  const failureFor = (b: RedeliveryCandidate) =>
+    failures.find((f) => keyOf(f) === keyOf(b))?.error ?? null;
   const single = bills !== null && bills.length === 1 ? bills[0] : null;
+  // Several lines that are all invoices of ONE split bill (an OBD number typed).
+  const oneSplitBill =
+    bills !== null && bills.length > 1 && bills.every((b) => b.invoiceKN !== null && b.orderId === bills[0].orderId);
 
   return (
     <div className="fixed inset-0 z-[120] flex items-start justify-center bg-black/40 p-4 pt-[70px]" onClick={busy ? undefined : onClose}>
@@ -340,7 +374,7 @@ export function TripRedeliveryDialog({
                   This will be <span className="text-warn-text">attempt {single.attemptNo}</span>
                 </div>
               )}
-              {failureFor(single.orderId) && <Refusal text={failureFor(single.orderId)} />}
+              {failureFor(single) && <Refusal text={failureFor(single)} />}
             </div>
           )}
 
@@ -348,15 +382,23 @@ export function TripRedeliveryDialog({
           {bills !== null && bills.length > 1 && (
             <>
               <p className="mt-3 text-[12px] text-ink-500">
-                This number covers <b className="text-ink-900">{bills.length} bills</b>. Tick the ones going back out.
+                {oneSplitBill ? (
+                  <>
+                    This bill has <b className="text-ink-900">{bills.length} invoices</b>. Tick the ones going back out.
+                  </>
+                ) : (
+                  <>
+                    This number covers <b className="text-ink-900">{bills.length} bills</b>. Tick the ones going back out.
+                  </>
+                )}
               </p>
               <div className="mt-2 overflow-hidden rounded-[10px] border border-ink-100">
                 {bills.map((b) => {
                   const off = b.verdict === "refused";
-                  const fail = failureFor(b.orderId);
+                  const fail = failureFor(b);
                   return (
                     <label
-                      key={b.orderId}
+                      key={keyOf(b)}
                       className={`flex cursor-pointer items-start gap-2.5 border-b border-ink-50 px-3 py-2.5 last:border-b-0 ${
                         off ? "cursor-not-allowed text-ink-400" : "hover:bg-ink-25"
                       }`}
@@ -365,12 +407,15 @@ export function TripRedeliveryDialog({
                         type="checkbox"
                         className="mt-[3px] h-[14px] w-[14px] flex-none accent-brand-600"
                         disabled={off || busy}
-                        checked={chosen.has(b.orderId)}
-                        onChange={() => toggle(b.orderId)}
+                        checked={chosen.has(keyOf(b))}
+                        onChange={() => toggle(keyOf(b))}
                       />
                       <span className="min-w-0 flex-1">
                         <span className="flex flex-wrap items-baseline gap-x-2 text-[13px]">
                           <span className={`font-mono font-semibold ${off ? "" : "text-ink-900"}`}>{b.obdNumber}</span>
+                          {b.invoiceKN !== null && (
+                            <span className={`font-mono ${off ? "" : "text-ink-700"}`}>{invoiceLabel(b)}</span>
+                          )}
                           <span className={off ? "" : "text-ink-700"}>{b.customerName}</span>
                           {b.volumeLitres !== null && <span className="tabular-nums text-ink-500">{formatLitres(b.volumeLitres)} L</span>}
                           <span className="text-ink-500">· {stageLabel(b.workflowStage)}</span>
@@ -474,7 +519,7 @@ function Facts({ bill }: { bill: RedeliveryCandidate }) {
       <dt className="text-ink-500">OBD</dt>
       <dd className="font-mono text-ink-900">{bill.obdNumber}</dd>
       <dt className="text-ink-500">Invoice</dt>
-      <dd className="font-mono text-ink-900">{bill.invoiceNo ?? "—"}</dd>
+      <dd className="font-mono text-ink-900">{invoiceLabel(bill) ?? "—"}</dd>
     </dl>
   );
 }

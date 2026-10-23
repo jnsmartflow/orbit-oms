@@ -20,10 +20,13 @@
 //      REVIEW instead: it never goes in the bulk Copy; billing opens it, reads
 //      the finding, and marks it done from the panel.
 //   4. COPIES ARE PER BILL AND MAY BE PARTIAL. Every copy press writes one
-//      trip_bill_copies row per bill (UNIQUE tripId + orderInvoiceId, and the
-//      old tripId + orderId until PART 7 — a second press on the same bill is
-//      skipped, P5-4); the next press copies only bills that
-//      became ready since. Slice 9's "never a partial set" (a trip copyable only
+//      trip_bill_copies row per bill (UNIQUE tripId + orderInvoiceId — a
+//      second press on the same bill is skipped); the next press copies only
+//      bills that became ready since. A SPLIT OBD (Add invoices P5-5, v27.74 —
+//      PART 7 dropped the old per-OBD unique) gets ONE ROW PER INVOICE of it on
+//      the trip, and reads copied there when every one is
+//      (lib/order-invoices/copy-plan.ts — incl. the whole-OBD copy taken
+//      before a split, e.g. copy 276). Slice 9's "never a partial set" (a trip copyable only
 //      once every bill had an invoice number) was REMOVED on purpose — do not
 //      restore it.
 //   5. DONE IS A PRESS. When every non-held bill is copied, billing presses
@@ -70,7 +73,8 @@ import { tintPhaseOf } from "@/lib/floor/tint-phase";
 import { CHALLAN_LINKED, DISPATCHED, PICK_ASSIGNED, PICK_CHECKED, PICK_DONE } from "@/lib/workflow-stages";
 import { BILLABLE_BILL_WHERE } from "@/lib/challan-orders/where";
 import { logTripBillingDone, logTripBillsCopied } from "@/lib/trips/activity";
-import { invoiceRowLinks, linkRowFor, RECORD_OBD_SELECT, recordObdOf, recordsOfObds } from "@/lib/order-invoices/links";
+import { invoiceRowLinks, RECORD_OBD_SELECT, recordObdOf, recordsOfObds } from "@/lib/order-invoices/links";
+import { badSentNo, coveringCopy, isWholeObdCopy, planCopyRows } from "@/lib/order-invoices/copy-plan";
 import { onStopsWhere, onTripsWhere, placeOnTrips, stopRowsSelect } from "@/lib/order-invoices/trip-read";
 import { loadSplitInvoiceRows } from "@/lib/order-invoices/invoice-load";
 import { placeLoad } from "@/lib/floor/invoice-rows";
@@ -105,14 +109,42 @@ function invoiceOf(invoiceNo: string | null): string | null {
   return t === "" ? null : t;
 }
 
+/**
+ * One invoice of a SPLIT OBD on the trip (P5-5) — the tab draws one line each.
+ * Its copy state is its OWN: a copy row on this trip naming it, or the OBD's
+ * whole-bill copy taken before the split (`copiedWhole`, copy-plan.ts).
+ */
+export interface PrintInvoiceLine {
+  /** order_invoices.id */
+  id: number;
+  seq: number;
+  /** 1-based among ALL the OBD's invoices, and their count — "2/4". */
+  k: number;
+  n: number;
+  invoiceNo: string | null;
+  invoiceDate: string | null;
+  litres: number;
+  /** null = unknown. Exact (rules 1-2) or "~" shared (rule 3, never here: no header kg is read). */
+  kg: number | null;
+  kgExact: boolean;
+  copiedAt: string | null;
+  copiedByName: string | null;
+  copyKind: string | null;
+  /** The covering copy is the OBD's whole-bill copy from before the split. */
+  copiedWhole: boolean;
+  /** This invoice's latest copy on ANOTHER trip — a quiet note. */
+  copiedOnOtherTrip: { tripNumber: string; at: string } | null;
+}
+
 export interface PrintBillRow {
   /**
-   * A SPLIT OBD (Add invoices, Phase 5 commit 1): the invoices of it that are on
-   * THIS trip, seq order — DATA ONLY until Phase 5 commit 5 (per-invoice copies)
-   * draws them. null = not split. `litres` below is theirs when only some are
-   * on the trip (lib/floor/invoice-rows.ts placeLoad), else the OBD's own.
+   * A SPLIT OBD (Add invoices): the invoices of it that are on THIS trip, seq
+   * order, each with its own copy state (P5-5). null = not split. `litres`
+   * below is theirs when only some are on the trip (lib/floor/invoice-rows.ts
+   * placeLoad), else the OBD's own. The bill's own copy fields say "copied"
+   * only when EVERY line is.
    */
-  invoices: Array<{ seq: number; invoiceNo: string | null; invoiceDate: string | null }> | null;
+  invoices: PrintInvoiceLine[] | null;
   orderId: number;
   obdNumber: string;
   invoiceNo: string | null;
@@ -198,8 +230,12 @@ export interface PrintTrip {
   readyOrderIds: number[];
   readyObds: string[];
   /** Copy inv's set (rule 7): bills with an invoice number and NO copy row on
-   *  this trip, held included, any picking state — in table order. */
+   *  this trip, held included, any picking state — in table order. A SPLIT
+   *  bill appears once PER uncopied invoice (P5-5). */
   invoicePendingOrderIds: number[];
+  /** Parallel to invoicePendingOrderIds: the number each entry copies — what
+   *  the Copy inv press sends back as `invoiceNos`. */
+  invoicePendingBillNos: string[];
   /** Their invoice numbers, trimmed, each DISTINCT number once, in table order. */
   invoicePendingNos: string[];
   /** Done not pressed, ≥ 1 non-held bill, and every non-held bill copied. */
@@ -324,11 +360,26 @@ export async function loadPrintTrips(tripIds: number[]): Promise<PrintTrip[]> {
     ? (
         await prisma.trip_bill_copies.findMany({
           where: recordsOfObds(orderIds),
-          select: { tripId: true, ...RECORD_OBD_SELECT, copiedAt: true, copiedById: true, kind: true },
+          select: { tripId: true, orderInvoiceId: true, ...RECORD_OBD_SELECT, copiedAt: true, copiedById: true, kind: true },
           orderBy: { copiedAt: "desc" },
         })
       ).map((c) => ({ ...c, orderId: recordObdOf(c) }))
     : [];
+  // P5-5 — each split OBD's split moment (its first seq ≥ 2 row): a copy older
+  // than it was of the whole bill (lib/order-invoices/copy-plan.ts). None read
+  // when no bill here is split.
+  const splitIds = Array.from(splitRows.keys());
+  const splitAtByOrder = new Map<number, Date>();
+  if (splitIds.length > 0) {
+    for (const r of await prisma.order_invoices.findMany({
+      where: { orderId: { in: splitIds }, seq: { gt: 1 } },
+      select: { orderId: true, createdAt: true },
+    })) {
+      const at = splitAtByOrder.get(r.orderId);
+      if (at === undefined || r.createdAt.getTime() < at.getTime()) splitAtByOrder.set(r.orderId, r.createdAt);
+    }
+  }
+
   const otherTripIds = Array.from(
     new Set(copyRows.map((c) => c.tripId).filter((tid) => !trips.some((t) => t.id === tid))),
   );
@@ -401,8 +452,44 @@ export async function loadPrintTrips(tripIds: number[]): Promise<PrintTrip[]> {
       const isChecked = o.workflowStage === PICK_CHECKED || o.workflowStage === DISPATCHED;
       const hasFinding = findingOrderIds.has(o.id);
       // copyRows is newest first, so the first match per (trip, bill) is the latest.
-      const mine = copyRows.find((c) => c.orderId === o.id && c.tripId === t.id) ?? null;
       const other = copyRows.find((c) => c.orderId === o.id && c.tripId !== t.id) ?? null;
+      // A SPLIT bill: one line per invoice here, each with its own copy (P5-5).
+      const on = onTripOf(o);
+      const splitAt = splitAtByOrder.get(o.id) ?? null;
+      const ownCopies = on ? copyRows.filter((c) => c.orderId === o.id) : [];
+      const lines: PrintInvoiceLine[] | null = on
+        ? on.rows.map((r) => {
+            const c = coveringCopy(ownCopies, r.id, splitAt, (tid) => tid === t.id);
+            const oc = coveringCopy(ownCopies, r.id, splitAt, (tid) => tid !== t.id);
+            return {
+              id: r.id,
+              seq: r.seq,
+              k: on.all.findIndex((a) => a.id === r.id) + 1,
+              n: on.all.length,
+              invoiceNo: r.invoiceNo,
+              invoiceDate: r.invoiceDate,
+              litres: r.litres,
+              kg: r.kg,
+              kgExact: r.kgExact,
+              copiedAt: iso(c?.copiedAt),
+              copiedByName: nameOf(c?.copiedById ?? null),
+              copyKind: c?.kind ?? null,
+              copiedWhole: c ? isWholeObdCopy(c, splitAt) : false,
+              copiedOnOtherTrip: oc
+                ? { tripNumber: tripNumberById.get(oc.tripId) ?? `#${oc.tripId}`, at: oc.copiedAt.toISOString() }
+                : null,
+            };
+          })
+        : null;
+      // Unsplit: the bill's copy on this trip. Split: copied only when every
+      // line is — then the latest of their copies stands for the bill.
+      const mine = !lines
+        ? (copyRows.find((c) => c.orderId === o.id && c.tripId === t.id) ?? null)
+        : lines.length > 0 && lines.every((l) => l.copiedAt !== null)
+          ? (ownCopies
+              .filter((c) => c.tripId === t.id && on!.rows.some((r) => coveringCopy([c], r.id, splitAt, () => true) !== null))
+              .sort((a, b) => b.copiedAt.getTime() - a.copiedAt.getTime())[0] ?? null)
+          : null;
       const state: PrintBillState = held
         ? "held"
         : mine
@@ -420,10 +507,7 @@ export async function loadPrintTrips(tripIds: number[]): Promise<PrintTrip[]> {
         routeName: drop.routeName,
         dropSeq: drop.dropSeq,
         litres: litresOn(o),
-        invoices: (() => {
-          const on = onTripOf(o);
-          return on ? on.rows.map((r) => ({ seq: r.seq, invoiceNo: r.invoiceNo, invoiceDate: r.invoiceDate })) : null;
-        })(),
+        invoices: lines,
         isGift: isGiftBill(o.materialType),
         held,
         state,
@@ -452,8 +536,20 @@ export async function loadPrintTrips(tripIds: number[]): Promise<PrintTrip[]> {
     const readyRows = eligibleRows.filter((r) => r.state === "ready");
     const outstanding = eligible - copiedCount;
     // Rule 7: keyed on the copy row, NOT on `state` — a held bill reads "held"
-    // whatever its copy row says, and Copy inv includes held bills.
-    const invoiceRows = rows.filter((r) => r.copiedAt === null && invoiceOf(r.invoiceNo) !== null);
+    // whatever its copy row says, and Copy inv includes held bills. A SPLIT
+    // bill: each of its invoices here without a copy (P5-5).
+    const invoicePending: Array<{ orderId: number; no: string }> = [];
+    for (const r of rows) {
+      if (r.invoices) {
+        for (const l of r.invoices) {
+          const no = invoiceOf(l.invoiceNo);
+          if (l.copiedAt === null && no !== null) invoicePending.push({ orderId: r.orderId, no });
+        }
+      } else {
+        const no = invoiceOf(r.invoiceNo);
+        if (r.copiedAt === null && no !== null) invoicePending.push({ orderId: r.orderId, no });
+      }
+    }
 
     const state: PrintTripState =
       t.billingDoneAt === null
@@ -488,8 +584,9 @@ export async function loadPrintTrips(tripIds: number[]): Promise<PrintTrip[]> {
       waitingCount: eligibleRows.filter((r) => r.state === "waiting").length,
       readyOrderIds: readyRows.map((r) => r.orderId),
       readyObds: readyRows.map((r) => r.obdNumber),
-      invoicePendingOrderIds: invoiceRows.map((r) => r.orderId),
-      invoicePendingNos: Array.from(new Set(invoiceRows.map((r) => invoiceOf(r.invoiceNo)!))),
+      invoicePendingOrderIds: invoicePending.map((p) => p.orderId),
+      invoicePendingBillNos: invoicePending.map((p) => p.no),
+      invoicePendingNos: Array.from(new Set(invoicePending.map((p) => p.no))),
       canDone: t.billingDoneAt === null && eligible > 0 && outstanding === 0,
       rows,
     };
@@ -510,7 +607,8 @@ export async function loadPrintTrips(tripIds: number[]): Promise<PrintTrip[]> {
  *
  * Bills are reached THROUGH THE INVOICE ROWS (v27.66 readers B): trip_drops →
  * order_invoices."tripDropId" → orders. Inside EXISTS, a bill with several rows
- * on the trip cannot count twice.
+ * on the trip cannot count twice. Copies are PER INVOICE ROW (P5-5): an
+ * invoice row on the trip with no copy covering it is outstanding.
  */
 export async function getPrintWorkTripIds(): Promise<number[]> {
   const rows = await prisma.$queryRaw<{ id: number }[]>`
@@ -535,7 +633,14 @@ export async function getPrintWorkTripIds(): Promise<number[]> {
                 AND NOT EXISTS (
                       SELECT 1 FROM trip_bill_copies c
                         JOIN order_invoices ci ON ci.id = c."orderInvoiceId"
-                       WHERE c."tripId" = t.id AND ci."orderId" = o.id)
+                       WHERE c."tripId" = t.id AND ci."orderId" = o.id
+                         -- P5-5: the copy names THIS invoice row, or is the
+                         -- OBD's whole-bill copy from before its split. An
+                         -- unsplit OBD has no seq >= 2 row, so the MIN is NULL
+                         -- and only the first arm (its one row) can hold.
+                         AND (c."orderInvoiceId" = oi.id
+                              OR c."copiedAt" < (SELECT MIN(x."createdAt") FROM order_invoices x
+                                                  WHERE x."orderId" = o.id AND x.seq > 1)))
            )
          )
        )
@@ -651,18 +756,20 @@ function requiredState(kind: Exclude<PrintCopyKind, "invoice">): PrintBillState 
  * claims a bill the screen did not show as copyable.
  *
  * ⚠ A SECOND PRESS ON THE SAME BILL IS SKIPPED, NOT DOUBLE-RECORDED: the rows go
- * in with createMany skipDuplicates over trip_bill_copies_trip_invoice_key (and
- * the old trip_bill_copies_trip_order_key until PART 7). Both presses name the
- * same invoice row — linkRowFor is deterministic on the same rows. Fewer
- * rows landing than were sent means someone else copied them first; the answer
- * says how many. `single` and `review` take exactly one bill.
+ * in with createMany skipDuplicates over trip_bill_copies_trip_invoice_key.
+ * Both presses name the same invoice rows (copy-plan.ts planCopyRows: seq 1 on
+ * an unsplit bill, each uncopied invoice here on a split one). A bill none of
+ * whose rows landed was copied by someone else first; the answer says how
+ * many. `single` and `review` take exactly one bill.
  *
  * `invoice` ("Copy inv", rule 7) puts INVOICE numbers on the clipboard and
  * sends every bill carrying them, with `invoiceNos[i]` = the number the screen
  * showed for `orderIds[i]`. Picking state and hold are ignored; each bill must
  * still have NO copy row on this trip and its live invoice number (trimmed)
  * must equal the one sent — else 409 and nothing is written, so a row never
- * claims a number that was not on the clipboard.
+ * claims a number that was not on the clipboard. A SPLIT bill is sent once per
+ * invoice (P5-5): every number sent must be one of its invoices here with no
+ * copy yet, and exactly those invoices get a row.
  *
  * Then: trips.billingCopiedAt / ById (the latest copy press — an `invoice`
  * press is one too) and one `bills_copied` activity row (`detail.kind` names
@@ -677,8 +784,10 @@ export async function copyTripBills(opts: {
   invoiceNos?: string[];
 }): Promise<CopyBillsOutcome> {
   const isInvoice = opts.kind === "invoice";
-  // invoice: the number the screen showed per bill, keyed by order id.
-  const sentNoById = new Map<number, string>();
+  // invoice: the numbers the screen showed per bill, keyed by order id — one
+  // on an unsplit bill (checked once the trip is loaded), one per invoice on a
+  // split one.
+  const sentNosById = new Map<number, Set<string>>();
   if (isInvoice) {
     if (!opts.invoiceNos || opts.invoiceNos.length !== opts.orderIds.length) {
       return { ok: false, status: 400, error: "An invoice copy needs one invoice number per bill." };
@@ -686,11 +795,9 @@ export async function copyTripBills(opts: {
     for (let i = 0; i < opts.orderIds.length; i++) {
       const no = invoiceOf(opts.invoiceNos[i]);
       if (no === null) return { ok: false, status: 400, error: "An invoice copy needs one invoice number per bill." };
-      const prev = sentNoById.get(opts.orderIds[i]);
-      if (prev !== undefined && prev !== no) {
-        return { ok: false, status: 400, error: "A bill was sent with two different invoice numbers." };
-      }
-      sentNoById.set(opts.orderIds[i], no);
+      const set = sentNosById.get(opts.orderIds[i]) ?? new Set<string>();
+      set.add(no);
+      sentNosById.set(opts.orderIds[i], set);
     }
   }
 
@@ -716,13 +823,33 @@ export async function copyTripBills(opts: {
     if (!r) {
       return { ok: false, status: 409, error: `A bill is no longer on ${trip.tripNumber} — nothing was recorded. Refresh.` };
     }
+    if (isInvoice && r.invoices) {
+      // A SPLIT bill (P5-5): every number sent is one of its invoices here
+      // with no copy yet.
+      const bad = badSentNo(
+        r.invoices.map((l) => ({ id: l.id, invoiceNo: l.invoiceNo, copied: l.copiedAt !== null })),
+        sentNosById.get(id) ?? new Set(),
+      );
+      if (bad !== null) {
+        return {
+          ok: false,
+          status: 409,
+          error: `Invoice ${bad} of OBD ${r.obdNumber} was already copied or is no longer on ${trip.tripNumber} — nothing was recorded. Refresh.`,
+        };
+      }
+      bills.push(r);
+      continue;
+    }
     if (isInvoice) {
+      if ((sentNosById.get(id)?.size ?? 0) > 1) {
+        return { ok: false, status: 400, error: "A bill was sent with two different invoice numbers." };
+      }
       // Rule 7: no state rule — only "not copied yet" and "same number".
       // `copiedAt`, not `state`: a held bill reads "held" whatever its copy row.
       if (r.copiedAt !== null) {
         return { ok: false, status: 409, error: `OBD ${r.obdNumber} was already copied — nothing was recorded. Refresh.` };
       }
-      if (invoiceOf(r.invoiceNo) !== sentNoById.get(id)) {
+      if (invoiceOf(r.invoiceNo) !== Array.from(sentNosById.get(id) ?? [])[0]) {
         return {
           ok: false,
           status: 409,
@@ -746,22 +873,47 @@ export async function copyTripBills(opts: {
   }
 
   const pressedAt = new Date();
-  // Which invoice row each copy names (lib/order-invoices/links.ts): seq 1 on
-  // an unsplit bill; on a split one the lowest-seq row on THIS trip (P5-4).
-  const invoiceRows = await invoiceRowLinks(bills.map((b) => b.orderId));
-  const created = await prisma.trip_bill_copies.createMany({
-    data: bills.map((b) => ({
-      tripId: trip.id,
-      orderId: b.orderId,
-      orderInvoiceId: linkRowFor(invoiceRows.get(b.orderId) ?? { seq1Id: null, split: false }, "copy", trip.id),
-      obdNumber: b.obdNumber,
-      invoiceNo: b.invoiceNo,
-      kind: opts.kind,
-      copiedAt: pressedAt,
-      copiedById: opts.actorId,
-    })),
-    skipDuplicates: true,
-  });
+  // Which invoice rows each bill's copy names (lib/order-invoices/copy-plan.ts):
+  // seq 1 on an unsplit bill; on a split one EACH invoice here not copied yet —
+  // a Copy inv press only the ones whose numbers were sent (P5-5).
+  const seq1 = await invoiceRowLinks(bills.filter((b) => !b.invoices).map((b) => b.orderId));
+  const data: Array<{
+    tripId: number;
+    orderId: number;
+    orderInvoiceId: number;
+    obdNumber: string;
+    invoiceNo: string | null;
+    kind: PrintCopyKind;
+    copiedAt: Date;
+    copiedById: number;
+  }> = [];
+  for (const b of bills) {
+    const planned = planCopyRows(
+      {
+        split: b.invoices !== null,
+        seq1Id: seq1.get(b.orderId)?.seq1Id ?? null,
+        here: (b.invoices ?? []).map((l) => ({ id: l.id, invoiceNo: l.invoiceNo, copied: l.copiedAt !== null })),
+      },
+      isInvoice && b.invoices ? (sentNosById.get(b.orderId) ?? new Set()) : null,
+    );
+    if (planned.length === 0 && !b.invoices) {
+      console.error(`[print] order ${b.orderId} has no seq-1 invoice row — its copy was not recorded; re-run v27.63 PART 3`);
+    }
+    for (const p of planned) {
+      data.push({
+        tripId: trip.id,
+        orderId: b.orderId,
+        orderInvoiceId: p.orderInvoiceId,
+        obdNumber: b.obdNumber,
+        // A split bill's row records ITS invoice's number; unsplit as before.
+        invoiceNo: b.invoices ? p.invoiceNo : b.invoiceNo,
+        kind: opts.kind,
+        copiedAt: pressedAt,
+        copiedById: opts.actorId,
+      });
+    }
+  }
+  const created = data.length > 0 ? await prisma.trip_bill_copies.createMany({ data, skipDuplicates: true }) : { count: 0 };
 
   if (created.count === 0) {
     return {
@@ -775,8 +927,9 @@ export async function copyTripBills(opts: {
     };
   }
 
-  // Which bills THIS press recorded — a skipped duplicate carries someone
-  // else's (or an earlier) stamp. Same press time and actor = ours.
+  // Which rows THIS press recorded — a skipped duplicate carries someone
+  // else's (or an earlier) stamp. Same press time and actor = ours. A bill is
+  // recorded when any of its rows landed.
   const landedRows = await prisma.trip_bill_copies.findMany({
     where: {
       tripId: trip.id,
@@ -784,12 +937,12 @@ export async function copyTripBills(opts: {
       copiedById: opts.actorId,
       copiedAt: pressedAt,
     },
-    select: RECORD_OBD_SELECT,
+    select: { ...RECORD_OBD_SELECT, invoiceNo: true },
   });
   const landedIds = new Set(landedRows.map(recordObdOf));
   const landed = bills.filter((b) => landedIds.has(b.orderId));
   const landedInvoiceNos = isInvoice
-    ? Array.from(new Set(landed.map((b) => invoiceOf(b.invoiceNo)).filter((n): n is string => n !== null)))
+    ? Array.from(new Set(landedRows.map((r) => invoiceOf(r.invoiceNo)).filter((n): n is string => n !== null)))
     : [];
 
   await prisma.trips.update({
@@ -810,8 +963,8 @@ export async function copyTripBills(opts: {
   return {
     ok: true,
     tripNumber: trip.tripNumber,
-    recorded: created.count,
-    alreadyCopied: bills.length - created.count,
+    recorded: landed.length,
+    alreadyCopied: bills.length - landed.length,
     obdNumbers: landed.map((b) => b.obdNumber),
     invoiceNos: landedInvoiceNos,
     billingCopiedAt: pressedAt.toISOString(),

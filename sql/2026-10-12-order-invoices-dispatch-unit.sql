@@ -4,7 +4,16 @@
 -- re-deliveries and CI.
 --
 -- Schema v27.66 (CORE v141, chain entry v27.66).
--- ✅ PARTS 1,2,5,3,4,6a,8 run by owner 12 Oct 2026; 6b/6c/7 pending.
+-- ✅ PARTS 1,2,5,3,4,6a,8 run by owner 12 Oct 2026; 6b later.
+-- ✅ PART 7 + 6c RUN by owner 23 Oct 2026 (Schema v27.74, CORE v150), after
+--   the read-only gate sql/2026-10-17-part7-gate-checks.sql (k1–6 all 0;
+--   copies 857, re-deliveries 73). Live verify: both "orderInvoiceId" NOT NULL ·
+--   trip_bill_copies_trip_order_key 0 · trip_redeliveries_trip_order_key 0
+--   (dropped) · both _trip_invoice_key UNIQUE ("tripId","orderInvoiceId")
+--   present · re-delivery 28: trip 668 · drop 2763 → row 36798 I536230713 ·
+--   re-delivery 86: trip 668 · drop 2763 → row 36800 I536230715.
+--   🔴 THE PART 7 GATE LIST IS CLOSED — nothing in this file is pending.
+--   P5-5 writes one copy / re-delivery PER INVOICE ROW. Do not re-run 6c.
 --   PART 8 live: rows 18,418 · on trip 3,878 · held 285 · dispatched 7,330 ·
 --   with dispatchedAt 506 · mismatches 0/0/0 · copies 508/0 · re-deliveries
 --   25/1 (28 waits for 6b) · CI 195/0 · 18648's 4 rows null/false/false ·
@@ -464,7 +473,8 @@ UPDATE trip_bill_copies c
 --    AND oi."orderId" = 18648
 --    AND right(oi."invoiceNo", 3) = '713';
 
--- 6c. RUN LATER — after PART 7. One new trip_redeliveries row for …715: same
+-- 6c. ✅ RUN by owner 23 Oct 2026 after PART 7 → re-delivery 86. Do not re-run
+-- (the NOT EXISTS makes it a no-op). One new trip_redeliveries row for …715: same
 -- trip, stop, attempt, previous trip, reason, note, return tick, time and
 -- author as 28 (it is the same real event); "invoiceNo" = 715's number.
 -- Writes exactly 1 row, once; fires the existing trip live line for trip 668.
@@ -500,7 +510,7 @@ ORDER BY 1;
 
 
 -- ============================================================================
--- PART 7 — LATER, NOT NOW. The Phase 5 gate. COMMENTED OUT.
+-- PART 7 — ✅ RUN by owner 23 Oct 2026 (v27.74). Kept COMMENTED OUT as the record.
 -- Run only when (a) every reader/writer of trip_bill_copies / trip_redeliveries
 -- keys on "orderInvoiceId" (lib/billing/print.ts, lib/trips/redelivery.ts,
 -- lib/trips/queries.ts, lib/trip-sheet/load.ts, cancel route), (b) PART 8 shows

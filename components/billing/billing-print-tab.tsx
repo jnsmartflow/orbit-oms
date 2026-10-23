@@ -47,6 +47,14 @@
 // Hidden when nothing is pending; shown on reopened and done trips too.
 // No keyboard shortcut — Ctrl+C stays the OBD Copy.
 //
+// 🔴 A SPLIT OBD IS DRAWN ONE LINE PER INVOICE ON THE TRIP (Add invoices P5-5,
+// v27.74): number + k/n, litres, kg and ITS OWN copy state ("copied on another
+// trip" too). The OBD's #, number, ship-to and picking pill sit on its first
+// line. Copy OBDs writes a copy row for every uncopied invoice of it here;
+// Copy inv only for the invoice numbers it put on the clipboard. A whole-OBD
+// copy from BEFORE the split (copy 276 on L-261006-05) covers each of its
+// invoices and reads "✓ … · whole OBD, before split".
+//
 // 🔴 DONE IS A PRESS. When every non-held bill is copied, "Done — all copied"
 // appears and moves the trip to Done today. Nothing stamps it automatically.
 //
@@ -64,7 +72,7 @@ import {
 import { toast } from "sonner";
 import { getTodayIST } from "@/lib/dates";
 import { smartTitleCase } from "@/lib/mail-orders/utils";
-import type { PrintBillRow, PrintBillState, PrintTrip } from "@/lib/billing/print";
+import type { PrintBillRow, PrintBillState, PrintInvoiceLine, PrintTrip } from "@/lib/billing/print";
 import { useBillingShownIds } from "@/components/billing/billing-live";
 import { GiftBadge } from "@/components/floor/gift-badge";
 import { StatusPill, countByStatus, rowStatus, type FloorStatus, type StatusCounts } from "@/components/floor/status-pill";
@@ -422,8 +430,8 @@ export function BillingPrintTab({
     window.setTimeout(() => setInvFlash(false), 1600);
     if (!canEdit) return;
 
-    // The number the screen showed per bill — the server refuses a changed one.
-    const noById = new Map(selected.rows.map((r) => [r.orderId, (r.invoiceNo ?? "").trim()]));
+    // The number the screen showed per entry (one per invoice on a split bill)
+    // — the server refuses a changed one.
     setBusy(true);
     try {
       const res = await fetch(`/api/billing/print/trip/${selected.id}/copy`, {
@@ -431,7 +439,7 @@ export function BillingPrintTab({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           orderIds: selected.invoicePendingOrderIds,
-          invoiceNos: selected.invoicePendingOrderIds.map((id) => noById.get(id) ?? ""),
+          invoiceNos: selected.invoicePendingBillNos,
           kind: "invoice",
         }),
       });
@@ -767,6 +775,60 @@ function BillRow({
   const held = r.state === "held";
   const muted = held || r.state === "waiting" ? " !text-ink-400" : "";
   const strike = held ? " line-through" : "";
+  // A SPLIT OBD — one line per invoice here; the OBD's own cells on the first.
+  if (r.invoices && r.invoices.length > 0) {
+    return (
+      <>
+        {r.invoices.map((l, i) => {
+          const first = i === 0;
+          const last = i === r.invoices!.length - 1;
+          const join = last ? "" : " border-b-0";
+          return (
+            <tr
+              key={l.id}
+              onClick={onOpen}
+              className={`cursor-pointer ${open ? "bg-brand-50" : cls.row} hover:bg-brand-50/60`}
+            >
+              <td className={`${TD_C}${join} border-l-[3px] ${cls.edge}`}>{first ? index : ""}</td>
+              <td className={`${TD}${join} font-mono${r.state === "ready" ? " font-semibold text-ink-900" : ""}${muted}${strike}`}>
+                {first ? r.obdNumber : ""}
+              </td>
+              <td className={`${TD}${join}${muted}${strike}`}>
+                {l.invoiceNo ? <span className="font-mono">{l.invoiceNo}</span> : <span className="text-ink-400">— not yet</span>}
+                <span className="ml-1.5 whitespace-nowrap text-[10px] tabular-nums text-ink-400" title={`Invoice ${l.k} of ${l.n} of this OBD`}>
+                  {l.k}/{l.n}
+                </span>
+              </td>
+              <td className={`${TD}${join}${muted}${strike}`} title={first ? (r.shipToName ?? undefined) : undefined}>
+                {first ? (r.shipToName ? smartTitleCase(r.shipToName) : "—") : ""}
+                {first && r.isGift && (
+                  <span className="ml-1.5 inline-block align-[-1px]">
+                    <GiftBadge />
+                  </span>
+                )}
+              </td>
+              <td
+                className={`${TD}${join} tabular-nums${r.isGift && !held ? " !text-ink-400" : muted}${strike}`}
+                title={r.isGift ? "Gift — not counted in L / kg" : undefined}
+              >
+                {l.litres > 0 ? `${Math.round(l.litres).toLocaleString("en-US")} L` : ""}
+                {l.kg !== null && (
+                  <span className="block text-[10px] text-ink-400">
+                    {l.kgExact ? "" : "~"}
+                    {(Math.round(l.kg * 100) / 100).toLocaleString("en-US")} kg
+                  </span>
+                )}
+              </td>
+              <td className={`${TD}${join}`}>{first ? <PrintPickingPill row={r} nowMs={nowMs} /> : null}</td>
+              <td className={`${TD}${join}`}>
+                <InvoiceCopyCell row={r} line={l} />
+              </td>
+            </tr>
+          );
+        })}
+      </>
+    );
+  }
   return (
     <tr onClick={onOpen} className={`cursor-pointer ${open ? "bg-brand-50" : cls.row} hover:bg-brand-50/60`}>
       <td className={`${TD_C} border-l-[3px] ${cls.edge}`}>{index}</td>
@@ -807,6 +869,67 @@ function CopiedMark({ row: r }: { row: PrintBillRow }) {
       ✓ {hhmm(r.copiedAt)}
       {r.copyKind === "invoice" && <span className="ml-1 text-[10px] font-semibold uppercase tracking-[0.04em]">inv</span>}
     </span>
+  );
+}
+
+/**
+ * One invoice's copy state on a split OBD (P5-5): its own ✓ (with "whole OBD,
+ * before split" when the covering copy predates the split), else the bill's
+ * own next step; a held bill reads held. A copy on another trip is a quiet
+ * second line.
+ */
+function InvoiceCopyCell({ row: r, line: l }: { row: PrintBillRow; line: PrintInvoiceLine }) {
+  const other = l.copiedOnOtherTrip ? (
+    <span className="mt-0.5 block text-[10px] text-ink-400">
+      copied on {l.copiedOnOtherTrip.tripNumber} · {hhmm(l.copiedOnOtherTrip.at)}
+    </span>
+  ) : null;
+  const mark =
+    l.copiedAt !== null ? (
+      <span className="whitespace-nowrap font-semibold text-ok-text">
+        ✓ {hhmm(l.copiedAt)}
+        {l.copyKind === "invoice" && <span className="ml-1 text-[10px] font-semibold uppercase tracking-[0.04em]">inv</span>}
+        {l.copiedWhole && (
+          <span className="ml-1 font-normal text-ink-400" title="The OBD was copied as one bill before it was split into invoices.">
+            · whole OBD, before split
+          </span>
+        )}
+      </span>
+    ) : null;
+  if (r.state === "held") {
+    return (
+      <>
+        {mark ? (
+          <span className="whitespace-nowrap">
+            {mark}
+            <span className="text-ink-400"> · on hold</span>
+          </span>
+        ) : (
+          <span className="text-ink-400">on hold · not copied</span>
+        )}
+        {other}
+      </>
+    );
+  }
+  if (mark) {
+    return (
+      <>
+        {mark}
+        {other}
+      </>
+    );
+  }
+  return (
+    <>
+      {r.state === "review" ? (
+        <span className={`${CHIP} bg-danger-bg text-danger-text`}>open to copy →</span>
+      ) : r.state === "waiting" ? (
+        <span className="text-ink-400">not picked yet</span>
+      ) : (
+        <span className={`${CHIP} bg-brand-50 text-brand-700`}>next copy</span>
+      )}
+      {other}
+    </>
   );
 }
 

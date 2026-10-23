@@ -218,6 +218,16 @@ export function placeLoad(invoiceRows: readonly PlaceRow[], inPlace: (tripDropId
   return loadWhere(invoiceRows, (r) => inPlace(r.tripDropId));
 }
 
+/**
+ * The load of the NAMED invoices of an OBD — a re-delivery carries only the
+ * invoices it names (P5-5, lib/order-invoices/redelivery-plan.ts). null = all
+ * of them, or unsplit: use the OBD's own totals (placeLoad's rule).
+ */
+export function invoicesLoad(invoiceRows: readonly (PlaceRow & { id: number })[], ids: readonly number[]): PlaceLoad | null {
+  const set = new Set(ids);
+  return loadWhere(invoiceRows, (r) => set.has(r.id));
+}
+
 /** placeLoad's rule over any test of the invoice row — null = all of them, or unsplit. */
 function loadWhere<R extends PlaceRow>(invoiceRows: readonly R[], keep: (r: R) => boolean): PlaceLoad | null {
   if (invoiceRows.length < 2) return null;

@@ -502,7 +502,7 @@ export async function logTripCancelled(opts: {
    * `orderIds` because those bills were never detached (they were never this
    * trip's bills).
    */
-  redeliveries?: Array<{ orderId: number; obd: string }>;
+  redeliveries?: Array<{ orderId: number; obd: string; invoiceNo?: string | null }>;
 }): Promise<void> {
   const carried =
     opts.orderIds.length === 0
@@ -528,6 +528,10 @@ export async function logTripCancelled(opts: {
         ? {
             redeliveryOrderIds: redel.map((r) => r.orderId),
             redeliveryObdNumbers: redel.map((r) => r.obd),
+            // P5-5 — parallel, only when a split bill's invoice is among them.
+            ...(redel.some((r) => r.invoiceNo !== undefined)
+              ? { redeliveryInvoiceNos: redel.map((r) => r.invoiceNo ?? null) }
+              : {}),
           }
         : {}),
     },
@@ -790,6 +794,9 @@ export interface RedeliveryLogItem {
   attemptNo: number;
   /** site_closed | wrong_dispatch — lib/trips/redelivery.ts REDELIVERY_REASONS. */
   reason: string;
+  /** P5-5 — the invoice of a SPLIT bill this row re-delivers. Absent on an
+   *  unsplit bill (its row IS the bill), so their text and detail are unchanged. */
+  invoiceNo?: string | null;
 }
 
 /**
@@ -810,10 +817,16 @@ export async function logTripRedeliveryAdded(opts: {
     action: TRIP_REDELIVERY_ADDED,
     actorId: opts.actorId,
     summary: `${n} re-deliver${n === 1 ? "y" : "ies"} added — ${opts.items
-      .map((i) => `${i.obd} (attempt ${i.attemptNo}, ${redeliveryReasonLabel(i.reason)})`)
+      .map((i) => `${i.obd}${i.invoiceNo ? ` · ${i.invoiceNo}` : ""} (attempt ${i.attemptNo}, ${redeliveryReasonLabel(i.reason)})`)
       .join(", ")}${opts.confirmedReturn ? " · truck came back confirmed" : ""}`,
     detail: {
-      items: opts.items.map((i) => ({ orderId: i.orderId, obd: i.obd, attemptNo: i.attemptNo, reason: i.reason })),
+      items: opts.items.map((i) => ({
+        orderId: i.orderId,
+        obd: i.obd,
+        attemptNo: i.attemptNo,
+        reason: i.reason,
+        ...(i.invoiceNo !== undefined ? { invoiceNo: i.invoiceNo } : {}),
+      })),
       orderIds: opts.items.map((i) => i.orderId),
       obdNumbers: opts.items.map((i) => i.obd),
       note: opts.note ?? null,
@@ -838,10 +851,16 @@ export async function logTripRedeliveryRemoved(opts: {
     action: TRIP_REDELIVERY_REMOVED,
     actorId: opts.actorId,
     summary: `${n} re-deliver${n === 1 ? "y" : "ies"} removed — ${opts.items
-      .map((i) => `${i.obd} (attempt ${i.attemptNo}, ${redeliveryReasonLabel(i.reason)})`)
+      .map((i) => `${i.obd}${i.invoiceNo ? ` · ${i.invoiceNo}` : ""} (attempt ${i.attemptNo}, ${redeliveryReasonLabel(i.reason)})`)
       .join(", ")}`,
     detail: {
-      items: opts.items.map((i) => ({ orderId: i.orderId, obd: i.obd, attemptNo: i.attemptNo, reason: i.reason })),
+      items: opts.items.map((i) => ({
+        orderId: i.orderId,
+        obd: i.obd,
+        attemptNo: i.attemptNo,
+        reason: i.reason,
+        ...(i.invoiceNo !== undefined ? { invoiceNo: i.invoiceNo } : {}),
+      })),
       orderIds: opts.items.map((i) => i.orderId),
       obdNumbers: opts.items.map((i) => i.obd),
     },
