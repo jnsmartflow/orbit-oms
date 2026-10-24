@@ -1,5 +1,5 @@
 # CLAUDE_PICKING.md — Picking Module
-# v1.19 · Schema v27.24 · September 2026 · updated 2026-09-30
+# v1.20 · Schema v27.74 · October 2026 · updated 2026-10-24
 # Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md
 
@@ -45,7 +45,7 @@ Two kinds of bill do not arrive that way. A **tint** bill is excluded from the f
 `lib/dispatch/completion-slot.ts` (`CLAUDE_TINT.md`). A **held** bill cannot match the fallback's
 `dispatchStatus: null`; it reaches Picking only when Floor releases it (`POST /api/floor/release`,
 `FLOOR_RELEASABLE_STAGES` in `lib/floor/release-stages.ts`). With the pick visibility gate ON, a
-waiting bill on an unshown trip is held back from the Assign tab (§5.2). Was: a bill with no mail
+waiting bill is held back from the Assign tab until ANY of its invoice rows is on a shown trip (§5.2). Was: a bill with no mail
 order waited for a hand Release on Floor until 2026-09-11; now released on import (b3dfe5b8). Do not
 revert.
 
@@ -137,7 +137,8 @@ here because it is the reason the ladder carries a per-row flag at all; removal 
 ```
 pending_support → [import auto-release (§1) | tint completion | Floor Release of a held bill]
   → pending_picking → [Assign] → pick_assigned → [Picker Mark Done] → pick_done
-  → [Supervisor Approve] → pick_checked → (dispatched — no reachable writer, §7)
+  → [Supervisor Approve + article no.] → pick_checked → (dispatched — not written by Picking; §7)
+  pending_picking | pick_assigned → [Direct Loading, no picker] → pick_checked   (§5.7; Undo → pending_picking)
 ```
 The `pending_support` stage NAME is historical — nothing called Support writes it any more. A bill
 still sitting there is one import did not release: held at import, or restored from Floor's
@@ -456,12 +457,27 @@ row's `zone` (`due` | `upcoming`) is computed from `dispatchTargetDate` vs today
   - **Held back by the pick visibility gate.** The gate's DEFINITION (the `app_settings` key, the
     switch, Show to floor, the predicate) is owned by **`CLAUDE_FLOOR_TRIPS.md §11`**. Where Picking
     applies it: `buildPickingWhere(gateOn)` ANDs `waitingBranchWhere(gateOn)` onto the **waiting
-    branch only** (`lib/picking/queue.ts:398`); the in-progress branch
+    branch only** (`lib/picking/queue.ts`).
+    - 🔴 **Gate ON = a waiting bill shows when ANY invoice row of the OBD is on a SHOWN trip**
+      (`ON_SHOWN_TRIP_WHERE` = `onTripsWhere({ shownAt: { not: null } })` → `invoices: { some:
+      { tripDrop: { trip } } }`, `lib/order-invoices/trip-read.ts`; readers B, `912f17ec`,
+      2026-10-12).
+    - The extra `orders.tripDropId: { not: null }` stays on purpose, for
+      `orders_tripDropId_idx`: on Model A it is exact for "on ANY trip".
+    - `countHeldBackWaiting` is the complement, worked out IN MEMORY over the rows. The SQL `NOT`
+      form lost its pkey lookups in an EXPLAIN.
+    - The rule is mirrored, not shared, in four places: here, `countHeldBackWaiting`,
+      `lib/trips/show.ts` and Floor's `isAwaitingShow`. Change all four or none.
+    - **Picking itself stays PER OBD under Model A:** `pick_assignments.orderId` is `@unique`, and
+      one invoice on a shown trip shows the whole bill (`CLAUDE_ORDER_INVOICES.md` §2).
+
+    The in-progress branch
     (`{ workflowStage: { in: [PICK_ASSIGNED, PICK_DONE] } }`) and the checked branch are never gated
     — a bill in a picker's hands can never be hidden. With the gate ON the board shows a band,
     "N trucks with the planner · M bills" (`picking-board-mobile.tsx:3195-3200`), fed by the payload's
     `heldBack` / `heldBackTrucks` (§4 queue payload, §10 marker). With the gate OFF both are 0 and
-    no band renders. Live 2026-09-18: the gate is **OFF** (Q04).
+    no band renders. Live 2026-10-24: the gate is **OFF** (`picking.visibilityGate = false`, last
+    changed 2026-10-14; it was also OFF on 2026-09-18, Q04).
   - **Tinting strip** — a one-line pink strip under the summary with a "View ›" jump to the Tinting
     section on the Picking tab (`goToTinting`, owned by the shell; §5.6).
 - **Picking tab** — `pick_assigned` (the "Still picking" list), organised by **picker**, not route
@@ -644,7 +660,7 @@ header icon shares the bill's CONFIRMED findings as plain text through the OS sh
 message re-cut to "SHORT DISPATCH" + monospace block in ea7b117d, 2026-09-13). Nothing is stored:
 no table, no column, no route. The picker face is not a caller.
 
-**Cancel a bill (supervisor) [LIVE, 2026-08-20].** The ⋯ menu on the supervisor's detail screen
+**Cancel a bill (supervisor) [LIVE 2026-08-20 → REMOVED from the ⋯ menu 2026-10-17, `831482c7` — §5.7; history below].** The ⋯ menu on the supervisor's detail screen
 opens `CancelSheet` (`components/picking/cancel-sheet.tsx`, reasons from
 `lib/picking/cancel-reasons.ts`) → `POST /api/picking/cancel` (af075572, 00d7da22). The route gates
 on `picking` canEdit (`app/api/picking/cancel/route.ts:72`), admits only
@@ -947,7 +963,10 @@ write back per entry. Same key, same shape, same pruning — **there is no secon
 never be one.** A tick made in Combined and the same tick seen on that bill's own detail screen are
 the same note about the same physical goods.
 
-### 5.5 Pick bundling on the Assign tab [LIVE, 2026-08-18]
+### 5.5 Pick bundling on the Assign tab [LIVE 2026-08-18 → REMOVED from the board 2026-10-24 — §5.7]
+
+> **History since 2026-10-24.** The board draws one plain list; the engine below stays (Floor imports
+> `buildOilSkuSet`) and the queue still ships the siblings. Do not re-add the headings without the owner.
 
 **The engine is `lib/picking/grouping.ts`, and Picking OWNS it** (moved from `lib/floor/grouping.ts`
 by `git mv` in 3fdd0e13, zero behaviour change). Floor is a caller (`lib/floor/queries.ts:37`
@@ -1011,6 +1030,106 @@ canView, so a picker can fetch `/api/picking/tint-workload` by URL (his face nev
 section). The only new fact it gives him is how long a named colleague has been on a job. Narrowing
 it would need a new page key nobody holds yet (`code-update-2026-09-18-picking-colour-work.md §10`).
 
+### 5.7 Since 2026-09-30 — Direct Loading, article no., the Assign rework, the Trips view [LIVE; reconciled 2026-10-24]
+
+Other sessions shipped these after v1.19 and they were not in canon until this pass. Each one is
+recorded from the code at HEAD `b1d38861`. **Where this block and an older line above disagree, this
+block is the code.**
+
+**Direct Loading** (Schema v27.52, `b1b56688` / `71f8b881` / `fdd205d0`, 2026-10-03). A bill loaded
+straight from stock, with no picker.
+- **The write.** `POST /api/picking/direct-load` (`picking` canEdit), body `{ orderIds }`, returns
+  `{ done, skipped }`.
+  - Allowed only at `DIRECT_LOADABLE_STAGES` = `pending_picking` / `pick_assigned`, with
+    `dispatchStatus = 'dispatch'`. `pick_done` goes forward by Approve instead. A `pending_picking`
+    bill that already has an assignment row is skipped "Already assigned."
+  - Per bill, in order:
+    1. ONE guarded `orders.updateMany` → `workflowStage: pick_checked`, `directLoadedAt`,
+       `directLoadedById`.
+    2. If it was `pick_assigned`, `pick_assignments.deleteMany` (step 1 is reverted if this fails).
+    3. One log: "Direct loading" or "Direct loading · picker removed ({name})".
+    4. A "Direct loaded" push to the removed picker.
+  - 🔴 **A flag beside the stage, never a new stage and never on `pick_assignments`.** It creates no
+    assignment row, and it is not `loadedAt` (Vehicle Loading's) — `lib/picking/direct-load.ts`.
+- **Undo.** `POST /api/picking/direct-load/undo`, body `{ orderId }`.
+  - Only while `pick_checked`, with `directLoadedAt` set and `invoiceNo` AND `invoicedAt` both null.
+    Otherwise 409, e.g. "This bill is already invoiced — it cannot be undone."
+  - It sends the bill back to `pending_picking`, clears both columns and logs "Direct loading undone".
+    It restores no picker.
+- **The Done tab's "checked today"** ORs `pick_assignments.checkedAt` with `directLoadedAt` (the
+  `buildPickingWhere` checked arm, `lib/picking/sync.ts`, and billing's `buildBillingInvoicedInfoWhere`).
+  The band sorts on `COALESCE(checkedAt, directLoadedAt)`.
+- **On the phone:**
+  - The Assign picker sheet's FIRST cell is a **Direct Loading** card. One tap, no confirm.
+  - The Checked band shows an ink footer, "Direct Loading · {name} · {time}", with **Undo**.
+  - The detail screen shows a read-only strip only. Its Direct Loading button was removed on
+    2026-10-03 — "UNDO ONLY … Do not re-add".
+  - The status token is `direct` (`#1B1826`).
+  - Floor's side → `CLAUDE_FLOOR.md`.
+
+**Article no. on Approve** (Schema v27.58, `dadb4a2d`, 2026-10-06).
+- **The column.** `pick_assignments.articleCount Int?`, with the live CHECK
+  `chk_pick_assignments_article_count` (NULL or 1–999 — invisible in Prisma, like
+  `chk_pick_assignments_status`). It is the number written on the drum. It is **not** SAP's
+  `articleTag` / `totalArticle`.
+- **Approve.** `POST /api/picking/approve` **requires** `{ orderId, articleCount }` (400 without it —
+  an old bundle posting `{ orderId }` is refused). The value rides the existing `pick_assignments`
+  write and is nulled by its rollback.
+- **Editing it.** `POST /api/picking/article-count` (`picking` canEdit). It works only at
+  `pick_checked` with an assignment row; a direct-loaded bill gets 409 "This bill is not an approved
+  pick." The writes, in order:
+  1. `pick_assignments.update`.
+  2. ONE `orders.update` that **bumps only `updatedAt`** — load-bearing, because `pick_assignments`
+     has no `updatedAt` and the markers key on `MAX(orders.updatedAt)`, §10.
+  3. A non-stage log, "Article no. {old} → {new}".
+- **UI.** `components/picking/article-count-popup.tsx`: Approve opens it empty, edit opens it
+  prefilled. Checked bills show "Art. no. N" on the detail meta line. Floor reads it too.
+
+**Cancel left Picking** (`831482c7`, 2026-10-17). The supervisor's ⋯ menu now holds ONE item, **Edit
+article no.** (`canEditArticleCount`: checked, not direct-loaded, has a picker). Cancelling a bill is
+Floor's only.
+- `components/picking/cancel-sheet.tsx` has **no importer**.
+- `POST /api/picking/cancel` is still deployed (with its `mirrorObdHoldSafe` and challan release) but
+  has **no caller**. `PICKING_CANCELLABLE_STAGES` is marked DORMANT in `lib/workflow-stages.ts`.
+- Kept per the no-delete rule. §5.3's cancel block below is history.
+
+**The Assign tab, reworked on 2026-10-24** (`eabc3a44` → `e817f01f`, owner). ⚠ This area changed six
+times in one day; read the code before trusting the wording.
+- **A "Bills | Trips" switch**; Bills is the default and nothing is persisted.
+- **Bills, level 1:** three group cards (`ASSIGN_GROUPS`).
+  - The groups are **Local** (`data-blue`), **UPC** (`data-orange`) and **Cross/IGT** (`data-teal`),
+    from `assignGroupOf` on the delivery type; no type means Local.
+  - Each card shows the litres, and a ring with the waiting count (due and upcoming). The ring turns
+    `ok` with a check at 0, and that card is not tappable.
+  - The cards replaced the type pills, the ODB toggle, the route dropdown and the summary strip.
+- **Bills, level 2:** the group's **route chips only**. They start with "All", show counts, wrap with
+  no sideways scroll, and are 36px. Below them is the Due now list plus the locked Upcoming zone. A
+  Route | Bay switch was tried and removed the same day.
+- 🔴 **Bundling is gone from the board** — one plain list (owner, 2026-10-24). The server still computes
+  `waitingSkus` / `oilSkus`, which nothing on `/picking` reads. `buildPickGroups` / `buildOilGroups`
+  have no caller. `buildOilSkuSet` is still imported by `queue.ts` and Floor. §5.5 is history.
+- **Trips view** (`85b64d77` / `60f9fa75`, 2026-10-13): `GET /api/picking/trips` (`picking` canView,
+  read-only, `lib/picking/trips-view.ts`), fetched only while the view shows.
+  - Which trips: today's desk trips (`getTripsForDate`), not cancelled, **shown only when the gate is
+    ON**, holding at least one bill, plus a "not on a trip" card.
+  - Its own All / Local / UPC pills.
+  - A trip screen with waiting / picking / needs-check / checked bands of the same `PickingCard`
+    (`components/picking/assign-trips.tsx`).
+
+**On the cards:**
+- **Assigned by** (`f6b39886`, `b4e9e0d6`, 2026-10-24): one muted line, "{name} · {time}" ("Assigned …"
+  on the Done tab), on the Picking tab's picker list and the Checked band (not direct-loaded) and the
+  picker's cards. It shows nothing when the name is missing.
+- **CHALLAN** (`orders.isChallanOrder`, `ChallanBadge`) is the first pill.
+- **ODB** (`orders.isObdImport`, `ObdBadge`, `data.plum`; `CLAUDE_IMPORT.md §3.5`). The Assign ODB
+  filter it came with went in the rework.
+- **"→ ship-to changed"** (`ShipToChangedTag`). A typed ship-to routes on its picked area
+  (`effectiveArea`; v27.73).
+
+**Findings on merged rows** (`fa8bac52`, 2026-10-06): a batch-split merged row can record a finding.
+`lib/picking/allocate-finding.ts` spreads the found quantity over its lines in `lineId` order, and the
+two findings routes accept `rawLineItemIds` (≤ 50). See §11.
+
 ---
 
 ## 6. Floor workflow [LIVE] — all 4 states built
@@ -1028,9 +1147,9 @@ sessions — picker Mark Done, supervisor Approve + tick screen, and the Checked
 
 State 4 does **not** make the bill "exit picking" in the sense of disappearing — it moves to the
 supervisor board's **Done tab** (§5.2 — labelled "Checked" until 2026-07-19; the stage is still
-`pick_checked`), which is its permanent same-day record. Nothing reachable today moves
-an order past `pick_checked` to `dispatched` (§7 — the write path exists but has no caller), so a
-checked bill simply stays visible there for the rest of the day.
+`pick_checked`), which is its permanent same-day record. Nothing in Picking moves an order past
+`pick_checked` to `dispatched`, and almost nothing in the app does (§7), so a checked bill
+simply stays visible there for the rest of the day.
 
 **Roles (locked):** all 3 supervisors can assign — equal power, no single-assigner bottleneck. **Any**
 supervisor can approve **any** Done bill (v1 — no "only the assigner approves" rule).
@@ -1195,16 +1314,22 @@ question is only own-phone vs. a shared terminal; assign is still V1 test-mode (
   `PickingQueueResult` in `lib/picking/queue.ts` — read it there, it is not restated here.** It
   excludes future-dated rows, which is the non-obvious part, and `CLAUDE_NOTIFICATIONS.md §7` points
   a future supervisor-reminder timer at it.
-- **⚠️ NO REACHABLE WRITER `pick_checked` → `dispatched`** [OPEN]. Orders DO reach `dispatched`:
-  **7,330** rows, all not removed (live 2026-09-18, Q09). A write path exists in the repo —
-  `markBillsDispatched()` in `lib/floor/dispatch.ts` (`:175-179` writes `workflowStage: DISPATCHED`
-  plus one `order_status_logs` row), called only by `POST /api/floor/trips/[id]/dispatch` — but that
-  route has **no client caller since slice 7** (3b9d1ab4, 2026-09-15; its own header,
-  `dispatch/route.ts:13`, and no hit in `components/` or `app/`). So nothing reachable drains
-  `pick_checked`, and a checked bill stays on the Done tab's Checked band for its day. Where the
-  7,330 rows came from, and the full writer sweep, is an open item owned by
-  **`CLAUDE_FLOOR_TRIPS.md §14`** — not re-told here. Code comments claiming 4,137
-  (`lib/workflow-stages.ts:98`) and 7,067 (`lib/floor/dispatch.ts:6`) are dated claims, not counts.
+- **⚠️ ALMOST NO REACHABLE WRITER `pick_checked` → `dispatched`** [OPEN]. Orders DO reach
+  `dispatched`: **7,361** live 2026-10-24 (7,330 on 2026-09-18, Q09).
+  - **Writer 1:** `markBillsDispatched()` (`lib/floor/dispatch.ts`, one `orders.update` + one log),
+    called only by `POST /api/floor/trips/[id]/dispatch`. That route still has **no client caller
+    since slice 7** (3b9d1ab4, 2026-09-15).
+  - **Writer 2, new since Add invoices (6.4, `4c97fd2f`, 2026-10-19):** `settleObdDone`
+    (`lib/order-invoices/dispatch.ts`). It moves a **split** OBD from `pick_checked` to
+    `dispatched` when Floor's per-invoice CI returns its last open invoice and at least one invoice
+    really shipped. This one is reachable, but only on a split OBD (1 live, 0 CIs on it).
+  - So, in practice, nothing in the app drains `pick_checked` on an unsplit bill, and a checked
+    bill stays on the Done tab's Checked band for its day.
+  - The writer table and where the rows came from (hand SQL) are owned by
+    **`CLAUDE_FLOOR_TRIPS.md §14`** and not re-told here. *(This item said "no reachable writer"
+    outright until 2026-10-24.)*
+  - Code comments claiming 4,137 (`lib/workflow-stages.ts`) and 7,067 (`lib/floor/dispatch.ts`)
+    are dated claims, not counts.
 - **`pick_assignments.status` has a live CHECK constraint invisible in `schema.prisma`**
   [LANDMINE] — `chk_pick_assignments_status` restricts `status` to exactly `'assigned'` or `'picked'`
   at the DB layer, confirmed via a direct `pg_constraint` query (2026-07-17 discovery) — it does not
@@ -1262,7 +1387,7 @@ panel (§11.5).
 | `components/picking/card-atoms.tsx` | The two boards' shared card language (2026-07-29). Both import `AgeBadge` (the days→colour scale, here and nowhere else), `CardShelf`, `CARD_SHADOW_V2`, `RouteDot`, `SmuBadge` + `isSmuBadged` (§5.2) and `ColourWorkBadge` (§5.2); `isColourWorkBadged` is read by `bill-symbols.tsx`. The supervisor board also imports `FamilyChip` and renders it directly on the Picking tab's picker cards (`picking-board-mobile.tsx:34`, `:3481`); `UnlistedChip` is a shelf internal. The CARD itself is deliberately not shared (§5.4) |
 | `components/picking/bill-symbols.tsx` | `BillSymbols` + `hasBillSymbols()` — the detail header's glyph run on BOTH faces (duplicate-SO tag, key dealer, urgent P1, TINT/BASE, SMU number — each glyph carries `aria-label` + `title`); replaced the flag row 2026-08-22 (§5.2) |
 | `components/picking/bill-band.tsx` | `BillBand` — the bay · route · triangle band under BOTH detail headers (§5.3). Replaced `bay-circle.tsx` (deleted) |
-| `components/picking/cancel-sheet.tsx` | `CancelSheet` — the supervisor's reason sheet behind the detail ⋯ menu (§5.3 cancel) |
+| `components/picking/cancel-sheet.tsx` | `CancelSheet` — **ORPHAN since 2026-10-17** (no importer; Cancel left the ⋯ menu, §5.7). Was the reason sheet behind the detail ⋯ menu (§5.3 cancel) |
 | `lib/picking/cancel-reasons.ts` | `CANCEL_REASONS`, labels, `isCancelReason()`, `cancelRequiresNote()`, `buildCancelNote()`, `CANCEL_NOTE_MAX` — shared by the sheet and `app/api/picking/cancel/route.ts` |
 | `lib/picking/colour-work.ts` | `ColourWork` type, `PROJECT_SMU_CODES`, `isProjectSmu()`, `resolveColourWork()` — the TINT/BASE rule, pure (§5.2) |
 | `lib/picking/colour-work-query.ts` | `getColourWorkByOrder()` — the batched DB side of colour work, called once per queue build |
@@ -1275,11 +1400,16 @@ panel (§11.5).
 | `lib/picking/search.ts` | `matchesPickingSearch()` — the one search predicate for the supervisor's four lists (§5.3) |
 | `lib/picking/share-findings-text.ts` | `buildFindingsMessage()`, `shareFindingsText()` — WhatsApp text share of confirmed findings, pure, nothing stored (§5.3) |
 | `lib/picking/tint-workload.ts` | `getTintWorkload()`, `getTintWorkloadMarker()` — the Tinting section's feed and marker (§5.6) |
-| `lib/picking/visibility-gate.ts` | `PICK_VISIBILITY_GATE_KEY`, `isPickGateOn()`, `waitingBranchWhere()`, `countHeldBackWaiting()` — the gate's definition is owned by `CLAUDE_FLOOR_TRIPS.md §11`; Picking applies it (§5.2, §10) |
+| `lib/picking/visibility-gate.ts` | `PICK_VISIBILITY_GATE_KEY`, `isPickGateOn()`, `waitingBranchWhere()`, `countHeldBackWaiting()` — the gate's definition is owned by `CLAUDE_FLOOR_TRIPS.md §11`; Picking applies it (§5.2, §10). Since v27.66 it reads "any invoice row on a shown trip" through `lib/order-invoices/trip-read.ts` |
+| `lib/order-invoices/trip-read.ts` | NOT Picking's (`CLAUDE_ORDER_INVOICES.md`) — `ON_SHOWN_TRIP_WHERE`, `onTripIdsWhere`, `onStopsWhere`: the invoice-row trip reads the gate, `sync.ts` and `trips-view.ts` use |
+| `lib/picking/direct-load.ts` + `app/api/picking/direct-load/route.ts` + `direct-load/undo/route.ts` | Direct Loading and its Undo (§5.7) |
+| `lib/picking/article-count.ts` + `app/api/picking/article-count/route.ts` + `components/picking/article-count-popup.tsx` | Article no. — parse rule, the edit route, the Approve / edit popup (§5.7) |
+| `lib/picking/trips-view.ts` + `app/api/picking/trips/route.ts` + `components/picking/assign-trips.tsx` | The Assign tab's Trips view — read-only feed and its presentational parts (§5.7) |
+| `lib/picking/allocate-finding.ts` | Pure — spreads one found quantity over a merged row's lines (§5.7, §11) |
 | `lib/hooks/use-picking-marker.ts` | The marker hook (§10) — `PICKING_MARKER_POLL_MS`, optional `url`/`onProbe`, returns `resync()` |
 | `app/api/picking/marker/route.ts` | GET — `{ count, latest, heldBack, heldBackTrucks }`; reads `isPickGateOn()` and shares `buildPickingWhere` (§10) |
 | `app/api/picking/release/route.ts` | POST — manual early release (`canEdit`), window-checked by `release-window.ts` (§5.2) |
-| `app/api/picking/cancel/route.ts` | POST — supervisor cancel (`canEdit`), `PICKING_CANCELLABLE_STAGES`, the "Bill cancelled" push (§5.3) |
+| `app/api/picking/cancel/route.ts` | POST — supervisor cancel (`canEdit`), `PICKING_CANCELLABLE_STAGES`, the "Bill cancelled" push (§5.3). **No caller since 2026-10-17** (§5.7); still deployed, still mirrors the invoice-row hold (`mirrorObdHoldSafe`) |
 | `app/api/picking/tint-workload/route.ts` + `tint-workload/marker/route.ts` | GET — the Tinting feed and its marker, `picking` canView (§5.6) |
 | `app/api/picking/push-test/route.ts` | Temporary push proof endpoint (`picking` canView); owned by `CLAUDE_NOTIFICATIONS.md` |
 | `app/api/warehouse/pickers/route.ts` | GET — the Assign sheet's roster with each picker's OPEN-bill count (§4). The only live file under `app/api/warehouse/` |
@@ -1334,19 +1464,21 @@ pointer to the drain hole survives anywhere in `docs/`.
 
 ---
 
-## 10. Live sync [LIVE — 2026-07-22; change-feed path BUILT 2026-09-30, behind `live.feed.picking` (OFF)]
+## 10. Live sync [LIVE — 2026-07-22; change-feed path LIVE — `live.feed.picking` ON since 2026-10-01]
 
 ### 10.0 Two paths, one switch (2026-09-30, live feed 4a/4b)
 
 Picking runs on the **change feed** when `app_settings` `live.feed` AND `live.feed.picking` are both ON
 (absent row = OFF); otherwise on the **marker path** described in the rest of this section, which is
-unchanged. Plan: `docs/prompts/drafts/code-plan-2026-09-30-picking-live-feed.md`; records:
+unchanged. **Both are ON live** (`app_settings`, read 2026-10-24: `live.feed` since 2026-09-30,
+`live.feed.picking` since 2026-10-01), so the change feed is the live path and the marker path is the
+fallback. *(This section said the switch was OFF until 2026-10-24.)* Plan: `docs/prompts/drafts/code-plan-2026-09-30-picking-live-feed.md`; records:
 `code-update-2026-09-30-picking-live-feed-4a.md` (server) and `-4b.md` (client).
 
-| | Marker path (switch OFF — today) | Change-feed path (switch ON) |
+| | Marker path (switch OFF — the fallback) | Change-feed path (switch ON — live) |
 |---|---|---|
 | Who polls | supervisor: queue marker + tint-workload marker, 15 s each; picker: his narrowed marker, 15 s | ONE `GET /api/live/changes?screen=picking` per phone: 15 s while touched in the last 2 min, 60 s idle, instant on touch-after-idle / visible / focus (≤ 1 per 3 s), **nothing while hidden** (screen off, locked, app switched), backoff 5 s → 2 min on flaky data |
-| Supervisor refresh | marker moved → full queue refetch (~2 s, ~54 KB) | ONE `POST /api/picking/sync { orderIds, tripIds, shownIds, tintShownIds }` → rows re-read BY ID through the same builder (`getPickingQueue({ onlyIds })` → `buildPickingWhere`, same `gateOn`) and merged by `lib/picking/live-merge.ts` (replace / insert / remove, re-sorted with `PICKING_SPINE`, siblings re-emitted, held-back triple and pick-deleted replaced only when returned); `tintTouched` → refetch the tint workload; a different IST day → full reload |
+| Supervisor refresh | marker moved → full queue refetch (~2 s, ~54 KB) | ONE `POST /api/picking/sync { orderIds, tripIds, shownIds, tintShownIds }` → a trip id maps to its bills through ANY invoice row on that trip (`onTripIdsWhere`, `lib/order-invoices/trip-read.ts` — the gate's own "any row" rule, v27.66) → rows re-read BY ID through the same builder (`getPickingQueue({ onlyIds })` → `buildPickingWhere`, same `gateOn`) and merged by `lib/picking/live-merge.ts` (replace / insert / remove, re-sorted with `PICKING_SPINE`, siblings re-emitted, held-back triple and pick-deleted replaced only when returned); `tintTouched` → refetch the tint workload; a different IST day → full reload |
 | Picker refresh | marker (narrowed to his `pickerId`) moved → his list | the feed asks `&face=picker&held=<his ids>` — the SERVER keeps only order ids assigned to the session user now, or held by his phone (a bill leaving him still wakes it) → his list refetched (`?pickerId=me`) |
 | Own writes | full refetch + `resync()` | supervisor: the acted-on ids through one sync (`refetchQueue({ ids })`), applied at once; picker: his list |
 | **Push → instant** | — (the notification only) | `public/sw.js` posts `{ type: "orbit-push", tag, kind, orderId }` to open windows after a picking notification. Page ON the feed and VISIBLE: supervisor (`pick-done-<id>`) → `POST /api/picking/sync` with that one id; picker (`pick-assigned-<id>` / `pick-cancelled-<id>`) → his list. **Never through the feed** — its per-instance head cache can answer "nothing new" for ≤ 5 s. The next glance re-reads the same bill harmlessly. Pushes are best-effort (device toggle, permission, iOS installed-app only) — the glance is the guarantee |
@@ -1364,10 +1496,10 @@ while the feed is not live. Server: `app/api/picking/sync`, `lib/picking/sync.ts
 `lib/picking/picker-feed.ts`, `app/api/live/changes` (`screen=picking`, `face=picker`). Debug log:
 `localStorage.setItem("orbit.live.debug","1")` → `[live:picking]` lines incl. `push …` triggers.
 **Trigger coverage** replaces the "marker ⊇ queue" rule on this path: every table the queue reads is
-triggered (CORE §13), incl. `pick_findings` — whose trigger (2b-i SQL) must be applied before the
-switch is turned on.
+triggered (CORE §13), incl. `pick_findings` — whose trigger (2b-i SQL) had to be applied before the
+switch was turned on (the switch is on; the trigger was not re-read in the 2026-10-24 pass).
 
-### 10.1 The marker path (switch OFF) — unchanged
+### 10.1 The marker path (switch OFF — the fallback) — unchanged
 
 Both picking surfaces self-refresh **with no manual refresh, pull-to-refresh or app restart**.
 Previously each surface fetched once and never again — the acting device saw its own change, every
@@ -1722,6 +1854,44 @@ Evidence: all nine commits confirmed present on `main` by `git log` before anyth
 
 ---
 
+## Change log — v1.20 (2026-10-24, canon batch B5: Add invoices + reconciliation to Schema v27.74)
+
+Evidence: code at HEAD `b1d38861` (`lib/picking/visibility-gate.ts`, `sync.ts`, `queue.ts`, `trips-view.ts`,
+`direct-load.ts`, `article-count.ts`, `allocate-finding.ts`, `lib/order-invoices/trip-read.ts` / `dispatch.ts`, the
+picking routes and `picking-board-mobile.tsx`); `git show` of `912f17ec` (readers B), `4c97fd2f`, `b1b56688`,
+`71f8b881`, `fdd205d0`, `dadb4a2d`, `831482c7`, `85b64d77`, `60f9fa75`, `eabc3a44` → `b4e9e0d6`, `fa8bac52`,
+`4770969f`, `292885af`, `5fb7a158`, `660facdc`; `app_settings` read live 2026-10-24. Plan:
+`docs/prompts/drafts/code-discovery-2026-10-24-canon-add-invoices.md`.
+
+- **Add invoices (this batch's rows):**
+  - §1 and §5.2: the gate holds a waiting bill back until ANY invoice row of its OBD is on a shown trip
+    (`ON_SHOWN_TRIP_WHERE`, `trip-read.ts`). The in-memory complement and the four mirrored copies are noted.
+  - One line: **Picking stays per OBD under Model A** (`pick_assignments.orderId` `@unique`).
+  - §10.0 sync maps a trip to its bills through any invoice row.
+  - §8 gains `trip-read.ts`.
+- **Other sessions' stale lines:**
+  - §10 / §10.0: the change feed is **LIVE** (`live.feed.picking` ON since 2026-10-01). It said OFF.
+  - §5.2: the gate is still OFF live, last set 2026-10-14.
+  - §2 / §6 / §7: `dispatched` now has a second, reachable writer on a split OBD (`settleObdDone`, 6.4).
+    The table is owned by FLOOR_TRIPS §14; 7,361 live.
+  - §2 ladder: Approve takes the article no.; the Direct Loading path is added.
+  - NEW §5.7, covering:
+    - Direct Loading (v27.52);
+    - article no. on Approve plus its edit route (v27.58, `chk_pick_assignments_article_count`);
+    - Cancel removed from the ⋯ menu (the route and sheet are orphaned);
+    - the 2026-10-24 Assign rework (Bills | Trips, Local / UPC / Cross-IGT cards, route chips, **bundling
+      removed from the board**);
+    - the Trips view (`GET /api/picking/trips`);
+    - the assigned-by line, the CHALLAN / ODB / ship-to-changed tags, and findings on merged rows.
+  - §5.3 cancel and §5.5 bundling are marked history.
+  - §8: eight new rows; the cancel sheet and route are marked orphaned.
+- Schema stamp **v27.24 → v27.74**: reconciled against every CORE version that touches what Picking reads or
+  writes (v27.46 / v27.47 live-feed triggers incl. `pick_findings` — trigger not re-read; v27.52 `orders.directLoaded*`;
+  v27.58 `pick_assignments.articleCount`; v27.60 `isChallanOrder`; v27.66 / v27.69 invoice-row trip reads;
+  v27.68 `isObdImport`; v27.73 typed ship-to). v27.75 is `trip_activity` only. Version v1.19 → v1.20.
+- **Not re-verified in this pass:** older line anchors through §3–§7 (kept, may have drifted); the Tinting
+  section (§5.6) beyond its live-feed line; the picker face's Combined tab.
+
 ## Change log — v1.19 (2026-09-30, live feed picking 4a/4b)
 
 - §10 gains §10.0: the change-feed path behind `live.feed.picking` (OFF at writing) — one adaptive glance per phone, the supervisor patched BY ID through `POST /api/picking/sync` (same builder, parity 18/18 in 4a), the picker's feed narrowed server-side to his own bills, own writes by id, push → instant re-read of one bill via the service-worker message, pause rules, the "changed elsewhere" strip, tick pruning, midnight reload, fallback. The existing text is now §10.1, the marker path, unchanged.
@@ -1765,4 +1935,4 @@ Q09, Q10a). Drafts read as history: code-update 2026-08-18 grouping, 2026-08-20 
 
 ---
 
-*CLAUDE_PICKING.md v1.19 · Schema v27.24 · Picking Module · September 2026 · updated 2026-09-30 — §10.0 change-feed path (live feed picking 4a/4b, behind live.feed.picking). Prior, v1.18 (2026-09-18) — reconciled to code at HEAD `cc1e721a`: bills reach Picking on import (`applyNoMailOrderFallback`), per-user access, the pick visibility gate as Picking applies it, bundling, supervisor cancel, the Tinting section, colour work, duplicate-SO, SAP-name fallback, bay band, hardener rows, WhatsApp share, the unreachable `dispatched` writer and 23 new key-file rows; the v1.18 change log lists every section. Prior, v1.17 (2026-09-04): §3.1 added, `lib/picking/pack-sort.ts` documented in the file that owns it*
+*CLAUDE_PICKING.md v1.20 · Schema v27.74 · Picking Module · October 2026 · updated 2026-10-24 — canon batch B5: the pick gate reads ANY invoice row on a shown trip and Picking stays per OBD (Model A); the change feed is live; NEW §5.7 (Direct Loading, article no., Cancel gone from the ⋯ menu, the Assign rework with bundling removed, the Trips view, card tags); the second `dispatched` writer; full list in the v1.20 change log. Prior, v1.19 (2026-09-30) — §10.0 change-feed path (live feed picking 4a/4b, behind live.feed.picking). Prior, v1.18 (2026-09-18) — reconciled to code at HEAD `cc1e721a`: bills reach Picking on import (`applyNoMailOrderFallback`), per-user access, the pick visibility gate as Picking applies it, bundling, supervisor cancel, the Tinting section, colour work, duplicate-SO, SAP-name fallback, bay band, hardener rows, WhatsApp share, the unreachable `dispatched` writer and 23 new key-file rows; the v1.18 change log lists every section. Prior, v1.17 (2026-09-04): §3.1 added, `lib/picking/pack-sort.ts` documented in the file that owns it*

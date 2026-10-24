@@ -1,5 +1,5 @@
 # CLAUDE_CI.md — CI, Goods Return Note (CI Form)
-# v1.4 · Schema v27.24 · October 2026 · updated 2026-10-03
+# v1.5 · Schema v27.74 · October 2026 · updated 2026-10-24
 # Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md
 
@@ -36,6 +36,22 @@ bill has taken the viewport). A server `layout.tsx` cannot supply them, and a
 layout rendering a bare `RoleLayoutClient` would permanently lock the supervisor
 to the default Home/Menu/You bar.
 
+### CIs that no face raises — three server raisers
+
+Two faces show CIs, but four paths **create** them. Each one writes a `source`
+(§3). Only `manual` comes from the faces:
+
+| Raiser | `source` | Where | Shape |
+|---|---|---|---|
+| The phone face (§7) | `manual` | `POST /api/ci/draft` → lines → submit | full or part, whole OBD |
+| **Floor's Raise CI** (since 2026-09-22) | `floor` | `POST /api/floor/ci` → `lib/floor/raise-ci.ts` | full; **whole bill** (`raiseFullBillCi`, then the bill is cancelled) or, on a split OBD, **one CI per ticked invoice** (`raiseInvoiceCi`, 6.3, 2026-10-19) — §7.1 |
+| The picking-finding confirm | `auto_finding` | `lib/ci/auto.ts` (§9) | part, whole OBD |
+| A `'ci'` SO tag (bill-only) | `auto_bill_only` | `lib/ci/bill-only.ts` `raiseBillOnlyCi`, called by `lib/billing/telephonic-apply.ts` `applySoTagHolds` (which then cancels the bill) | full, whole OBD |
+
+The Floor screen, its button and its Cancel & CI tab belong to `CLAUDE_FLOOR.md`
+(§4.1b). The whole-bill cancel belongs there too. This file owns only the
+document those paths write.
+
 ### What this file owns, and what it does not
 
 This file owns the CI **document**: its three tables, the status ladder, the
@@ -62,6 +78,9 @@ that will disagree with itself inside a cycle.
 | The 344px rail + `minmax(0, 1fr)` two-track grid | `CLAUDE_MRN.md`, `CLAUDE_FLOOR.md` | §8 — CI copied the geometry |
 | Card anatomy, the line row, the bottom-sheet primitives | `CLAUDE_PICKING.md §5.2` | ⚠ **copied, not imported** — §14 records that they are copies and why |
 | Soft-delete reads, the `$transaction` ban, `force-dynamic`, the `Date.parse` trap | `CLAUDE_CORE.md §3` | never restated here |
+| Invoice rows (`order_invoices`), the split OBD, the OBD done rule, which row a whole-OBD record points at | `CLAUDE_ORDER_INVOICES.md` §3, §4.6, §4.9 | §5 and §7.1 state only what CI does with them |
+| Floor's Raise CI button, its selection and the Cancel & CI tab | `CLAUDE_FLOOR.md` §4.1b | §7.1 owns the CI rules behind it |
+| The Billing · Telephonic tab and the `'ci'` SO tag | `CLAUDE_BILLING.md` §5 / §5b | the bill-only CI it raises (§1 raisers table) |
 
 **Where CI diverges from an owner's rule, the divergence is stated in this file
 and the rule stays in theirs.** There is exactly one today: the division number
@@ -117,12 +136,14 @@ nullability and the reasoning behind it live in the model headers in
 Read them there. A column list copied into a doc goes stale the day someone adds
 a column, which is exactly what happened to that file's own
 `// The CI header. 31 columns.` comment: `source` was added 2026-09-01 and the
-count stayed wrong until 2026-09-03. It is 32.
+count stayed wrong until 2026-09-03. It was 32 then. Live it is **37**
+(`information_schema.columns`, 2026-10-24): `orderInvoiceId` (v27.66) and the
+four bill-to / ship-to columns (v27.70) came since.
 
 | Table | What it is |
 |---|---|
 | `ci_reason_master` | The reason list. **DATA, NOT CODE** — the depot can add, relabel or retire a reason without a deploy, which is why `GET /api/ci/reasons` exists and why no component may hardcode the list. 8 live rows, 3 pinned |
-| `ci_returns` | The CI header. Snapshots the bill and the dealer; carries the stage-1 answers, billing's three fields, the void columns and `source` |
+| `ci_returns` | The CI header. Snapshots the bill and the dealer; carries the stage-1 answers, billing's three fields, the void columns, `source`, **`orderInvoiceId`** (below) and the **bill-to / ship-to** pair (§13 CI-5) |
 | `ci_return_lines` | One returned line. Snapshots what the bill said at the moment of the return, because a re-import patches raw lines in place |
 
 ### The five CHECK constraints — invisible in Prisma, so they are recorded here
@@ -131,14 +152,15 @@ count stayed wrong until 2026-09-03. It is 32.
 appear in `schema.prisma` as anything but a comment. Read live from
 `pg_constraint`, 2026-09-03; all five re-read 2026-09-21, and
 `chk_ci_returns_source` again 2026-09-22 after it was widened (CORE §7, Schema
-v27.39) — **all five are on `ci_returns`**:
+v27.39 and v27.40). **All five were re-read again 2026-10-24, unchanged since. All
+five are on `ci_returns`:**
 
 | Constraint | What it enforces |
 |---|---|
 | `chk_ci_returns_status` | `draft` / `submitted` / `closed` / `returned_to_floor` |
 | `chk_ci_returns_return_type` | `full` / `part` |
 | `chk_ci_returns_material_moved` | `moved` / `not_moved` |
-| `chk_ci_returns_source` | `manual` / `auto_finding` / `auto_bill_only` — the third added 2026-09-22 (Schema v27.39). **`auto_bill_only`'s owner is the Billing · Telephonic tab, which is NOT BUILT: nothing writes the value yet.** The code already reads it — `CiSource` / `asCiSource` / `ciSourceTag` in `lib/ci/types.ts`, and the rail card and detail header tag it **"Bill-only"** (a picking-finding CI stays **"Auto"**, a manual one carries no tag). A FOURTH value needs a SQL ALTER on this CHECK first |
+| `chk_ci_returns_source` | `manual` / `auto_finding` / `auto_bill_only` / `floor`. The third value was added 2026-09-22 (v27.39) and the fourth the same day (v27.40). Each has a writer (§1 raisers table). Live non-draft rows on 2026-10-24: auto_finding 92 · auto_bill_only 46 · floor 46 · manual 31. `ciSourceTag` (`lib/ci/types.ts`) tags them on the rail card and detail header as **"Auto"**, **"Bill-only"** and **"Floor"**; a manual CI carries no tag. *(This row said "`auto_bill_only` … NOT BUILT: nothing writes the value yet" and listed three values until 2026-10-24.)* A FIFTH value needs a SQL ALTER on this CHECK first |
 | `chk_ci_returns_complete_when_not_draft` | 🔴 **the load-bearing one** — `status = 'draft'` OR all four of `materialMoved`, `materialReceivedDate`, `reasonId`, `reasonLabel` are NOT NULL |
 
 ⚠ A NULL `materialMoved` also *satisfies* `chk_ci_returns_material_moved`:
@@ -152,12 +174,32 @@ application code in two places (`PUT /lines` returns a 400; `lib/ci/auto.ts`
 skips the line). If a zero-tin row ever appears, the database did not let it
 through by accident; a write path did.
 
-**Indexes** (live, `pg_indexes`): `ci_returns` carries its pkey, `ciNumber`
-UNIQUE, and five secondaries — `invoiceNo`, `obdNumber`, `orderId`, `status`,
-`materialReceivedDate`. The `invoiceNo` + `obdNumber` pair is §5's search ruling
-in schema form. `ci_return_lines` has its pkey plus `UNIQUE(ciReturnId,
+**Indexes** (live, `pg_indexes`, re-read 2026-10-24): `ci_returns` carries its
+pkey, `ciNumber` UNIQUE, and six secondaries: `invoiceNo`, `obdNumber`, `orderId`,
+`status`, `materialReceivedDate`, and `orderInvoiceId` (v27.66). The `invoiceNo` +
+`obdNumber` pair is §5's search ruling in schema form. `ci_return_lines` has its pkey plus `UNIQUE(ciReturnId,
 lineNumber)`; there is deliberately no separate index on `ciReturnId`, which is
 the leading column of that pair.
+
+### `ci_returns.orderInvoiceId` — which invoice row came back (v27.66, 2026-10-12)
+
+`Int?`, FK `ci_returns_orderInvoiceId_fkey` → `order_invoices` **ON DELETE
+RESTRICT**, index `ci_returns_orderInvoiceId_idx`. **`orderId` stays the identity
+of the bill (§5).** This column only narrows it to one invoice row. Every CI
+that existed then was back-filled to the OBD's seq-1 row.
+
+| Writer | Value |
+|---|---|
+| Floor per-invoice CI (`raiseInvoiceCi`) | **the ticked row** |
+| Every whole-OBD raiser: phone draft, Floor whole bill, auto, bill-only | `linkRowForOrder(orderId, "ci")` (`lib/order-invoices/links.ts`): **seq 1 on an unsplit OBD, NULL on a split one** |
+
+🔴 **NULL means "the whole OBD", not "unlinked".** A NULL CI on a split OBD covers
+every invoice row (`ciCoversRow`, `CLAUDE_ORDER_INVOICES.md` §4.6 / §4.9). Never
+back-fill it to seq 1.
+
+**Live 2026-10-24:** all **232** CIs carry a row (215 non-draft + 17 drafts). None
+sits on a seq ≥ 2 row, and none is on the one split OBD, so no live CI has a NULL
+row and no live CI is per-invoice yet.
 
 ---
 
@@ -188,21 +230,48 @@ at six call sites and has no year reset).
 
 ## 5. The bill: search, identity, and the invoice rule
 
-**Search** (`GET /api/ci/search`) matches on **invoice number OR OBD number**.
-The term is normalised in `lib/ci/queries.ts` — trimmed, uppercased, and a bare
-9 digits gets its `I` prefix — and the normalised term is echoed back so the UI
-can show what was actually searched. It **always returns a list, never a single
-row**: 11 live invoice numbers map to two OBDs each. With exactly one hit the UI
-skips straight to the bill, which is a UI shortcut and not a query shortcut.
+**Search** (`GET /api/ci/search`, `searchCiBills` in `lib/ci/queries.ts`)
+matches on **invoice number OR OBD number**. The term is normalised by
+`normaliseCiSearchTerm` (`lib/ci/search-term.ts`, pure since 2026-10-10 so Add
+invoices' `lib/order-invoices/rules.ts` shares the one rule; `queries.ts`
+re-exports it): trimmed, uppercased, and a bare 9 digits gets its `I` prefix.
+The normalised term is echoed back so the UI can show what was actually
+searched. It **always returns a list, never a single row**: 11 live invoice
+numbers map to two OBDs each. With exactly one hit the UI skips straight to the
+bill, which is a UI shortcut and not a query shortcut.
+
+- **The invoice side matches ANY invoice row** (since 2026-10-13, `e11e7115`). It
+  first searches `order_invoices.invoiceNo`, keeps the lowest matching seq per
+  OBD, and ORs those OBDs into the order match. So a seq-2 invoice number finds
+  its OBD. The 31-day `orderDateTime` fence still applies.
+- ⚠ **The hit card still shows the OBD's own (seq-1) number.** The phone raises
+  a whole-OBD CI. The search returns `matchedInvoiceSeq`, but no component reads
+  it yet.
 
 🔴 **`orderId` is the identity of the bill. Never `invoiceNo`.** `invoiceNo` is
 not unique, and `obdNumber`, though unique, is a business key. Every route that
 takes a bill takes `orders.id` — `GET /api/ci/bill/[orderId]` — and
 `ci_returns.orderId` is `NOT NULL` with `onDelete: Restrict`.
 
-⚠ **No behaviour hangs off that FK.** A CI never changes the order's
-`workflowStage` or any other column; the link is stored, and read, and nothing
-else.
+**What a CI does to the order.** The CI document itself writes no `orders`
+column. What changes the order is the raiser around it, or a guard that reads
+it:
+
+- **A whole-bill CI from Floor or from a bill-only tag cancels the bill.** The
+  caller does that write (`raiseFullBillCi` step f; `applySoTagHolds`), not the
+  CI. The phone face and the auto-CI never touch the stage.
+- 🔴 **A FULL CI counts toward the OBD done rule** (`CLAUDE_ORDER_INVOICES.md` §3,
+  `lib/order-invoices/dispatch.ts`). Raising a per-invoice CI can therefore move a
+  split OBD to `dispatched` (`settleObdDone`). It does so only when at least one
+  row really shipped. Here, "full" means submitted or closed, not a draft and not
+  voided; part CIs never count. The rule is owned there; do not restate it here.
+- **A live FULL CI blocks Release, unhold and cancel** (`findLiveCi`,
+  `lib/ci/live-ci.ts`; scoped per row by `invoiceRowIds`, so a CI on one invoice
+  never blocks releasing another).
+
+*(Until 2026-10-24 this paragraph said "a CI never changes the order's
+`workflowStage` or any other column". That has been false since the Floor CI
+(2026-09-22) and the done rule (6.4, `4c97fd2f`, 2026-10-19). Do not restore it.)*
 
 ### The invoice rule
 
@@ -218,6 +287,13 @@ Three read paths implement it and all three are live-first: the board
 (`toBoardRow`), the detail (`getCiDetail`) and the register export
 (`getCiRegisterRows`). This is the **one** place CI deliberately does not
 snapshot.
+
+**Which invoice is "the order's" (6.3, `3e319529`).** All three read through
+`liveInvoiceOf(order, orderInvoice)` (`lib/ci/queries.ts`). On a CI whose row is
+**seq ≥ 2**, the live number and date are **that row's**
+(`order_invoices.invoiceNo` / `invoiceDate`). Otherwise they are `orders.invoiceNo`
+/ `invoiceDate`, which is seq 1 (that covers seq 1 and NULL whole-OBD CIs). The
+per-invoice raiser also snapshots its own row's number.
 
 ### Division — CI's one divergence from an owner's rule
 
@@ -320,6 +396,56 @@ computed by the board from the server's own `status` and `supervisorId`, and bot
 write routes re-test both inside a guarded write. A screen that worked it out for
 itself would be a fourth opinion about who may write.
 
+### 7.1 Raise CI from Floor — the desk raiser, whole bill or per invoice
+
+Not a face of `/ci`: the button, its ticks and the result view are Floor's
+(`CLAUDE_FLOOR.md` §4.1b, which lists the refusals word for word). The CI rules
+behind it are below. `POST /api/floor/ci` is gated on `floor` canEdit, **not**
+the `ci` tick. Its body is `{ orderIds, reasonId, remark?, invoiceRowIds? }`. An
+OBD listed in `invoiceRowIds` gets one `raiseInvoiceCi` per row; every other OBD
+gets `raiseFullBillCi`. Both write `status 'submitted'` straight onto billing's
+rail, with `returnType 'full'`, `materialMoved 'not_moved'` and `source 'floor'`.
+
+- **Whole bill** (`raiseFullBillCi`, `lib/floor/raise-ci.ts`): every active line
+  at its delivered quantity (`lib/ci/full-bill.ts`), then the bill is cancelled
+  (Floor's write). Duplicate guard: **any** live (non-draft, non-voided) CI of
+  **any** source, plus a separate open-draft check. One exception: an existing
+  `floor` CI on a bill still on the floor is read as "an earlier press made the
+  CI and died before the cancel". The function then finishes that press with the
+  existing number, so a retry is safe.
+- **Per invoice** (`raiseInvoiceCi`, 6.3, `3e319529`, 2026-10-19; rules in the pure
+  `lib/order-invoices/ci-plan.ts`):
+  - Only on a split OBD.
+  - One CI per ticked invoice row: `orderInvoiceId` = that row. Its lines are that
+    invoice's `order_invoice_lines` (raw line + tins), never the whole bill. The
+    number and date are that row's.
+  - A held invoice may be returned. An invoice on a trip or already dispatched is
+    refused.
+  - 🔴 **Duplicate guard per (OBD, invoice row)** (`invoiceCiDuplicate`): any
+    non-voided, non-draft CI that covers the row (its own, or a whole-OBD NULL
+    one) → "Already has CI-…"; a covering draft → "open on /ci". A second CI
+    would double the credit in SAP.
+  - 🔴 **The OBD is NOT cancelled.** There is no `orders` write. The only
+    exception is when the CI finishes the OBD under the done rule (§5,
+    `settleObdDone`). There is one status log naming the row. The invoice leaves
+    To plan / On hold for the Cancel & CI tab.
+- **Add invoices is refused once ANY CI exists on the OBD**, every status, **void
+  and draft included**: "Has a CI (…) — invoices can't be changed."
+  (`obdStateRefusal`, `lib/order-invoices/plan.ts`; owner →
+  `CLAUDE_ORDER_INVOICES.md` §5). Voiding a CI does not reopen Add invoices.
+- ⚠ **KNOWN DEFECT, recorded 2026-10-24, not fixed: a whole-OBD CI is NOT refused
+  on a split OBD that already has a per-invoice CI.** `raiseFullBillCi`'s guard
+  finds the per-invoice CI. Its `source` is `floor`, so the guard takes the retry
+  branch: it creates no second CI and cancels the WHOLE OBD under the invoice
+  CI's number. **SAP is not credited twice** (no second document). But the other
+  invoices go off the floor with no CI of their own. The Floor client does not
+  pre-check this either.
+  - The fix belongs in the guard: on a split OBD, an existing floor CI with a
+    non-NULL `orderInvoiceId` is a per-invoice CI, not an unfinished press, and
+    should be refused.
+  - Whether the desk can actually send that request is not confirmed: it would
+    need a whole-OBD Raise CI on a split OBD, i.e. every invoice ticked. ROADMAP.
+
 ---
 
 ## 8. Billing's desk face
@@ -404,6 +530,20 @@ feature flag and no switch for the review.** A special case built for a decision
 nobody has made yet is a second code path to maintain forever. Do not read this
 as settled, and do not build a toggle for it — when the review lands, the rule
 changes in one place.
+
+### Still WHOLE-OBD after Add invoices — an open item
+
+🔴 **The auto-CI is per OBD, not per invoice** (6.3 decided this deliberately,
+`3e319529`). It is keyed `orderId` + `source 'auto_finding'`. Its
+`orderInvoiceId` is `linkRowForOrder`: seq 1 on an unsplit OBD, **NULL on a split
+one** (a whole-OBD CI that covers every row, §3). The reason: a finding is on a
+SAP line, and on a split OBD one line's tins can sit across several invoices. Its
+fire rule still reads `orders.invoiceNo` (seq 1), and it snapshots that number.
+Per-invoice auto-CI is an open item (§15, `docs/ROADMAP.md`). The bill-only CI
+(`lib/ci/bill-only.ts`) is whole-OBD for the same reason it is a whole-bill
+document. (`lib/ci/auto.ts`, `bill-only.ts` and `app/api/ci/draft/route.ts` still
+carry a comment "NULL on a split one until Phase 6 assigns it from lines". Phase
+6 kept them whole-OBD; the comment is stale.)
 
 ### One auto CI per order, and it GROWS
 
@@ -572,7 +712,7 @@ The mechanism — the 15s poll, the count + `MAX(updatedAt)` probe — is
 
 ## 13. Landmines
 
-Sixteen. Each states the reasoning, not just the rule — "don't do X" gets argued
+Seventeen. Each states the reasoning, not just the rule — "don't do X" gets argued
 around; "don't do X because it did Y" does not.
 
 **CI-1 · `invoiceNo` is read LIVE. There must never be a back-fill job.**
@@ -614,15 +754,37 @@ millisecond can read the same maximum; `UNIQUE(ciNumber)` is the real backstop
 and both write paths re-allocate **once** on P2002 and retry. At a handful of
 returns a day the window is theoretical.
 
-**CI-5 · The dealer name is a SNAPSHOT that honours the ship-to override, so it
-can legitimately differ from the customer master.** Live example, verified
-2026-09-03 — **CI-2026-00007, OBD 9109178276**: the CI says `National Paints`,
-`delivery_point_master` (id 1987) says `Ambika Paints`, and SAP's own
-`shipToCustomerName` says `AMBIKA PAINTS`. The bill carries
-`shipToOverrideCustomerId = 1948` = National Paints. **The override is correct:
-goods come back from where they were DELIVERED.** This is also why the register
-will show a name billing's old sheet does not — expect that question, and do not
-"fix" it by reading the master.
+**CI-5 · Two parties, and the screens SHOW SAP's bill-to (v27.70, 2026-10-17,
+`c6d6a8c7`).**
+
+- **Four columns, snapshotted at raise by every raiser through `ciPartyColumns`
+  (`lib/ci/derive.ts`):** `billToCustomerCode` / `billToCustomerName` and
+  `shipToCustomerCode` / `shipToCustomerName`, all `text` and nullable. Smart Flow
+  added them live and back-filled every row. Bill-to comes from the newest
+  `import_raw_summary` row per OBD (`loadBillToByObd`, `lib/reports/bill-facts.ts`).
+  Ship-to comes from `orders.shipToCustomerId` / `shipToCustomerName`, which is
+  **SAP's own ship-to, never the override dealer**.
+- **What the screens show** (`ciPartyDisplay`):
+  - The main name is bill-to, else the old `customerName`, else "(Unmatched)".
+  - A grey **"Ship to · name · code"** line sits under it and is hidden when
+    unknown.
+  - It shows on both faces: the phone search card, bill header, success screen,
+    Submitted card and detail (`spine.tsx` `SHIP_TO_LINE`), and the desk rail and
+    pane.
+  - The desk search also matches bill-to, ship-to and the old name.
+  - The register's columns A/B take the bill-to pair (`registerDealer`), else the
+    old pair. Unknown is an empty cell, never "(Unmatched)".
+- **The old dealer snapshot stays, for history.** `customerId` / `customerCode` /
+  `customerName` are still written by `resolveCiDealer` (CI-6), which honours the
+  ship-to override.
+  - Live example, verified 2026-09-03 — **CI-2026-00007, OBD 9109178276**: the
+    snapshot says `National Paints`, the override dealer
+    (`shipToOverrideCustomerId = 1948`). The master (id 1987) and SAP's ship-to
+    say Ambika Paints.
+  - Before v27.70 that snapshot WAS the displayed name. *(Until 2026-10-24 this
+    entry said the displayed dealer honours the override. For display that has
+    been false since v27.70.)*
+  - Do not "fix" either column by reading the master.
 
 **CI-6 · `resolveCiDealer` MIRRORS Picking's rule; it does not import it.**
 `lib/picking/queue.ts` owns the effective-dealer rule but does not export it (it
@@ -708,10 +870,10 @@ draft is invisible; doing that here would blank a **live** document, which
 billing may be reading, for the width of two statements.
 
 **CI-16 · CLOSED — `/ci` is in the sidebar.** `PAGE_NAV_MAP` carries
-`{ pageKey: "ci", label: "CI", href: "/ci" }` (`lib/permissions.ts:102`, placed
+`{ pageKey: "ci", label: "CI", href: "/ci" }` (`lib/permissions.ts` `PAGE_NAV_MAP`, placed
 after `mrn`; its comment warns that the position is behaviour, because
 `MobileShell`'s phone Home is `navItems[0]?.href`), and the sidebar icon is
-`ci: Undo2` (`components/shared/role-sidebar.tsx:76`).
+`ci: Undo2` (`components/shared/role-sidebar.tsx` `ICON_MAP`; line numbers dropped 2026-10-24 — they had drifted).
 Was URL-only in canon until 2026-09-18; the nav entry has existed since 55c3cdc6 (2026-08-31).
 ⚠ **`digitsCell`'s leading-zero branch is the sixteenth-and-a-half:** a digit
 string writes as a NUMBER unless it starts with `0`, where it stays TEXT.
@@ -719,14 +881,26 @@ string writes as a NUMBER unless it starts with `0`, where it stays TEXT.
 drops the padding on a document number going upward is worse than one column with
 mixed types. The comment sits at that line; do not simplify it to `Number()`.
 
+**CI-17 · `orderInvoiceId` NULL is a WHOLE-OBD CI. It is not a missing link
+(2026-10-24).** On a split OBD, every whole-OBD raiser writes NULL
+(`linkRowForOrder`), and NULL covers every invoice row in the duplicate guard, the
+done rule and the live-CI guard (`ciCoversRow`). A "tidy-up" that back-fills NULL
+to seq 1 would quietly shrink a whole-bill return to one invoice. The done rule
+would then call the OBD dispatched with invoices still un-returned, and the
+per-invoice guard would allow a second CI on the others, which is a double credit
+in SAP. Owner of the rule: `CLAUDE_ORDER_INVOICES.md` §4.9 and §8.
+
 ---
 
 ## 14. Key files index
 
-**Schema** — `prisma/schema.prisma`: `ci_reason_master`, `ci_returns` (32
-columns), `ci_return_lines`. The model headers carry the column-level reasoning.
+**Schema** — `prisma/schema.prisma`: `ci_reason_master`, `ci_returns` (37
+columns live, 2026-10-24), `ci_return_lines`. The model headers carry the
+column-level reasoning.
 
-**`lib/ci/` — seven files. The client/server line matters:**
+**`lib/ci/` — eleven files** *(seven until 2026-10-24's count; `full-bill.ts`,
+`bill-only.ts` and `live-ci.ts` came 2026-09-22/24 and `search-term.ts` came
+2026-10-10)*. **The client/server line matters:**
 
 | File | Owns | Client-safe? |
 |---|---|---|
@@ -736,6 +910,10 @@ columns), `ci_return_lines`. The model headers carry the column-level reasoning.
 | `auto.ts` | The findings→CI reconcile (§9) | 🔴 server only (`prisma`) |
 | `number.ts` | `allocateCiNumber` (§4) | 🔴 server only (`prisma`) |
 | `resolve-lines.ts` | Batch SKU→name/pack against `sku_master_v2.material` ONLY | 🔴 server only (`prisma`) |
+| `search-term.ts` | `normaliseCiSearchTerm` — the one invoice / OBD search-term rule (§5); shared with `lib/order-invoices/rules.ts` | ✅ **PURE** — no Prisma |
+| `full-bill.ts` | `computeFullBillLines` — "full bill" = every active line at its delivered quantity; callers: `PUT /lines`, `bill-only.ts`, Floor's `raiseFullBillCi` | 🔴 server only (`prisma`) |
+| `bill-only.ts` | `raiseBillOnlyCi` — the `'ci'` SO-tag CI (§1 raisers); never throws | 🔴 server only (`prisma`) |
+| `live-ci.ts` | `findLiveCi(orderId, invoiceRowIds?)` + `liveCiRefusal` — "does this bill carry a live FULL CI?" for Release / unhold / cancel / hold release (§5) | 🔴 server only (`prisma`) |
 | `workbook.ts` | The register .xlsx (§10) | 🔴 server only **for a second reason**: `xlsx` is a ~900KB CommonJS bundle with side effects that webpack cannot tree-shake out of anything a client component imports. `queries.ts` takes its row type with `import type`, which `isolatedModules` erases |
 
 **`app/api/ci/` — twelve routes. All twelve carry `export const dynamic =
@@ -784,6 +962,14 @@ the tab bar is already hidden.
 
 **The auto hook** — `app/api/picking/findings/confirm/route.ts`.
 
+**Raisers outside `/ci`** (§1, §7.1), with their owners in brackets:
+- `app/api/floor/ci/route.ts` — `floor` canEdit, `force-dynamic` (Floor)
+- `lib/floor/raise-ci.ts` — `raiseFullBillCi`, `raiseInvoiceCi`
+- `lib/order-invoices/ci-plan.ts` — pure, tested by `ci-plan.test.ts`: `ciCoversRow`, `invoiceCiRefusal`, `invoiceCiDuplicate`, `invoiceCiPicks`
+- `lib/order-invoices/links.ts` — `linkRowForOrder`, the row a whole-OBD CI points at
+- `lib/order-invoices/dispatch.ts` — the done rule, `settleObdDone` (ORDER_INVOICES)
+- `lib/billing/telephonic-apply.ts` — calls `raiseBillOnlyCi` (BILLING)
+
 **Mockups** — `docs/mockups/ci/supervisor.html` (frames 1-9) and
 `docs/mockups/ci/billing.html` (4 frames), committed 2026-09-03. Component
 headers cite frame numbers into these two files.
@@ -812,6 +998,18 @@ by status × source            totals                     closed CIs
 Four days from first table to register export: 19 CI commits, `e8695f40`
 (2026-08-31 16:42) → `3b0d04b7` (2026-09-03 22:51).
 
+**Live shape, SELECT-verified 2026-10-24** (the block above is the 2026-09-03 snapshot, kept as history):
+
+```
+non-draft by status × source × type        totals
+  closed    · auto_finding   · part  92     all rows        232
+  closed    · auto_bill_only · full  46     drafts           17
+  closed    · floor          · full  45     voided            0
+  submitted · floor          · full   1     orderInvoiceId  232 / 232
+  closed    · manual         · full   8     on a seq ≥ 2 row  0
+  closed    · manual         · part  23     on a split OBD    0  (1 split OBD live)
+```
+
 **Known-and-deliberate gaps** — all tracked in `docs/ROADMAP.md`'s CI section:
 
 - **17 drafts against 14 real CIs.** Harmless — every feed filters
@@ -822,10 +1020,10 @@ Four days from first table to register export: 19 CI commits, `e8695f40`
 - **`returned_to_floor` has no writer** (§2).
 - **No A4 print sheet.** MRN has one; CI does not. Route comments already
   anticipate it ("the eventual print sheet").
-- **Stale code comments (claims, not facts).** `app/ci/page.tsx:57-62` ("⚠ NOT
+- **Stale code comments (claims, not facts).** `app/ci/page.tsx` ("⚠ NOT
   IN THE SIDEBAR YET … Reach this page by URL until then") and
-  `lib/permissions.ts:300-303` (`ci` "DELIBERATELY NOT IN PAGE_NAV_MAP YET") are
-  both contradicted by `lib/permissions.ts:102` (§13 CI-16). Neither changes
+  `lib/permissions.ts` (`ci` "DELIBERATELY NOT IN PAGE_NAV_MAP YET" — still there 2026-10-24) are
+  both contradicted by `PAGE_NAV_MAP` (§13 CI-16). Neither changes
   behaviour; fix them in a code-comment pass.
 - **The old-MFG arm of the auto rule is provisional** (§9).
 - **A frozen auto-CI is reconciled by hand only** — the `console.error` is the
@@ -834,10 +1032,19 @@ Four days from first table to register export: 19 CI commits, `e8695f40`
   different field from `ci_reason_master`.
 - **Whether a second register exists for CIs above ₹10,000** is unanswered, and
   no threshold has been guessed (§10).
+- **Auto-CI per invoice** (§9): the auto-CI and the bill-only CI stay whole-OBD
+  (NULL row on a split OBD). Open; ROADMAP.
+- **Whole-OBD Floor CI after a per-invoice CI** cancels the OBD instead of being
+  refused (§7.1 known defect). Open; ROADMAP.
+- **The phone search's `matchedInvoiceSeq` is unread** (§5): a hit found by a seq-2
+  number shows seq 1's number on the card.
+- **Stale code comments, for the code-comment pass:** "NULL on a split one until
+  Phase 6 assigns it from lines" in `lib/ci/auto.ts`, `lib/ci/bill-only.ts`,
+  `app/api/ci/draft/route.ts` and `lib/floor/raise-ci.ts` (§9).
 
 ---
 
-*CLAUDE_CI.md v1.4 · Schema v27.24 · CI / Goods Return Note · updated 2026-10-03 — §8: the UniversalHeader exceptions are now two (`/floor`, `/freight-trips`), wording only. Prior, v1.3 · September 2026 ·
+*CLAUDE_CI.md v1.5 · Schema v27.74 · CI / Goods Return Note · updated 2026-10-24 — **canon batch B5 (Add invoices) and a reconciliation to Schema v27.74.** Evidence: code at `b1d38861` (`lib/ci/*`, `lib/floor/raise-ci.ts`, `app/api/floor/ci`, `lib/order-invoices/ci-plan.ts` / `links.ts` / `dispatch.ts` / `plan.ts`, `app/api/ci/draft`), `git show` of `3e319529` (6.3), `4c97fd2f` (6.4), `e11e7115`, `c6d6a8c7` (v27.70); `pg_constraint`, `pg_indexes`, `information_schema` and counts read live 2026-10-24. Plan: `docs/prompts/drafts/code-discovery-2026-10-24-canon-add-invoices.md`. §1: NEW "three server raisers" table (`floor`, `auto_finding`, `auto_bill_only` beside the phone's `manual`) and three ownership rows (ORDER_INVOICES, FLOOR §4.1b, BILLING). §3: `ci_returns` 37 columns; `chk_ci_returns_source` has FOUR values, each with a writer (the "`auto_bill_only` … NOT BUILT" line was false); the `orderInvoiceId` index; NEW `orderInvoiceId` subsection (writers, NULL = whole OBD, live 232/232). §5: search matches ANY invoice row; **corrected** "a CI never changes `workflowStage`" — a FULL CI counts toward the OBD done rule (cross-ref, not restated), whole-bill raisers cancel, the live-CI guard; `liveInvoiceOf` shows a seq-2+ CI's own number. NEW §7.1 Floor Raise CI — whole bill vs per invoice, the per-(OBD, invoice row) duplicate guard, no OBD cancel, Add invoices refused by any CI incl. void, and a **known defect**: a whole-OBD CI after a per-invoice CI is not refused (no second CI, but the OBD is cancelled). §9: the auto-CI stays whole-OBD — open item. §13: CI-5 rewritten for v27.70 (bill-to shown, SAP ship-to line, old snapshot kept); NEW CI-17 (NULL is whole-OBD); line anchors in CI-16 dropped. §14: eleven `lib/ci` files, the raisers outside `/ci`. §15: 2026-10-24 live shape and four open items. Schema stamp v27.24 → v27.74: reconciled against every CORE version that touches a CI table (v27.39, v27.40, v27.66, v27.70; v27.75 is `trip_activity` only). Prior, v1.4 · updated 2026-10-03 — §8: the UniversalHeader exceptions are now two (`/floor`, `/freight-trips`), wording only. Prior, v1.3 · September 2026 ·
 updated 2026-09-22 — **§3 only:** `chk_ci_returns_source` widened to three
 values (`auto_bill_only`, CORE Schema v27.39), read live from `pg_constraint`
 2026-09-22; the code that labels it "Bill-only" is named in the row. The Schema

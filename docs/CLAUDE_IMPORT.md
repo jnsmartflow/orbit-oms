@@ -1,8 +1,8 @@
 # CLAUDE_IMPORT.md — OrbitOMS Import Pipeline
-# v1.11 · Schema v27.24 · September 2026 · updated 2026-09-18 · Lives in: orbit-oms/docs/
+# v1.12 · Schema v27.74 · October 2026 · updated 2026-10-24 · Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md
 
-Covers the SAP/OBD import pipeline end-to-end: the four import sources (manual SAP .xlsx, SAP clipboard paste, manual template, Auto-Import — **LIVE**, §10), the shared upsert utility the two SAP sources funnel through, the no-mail-order auto-release every source ends with (§2.1), the anomaly guard (§8.3), schema, filters, and downstream consumers.
+Covers the SAP/OBD import pipeline end-to-end: the five import sources (manual SAP .xlsx, SAP clipboard paste, the ODB paste — §3.5, manual template, Auto-Import — **LIVE**, §10), the shared upsert utility the two SAP sources funnel through, the no-mail-order auto-release every source ends with (§2.1), the anomaly guard (§8.3), schema, filters, and downstream consumers.
 
 Primary users (live `import_obd` grants, SELECT 2026-08-04 — CORE §5): admin, billing_operator, tint_manager, operations (granted 2026-08-01, `c8f8d020`), operation_manager. ⚠ dispatcher and support are **seeded** for this key but **all-false live** — this line named them as users until 2026-08-04; that was seed, not reality. ⚠ Access mode is `user` (live 2026-09-18, Q02), so who may import is decided per PERSON by the Import OBDs tick (`import_obd` canImport) — the only rule since `792efc52` (§9). The role list above is the 2026-08-04 role-grant read, not the gate.
 
@@ -10,20 +10,21 @@ Primary users (live `import_obd` grants, SELECT 2026-08-04 — CORE §5): admin,
 
 ## 1. What this module is
 
-OrbitOMS receives Outbound Deliveries (OBDs) from SAP through four sources (`components/import/import-modal.tsx:44` `type Format = "sap-paste" | "sap" | "manual-template"`, plus the machine path):
+OrbitOMS receives Outbound Deliveries (OBDs) from SAP through five sources (`components/import/import-modal.tsx` `type Format = "sap-paste" | "obd-paste" | "sap" | "manual-template"`, plus the machine path):
 
-- **SAP clipboard paste** — the operator copies SAP's on-screen OBD list and pastes it into the Import window. **The window's DEFAULT format** (`import-modal.tsx:108` `useState<Format>("sap-paste")`, reset to it at `:130`). Actions `sap-paste-preview` / `sap-paste-confirm` (commit `37ceb57a`, §3.4). Same report, same authority as the .xlsx — `ImportSource "manual-sap"` (§6).
+- **SAP clipboard paste** — the operator copies SAP's on-screen OBD list and pastes it into the Import window. **The window's DEFAULT format** (`import-modal.tsx` `useState<Format>("sap-paste")`, reset to it on close). Actions `sap-paste-preview` / `sap-paste-confirm` (commit `37ceb57a`, §3.4). Same report, same authority as the .xlsx — `ImportSource "manual-sap"` (§6).
 - **Manual SAP** — operator uploads a SAP OBT export `.xlsx` via the Import window's "SAP" format or the `/import` page. Preview-then-confirm with optional bypass for fast batches.
-- **Manual template** — the Import window's third format (`import-modal.tsx:707`), posting `?action=preview` then `?action=confirm` (`:515`, `:531`). Live and user-reachable, not a legacy leftover.
+- **ODB paste** — a third paste-shaped card in the Import window: the same paste with rule D.1b off (any shipping point), tagging `orders.isObdImport` (v27.68, §3.5).
+- **Manual template** — posting `?action=preview` then `?action=confirm`. **Reachable only from the `/import` page now** (`ImportPageContent`, behind `/import` and `/admin/import`). The Import window dropped its template card on 2026-09-29 (`5cf47f08`, owner: zero template batches); its template branches are left in place, unreachable. *(This bullet said it was the window's third format until 2026-10-24.)*
 - **Auto-Import** — scheduled background pull on the **import PC** (a separate machine — task state and trigger config are unverifiable from the depot PC; DB batch markers are the ground truth). **LIVE and running** (resumed 2026-06-20; the "paused as of 2026-05-14" claim was corrected 2026-08-03, and the MECHANISM line corrected 2026-08-04): **it is the pure-JSON pipeline** — the depot script fetches Breakwalls JSON, HMAC-signs with `auto-import-json-v1` (`IMPORT_HMAC_SECRET_JSON`), and POSTs to `?action=auto-json`, plus the `check` pre-filter, the `day-obds` count and the `patch-headers`/`pending-invoices` invoice+clock sweep. **Every one of the 944 batches 2026-06-20→08-03 (3,876 OBDs) carries the `[auto-import] auto-json` marker; the v1 multipart path (`?action=auto`) has ZERO batches in the entire table.** The old "HMAC-signs a multipart payload" wording survived the 2026-08-03 status correction — status and mechanism were two separate stale claims. Two tracked repo copies post to that path: `docs/Powershell/Auto-Import-v2.ps1` and `docs/Powershell/Auto-Import-v3.ps1` (tracked since `eb34532c`, 2026-09-08). **v3 is PROBABLY what runs — UNVERIFIED:** `docs/ROADMAP.md` ("⚠ Canon is stale on the auto-import cadence") records live batch gaps of 1–5 min that v2's fixed ~10-min cycle cannot produce, and the ten volume-zero header-only bills match a rule only v3 has (§8.3). Only the import PC can confirm which file is scheduled (a copy is a claim, not proof it is deployed unmodified). The v1-mechanism copies (`docs/sample/Auto-Import.ps1`, `docs/Parser/Auto-Import.ps1`, `docs/Powershell/Auto-Import.ps1` — all titled "v2.0", all posting to the old `orbit-oms.vercel.app` domain) are historical; see §14's naming-trap landmine.
 
-The two SAP sources (.xlsx and paste) converge at `upsertObd()` (`lib/import-upsert.ts:92`) — the shared brain that owns create-vs-patch decisions, line-level diff, soft-remove cascades, audit logging, and downstream-effect signalling. Auto-Import (`processAutoImportRows`) and the manual template (`handlePreview` + `handleConfirm`) create their bills inline in `app/api/import/obd/route.ts`; they call `upsertObd` only from the shadow runners (`route.ts:2790`, `:3089`, `IMPORT_SHADOW_MODE`, default off).
+The SAP sources (.xlsx, paste and the ODB paste) converge at `upsertObd()` (`lib/import-upsert.ts:92`) — the shared brain that owns create-vs-patch decisions, line-level diff, soft-remove cascades, audit logging, and downstream-effect signalling. Auto-Import (`processAutoImportRows`) and the manual template (`handlePreview` + `handleConfirm`) create their bills inline in `app/api/import/obd/route.ts`; they call `upsertObd` only from the shadow runners (`route.ts:2790`, `:3089`, `IMPORT_SHADOW_MODE`, default off).
 
-**Every source ends the same way:** mail-order enrichment first, then the no-mail-order fallback (§2.1) releases every new non-tint bill that no mail order spoke for straight to `pending_picking`. No bill waits for a person to release it (`b3dfe5b8`, 2026-09-11).
+**Every source ends the same way** (§2.3): the challan catch, then mail-order enrichment, then the Telephonic tags, then the no-mail-order fallback (§2.1). The fallback releases every new non-tint bill that nothing else spoke for straight to `pending_picking`. No bill waits for a person to release it (`b3dfe5b8`, 2026-09-11). Every new order also gets its seq-1 `order_invoices` row (§2.2).
 
 Scale: ~100–200 OBDs/day per CORE §1. Single-depot deployment.
 
-Downstream consumers: `orders` rollup, `import_obd_query_summary` cache, `applyMailOrderEnrichment()` hook (CLAUDE_MAIL_ORDERS.md §7), the no-mail-order fallback (§2.1), challan auto-creation (CLAUDE_TINT.md §9.1), Floor Control (CLAUDE_FLOOR.md), Tint Manager, picking (CLAUDE_PICKING.md).
+Downstream consumers: `orders` rollup, `import_obd_query_summary` cache, `applyMailOrderEnrichment()` hook (CLAUDE_MAIL_ORDERS.md §4), the no-mail-order fallback (§2.1), challan auto-creation (CLAUDE_TINT.md §9.1), Floor Control (CLAUDE_FLOOR.md), Tint Manager, picking (CLAUDE_PICKING.md).
 
 ---
 
@@ -41,7 +42,7 @@ SAP paste path (the Import window's DEFAULT format, §3.4) and Manual SAP (.xlsx
   Operator → click Confirm Import (from the window, the write runs in the header pill, §11)
     → POST ?action=sap-paste-confirm | ?action=manual-sap-confirm
     → re-parse → for each ObdInput: upsertObd(input, "manual-sap", …)
-        → createPath OR patchPath
+        → createPath (orders.create → createSapInvoiceRows, §2.2) OR patchPath
     → caller dispatches DownstreamEffect[] returned by upsertObd:
         applyMailOrderEnrichment  (matches mo_orders.soNumber)
         createChallanForOrder     (Retail Offtake / Decorative Projects only)
@@ -51,7 +52,7 @@ SAP paste path (the Import window's DEFAULT format, §3.4) and Manual SAP (.xlsx
 
 Manual-template path:
   → POST ?action=preview  (handlePreview — the real ingest: batch + raw rows + qty guard, §8.3)
-  → POST ?action=confirm  (handleConfirm — creates orders)
+  → POST ?action=confirm  (handleConfirm — creates orders → createSapInvoiceRowsForObds, §2.2)
     → applyMailOrderEnrichment → applyNoMailOrderFallback (§2.1)
 
 Auto-Import path (LIVE — the pure-JSON pipeline, §10; mechanism corrected 2026-08-04):
@@ -65,11 +66,13 @@ Auto-Import path (LIVE — the pure-JSON pipeline, §10; mechanism corrected 202
     → empty payload + volume > 0 → OBD NOT created, retried next cycle;
       volume 0 → header-only import on purpose (§8.3)
     → bulk createMany (CREATE-only for lines: existing OBDs skipped at ingest)
+      → createSapInvoiceRowsForObds (§2.2)
     → applyMailOrderEnrichment → applyNoMailOrderFallback (§2.1)
   Invoice pass, same script:
     → POST ?action=pending-invoices — OBDs in the window with invoiceNo null
     → POST ?action=patch-headers    — null→value invoice fill + clock repair +
                                       dispatch-window repair (§12, Step B)
+                                      → syncSapInvoiceRow when the invoice moved (§2.2)
 ```
 
 Manual SAP and paste exercise both create and patch paths. The auto-json ingest is **create-only for lines** — an existing OBD is skipped entirely at ingest; the ONLY writes to existing OBDs from the auto pipeline go through the separate `patch-headers` action (null-only invoice fill + clock/slot/window repair, §12). Neither auto action ever reaches `applyLinePatch`.
@@ -115,15 +118,16 @@ release themselves on completion — `CLAUDE_TINT.md §2`.
   (`route.ts:520-528`) measures this at ~12.5 of ~23.7 released bills a day (30 days to 2026-09-10) and
   records widening the gate as an owner decision, not a bug.
 
-**The four call sites** — each runs AFTER `applyMailOrderEnrichment`, keyed on `obdNumber` (not
-`soNumber`, so bills with no SO number are reached):
+**The five call sites** — each runs AFTER `applyMailOrderEnrichment` and right after `applySoTagHolds` on the same OBD list (§2.3), keyed on `obdNumber` (not
+`soNumber`, so bills with no SO number are reached). Line anchors below are from 2026-09-18 and have drifted — find them by handler name:
 
 | Call site | Handler | Source |
 |---|---|---|
 | `route.ts:1423` (STEP D1c) | `handleConfirm` | manual template |
 | `route.ts:2017` (after the effect loop) | `handleManualSapConfirm` | manual SAP .xlsx |
-| `route.ts:2562` (after the effect loop) | `handleSapPasteConfirm` | SAP paste |
+| `route.ts:2562` (after the effect loop) | `handleSapPasteConfirm` | SAP paste and ODB paste |
 | `route.ts:3869` (CONFIRM D1c) | `processAutoImportRows` | `?action=auto` and `?action=auto-json` |
+| (2026-10-07, `66114bed`) | `handleChallanCheckRetry` | `?action=challan-check-retry` — a batch whose challan check failed (§2.3) |
 
 The two SAP call sites pass every non-errored result (`results.filter(r => r.outcome !== "errored")`),
 so a patched or unchanged OBD still at `pending_support` with a null status is released too.
@@ -131,6 +135,75 @@ so a patched or unchanged OBD still at `pending_support` with a null status is r
 ⚠ **"A late mail order cannot happen" is an owner statement recorded in the function's header
 (`route.ts:534-538`, 2,498 of 2,498 pairs in 30 days had the mail order first).** If that ever stops
 being true, a later `hold` would find the bill already released.
+
+### 2.2 Every new order gets its seq-1 invoice row [LIVE, Schema v27.63, `6ac1d51e`, 2026-10-10]
+
+**This file owns the "every create path" half. `CLAUDE_ORDER_INVOICES.md` §4.1 owns the writer.**
+Under Model A every `orders` row has at least one `order_invoices` row. Seq 1 has `source 'sap'` and
+**mirrors** `orders.invoiceNo` / `invoiceDate`. A split OBD (Add invoices, Floor) adds seq 2..n as
+`'manual'` rows. Import writes only seq 1. It is written AFTER the `orders` write, on every path that
+creates an order:
+
+| Path | Where | Call |
+|---|---|---|
+| Manual template confirm | `handleConfirm`, after `orders.createMany` | `createSapInvoiceRowsForObds(confirmedObdNumbers)` |
+| Auto-Import (`auto` / `auto-json`) | `processAutoImportRows`, after `orders.createMany` | `createSapInvoiceRowsForObds(confirmedObdNumbers)` |
+| SAP .xlsx, SAP paste, ODB paste | `upsertObd` → `createPath` (`lib/import-upsert.ts`), after `orders.create` | `createSapInvoiceRows([created.id])` |
+| (not import) challan create | `lib/challan-orders/create.ts` | `createSapInvoiceRows` |
+
+**When SAP's invoice number arrives later**, the same null-only fill reaches the mirror:
+- `patch-headers` (`handleAutoImportPatchHeaders`) calls `syncSapInvoiceRow(orderId)` after its
+  `orders.update` when the invoice was touched.
+- The SAP sources' `applyHeaderPatch` (`lib/import-upsert/header.ts`) calls it when `invoiceNo` or
+  `invoiceDate` is in the plan.
+
+`syncSapInvoiceRow` first creates a missing seq-1 row, then fills NULL fields only. It is a separate
+table, so it is no second `orders.update` and does not move the live-sync markers.
+
+**`lib/order-invoices/sap-row.ts` is the ONE writer of the mirror.** It reads the value back from
+`orders`, never from the caller. It fills NULLs only and never touches a `'manual'` row. It **never
+throws**: the order is already written, a failure is logged `[order-invoices]` and repaired by
+re-running PART 3 of `sql/2026-10-10-order-invoices-ddl.sql`. `split.ts` is its only non-import
+caller of `syncSapInvoiceRow`. **Live 2026-10-24:** 20,585 orders, **0 without a seq-1 row**, and
+**0** whose seq-1 number differs from a non-blank `orders.invoiceNo`. Hard rule → §7.
+
+### 2.3 After the write — the fixed order of the post-create steps [LIVE]
+
+On every create handler (template, SAP .xlsx, paste / ODB paste, Auto-Import), the order is fixed:
+
+```
+catchChallanObds   → applyMailOrderEnrichment → applySoTagHolds → applyNoMailOrderFallback → CHN
+(challan, slice 6)   (MAIL_ORDERS §4)           (Telephonic tags)   (§2.1)                     (challan create)
+```
+
+- **`catchChallanObds(obdNumbers, actorId)`** (`lib/challan-orders/reconcile.ts`; `fa0348ef`,
+  2026-10-07) runs FIRST, before anything can release a bill. An OBD whose SO has a live challan link is:
+  - **caught**: `workflowStage = "challan_linked"` (`CHALLAN_LINKED`, `lib/workflow-stages.ts`) plus
+    `challanOrderId`, with the link going waiting → linked; or
+  - **held**: "Held on import (challan dealer mismatch)" when SAP's bill-to differs; or
+  - **left alone** with a "double dispatch risk" alert when it was already touched.
+
+  Its `excludeSos` / `excludeObds` keep those bills out of the steps after it, and `excludeAll`
+  withholds the whole batch. If the check itself fails, the batch is written as
+  `status = "challan_check_failed"` (`CHALLAN_CHECK_FAILED_STATUS`, `lib/challan-orders/check-failed.ts`,
+  `66114bed`). It is surfaced by `GET /api/challan-orders/alerts` and finished by
+  `?action=challan-check-retry` (`handleChallanCheckRetry`, §9). The challan module owns the rest.
+- **`applySoTagHolds(obdNumbers, now)`** (`lib/billing/telephonic-apply.ts`; `d3656942`, 2026-09-22)
+  applies Billing · Telephonic SO tags BEFORE the fallback, so a tagged bill is never auto-released
+  first. A `hold` tag holds ("Held on import (Telephonic tag)"). A `ci` tag raises the bill-only CI and
+  cancels the bill, or holds it if the CI fails. It never throws. Owner: `CLAUDE_BILLING.md` §5b;
+  `CLAUDE_CI.md` for the CI.
+- **Enrichment never touches a cancelled, removed or challan-linked bill** (`ebf928c8` 2026-09-27,
+  then slice 6): its `where` is `{ soNumber, isRemoved: false, workflowStage: { notIn: ["cancelled",
+  CHALLAN_LINKED] } }`.
+  - Each bill it moves into hold gets one log: "Held on import (billing hold on mail order)" with the
+    mail order's `heldById`, or "Held on import (mail order)" (`lib/floor/hold-log.ts`, `e1da66f0`).
+  - **Ship-to is carried FILL-ONLY** in its own `updateMany` (`7a54c8c9`): never over a bill that
+    already has a dealer redirect or a typed name. Since v27.73 (`241c971e`) that includes the typed
+    ship-to text + area.
+  - The hold mirror onto invoice rows is §9.
+  - These are enrichment internals and belong to `CLAUDE_MAIL_ORDERS.md §4`; they are listed here
+    because they change what an import does.
 
 ---
 
@@ -245,6 +318,26 @@ needs none of this: `header.ts` only fills a NULL `shipToCustomerName` and never
 Evidence for the conversion, the name rule and the fixture comparison:
 `docs/prompts/archive/2026-09/code-update-2026-09-14-sap-paste-import.md` §2, §3, §5.
 
+### 3.5 The ODB paste — the same paste, any shipping point [LIVE, Schema v27.68, `faf42277`, 2026-10-15]
+
+A paste card in the Import window, titled **"ODB"**. It was built as "OBD"; the visible label was
+renamed **OBD → ODB** on 2026-10-16 (`5fb7a158`). The code keeps `obd-paste` / `isObdImport` /
+`[obd-paste]`.
+- **It rides the SAME two paste actions** with `obd: true` in the JSON body (`pasteBody`,
+  `import-modal.tsx`; only a literal `true` counts, in `parseSapPasteBody`). It has the same session
+  gate, `SAP_IMPORT_ENABLED`, `import_obd` tick and `"manual-sap"` source, by construction.
+- It differs in exactly three places, each marked "OBD MODE" in the route:
+  1. **Rule D.1b is off** (`skipForeignShippingPoint: false` → `groupRows`). A bill from any shipping
+     point is kept, not only `IN53` (`DEPOT_SHIPPING_POINT`), and `rows[0]`'s value is stored.
+  2. **The batch prefix is `[obd-paste]`** (§4). The Today's log reads it as "ODB paste"
+     (`howFromHeaderFile`, `app/api/import/log/route.ts`).
+  3. **`upsertObd` gets `markObdImport`** → `orders.isObdImport = true` (§6). It is set on create AND on
+     a re-paste of an existing bill, sticky, and never written false. Floor and Picking draw it as the
+     ODB pill / filter (`components/shared/obd-badge.tsx`, `data.plum` — `CLAUDE_UI.md §2.1`).
+- Client rule: test a paste branch with `isPasteFormat(f)`, never `format === "sap-paste"`. The latter
+  silently drops the ODB card.
+- **Live 2026-10-24:** 5 `[obd-paste]` batches; 57 orders with `isObdImport = true`.
+
 ---
 
 ## 4. Schema (import tables)
@@ -269,6 +362,7 @@ plus `fileName`, `fileSize`, `uploadedById`, `errorMessage` and `completedAt` �
 | `[auto-import] auto-json` | `processAutoImportRows` (`?action=auto-json`, `route.ts:3327`) | `[auto-import] auto-json` |
 | `[manual-sap]` | `handleManualSapConfirm` (`route.ts:1839`) | `[manual-sap] EXPORT 12.09.XLSX (obdEmailDate: 2026-09-12)` |
 | `[sap-paste]` | `handleSapPasteConfirm` (`route.ts:2389`) | `[sap-paste] clipboard 546 rows (obdEmailDate: 2026-09-14)` |
+| `[obd-paste]` | `handleSapPasteConfirm` in OBD MODE (the ODB card, §3.5; since 2026-10-15) | `[obd-paste] clipboard … rows (obdEmailDate: …)` |
 | `[<templateId>]` | `handlePreview` — manual template (`route.ts:928`) | `[combined_v2] <file name>` (`ImportTemplateId`, `lib/import-templates.ts:1`) |
 
 **The `⚠` suffix.** When the anomaly guard (§8.3) records anything for a batch, `writeImportAnomalies`
@@ -281,7 +375,7 @@ Filter with `"headerFile" LIKE '[sap-paste]%'` etc. — in Postgres `LIKE`, `[` 
 batch's per-OBD audit notes still read `via manual-sap batch BATCH-…` (its `ImportSource` is
 `"manual-sap"`, §6), so the batch's `headerFile` is the ONLY place a paste is distinguishable.
 
-**`status`** — the code writes `processing` → `completed` | `failed` (the old `'success'|'error'` never
+**`status`** — the code writes `processing` → `completed` | `failed` | **`challan_check_failed`** (since 2026-10-07, `CHALLAN_CHECK_FAILED_STATUS`, §2.3; the final status comes from `finalBatchStatus`) (the old `'success'|'error'` never
 existed). Live SELECT 2026-09-14: every persisted row is `completed` (2,421 auto-import · 570 manual-sap ·
 2 sap-paste).
 
@@ -319,7 +413,18 @@ removedAt, removedReason
 createdAt
 ```
 
-Relations: `enrichedLineItem` (0..1 — unique FK, but many raw lines have none; see below), `splitLineItems` (1:N), `challanFormulas` (1:N), `tinterIssueEntries(_b)` (1:N).
+Relations: `enrichedLineItem` (0..1 — unique FK, but many raw lines have none; see below), `splitLineItems` (1:N), `challanFormulas` (1:N), `tinterIssueEntries(_b)` (1:N), and `order_invoice_lines` (Add invoices: which invoice of a split OBD carries how many tins of this line — `CLAUDE_ORDER_INVOICES.md`).
+
+**`totalWeight` is now READ downstream (2026-10-13, `79274c13`)** to learn **kg per tin per SKU**:
+- `learnedKgPerUnit(skus)` (`lib/order-invoices/kg-per-unit.ts`) takes the median of `totalWeight ÷
+  unitQty` over lines with both > 0, grouped by `skuCodeRaw`. It is **computed on every read and stored
+  nowhere** (read-only, one `$queryRaw`).
+- It feeds the kg of each invoice of a split OBD (`loadSplitInvoiceRows`, `lib/order-invoices/invoice-load.ts`).
+- 🔴 **Auto-Import lines do not carry `totalWeight`** (§10.1 — the auto path stores no line weights; 151
+  of 38,806 auto lines had it, 2026-10-13). SAP .xlsx and paste lines nearly all do. That is why the
+  value is learned per SKU from the lines that have it, rather than read off the bill's own lines.
+- Do not "tidy" `totalWeight` out of the SAP sources' `createMany` (§14, patch-path parity): it is no
+  longer write-only.
 
 ### import_enriched_line_items
 
@@ -459,11 +564,11 @@ Planner vs executor split. The planner reads existing state and produces a plan;
 
 ### Files
 
-- `lib/import-upsert.ts` — entry wrapper (there is no `lib/import-upsert/index.ts`). Exports `upsertObd(input, source, batchId, batchRef, userId, now, options = {}) → Promise<UpsertResult>` (`:92`). Branches: `createPath` (`:143`, no existing order) vs `patchPath` (`:302`). `createPath` also calls `createMany` on lines (`:240`), passing `netWeight` + `totalWeight`. Re-exports the public types plus `CHALLAN_ELIGIBLE_SMU`, `DIVISION_TO_SMU`, `LINE_AUTHORITY` and three helpers.
+- `lib/import-upsert.ts` — entry wrapper (there is no `lib/import-upsert/index.ts`). Exports `upsertObd(input, source, batchId, batchRef, userId, now, options = {}) → Promise<UpsertResult>` (`:92`). Branches: `createPath` (no existing order) vs `patchPath`. `createPath` calls `createSapInvoiceRows([created.id])` right after `orders.create` (§2.2), and `createMany` on lines, passing `netWeight` + `totalWeight`. Since v27.68 `UpsertOptions.markObdImport` (the ODB paste, §3.4) sets `orders.isObdImport = true`: in the create data, or once on an existing bill (`updateMany … WHERE isObdImport = false`, before the unchanged early return). It is sticky and never written false. *(Line anchors dropped 2026-10-24 — they had drifted.)* Re-exports the public types plus `CHALLAN_ELIGIBLE_SMU`, `DIVISION_TO_SMU`, `LINE_AUTHORITY` and three helpers.
 - `lib/import-upsert/types.ts` — `ImportSource`, `ObdInput`, `ObdLineInput`, `UpsertOptions` (`dryRun`, `preloaded`), `UpsertResult`, `UpsertOutcome` = `"created" | "patched" | "unchanged" | "errored"` (`:84`), `DownstreamEffect` with `EffectType` (`:71-76`); constants `DIVISION_TO_SMU`, `SMU_CODE_BY_NAME`, `LINE_AUTHORITY`, `CHALLAN_ELIGIBLE_SMU`. There is no `UpsertContext`.
 - `lib/import-upsert/state.ts` — `loadExistingObd(obdNumber)` (`:17`) returns `{ order, summary, lines: ExistingLine[] }`; also `resolveCustomerId()` (`:59`). Lines `SELECT` does NOT include `netWeight`/`totalWeight` (see §14 landmines).
 - `lib/import-upsert/lines.ts` — `patchLines()` (pure planner, `:49`) + `applyLinePatch()` (executor, `:178`). Composite-key keyed: `makeKey(lineId, skuCodeRaw)` (`:28`). Inserts new lines via `createMany` (`:187`), updates existing in-place, marks orphans `lineStatus = "removed_by_import"` (literal string, never change).
-- `lib/import-upsert/header.ts` — `patchHeader()` (pure planner, `:41`) + `applyHeaderPatch()` (executor, `:152`). Per-field diff. Skips no-ops. Has **no** `totalUnitQty` / `grossWeight` / `volume` handling at all (Defect B, §15).
+- `lib/import-upsert/header.ts` — `patchHeader()` (pure planner) + `applyHeaderPatch()` (executor). Per-field diff. Skips no-ops. When the plan writes `invoiceNo` or `invoiceDate`, the executor calls `syncSapInvoiceRow(orderId)` after the `orders` write (§2.2). Has **no** `totalUnitQty` / `grossWeight` / `volume` handling at all (Defect B, §15).
 - `lib/import-upsert/effects.ts` — `buildEffects()` (`:47`). Effect kinds (`EffectType`): `mail-order-enrichment`, `challan-create`, `query-summary-rebuild`, `customer-resolved`, `order-type-mismatch`. The confirm handlers loop the returned effects themselves.
 - `lib/import-upsert/helpers.ts` — `resolveSmuFromDivision`, `resolveSlotFromTime`, `mergeEmailDateTime`, `fmt`.
 - `lib/import-upsert/audit.ts` — `formatAuditNote()` + `writeAuditLogs()` (`:33`), a `createMany` into **`order_status_logs`** (`:40`). It does not write `import_shadow_log`.
@@ -532,6 +637,8 @@ When an existing line key doesn't appear in the incoming set:
 - **Mail-order enrichment hook runs after upsert.** Effect dispatched by `dispatchEffects()`.
 - **Customer matching cascade** lives in mail-orders module — see `CLAUDE_MAIL_ORDERS.md §5` (don't duplicate here).
 - **Storage Location (col 3)** read but ignored downstream. Reserved for future warehouse-zone routing. Don't propagate without confirming a consumer exists.
+- **Every new order gets its seq-1 `order_invoices` row, through `lib/order-invoices/sap-row.ts` only, AFTER the `orders` write** (§2.2). A new create path — a fifth source, a script, a challan variant — must call `createSapInvoiceRows` / `createSapInvoiceRowsForObds`. A new invoice fill must call `syncSapInvoiceRow`. Never write the mirror inline, never pass it the value, and never let it throw into the import. An order with no seq-1 row is invisible to every reader that goes through invoice rows (trips, Print, the pick gate). The repair is PART 3 of `sql/2026-10-10-order-invoices-ddl.sql`.
+- **An OBD-level hold written at import must be mirrored onto the invoice rows** with `mirrorObdHoldSafe` (§9; `CLAUDE_ORDER_INVOICES.md` §4.4).
 - `export const dynamic = "force-dynamic"` on the route.
 - Schema columns are camelCase, no `@map`. The 2026-05-14 additions `netWeight` and `totalWeight` follow this rule.
 
@@ -541,7 +648,8 @@ When an existing line key doesn't appear in the incoming set:
 
 In order of application (parser side):
 
-1. **Delivery-level D.1** — non-LF returns with short delivery numbers. `group-rows.ts:75-83`. Skip whole delivery with reason `"non-LF return"`.
+1. **Delivery-level D.1** — non-LF returns with short delivery numbers. `group-rows.ts`. Skip whole delivery with reason `"non-LF return"`.
+1b. **D.1b — other depot's shipping point** (`acef58af`, 2026-09-29; `groupRows`, `lib/sap-parser/group-rows.ts`). Every row's `warehouse` (trimmed, uppercased, blank = "(blank)") is checked, and the WHOLE delivery is skipped unless there is exactly one value and it is `DEPOT_SHIPPING_POINT = "IN53"` (`lib/sap-parser/types.ts`). Never row-level: the SAP sources carry `LINE_AUTHORITY`, so a dropped row on a kept bill would be marked `removed_by_import`. Surfaced twice: `skipped[]` reason `"other depot shipping point"` and a `foreign-shipping-point` warning ("shipping point X — only IN53 bills are imported" / "mixed shipping points …" / "no shipping point …"). **Applies to the SAP .xlsx and the normal paste only.** Auto-Import and the manual template never reach `groupRows` (auto stores "Surat Depot" in that field). **The ODB paste turns it off** (`skipForeignShippingPoint: false`, §3.5).
 2. **Row-level non-LF filter.** `apply-rules.ts` STEP 1. Drop with reason `"non-LF row"`.
 3. **ZZRE — whole delivery (D.2).** Every row's `itemCategory === "ZZRE"` → whole delivery skipped (`"all-lines-ZZRE"`).
 4. **ZZRE — mixed.** Individual ZZRE rows in otherwise-non-ZZRE deliveries dropped per-row with `mixed-zzre-line` warning.
@@ -789,7 +897,7 @@ suppressed for that OBD so the declared-vs-zero case is not double-counted (`rou
 ## 9. Routes and handlers
 
 All OBD import operations dispatch through one route, `POST /api/import/obd`, with an `?action=` query
-param (`app/api/import/obd/route.ts:4584-4641`, verified 2026-09-18). A second, read-only route,
+param (`app/api/import/obd/route.ts`, the `POST` export at the end of the file; re-read 2026-10-24 — the 2026-09-18 line anchors have drifted ~400 lines). A second, read-only route,
 `GET /api/import/access`, tells a screen whether to draw the Import button (§9.1).
 
 ```ts
@@ -805,6 +913,10 @@ export async function POST(req: Request): Promise<NextResponse> {
   if (action === "patch-headers")     return handleAutoImportPatchHeaders(req);
   if (action === "pending-invoices")  return handleAutoImportPendingInvoices(req);
   if (action === "day-obds")          return handleAutoImportDayObds(req);
+
+  // 🔴 SLICE 6c (2026-10-07) — a PEOPLE path, deliberately ABOVE the import tick: gated on
+  // floor canEdit inside the handler, with its own session read
+  if (action === "challan-check-retry") return handleChallanCheckRetry(req);
 
   // PEOPLE — one rule: the Import OBDs tick
   const session = await auth();
@@ -852,8 +964,20 @@ the whole depot (`route.ts:4588-4594` comment).
 | `day-obds` | `handleAutoImportDayObds` (`route.ts:4505`) | **[v2, HMAC v2]** read-only: count + OBD numbers whose `obdEmailDate` falls in a `fromDate`–`toDate` window (31-day cap). Near-clone of `pending-invoices` with **no** `invoiceNo` filter and **no** `isRemoved` filter — soft-removed orders are included on purpose, mirroring `check`, so the depot script never sees them as "missing" and re-imports them forever. Dispatched at `route.ts:4600`; `Auto-Import-v3.ps1`'s glance calls it (`$ApiUrlDayObds`, `:79`) |
 | `preview` | `handlePreview` (`:797`) | Manual template — the real ingest: creates the batch, writes raw summary + lines, runs the qty guard (§8.3). Reached from the Import window's "Manual template" format |
 | `confirm` | `handleConfirm` (`:1219`) | Manual template — promotes the previewed summaries into `orders`, enrichment, fallback (§2.1) |
+| `challan-check-retry` | `handleChallanCheckRetry` (`66114bed`, 2026-10-07) | Body `{ batchId }`. **`floor` canEdit**, checked inside the handler; dispatched ABOVE the import tick on purpose. Re-runs `catchChallanObds` for a `challan_check_failed` batch (503 if it still fails), then enrichment → tags → fallback → CHN, and sets the batch `completed` (§2.3) |
 
 *(The auto-json/check/patch-headers/pending-invoices rows said "[PLANNED — v2]" or were absent until 2026-08-04 — the build shipped without this table being updated.)*
+
+**A hold carried at import is copied onto the invoice rows** (6.1, `92dfe7fa`, 2026-10-19). Under Model A
+each invoice row has its own `isHeld` (`CLAUDE_ORDER_INVOICES.md` §4.4). So every hold this route writes
+on `orders` is followed by `mirrorObdHoldSafe` (`lib/order-invoices/hold.ts`; never throws). There are
+three sites, all inside `applyMailOrderEnrichment` (its internals belong to `CLAUDE_MAIL_ORDERS.md §4`):
+- the mail order's carried Hold → `mirrorObdHoldSafe({ soNumber, … }, true, heldById)`;
+- a carried release on bills that were held before → `mirrorObdHoldSafe({ id: { in: wasHeld } }, false)`
+  (a partly-held split OBD keeps its held invoices);
+- the CI / bill-only safety-net hold → `mirrorObdHoldSafe(order.id, true, billOnlyById)`.
+
+The seq-1 invoice fill on `patch-headers` is §2.2.
 
 ### 9.1 `GET /api/import/access` + `useCanImportObds` — who sees the Import button [`792efc52`]
 
@@ -1004,7 +1128,13 @@ the Phase 9.5 sweep — neither was in the 2026-06-20 step list.
 
 ## 11. UI components
 
-- `components/import/import-modal.tsx` — the header Import window, mounted by `UniversalHeader` (`components/universal-header.tsx:655`) when the screen passes `showImport` (§9.1). Three formats — `"sap-paste"` (default), `"sap"`, `"manual-template"` (`:44`, `:108`). It renders its own preview; for the two SAP formats the WRITE is handed to the header pill (`handOffSapWrite`, `:454`) and the window closes. Manual template keeps its in-window result.
+- `components/import/import-modal.tsx` — the header Import window, mounted by `UniversalHeader` when the screen passes `showImport` (§9.1).
+  - **Two tabs:** "New import" (default) and **"Today's log"** (`6e597037`, 2026-09-29).
+  - **Three source cards** (`FORMAT_CARDS`): "Paste from SAP" (`sap-paste`, the default), "SAP file" (`sap`) and **"ODB"** (`obd-paste`, §3.5).
+  - The manual-template card was dropped 2026-09-29 (`5cf47f08`; `58d8d7f2` also dropped its pill from the preview / result toggles). The `"manual-template"` value and its branches stay in the code, unreachable. Template imports run on the `/import` page.
+  - It renders its own preview. For every format the WRITE is handed to the header pill (`handOffSapWrite`) and the window closes.
+  - *(This entry listed three formats with the template among them until 2026-10-24.)*
+- **Today's log** — `GET /api/import/log` (`import_obd` canImport, 401 / 403 JSON): today's IST `import_batches` with status `completed` / `failed` / `challan_check_failed`, **auto-import excluded** (`[auto-import]` prefix). Per row it counts new / existing / skipped / failed. `ImportLogHow` = `sap-paste` | `obd-paste` | `sap-file` | `template` from the `headerFile` prefix (`howFromHeaderFile`). It is drawn by `components/import/import-log-panel.tsx` ("SAP paste", "ODB paste", "SAP file", "Template").
 - `components/import/import-page-content.tsx` — the in-page importer behind BOTH `/import` (`app/(import)/import/page.tsx`, the sidebar target) and `/admin/import` (`app/(admin)/admin/import/page.tsx`). Runs in-page, not through the pill.
 - `components/import/sap-preview.tsx` — `SapPreview`, per-OBD outcome (new/patch/skipped/error) + issues list. Imported only by `import-page-content.tsx` (`:37`); the modal does not use it.
 - **Header import pill** — `ImportProgressProvider` (`components/import/import-progress-provider.tsx`, mounted in the root layout `app/layout.tsx:90`, owns the in-flight SAP write) and `ImportProgressPill` (`components/import/import-progress-pill.tsx`, rendered by `universal-header.tsx:422`), `37ceb57a`. Header chrome: `CLAUDE_UI.md §6`.
@@ -1153,7 +1283,8 @@ flows through, as the acceptance check.
   | `docs/Powershell/Auto-Import-v3.ps1` | `Auto-Import-v3.ps1 -- v3.0 "fast lane"` | yes (`eb34532c`) | `www.orbitoms.in` | pure JSON, fired every minute, mode-based — **probably what runs** (§10, unverified) |
 
   *(The sample/Parser copies' `$ToolRoot` point at a `%USERPROFILE%\OneDrive` path while v2, v3, the Powershell copy and CORE §4 say `F:\` — different machines/eras; only the import PC knows its own truth.)* The other `docs/Powershell/*.ps1` files (`0-FrtIngestion`, `3-PendingFetch`, `4-LogisticsEntry`, untracked) are Breakwalls freight/logistics automation, not OrbitOMS import.
-- **The six machine actions must stay above the session gate** (§9) — moving one below the tick stops depot auto-import. The middleware HMAC exemption (`middleware.ts:46-58`) and the `route.ts:4588-4594` comment both say so.
+- **The six machine actions must stay above the session gate** (§9) — moving one below the tick stops depot auto-import. `challan-check-retry` also sits above it, for a different reason: it is a PEOPLE path gated on `floor` canEdit inside its handler, so a Floor user without the Import tick can finish a failed challan check.
+- **The seq-1 invoice row goes through `sap-row.ts` only** (§2.2, §7) — never inline, never passed the value, never allowed to throw into an import. The middleware HMAC exemption (`middleware.ts:46-58`) and the `route.ts:4588-4594` comment both say so.
 - **Never write an import anomaly into `import_raw_summary.rowStatus`** (§8.3). Order creation whitelists `valid`/`warning`; any other value silently drops the bill from the app. Anomalies go to `rowError` and `import_shadow_log`.
 - **`import_enriched_line_items` is not 1:1 with raw lines** (§4) — the SAP sources never write it. Do not build a reader on it.
 - **The no-mail-order fallback must stay AFTER enrichment and keyed on `obdNumber`** (§2.1). The ordering is what keeps a mail-matched bill untouched by it (`route.ts:530-532`); keyed on `soNumber` it would miss the bills that have none (`route.ts:1415-1420`). Exactly one `orders.update` per bill.
@@ -1205,6 +1336,40 @@ flows through, as the acceptance check.
 - **`IMPORT_HMAC_SECRET_JSON`** is in Vercel and working (live auto-json batches authenticate daily). `IMPORT_HMAC_SECRET` (v1 var) stays until the v1 `?action=auto` handler is retired — which is now a real candidate: zero batch evidence ever (§9/§10). Retiring it is an owner decision, not a cleanup.
 - **lineId semantic change in v2.** v1 used ordinal positions (10/20/30); v2 uses real SAP item numbers. This means composite key `lineId|skuCodeRaw` will NOT match between a v1 create and a v2 patch. Create-only policy makes this safe, but if patch path ever becomes needed for Auto-Import, re-audit the key strategy.
 - **The new same-day/different-day arrival-slot rule is designed but NOT built** (§12.2). The live fork in `applyMailOrderEnrichment` still uses the old `receivedAt` vs `punchedAt` comparison. Building it is a single-site edit once picked up — see §12.2 for the full rule and the acceptance check (OBD `9108192224`).
+
+---
+
+## Change log — v1.12 (2026-10-24, canon batch B5: Add invoices + reconciliation to Schema v27.74)
+
+Evidence: code at HEAD `b1d38861` (`app/api/import/obd/route.ts`, `lib/import-upsert*`, `lib/sap-parser/group-rows.ts`,
+`lib/sap-paste/index.ts`, `components/import/*`, `app/api/import/log`, `lib/order-invoices/sap-row.ts` / `kg-per-unit.ts` /
+`hold.ts`, `lib/challan-orders/reconcile.ts` / `check-failed.ts`, `lib/billing/telephonic-apply.ts`); `git show` of
+`6ac1d51e` (v27.63), `79274c13`, `92dfe7fa`, `faf42277` (v27.68), `5fb7a158`, `acef58af`, `6e597037`, `5cf47f08`,
+`58d8d7f2`, `d3656942`, `fa0348ef`, `66114bed`, `ebf928c8`, `e1da66f0`, `7a54c8c9`, `241c971e`; read-only SELECTs
+2026-10-24. Plan: `docs/prompts/drafts/code-discovery-2026-10-24-canon-add-invoices.md`.
+
+- **Add invoices (this batch's rows):** NEW §2.2 — every new order gets its seq-1 `order_invoices` row on every
+  create path; `patch-headers` and `applyHeaderPatch` sync it; `sap-row.ts` the one writer (reads `orders`, NULLs
+  only, never throws); live 0 orders without one. §2 diagram marks the calls. §4 `import_raw_line_items`:
+  `totalWeight` is now read to learn kg per tin per SKU (computed, not stored; auto lines don't carry it).
+  §6 `createPath` / `applyHeaderPatch` name the calls. §7 two hard rules (the seq-1 row; the hold mirror).
+  §9 the OBD import route copies a carried hold onto invoice rows (`mirrorObdHoldSafe`, three sites). §14 landmine.
+- **Other sessions' stale lines:**
+  - §1 / header: FIVE sources. The ODB paste was added, and the manual template is reachable only on `/import`:
+    the window dropped its card on 2026-09-29. *(Was "the window's third format".)*
+  - NEW §3.5 the ODB paste (v27.68; label renamed OBD → ODB), with its `[obd-paste]` prefix in §4.
+  - §8 NEW rule 1b, D.1b: the IN53 shipping-point skip (`acef58af`).
+  - §2.1 FIVE fallback call sites, with `handleChallanCheckRetry` added.
+  - NEW §2.3 the fixed post-create order: challan catch → enrichment → Telephonic tags → fallback → CHN. It also
+    records the enrichment changes (no re-hold of cancelled / removed / challan-linked bills, hold logs, fill-only
+    ship-to incl. typed).
+  - §4 `import_batches.status` gains `challan_check_failed`.
+  - §9 the `challan-check-retry` action (`floor` canEdit, above the tick); drifted anchors noted.
+  - §11 the window: two tabs incl. Today's log, three cards, `GET /api/import/log`.
+  - Cross-reference fixed: enrichment is `CLAUDE_MAIL_ORDERS.md §4` (the Enrichment engine heading), not §7 (API endpoints) — §1 and the new text.
+- Schema stamp **v27.24 → v27.74**: reconciled against every CORE version that touches what Import writes
+  (v27.60 the challan-order columns and links via the catch; v27.63 `order_invoices`; v27.66 invoice-row
+  hold; v27.68 `orders.isObdImport`; v27.73 typed ship-to carry). v27.75 is `trip_activity` only. Version v1.11 → v1.12.
 
 ---
 
@@ -1295,4 +1460,4 @@ Evidence: `import_batches` SELECTs (timestamps naive-UTC-corrected), the repo sc
 
 ---
 
-*Import v1.11 · Schema v27.24 · OrbitOMS · updated 2026-09-18 — reconciliation pass (canon sweep batch B1): the no-mail-order fallback (§2.1), the SAP paste pipeline (§3.4), the anomaly guard (§8.3), rule P, the SKU-grouped roll-up, the tick-only import gate + `GET /api/import/access` (§9/§9.1), the v3 script and the real auto-path keys (§10), the enriched-table gap and `SMU_CODE_BY_NAME` folded in; §5/§6 names corrected. Prior: v1.10, 2026-09-14 — four FALSE claims corrected (§4 `import_batches` has no `source` column — source is the `headerFile` prefix; §5 the parser is not pure, `buildObds` reads the catalog; §6/§14 `ImportSource` has three values and `LINE_AUTHORITY` is a boolean map; §9 `day-obds` was missing). Schema stamp deliberately not bumped. Prior: v1.9, 2026-08-09 — §8.2 completed from the full session record: SIZE_OVERRIDES rationale (incl. the deliberate 3.7 L Wanda blanket call), the deliberately-untagged table, the `computeArticleTag()` dead-code warning, and the multi-group roll-up bug written up as its own find. Four-SKU `piecesPerCarton` re-verified against live data (still 9 — a draft claim that it had been changed to 6 is contradicted by the rows). §15 backfill item split into null vs wrongly-tagged. Schema stamp realigned v27.14 → v27.15 to match CORE v94. Prior: v1.8, same day — §8.2 first added with commit `9de0c55b`*
+*Import v1.12 · Schema v27.74 · OrbitOMS · updated 2026-10-24 — canon batch B5: the seq-1 `order_invoices` row on every new order (§2.2, `sap-row.ts` the one writer), learned kg per tin from `totalWeight` (§4), the import hold mirror (§9), the ODB paste (§3.5, v27.68), rule D.1b (§8), the fixed post-create order incl. the challan catch and Telephonic tags (§2.3), five fallback call sites, `challan-check-retry`, the window's Today's log and three cards (§11); full list in the v1.12 change log. Prior: v1.11, 2026-09-18 — reconciliation pass (canon sweep batch B1): the no-mail-order fallback (§2.1), the SAP paste pipeline (§3.4), the anomaly guard (§8.3), rule P, the SKU-grouped roll-up, the tick-only import gate + `GET /api/import/access` (§9/§9.1), the v3 script and the real auto-path keys (§10), the enriched-table gap and `SMU_CODE_BY_NAME` folded in; §5/§6 names corrected. Prior: v1.10, 2026-09-14 — four FALSE claims corrected (§4 `import_batches` has no `source` column — source is the `headerFile` prefix; §5 the parser is not pure, `buildObds` reads the catalog; §6/§14 `ImportSource` has three values and `LINE_AUTHORITY` is a boolean map; §9 `day-obds` was missing). Schema stamp deliberately not bumped. Prior: v1.9, 2026-08-09 — §8.2 completed from the full session record: SIZE_OVERRIDES rationale (incl. the deliberate 3.7 L Wanda blanket call), the deliberately-untagged table, the `computeArticleTag()` dead-code warning, and the multi-group roll-up bug written up as its own find. Four-SKU `piecesPerCarton` re-verified against live data (still 9 — a draft claim that it had been changed to 6 is contradicted by the rows). §15 backfill item split into null vs wrongly-tagged. Schema stamp realigned v27.14 → v27.15 to match CORE v94. Prior: v1.8, same day — §8.2 first added with commit `9de0c55b`*
