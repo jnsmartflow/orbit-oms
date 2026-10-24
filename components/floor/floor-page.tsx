@@ -183,6 +183,11 @@ interface TabCounts {
 function istTodayIso(): string {
   return new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
 }
+/** "22 Oct" from "YYYY-MM-DD" — a past day's New trip label (2026-10-24). */
+function fmtDayMonth(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" });
+}
 function addDaysIso(iso: string, delta: number): string {
   const [y, m, d] = iso.split("-").map(Number);
   return new Date(Date.UTC(y, m - 1, d + delta)).toISOString().slice(0, 10);
@@ -361,6 +366,23 @@ interface SearchFocus {
  *  different keys answer different questions (the stale-answer guard). */
 function viewKeyOf(viewMode: "live" | "history", histDate: string | null): string {
   return viewMode === "history" && histDate ? `history:${histDate}` : "live";
+}
+
+/**
+ * A PAST DAY'S ROWS WHEN ITS TRIPS ARE EDITABLE (D1, 2026-10-24): every row of
+ * TODAY's live board, plus the History day's rows that sit on a trip (whole
+ * OBD or any invoice) and are not on today's board. So the pool — every
+ * isPoolRow test on the page — is exactly today's pool, and a past trip's
+ * stops still find all their bills. A today row wins over the History copy:
+ * both are the same bill read now, and today's is anchored on the day the
+ * planner is adding from.
+ */
+function mergePastDayRows(dayRows: FloorBoardRow[], todayRows: FloorBoardRow[]): FloorBoardRow[] {
+  const seen = new Set(todayRows.map((r) => r.orderId));
+  const tripOnly = dayRows.filter(
+    (r) => !seen.has(r.orderId) && (r.tripDropId !== null || (r.invoiceRows ?? []).some((i) => i.tripDropId !== null)),
+  );
+  return [...todayRows, ...tripOnly];
 }
 
 // Every write route returns one of these shapes: { failed:[…] } for the batch
@@ -822,14 +844,20 @@ export function FloorPage({
       // discovered later.
       const tripDateParam =
         viewMode === "history" && histDate ? histDate : istTodayIso();
+      // PAST-DAY TRIP EDITS (D1, 2026-10-24): on a past day a floor editor
+      // works that day's trips like today's, and the pool they add from is
+      // TODAY's. So History also reads today's live board — one more GET, only
+      // here — and mergePastDayRows keeps the day's trip bills beside it.
+      const wantToday = viewMode === "history" && histDate !== null && canEdit;
       // (Live feed: a lazy tab not yet opened is skipped — `null` — and the
       // counts ride as a fifth entry, caught like trips. OFF: the same four.)
-      const [boardRes, holdRes, cancRes, tripRes, countsRes] = await Promise.all([
+      const [boardRes, holdRes, cancRes, tripRes, countsRes, todayRes] = await Promise.all([
         fetch(`/api/floor/board?${params.toString()}`, { cache: "no-store" }),
         wantHold ? fetch(`/api/floor/hold?${UNSCOPED_QS}`, { cache: "no-store" }) : null,
         wantCanc ? fetch(`/api/floor/cancelled?${UNSCOPED_QS}`, { cache: "no-store" }) : null,
         fetch(`/api/floor/trips?date=${tripDateParam}`, { cache: "no-store" }).catch(() => null),
         lazy && (!wantHold || !wantCanc) ? fetch("/api/floor/counts", { cache: "no-store" }).catch(() => null) : null,
+        wantToday ? fetch(`/api/floor/board?${UNSCOPED_QS}`, { cache: "no-store" }).catch(() => null) : null,
       ]);
       // A stale answer is dropped BEFORE anything is read or thrown — its
       // failure is no more this view's than its success is.
@@ -851,6 +879,14 @@ export function FloorPage({
       } catch {
         countsBody = null; // labels keep their last numbers
       }
+      // Today's board on a past day — a side feed like trips: a failure shows
+      // the day's trips with an empty pool and says so; it never blanks the page.
+      let todayRows: FloorBoardRow[] | null = null;
+      try {
+        if (todayRes && todayRes.ok) todayRows = ((await todayRes.json()) as { floor?: FloorBoardResult }).floor?.rows ?? [];
+      } catch {
+        todayRows = null;
+      }
       let tripsBody: { trips?: TripSummary[]; placeholderRoutes?: string[] } | null = null;
       let tripsError: string | null = null;
       try {
@@ -862,7 +898,11 @@ export function FloorPage({
       }
       if (isStale()) return;
 
-      setData({ floor: board.floor, pickers: board.pickers ?? [] });
+      setData({
+        floor: wantToday ? { ...board.floor, rows: mergePastDayRows(board.floor.rows ?? [], todayRows ?? []) } : board.floor,
+        pickers: board.pickers ?? [],
+      });
+      if (wantToday && todayRows === null) setSideError((prev) => prev ?? "Today's pool could not load");
       setRouteClubs((board.routeClubs ?? []) as FloorRouteClub[]);
       setLoadPlan((board.loadPlan ?? { configs: {}, routeNames: {} }) as FloorLoadPlanPayload);
 
@@ -961,7 +1001,7 @@ export function FloorPage({
     // `scope` is NOT here on purpose — every fetch is unscoped and the chips are
     // a pure client-side narrowing (scopedData below). Adding it back would
     // restore the 3-fetches-per-chip-click behaviour this change removed.
-  }, [viewMode, histDate]);
+  }, [viewMode, histDate, canEdit]);
 
   // ⚠ ONE EXCEPTION, live feed only: when this browser saw the feed ON last
   // time (FLOOR_LIVE_HINT_KEY), the MOUNT load is skipped — the feed takes its
@@ -3457,7 +3497,13 @@ export function FloorPage({
     .replace(",", "");
   const timeStr = now.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Kolkata" });
 
-  const barVisible = topTab === "floor" && viewMode === "live" && selection.size > 0 && data !== null;
+  // PAST-DAY TRIP EDITS (D1, 2026-10-24): History with floor canEdit works the
+  // day's trips like today's — so the bar, Move and New trip are up there too.
+  // The live desk is unchanged (`tripEditsOn` is true there for everyone, as
+  // the bar always was). Live-only machinery (marker, feed, carry) is not.
+  const pastDayEdits = viewMode === "history" && histDate !== null && canEdit;
+  const tripEditsOn = viewMode === "live" || pastDayEdits;
+  const barVisible = topTab === "floor" && tripEditsOn && selection.size > 0 && data !== null;
   // The menu lives on the bar, so it closes when the bar goes (ticks cleared,
   // tab changed, History) — never left "open" to reappear with the next tick.
   useEffect(() => {
@@ -3704,7 +3750,7 @@ export function FloorPage({
   // not filling a named trip ("+ Add bills"). Derived like addMode — no state —
   // so clearing the ticks ends it. Never on with addMode: that needs the pool.
   const moveSourceTrip =
-    railSelection.kind === "trip" && viewMode === "live" && addingToTripId === null
+    railSelection.kind === "trip" && tripEditsOn && addingToTripId === null
       ? (trips ?? []).find(
           (t) => t.id === railSelection.tripId && t.status !== "dispatched" && t.status !== "cancelled",
         ) ?? null
@@ -3847,10 +3893,11 @@ export function FloorPage({
   // going instead.
   const barContextLabel = useMemo(() => {
     if (addTargetTrip) return `adding to ${addTargetTrip.tripNumber}`;
-    if (railSelection.kind !== "trip") return null;
+    // A past day's "+ New trip" is born with that day's date — say so first.
+    if (railSelection.kind !== "trip") return pastDayEdits && histDate ? `New trip will be dated ${fmtDayMonth(histDate)}` : null;
     const t = (trips ?? []).find((x) => x.id === railSelection.tripId);
     return t ? `on ${t.tripNumber}` : null;
-  }, [addTargetTrip, railSelection, trips]);
+  }, [addTargetTrip, railSelection, trips, pastDayEdits, histDate]);
 
   // Tab counts reflect the searched/filtered set of each surface (they equal the
   // full totals when no search/filter is active).
@@ -4331,6 +4378,8 @@ export function FloorPage({
               routeNames={loadPlan.routeNames}
               onMakeTrip={(orderIds, vehicleSize) => void createTripWithSelection({ orderIds, vehicleSize })}
               makeTripBusy={tripBarBusy}
+              // D1 (2026-10-24): trip actions on a past day for floor editors.
+              tripEdits={tripEditsOn}
               // ONE BAR, placed by TripDesk INSIDE its bills column (2026-09-22)
               // so it never runs under the trip rail. The assign bar and the
               // trip selection bar were two components at the same bottom-0,
@@ -4365,6 +4414,10 @@ export function FloorPage({
                     }
                     onClear={clearSelection}
                     contextLabel={barContextLabel}
+                    // A past day (D1, 2026-10-24): "+ New trip · 22 Oct", and no
+                    // ··· More — Hold / Cancel / Add invoices write the bill.
+                    newTripLabel={pastDayEdits && histDate ? `+ New trip · ${fmtDayMonth(histDate)}` : undefined}
+                    billActions={!pastDayEdits}
                     menuOpen={moreOpen}
                     onMenuOpenChange={setMoreOpen}
                     onHold={() => void bulkHold(selectedUnits)}

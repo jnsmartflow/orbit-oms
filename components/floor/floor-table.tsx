@@ -544,7 +544,8 @@ export function FloorTable({
    * billed to (otherwise the block header says it once). Null = no line.
    */
   billedToFor?: (row: FloorBoardRow) => string | null;
-  // Wired only on the live variant; undefined on history/upcoming.
+  // Wired on the live variant, and on history when a past day's trips are
+  // editable (trip-desk.tsx `tripEdits`, 2026-10-24); undefined on upcoming.
   // A plain Set<number> (Hold-style callers) or the desk's Set<number | rd:id>;
   // read-only here — the table only asks `has`.
   selection?: ReadonlySet<FloorDeskKey>;
@@ -677,7 +678,12 @@ export function FloorTable({
   // view (2026-08-11) renders the ordinary live table — live status pills, ⚡
   // and ⋯ still working — simply by omitting the selection handlers, with no
   // new prop threaded through slot-band and route-row to reach here.
-  const interactive = variant === "live" && !!onToggleRow;
+  //
+  // PAST-DAY TRIP EDITS (D1, 2026-10-24): a HISTORY table ticks too when the
+  // caller wires selection — a past day's trip stops, so bills can be removed
+  // or moved. The history status cell is unchanged (no ⚡, read-only ⋯), so
+  // ticking is the only thing this adds there. Upcoming never ticks.
+  const interactive = (variant === "live" || variant === "history") && !!onToggleRow;
   // Split OBDs ticked per invoice (see the prop). Only ever on a live table.
   const perInvoice = interactive && !!onToggleInvoice;
   // The upcoming block, normalised once. Read by the width arrays' neighbour
@@ -1432,6 +1438,10 @@ export function FloorTable({
             </span>
           ) : (
           <span className="hidden items-center gap-1 group-hover:inline-flex" onClick={shipToBlock ? (e) => e.stopPropagation() : undefined}>
+            {/* ⚡ only when the caller wired it. Every live desk table does; a
+                past day's pool (today's bills shown on a History desk,
+                2026-10-24) does not — a bill write from a past day stays off. */}
+            {onMarkUrgent && (
             <button
               type="button"
               title={urgent ? "Clear urgent" : "Mark urgent"}
@@ -1442,6 +1452,7 @@ export function FloorTable({
             >
               <Zap size={12} />
             </button>
+            )}
             <button
               type="button"
               title="Open details"

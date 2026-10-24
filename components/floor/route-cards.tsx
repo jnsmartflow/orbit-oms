@@ -389,7 +389,7 @@ interface LeafWiring {
   /** Per-invoice ticks on a split OBD (P5-3) — spread into each FloorTable. */
   onToggleInvoice?: (invoiceRowId: number) => void;
   onToggleAll?: (rows: FloorBoardRow[]) => void;
-  onMarkUrgent: (id: number) => void;
+  onMarkUrgent?: (id: number) => void;
   onOpenDetail: (id: number, invoiceSeq?: number) => void;
   gateOn: boolean;
 }

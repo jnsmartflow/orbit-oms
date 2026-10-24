@@ -75,6 +75,13 @@ function obdsOf(detail: unknown): string[] {
   return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
 }
 
+/** True when the row was written on a trip dated before that day (IST) — set
+ *  by the server from the trip row (lib/trips/activity.ts writeActivity,
+ *  2026-10-24). Read, never derived. */
+function isPastDay(detail: unknown): boolean {
+  return detail !== null && typeof detail === "object" && (detail as Record<string, unknown>).pastDay === true;
+}
+
 /**
  * Every row, oldest first (floor redesign, 2026-09-15).
  *
@@ -112,6 +119,11 @@ export function TripHistoryList({ rows }: { rows: TripActivityRow[] }) {
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-baseline gap-x-2">
                         <span className="text-[12px] font-semibold text-gray-900">{r.summary}</span>
+                        {isPastDay(r.detail) && (
+                          <span className="rounded-[4px] border border-brand-200 bg-brand-50 px-[5px] text-[10px] font-semibold text-brand-700">
+                            past-day edit
+                          </span>
+                        )}
                         <span className="text-[11px] tabular-nums text-gray-400">{fmt(r.createdAt)}</span>
                       </div>
                       <div className="text-[11px] text-gray-500">

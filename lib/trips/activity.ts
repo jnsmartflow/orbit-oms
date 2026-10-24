@@ -184,13 +184,20 @@ async function writeActivity(opts: {
   detail?: Prisma.InputJsonValue;
 }): Promise<void> {
   try {
+    // PAST-DAY EDITS (D1, 2026-10-24): `detail.pastDay = true` when the trip is
+    // dated before today (IST). Read HERE from the trip row, never from a
+    // client flag, so every action and every caller gets the same answer. No
+    // new action and no ALTER — existing actions with one more fact in detail.
+    const trip = await prisma.trips.findUnique({ where: { id: opts.tripId }, select: { tripDate: true } });
+    const pastDay = trip !== null && trip.tripDate.getTime() < istTodayDateOnly().getTime();
+    const detail = pastDay ? withPastDay(opts.detail) : opts.detail;
     await prisma.trip_activity.create({
       data: {
         tripId: opts.tripId,
         action: opts.action,
         actorId: opts.actorId,
         summary: opts.summary,
-        ...(opts.detail !== undefined ? { detail: opts.detail } : {}),
+        ...(detail !== undefined ? { detail } : {}),
       },
     });
   } catch (err) {
@@ -199,6 +206,20 @@ async function writeActivity(opts: {
       err instanceof Error ? err.message : err,
     );
   }
+}
+
+/** Today in IST as UTC midnight — the `trips.tripDate` @db.Date shape. */
+function istTodayDateOnly(): Date {
+  const istNow = new Date(Date.now() + 5.5 * 60 * 60 * 1000);
+  return new Date(Date.UTC(istNow.getUTCFullYear(), istNow.getUTCMonth(), istNow.getUTCDate()));
+}
+
+/** `detail` plus `pastDay: true`. Every writer below passes an object (or
+ *  nothing); anything else is left as it was rather than reshaped. */
+function withPastDay(detail: Prisma.InputJsonValue | undefined): Prisma.InputJsonValue | undefined {
+  if (detail === undefined) return { pastDay: true };
+  if (detail === null || typeof detail !== "object" || Array.isArray(detail)) return detail;
+  return { ...(detail as Prisma.InputJsonObject), pastDay: true };
 }
 
 /** "3 bills" / "1 bill" — the count phrase every summary below shares. */

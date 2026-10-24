@@ -87,6 +87,11 @@ function fmtHistLabel(iso: string): string {
   const dt = new Date(Date.UTC(y, m - 1, d));
   return `${WD[dt.getUTCDay()]} ${dt.getUTCDate()} ${MON[dt.getUTCMonth()]}`;
 }
+/** "22 Oct" — the past-day chip's date. */
+function fmtDayMonth(iso: string): string {
+  const [, m, d] = iso.split("-").map(Number);
+  return `${d} ${MON[m - 1]}`;
+}
 
 /**
  * What every leaf table needs beyond its own rows. Typed rather than left as a
@@ -100,7 +105,8 @@ type LeafProps = {
   /** A split OBD's invoice row ticks that invoice (P5-3, floor-table.tsx). */
   onToggleInvoice?: (invoiceRowId: number) => void;
   onToggleAll?: (rows: FloorBoardRow[]) => void;
-  onMarkUrgent: (id: number) => void;
+  /** Omitted on a past day's pool — no bill write from a past day (⚡ hides). */
+  onMarkUrgent?: (id: number) => void;
   onOpenDetail: (id: number, invoiceSeq?: number) => void;
   gateOn: boolean;
 };
@@ -209,6 +215,7 @@ export function TripDesk({
   onMakeTrip,
   makeTripBusy,
   bottomBar,
+  tripEdits,
 }: {
   floor: FloorBoardResult;
   trips: TripSummary[] | null;
@@ -352,6 +359,15 @@ export function TripDesk({
    * too. Null when nothing is ticked.
    */
   bottomBar?: ReactNode;
+  /**
+   * TRIP ACTIONS ALLOWED (D1, 2026-10-24). Always true on the live desk. On a
+   * past day (History) it is floor canEdit: the day's trips then work exactly
+   * like today's — ticks, the header buttons, the bottom bar, Move, New trip —
+   * and the pool is TODAY's (floor-page merges today's board in). False = the
+   * read-only History it always was. The day being VIEWED is still
+   * `floor.mode`; this is the other half of what "history" used to mean.
+   */
+  tripEdits: boolean;
 }) {
   // ── TWO VIEW STATES, ONE PER LIST (2026-09-19) ───────────────────────────
   //
@@ -451,6 +467,16 @@ export function TripDesk({
 
   const isHistory = floor.mode === "history";
   const variant = isHistory ? "history" : "live";
+  // ── THE TWO HALVES OF "HISTORY" (D1, 2026-10-24) ─────────────────────────
+  // `isHistory` = the day being VIEWED is a past one. `tripsEditable` = trip
+  // actions are allowed on it. A past day with trip edits on (`pastEdit`) keeps
+  // its own trips (stops in the history variant, the day's record) but its POOL
+  // and Tinting lists are TODAY's bills, so they render live — without ⚡, since
+  // bill writes stay off on a past day — anchored on today.
+  const tripsEditable = !isHistory || tripEdits;
+  const pastEdit = isHistory && tripEdits;
+  const poolVariant = pastEdit ? "live" : variant;
+  const poolAnchor = pastEdit ? istTodayIso() : floor.date;
   const nowMs = Date.now();
   // ── THE FLOOR / TINTING SPLIT (2026-09-14) ───────────────────────────────
   //
@@ -471,12 +497,16 @@ export function TripDesk({
   const dueRows = floorTabRows.filter((r) => r.zone !== "upcoming");
 
   // Selection/urgent/detail wiring, forwarded to every leaf table. Read-only in
-  // History: a past day is a record, and every write path would edit a day the
-  // depot has already closed (the same rule the detail panel's `history` source
-  // follows, FLOOR §4.7).
-  const selProps: LeafProps = isHistory
+  // History without trip edits: a past day is then a record (the same rule the
+  // detail panel's `history` source follows, FLOOR §4.7). With trip edits on a
+  // past day the ticks come back and ⚡ stays off — a tick is a trip action,
+  // ⚡ writes the bill (D1, 2026-10-24).
+  const liveSel: LeafProps = { selection: rowSelection, onToggleRow, onToggleInvoice, onToggleAll, onMarkUrgent, onOpenDetail, gateOn };
+  const selProps: LeafProps = !tripsEditable
     ? { onMarkUrgent, onOpenDetail, gateOn }
-    : { selection: rowSelection, onToggleRow, onToggleInvoice, onToggleAll, onMarkUrgent, onOpenDetail, gateOn };
+    : pastEdit
+      ? { ...liveSel, onMarkUrgent: undefined }
+      : liveSel;
 
   // ── THE POOL, IN TWO HALVES (2026-09-10 b) ───────────────────────────────
   //
@@ -680,6 +710,15 @@ export function TripDesk({
     <span className="ml-auto flex items-center gap-3 text-[11.5px]">
       {isHistory ? (
         <span className="flex items-center gap-2">
+          {/* PAST-DAY TRIP EDITS (D1, 2026-10-24, mockup floor-past-trips tab 1):
+              says out loud that this past day's trips can be changed. Brand
+              tokens only — violet already means "selected / editable" here. */}
+          {pastEdit && histDate && (
+            <span className="mr-1 inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-brand-200 bg-brand-50 px-2.5 py-[3px] text-[11.5px] font-semibold text-brand-700">
+              <i aria-hidden className="inline-block h-1.5 w-1.5 rounded-full bg-brand-600" />
+              Past day · {fmtDayMonth(histDate)} · trip edits allowed
+            </span>
+          )}
           <button type="button" className={navCls} onClick={() => onStepHistory(-1)} aria-label="Previous day">‹</button>
           <span className="font-semibold text-gray-900">{histDate ? fmtHistLabel(histDate) : ""}</span>
           <button
@@ -768,8 +807,8 @@ export function TripDesk({
         <ByRoute
           rows={sort(tintingTabRows)}
           nowMs={nowMs}
-          anchorIso={floor.date}
-          variant={variant}
+          anchorIso={poolAnchor}
+          variant={poolVariant}
           openRoute={openRoute}
           onToggleRoute={(name) => setOpenRoute(name)}
           selProps={selProps}
@@ -778,9 +817,9 @@ export function TripDesk({
       ) : (
         <FloorTable
           rows={sort(tintingTabRows)}
-          anchorIso={floor.date}
+          anchorIso={poolAnchor}
           nowMs={nowMs}
-          variant={variant}
+          variant={poolVariant}
           {...tintLeaf}
           {...selProps}
         />
@@ -855,12 +894,12 @@ export function TripDesk({
           <FloorTable
             rows={sort(poolRows)}
             upcomingRows={sort(poolUpcoming)}
-            anchorIso={floor.date}
+            anchorIso={poolAnchor}
             nowMs={nowMs}
-            variant={variant}
+            variant={poolVariant}
             {...selProps}
           />
-        ) : effectivePoolPivot === "plan" && scope === "Upcountry" && !isHistory ? (
+        ) : effectivePoolPivot === "plan" && scope === "Upcountry" && tripsEditable ? (
           // THE UPCOUNTRY LOAD PLAN v2 (2026-09-21) — planned server-side from
           // these due bills (POST /api/floor/load-plan); Replan, pins, moves,
           // Make trip. History keeps the v1 view below: a past day is a record.
@@ -870,9 +909,9 @@ export function TripDesk({
             routeNames={routeNames}
             columns={cardColumns}
             nowMs={nowMs}
-            anchorIso={floor.date}
-            variant={variant}
-            onMarkUrgent={onMarkUrgent}
+            anchorIso={poolAnchor}
+            variant={poolVariant}
+            onMarkUrgent={pastEdit ? undefined : onMarkUrgent}
             onOpenDetail={onOpenDetail}
             gateOn={gateOn}
             onMakeTrip={onMakeTrip}
@@ -889,12 +928,12 @@ export function TripDesk({
             routeNames={routeNames}
             columns={cardColumns}
             nowMs={nowMs}
-            anchorIso={floor.date}
-            variant={variant}
-            onMarkUrgent={onMarkUrgent}
+            anchorIso={poolAnchor}
+            variant={poolVariant}
+            onMarkUrgent={pastEdit ? undefined : onMarkUrgent}
             onOpenDetail={onOpenDetail}
             gateOn={gateOn}
-            onMakeTrip={isHistory ? undefined : onMakeTrip}
+            onMakeTrip={tripsEditable ? onMakeTrip : undefined}
             makeTripBusy={makeTripBusy}
           />
         ) : (
@@ -914,8 +953,8 @@ export function TripDesk({
                 onOpenCard={onOpenRouteCard}
                 empty={poolEmpty}
                 nowMs={nowMs}
-                anchorIso={floor.date}
-                variant={variant}
+                anchorIso={poolAnchor}
+                variant={poolVariant}
                 leaf={selProps}
               />
             ) : allCardsOn ? (
@@ -929,7 +968,7 @@ export function TripDesk({
                 onOpenDetail={onOpenDetail}
               />
             ) : (
-              <ByRoute rows={poolRows} nowMs={nowMs} anchorIso={floor.date} variant={variant} openRoute={openRoute} onToggleRoute={setOpenRoute} selProps={selProps} />
+              <ByRoute rows={poolRows} nowMs={nowMs} anchorIso={poolAnchor} variant={poolVariant} openRoute={openRoute} onToggleRoute={setOpenRoute} selProps={selProps} />
             )}
             {/* The Upcoming block stays for the ROUTE ROWS only. On the cards
                 every upcoming bill is inside its own route's panel instead
@@ -939,9 +978,9 @@ export function TripDesk({
               <FloorTable
                 rows={[]}
                 upcomingRows={sort(poolUpcoming)}
-                anchorIso={floor.date}
+                anchorIso={poolAnchor}
                 nowMs={nowMs}
-                variant={variant}
+                variant={poolVariant}
                 {...selProps}
               />
             )}
@@ -1023,7 +1062,7 @@ export function TripDesk({
           trip={trip}
           activity={activity}
           busy={tripBusyId === trip.id}
-          readOnly={isHistory}
+          readOnly={!tripsEditable}
           adding={adding}
           onAddBills={() => onStartAddingTo(trip.id)}
           onChangeVehicle={() => onChangeVehicle(trip.id)}
@@ -1124,7 +1163,7 @@ export function TripDesk({
                     {...selProps}
                     // Re-delivery rows tick by their own id (never the History
                     // desk, which wires no selection at all).
-                    onToggleRedelivery={isHistory ? undefined : onToggleRedelivery}
+                    onToggleRedelivery={tripsEditable ? onToggleRedelivery : undefined}
                     onOpenRedelivery={onOpenRedelivery}
                   />
                 )}
@@ -1133,7 +1172,7 @@ export function TripDesk({
                     {/* Tickable like any re-delivery, by `rd:<id>`, so it can be
                         removed — never on History or while adding. */}
                     <span className="inline-flex w-[15px] justify-center">
-                      {!isHistory && !adding && (
+                      {tripsEditable && !adding && (
                         <input
                           type="checkbox"
                           aria-label={`Select re-delivery ${r.obdNumber}`}
@@ -1268,6 +1307,7 @@ export function TripDesk({
         // Hand bills are counted as bills (they are listed) but never in the
         // litres — they ride no truck (2026-09-24).
         poolLitres={sumLitres([...poolRows, ...poolUpcoming].filter((r) => !r.isHand))}
+        poolLabel={pastEdit ? "To plan · today" : undefined}
         selection={railSelection}
         onSelect={onSelectRail}
       />

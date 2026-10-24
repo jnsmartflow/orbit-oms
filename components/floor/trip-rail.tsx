@@ -116,6 +116,7 @@ export function TripRail({
   gateOn,
   poolCount,
   poolLitres,
+  poolLabel = "To plan",
   selection,
   onSelect,
   addMode = false,
@@ -146,6 +147,9 @@ export function TripRail({
   gateOn: boolean;
   poolCount: number;
   poolLitres: number;
+  /** The pool card's title. "To plan · today" on a past day whose trips are
+   *  editable — the pool there is TODAY's (trip-desk.tsx, 2026-10-24). */
+  poolLabel?: string;
   // ⚠ THE "IN TINTING" LINE WAS HERE AND WENT ON 2026-09-14. It counted the tint
   // room above the trips; the TINTING TAB now does that job, with a table behind
   // it and an Operator column the line could never carry. Two summaries of one
@@ -304,7 +308,7 @@ export function TripRail({
 
             Owner decision 2026-09-14. Do not "fix" this to match the Floor
             tab's row count. */}
-        <div className="text-[14.5px] font-semibold tracking-[-0.008em] text-[#1a1a22]">To plan</div>
+        <div className="text-[14.5px] font-semibold tracking-[-0.008em] text-[#1a1a22]">{poolLabel}</div>
         <div className="mt-px text-[12.5px] tabular-nums text-[#61616d]">
           {poolCount} bill{poolCount === 1 ? "" : "s"} · {formatLitres(poolLitres)} L
         </div>

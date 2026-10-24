@@ -63,6 +63,8 @@ export function FloorBottomBar({
   addInvoices = null,
   onAddInvoices,
   wholeObdBlock = null,
+  newTripLabel = "+ New trip",
+  billActions = true,
 }: {
   count: number;
   /** Already formatted by the caller through formatLitres. */
@@ -149,6 +151,18 @@ export function FloorBottomBar({
    * blocked by it: trips take invoices one by one.
    */
   wholeObdBlock?: string | null;
+  /**
+   * The pool CTA's words. "+ New trip · 22 Oct" on a past day (2026-10-24): the
+   * trip is born with that day's date (floor-page createTripWithSelection), and
+   * the button says so before it is pressed.
+   */
+  newTripLabel?: string;
+  /**
+   * ··· More (Hold, Add invoices, Cancel / Raise CI) — BILL writes. False on a
+   * past day (D1, 2026-10-24): its trips are editable, its bills are not, the
+   * same line the detail panel draws. The trip CTA stays.
+   */
+  billActions?: boolean;
 }) {
   // 🔴 INSIDE A TRIP THE FORM IS OFFERED GREY, NOT HIDDEN (owner, 2026-09-22):
   // every bill there would be refused ("On trip … — remove it from the trip
@@ -188,7 +202,7 @@ export function FloorBottomBar({
       // carry Local and Upcountry bills on one truck; the number takes the
       // majority type's letter (lib/trips/type-choice.ts).
       <button type="button" onClick={onNewTripWithSelection} disabled={busy} className={BAR_PRIMARY}>
-        {busy ? "Working…" : "+ New trip"}
+        {busy ? "Working…" : newTripLabel}
       </button>
     ) : (
       // Brand since 2026-09-22 — inside a trip, taking bills off is the state's
@@ -218,6 +232,8 @@ export function FloorBottomBar({
   return (
     <FloorActionBar count={count} countLabel={countLabel} figures={figures} extra={contextLabel ?? undefined} onClear={onClear}>
       {cta}
+      {billActions && (
+      <>
       <BarDivider />
       <MoreMenu
         open={menuOpen}
@@ -263,6 +279,8 @@ export function FloorBottomBar({
           },
         ]}
       />
+      </>
+      )}
     </FloorActionBar>
   );
 }
