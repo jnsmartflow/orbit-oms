@@ -8,10 +8,14 @@
 // PURE. No Prisma, no clock, no I/O — so a route handler and a future client
 // preview can both import it, and so it is testable without a database.
 //
-// 🔴 chk_trip_drops_key ENFORCES THIS IN THE DATABASE:
-//   CHECK ("dropKey" = CASE WHEN "customerId" IS NOT NULL
+// 🔴 chk_trip_drops_key ENFORCES THIS IN THE DATABASE (live text since v27.73,
+// 2026-10-19 — the copy in prisma/schema.prisma is the authority):
+//   CHECK ("dropKey" = CASE WHEN "shipToText" IS NOT NULL
+//                           THEN 't:' || "shipToText"
+//                           WHEN "customerId" IS NOT NULL
 //                           THEN 'c:' || "customerId"::text
 //                           ELSE 's:' || "shipToCode" END)
+// (This comment quoted the pre-v27.73 two-branch CHECK until 2026-10-24.)
 // There is NO default on the column. Compute it wrong — or forget it — and the
 // INSERT is rejected, not silently corrected. That is the design: the key is
 // load-bearing enough that a drifted value must never reach a row.

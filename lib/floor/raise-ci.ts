@@ -188,6 +188,12 @@ export async function raiseFullBillCi(args: {
       // means an earlier press created the CI and then failed at (f) —
       // finish that press rather than refuse it. The note names that CI's
       // own reason, which is the one billing sees.
+      // ⚠ KNOWN DEFECT (recorded 2026-10-24, CLAUDE_CI §7.1 — not fixed): on a
+      // SPLIT OBD a per-invoice CI (raiseInvoiceCi, below) is also source
+      // 'floor', with "orderInvoiceId" set to one invoice row. This branch
+      // reads it as a half-done press: no second CI is created (SAP is not
+      // credited twice), but (f) cancels the WHOLE OBD under that invoice's CI
+      // number. The fix belongs here — such a CI should be refused, not finished.
       if (existing.source === "floor" && existing.ciNumber !== null) {
         ciNumber = existing.ciNumber;
         noteReasonLabel = existing.reasonLabel ?? reason.label;
@@ -238,7 +244,11 @@ export async function raiseFullBillCi(args: {
       // Number first; UNIQUE(ciNumber) is the backstop, so a P2002
       // re-allocates ONCE (CLAUDE_CI §13 CI-4). No loop, no transaction.
       // Which invoice row came back (v27.66, lib/order-invoices/links.ts): seq 1
-      // on an unsplit bill; NULL on a split one until Phase 6 assigns it from lines.
+      // on an unsplit bill; NULL on a split one: the whole-bill Floor CI stays WHOLE-OBD, and NULL
+      // covers every invoice row (ciCoversRow, CLAUDE_CI §3). Per invoice is
+      // raiseInvoiceCi, below — it sets the ticked row.
+      // (Said "until Phase 6 assigns it from lines" until 2026-10-24. Phase 6 kept
+      // it whole-OBD — never back-fill NULL to seq 1.)
       const orderInvoiceId = await linkRowForOrder(order.id, "ci");
       // The bill-to, newest raw summary row for this OBD (one shared reader).
       const billTo = (await loadBillToByObd([order.obdNumber])).get(order.obdNumber);

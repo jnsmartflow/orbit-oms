@@ -6,8 +6,10 @@
 //
 // DATA STAYS ONE ROW PER OBD. A split OBD's board row carries `invoiceRows`,
 // one entry per order_invoices row (seq order); an unsplit OBD carries []. The
-// OBD is still the unit of selection, live-merge, sort and search in Phase 4 —
-// only the DRAWING expands (drawRowsOf, below).
+// OBD stays the unit of live-merge and sort; SELECTION is per invoice since P5-3
+// (`inv:<id>` keys, lib/floor/selection.ts) and search matches any invoice's
+// number. The DRAWING expands (drawRowsOf, below). (Said "the OBD is still the
+// unit of selection … in Phase 4" until 2026-10-24.)
 //
 // KG PER INVOICE — owner rule (2026-10-13), first that applies:
 //   1. every line on the invoice has SAP line kg (import_raw_line_items.
@@ -43,9 +45,9 @@ export interface FloorInvoiceRow {
   /** The OBD's saved split no longer matches SAP's lines (or is half-written) —
    *  "Lines changed in SAP — re-check invoices". Same on every row of the OBD. */
   stale: boolean;
-  /** THIS invoice's own trip stop (order_invoices."tripDropId", Phase 5) — null
-   *  = on no trip. Today every row of an OBD shares one; from Phase 5 they can
-   *  differ. tripNumber / tripStatus are that stop's trip. */
+  /** THIS invoice's own trip stop (order_invoices."tripDropId") — null = on no
+   *  trip. Rows of one OBD can sit on different stops since Phase 5.
+   *  tripNumber / tripStatus are that stop's trip. */
   tripDropId: number | null;
   tripNumber: string | null;
   tripStatus: string | null;
@@ -120,7 +122,8 @@ export function buildInvoiceRows(input: {
 
   const activeById = new Map(input.activeLines.map((l) => [l.rawLineItemId, l]));
   // The litres the header kg is shared by — every active line, as the detail
-  // panel's Invoices section shares it (components/floor/detail-invoices.tsx).
+  // panel's Invoices section did (components/floor/detail-invoices.tsx — kept on
+  // disk, not mounted since Phase 4, 2026-10-13).
   const obdLitres = input.activeLines.reduce((s, l) => s + (l.volumeLine ?? 0), 0);
   const savedLines = rows.flatMap((r) => r.lines);
   // Half-written (a row with no lines) counts as stale — lib/order-invoices/split.ts loadSplitView.
@@ -181,7 +184,7 @@ export function invoiceKg(
 
 // ── THE LOAD IN ONE PLACE (Phase 5 commit 1, 2026-10-13) ─────────────────────
 //
-// From Phase 5 one OBD's invoices can sit in different places — some on a trip
+// Since Phase 5 one OBD's invoices can sit in different places — some on a trip
 // stop, the rest in To plan, or on two trips. A stop, a trip, a Print list, a
 // trip sheet or a load plan then carries ONLY the invoices that are in it:
 // litres from their lines, kg by the rule above, tins summed.

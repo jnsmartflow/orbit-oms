@@ -20,8 +20,9 @@ export const dynamic = "force-dynamic";
  * an `other` remainder), total litres, and `isReady` — which is DERIVED from
  * the bills, never read from a column. See lib/trips/queries.ts.
  *
- * Gate: `floor` canEdit, matching every sibling under /api/floor. Read-only:
+ * Gate: `floor` canView for this GET (the PATCH below takes canEdit). Read-only:
  * no writes anywhere in this path, so the live-sync markers cannot see it.
+ * (Said "floor canEdit" for the GET until 2026-10-24; the code checked canView.)
  *
  * ⚠ NOT `/api/trips/[tripNo]` — that address belongs to the NTS Trip Report
  * mirror (`app/api/trips/[tripNo]/route.ts`) and is keyed on the NTS trip

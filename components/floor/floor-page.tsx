@@ -1690,7 +1690,8 @@ export function FloorPage({
   const unitByOrder = new Map(selectedUnits.map((u) => [u.orderId, u]));
   const selectedRows = rows.filter((r) => unitByOrder.has(r.orderId));
   const selectedLoadRows = selectedRows.map((r) => narrowToInvoiceIds(r, unitByOrder.get(r.orderId)?.invoiceRowIds ?? null));
-  // Owner decision 3: the whole-OBD actions are off while any OBD is partly ticked.
+  // Owner decision 3: Add invoices is off while any OBD is partly ticked (Hold
+  // and Raise CI act per invoice; Cancel needs every invoice — floor-bottom-bar).
   const wholeObdBlock = wholeObdReason(
     selectedRows
       .filter((r) => isPartialUnit(unitByOrder.get(r.orderId)!))
@@ -2535,7 +2536,8 @@ export function FloorPage({
         if (cancelSearch?.rows.some((r) => r.orderId === detail.orderId)) {
           return detailWalk(cancelSearch.rows, false);
         }
-        // History shows a split OBD as a whole (per-invoice there is Phase 6).
+        // History shows a split OBD as a whole. Per invoice there is NOT built —
+        // an open item (canon plan, 2026-10-24), not a scheduled phase.
         return detailWalk(filteredFloor?.rows ?? [], false);
       case "floor":
         // Every row the desk lists, upcoming included (2026-09-10 b). The pager
@@ -2924,13 +2926,14 @@ export function FloorPage({
   const isLive = viewMode === "live";
 
   // Single Esc owner — lifted out of detail-panel so exactly ONE action fires per
-  // press and only ONE listener exists: panel open → close it (selection kept);
-  // else the bar's ··· More menu open → close it; else an open By route card →
-  // back to the cards; else a live selection →
-  // clear it; else the add band → end it; else nothing. The Cancel / Raise CI
-  // form, when open, comes before all of them. Ignored while focus is in a
-  // field / native control so Esc never wipes a selection mid-type (ship-to
-  // search, far-date box, picker dropdown).
+  // press and only ONE listener exists. Rungs, top first (the code below is the
+  // order; CLAUDE_FLOOR §4.6): re-delivery info → re-delivery dialog → Add
+  // invoices dialog (it decides: close or "Discard?") — these three even with
+  // focus in a field; then an open slot popover or focus in a field / native
+  // control → nothing (so Esc never wipes a selection mid-type); then the
+  // Cancel / Raise CI form → the panel (selection kept) → a ··· More menu → an
+  // open By route card → a live selection → the add band → nothing. (This
+  // comment listed only the last six until 2026-10-24.)
   useEffect(() => {
     function onEsc(e: KeyboardEvent) {
       if (e.key !== "Escape") return;
@@ -4421,9 +4424,10 @@ export function FloorPage({
                     menuOpen={moreOpen}
                     onMenuOpenChange={setMoreOpen}
                     onHold={() => void bulkHold(selectedUnits)}
-                    // Owner decision 3 (P5-3): Cancel / Raise CI / Add invoices
-                    // act on the WHOLE OBD — grey with this reason while an OBD
-                    // is only partly ticked. Hold acts per invoice (6.1).
+                    // Owner decision 3 (P5-3): Add invoices acts on the WHOLE OBD —
+                    // grey with this reason while an OBD is only partly ticked.
+                    // Hold (6.1) and Raise CI (6.3) act per invoice; Cancel needs
+                    // every invoice (the menu hint says so).
                     wholeObdBlock={wholeObdBlock}
                     addInvoices={addInvMenuItem}
                     onAddInvoices={() => {

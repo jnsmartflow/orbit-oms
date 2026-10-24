@@ -54,8 +54,10 @@ const STAGE_CANCELLED = "cancelled";
  *
  * ⚠ REVISIT WHEN THE LOADING SCREEN SHIPS. Once loading end writes `dispatched`,
  * the owner decides whether "done" becomes dispatched instead of checked. Until
- * then nothing writes `dispatched` (slice 7), and a dispatched-only rule would
- * keep every trip on the desk forever.
+ * then almost nothing writes `dispatched` — the dispatch route has no caller
+ * since slice 7; only a split OBD whose last open invoice comes back on a CI
+ * (settleObdDone, 6.4) — and a dispatched-only rule would keep every trip on
+ * the desk forever.
  */
 const DESK_DONE_STAGES: string[] = [PICK_CHECKED, DISPATCHED, STAGE_CANCELLED];
 

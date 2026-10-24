@@ -124,7 +124,7 @@ const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
  * 🔴 HISTORY IS A RECORD, NOT A WORKING LIST, and that is the whole distinction.
  * A bill that shipped still HAPPENED on the day it was promised or checked, so a
  * past day that omits it is lying by omission — which it has been doing for
- * 4,137 rows since July, because every reader was taught to look for
+ * 4,137 rows as of 2026-09-11 (a dated count), because every reader was taught to look for
  * `pick_checked` alone. The live board (`floorLiveBaseWhere`) is deliberately
  * NOT widened and must never be.
  *
@@ -1187,8 +1187,8 @@ export async function getFloorBoard(
           // `dispatched` all it liked and this clause would still have excluded
           // the row before the OR was reached. It is also the ONLY thing letting
           // arm (a) find a shipped bill by its promise date, which is the larger
-          // half of the population (2,935 of 4,137 carry a promise date, against
-          // 710 that carry a checkedAt).
+          // half of the population (as of 2026-09-11: 2,935 of 4,137 carried a
+          // promise date, against 710 that carried a checkedAt).
           workflowStage: { in: FLOOR_HISTORY_STAGES },
           OR: [
             { dispatchTargetDate: anchorDate },

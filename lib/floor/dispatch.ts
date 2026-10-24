@@ -2,8 +2,9 @@
 //
 // THE dispatch write. What it means to say a bill has left the depot.
 //
-// 🔴 WHY THIS EXISTS AT ALL. Nothing in Orbit has ever written `dispatched`.
-// The stage has been reached 7,067 times and `order_status_logs` records the
+// 🔴 WHY THIS EXISTS AT ALL. Until this module (2026-09-13) nothing in Orbit
+// wrote `dispatched`. As of 2026-09-13 the stage had been reached 7,067 times
+// (a dated count, not a live one) and `order_status_logs` recorded the
 // transition 244 times — the newest of those from 2026-08-27. Every other one
 // came from a hand-run UPDATE in the SQL editor, which writes no log row, so the
 // app cannot say who shipped what or when, and an undo table had to be kept by
@@ -49,8 +50,14 @@
 // ─────────────────────────────────────────────────────────────────────────
 //
 // ⚠ WHAT A DISPATCH IS, in one place: ONE column, in ONE `orders.update`, plus
-// ONE `order_status_logs` row.
-//   workflowStage — DISPATCHED, and nothing else
+// ONE `order_status_logs` row — and, since Add invoices, the invoice rows:
+//   workflowStage — DISPATCHED, and no other orders column
+//   order_invoices — an unsplit bill: mirrorObdDispatchedSafe copies it onto
+//                    the seq-1 row; a SPLIT OBD: markRowsDispatched ships only
+//                    its rows on this trip, and the OBD goes DISPATCHED only
+//                    with its last open invoice (6.4, the done rule —
+//                    lib/order-invoices/dispatch.ts). (Said "one column …
+//                    nothing else" until 2026-10-24.)
 //
 // ⚠ WHAT IT DELIBERATELY DOES NOT TOUCH:
 //   dispatchStatus — 'dispatch' is a DECISION ("this bill is going out"), not a

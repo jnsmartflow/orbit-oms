@@ -284,7 +284,10 @@ export async function loadPrintTrips(tripIds: number[]): Promise<PrintTrip[]> {
   // THROUGH THE INVOICE ROWS (v27.66 readers B, lib/order-invoices/trip-read.ts):
   // a bill is on a trip when any of its invoice rows sits on one of the trip's
   // stops; it comes back ONCE per trip, on its lowest-seq row's stop there.
-  // Counts, litres and copies stay PER OBD until Phase 5.
+  // The COUNT stays per OBD (one bill line). A split OBD's litres are its
+  // invoices on THAT trip (onTripOf, below) and its copies are per invoice row
+  // (trip_bill_copies, v27.74). (Said "counts, litres and copies stay PER OBD
+  // until Phase 5" until 2026-10-24.)
   const dropIds = drops.map((d) => d.id);
   const orders = drops.length
     ? placeOnTrips(

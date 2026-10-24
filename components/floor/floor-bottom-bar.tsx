@@ -143,12 +143,13 @@ export function FloorBottomBar({
   addInvoices?: { label: string; hint: string; disabled: boolean } | null;
   onAddInvoices?: () => void;
   /**
-   * 🔴 OWNER DECISION 3 (Add invoices P5-3, 2026-10-17). Cancel / Raise CI and
-   * Add invoices act on the WHOLE OBD (Hold per invoice since 6.1, 2026-10-19); with only some invoices of a split
-   * OBD ticked they are GREY with this reason — "Acts on the whole OBD — tick
-   * all 4 invoices" (lib/floor/selection.ts wholeObdReason). null = nothing is
-   * partly ticked, and the menu is exactly as before. The trip CTA is never
-   * blocked by it: trips take invoices one by one.
+   * 🔴 OWNER DECISION 3 (Add invoices P5-3, 2026-10-17). With only some invoices
+   * of a split OBD ticked, ADD INVOICES is GREY with this reason — "Acts on the
+   * whole OBD — tick all 4 invoices" (lib/floor/selection.ts wholeObdReason).
+   * Hold (6.1) and Raise CI (6.3) act on the ticked invoices; Cancel / Raise CI
+   * only changes its hint (Cancel needs every invoice). null = nothing is partly
+   * ticked. The trip CTA is never blocked by it: trips take invoices one by one.
+   * (Said "Cancel / Raise CI and Add invoices … are GREY" until 2026-10-24.)
    */
   wholeObdBlock?: string | null;
   /**

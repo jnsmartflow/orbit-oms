@@ -12,6 +12,9 @@ import type { RolloutStage } from "@/auth.config";
 //
 // Both live in Supabase and are mirrored in prisma/schema.prisma.
 //
+// Live stage: ALL_USERS since 2026-08-06 (read 2026-10-24, CLAUDE_BILLING.md §2),
+// so the per-user flag below decides nothing today. The ladder is the mechanism.
+//
 // Rollout ladder:
 //   OFF              — nobody, whatever their per-user flag says. The emergency
 //                      kill switch: one UPDATE pulls the feature from everyone.

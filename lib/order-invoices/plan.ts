@@ -16,7 +16,7 @@
 // blocked. The owner's rule, which replaced it (do not revert):
 //   · The OBD's rows must all be in ONE state — the same stop (or all off a
 //     trip) and all held or none. An unsplit OBD always is. Rows that differ
-//     (only a later phase can move one row alone) → edit and undo refused.
+//     (since Phase 5 one row can move or be held alone) → edit and undo refused.
 //   · New rows INHERIT seq 1's state: tripDropId, isHeld, heldAt, heldById.
 //     So a first split of a bill on a trip / on hold is allowed and nothing on
 //     the trip or the OBD changes — every row sits on the same stop, and all

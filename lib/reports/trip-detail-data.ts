@@ -215,7 +215,8 @@ export async function getTripDetailRows(params: TripDetailParams): Promise<TripD
   // dispatchStatus is NULL — most of them. Removed bills keep their tripDropId
   // (CLAUDE_FLOOR_TRIPS.md §7), so `isRemoved: false` is what keeps them out.
   // Through the INVOICE ROWS (v27.66, lib/order-invoices/trip-read.ts): each
-  // OBD once per trip, on its lowest-seq row's stop there. Totals per OBD.
+  // OBD once per trip, on its lowest-seq row's stop there. Count per OBD; a
+  // split OBD's quantities are its invoices on that trip (step 4).
   const dropIds = drops.map((d) => d.id);
   const found = await prisma.orders.findMany({
     where: {
@@ -250,7 +251,8 @@ export async function getTripDetailRows(params: TripDetailParams): Promise<TripD
   // ── 4. Quantities (the import's per-OBD snapshot) ────────────────────────
   const snapByOrder = await loadSnapshots(orders.map((o) => o.id));
   // A SPLIT OBD carries only its invoices on THAT trip (Add invoices P5-5,
-  // the trip feed's rule — lib/order-invoices/invoice-load.ts placeLoad); one
+  // the trip feed's rule — loadSplitInvoiceRows in lib/order-invoices/invoice-load.ts,
+  // placeLoad in lib/floor/invoice-rows.ts); one
   // index-only read when none is split. Re-deliveries are not in this report.
   const splitRows = await loadSplitInvoiceRows(
     orders,

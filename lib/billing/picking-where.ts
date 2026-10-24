@@ -113,9 +113,11 @@ export async function buildBillingPendingWhere(
  *
  * These rows are INFORMATION ONLY. They are never actionable and never reach a
  * write path: `buildBillingPendingWhere()` is AND-ed into the mark-done
- * `updateMany` (app/api/billing/picking/mark-done/route.ts:96) and carries
+ * `updateMany` (app/api/billing/picking/mark-done/route.ts, its one
+ * `orders.updateMany`) and carries
  * `invoiceNo: null`, and undo carries its own `invoiceNo: null` guard
- * (app/api/billing/picking/undo/route.ts:85). An already-invoiced row matches
+ * (app/api/billing/picking/undo/route.ts, its one `orders.updateMany`; line
+ * anchors dropped 2026-10-24 — they had drifted). An already-invoiced row matches
  * neither, however the request is crafted.
  *
  * Read-only. Builds a `where` and nothing else.

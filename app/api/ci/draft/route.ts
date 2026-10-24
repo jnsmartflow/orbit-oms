@@ -147,7 +147,11 @@ export async function POST(req: Request): Promise<NextResponse> {
   // ── ONE write. Nothing partial can be left behind. ─────────────────────────
   // Sequential awaits, never prisma.$transaction (CORE §3).
   // Which invoice row came back (v27.66, lib/order-invoices/links.ts): seq 1
-  // on an unsplit bill; NULL on a split one until Phase 6 assigns it from lines.
+  // on an unsplit bill; NULL on a split one: a phone CI stays WHOLE-OBD, and NULL
+  // covers every invoice row (ciCoversRow, CLAUDE_CI §3). Per invoice here is an
+  // open item; only Floor's raiseInvoiceCi sets one row per invoice.
+  // (Said "until Phase 6 assigns it from lines" until 2026-10-24. Phase 6 kept
+  // it whole-OBD — never back-fill NULL to seq 1.)
   const orderInvoiceId = await linkRowForOrder(order.id, "ci");
   // The bill-to, newest raw summary row for this OBD (one shared reader).
   const billTo = (await loadBillToByObd([order.obdNumber])).get(order.obdNumber);

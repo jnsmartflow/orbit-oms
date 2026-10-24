@@ -242,7 +242,8 @@ export function DetailPanel({
    *  number, date, litres, kg + exact flag, stale. [] when unsplit. */
   invoiceRows?: FloorInvoiceRow[];
   /** How many invoices the OBD carries — the OBD view's "n invoices" (On hold,
-   *  Cancel & CI, History; per-invoice there is Phase 6). 1 = unsplit. */
+   *  Cancel & CI, History). On hold and Cancel & CI draw per invoice since 6.1 /
+   *  6.3; History still shows the OBD whole (an open item). 1 = unsplit. */
   invoiceCount?: number;
   /** "Other invoices: 716 · 714 · 715" — re-scope the panel to another invoice. */
   onScopeInvoice?: (seq: number) => void;

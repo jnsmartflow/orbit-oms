@@ -459,9 +459,10 @@ async function loadTripBills(drops: ReadonlyArray<{ id: number; tripId: number }
   const dropIds = drops.map((d) => d.id);
 
   // 🔴 THROUGH THE INVOICE ROWS (v27.66, Phase 3 readers A). Each OBD comes back
-  // once per trip it touches, on the stop of its lowest-seq row there. TOTALS
-  // STAY PER OBD for now — a bill brings its whole OBD's litres / kg; Phase 5
-  // makes them per invoice row.
+  // once per trip it touches, on the stop of its lowest-seq row there. The COUNT
+  // stays per OBD (one bill). Litres / kg of a SPLIT OBD are per invoice on this
+  // trip (placeLoad, below — Phase 5 commit 1); an unsplit OBD brings its own.
+  // (Said "totals stay per OBD … Phase 5 makes them per row" until 2026-10-24.)
   const found = await prisma.orders.findMany({
     where: { ...onStopsWhere(dropIds), isRemoved: false },
     select: {

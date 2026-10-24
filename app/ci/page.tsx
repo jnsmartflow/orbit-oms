@@ -54,12 +54,11 @@ export const viewport: Viewport = {
 // tabs; everyone else who can see CI (billing_operator, operations, admin) gets
 // billing's desk rail. Mirrors app/mrn/page.tsx exactly.
 //
-// ⚠ NOT IN THE SIDEBAR YET. `ci` is in the PageKey union and ALL_PAGE_KEYS but
-// deliberately NOT in PAGE_NAV_MAP — that is step 6, and its POSITION there is
-// behaviour rather than cosmetics: MobileShell's phone Home target is
-// navItems[0]?.href, so an entry inserted at index ≤ 2 would steal
-// floor_supervisor's Home button from /picking. Reach this page by URL until
-// then.
+// IN THE SIDEBAR since 55c3cdc6 (2026-08-31): `ci` is in PAGE_NAV_MAP after
+// `mrn` (was "not in the sidebar yet … reach this page by URL"). Its POSITION
+// there is behaviour rather than cosmetics: MobileShell's phone Home target is
+// navItems[0]?.href, so an entry moved to index ≤ 2 would steal
+// floor_supervisor's Home button from /picking.
 //
 // NO first-paint data is seeded here. The New tab starts on an empty search box,
 // so there is nothing to fetch before the supervisor types.

@@ -265,9 +265,12 @@ export function holdBodyOf(
 }
 
 /**
- * Owner decision 3 (2026-10-13): Cancel / Raise CI / Add invoices act on the
- * WHOLE OBD, so they are disabled while any OBD is only partly ticked. (Hold
- * acts per invoice since 6.1, 2026-10-19 — holdBodyOf above.) The
+ * Owner decision 3 (2026-10-13), narrowed since: only ADD INVOICES still needs
+ * every invoice of the OBD ticked, so only it is greyed with this reason while
+ * an OBD is partly ticked (floor-bottom-bar.tsx). Hold acts per invoice since
+ * 6.1 (holdBodyOf above) and Raise CI since 6.3 (one CI per ticked invoice);
+ * Cancel still acts on the whole OBD and the off-floor form offers it only then.
+ * (Said "Cancel / Raise CI / Add invoices … disabled" until 2026-10-24.) The
  * reason, or null when nothing is partial. `invoiceCount` = that OBD's invoices.
  */
 export function wholeObdReason(partials: ReadonlyArray<{ obdNumber: string; invoiceCount: number }>): string | null {

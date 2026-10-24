@@ -9,8 +9,10 @@
 //                                   lib/challan-orders/create.ts
 //   · createSapInvoiceRowsForObds — app/api/import/obd/route.ts (manual
 //                                   template + auto-import, after createMany)
-//   · syncSapInvoiceRow           — patch-headers (route.ts) and
-//                                   lib/import-upsert/header.ts applyHeaderPatch
+//   · syncSapInvoiceRow           — patch-headers (route.ts),
+//                                   lib/import-upsert/header.ts applyHeaderPatch,
+//                                   and lib/order-invoices/split.ts (before a
+//                                   save / undo)
 //
 // 🔴 THE MIRROR IS READ FROM `orders`, NEVER PASSED IN. Every function here runs
 // AFTER the orders write and copies what the database actually holds — so the
@@ -25,7 +27,9 @@
 // import now would strand a live bill with an error response, and the
 // PowerShell would not resend an OBD that already exists. A failure is logged
 // with the [order-invoices] tag and repaired by re-running PART 3 of the DDL
-// file (idempotent). Nothing reads these rows yet in Phase 1.
+// file (idempotent). Every trip / hold / dispatch / Print / CI reader goes
+// through these rows since Phases 3–6, so an order with no seq-1 row is on no
+// trip read. (Said "nothing reads these rows yet in Phase 1" until 2026-10-24.)
 //
 // Sequential awaits only — never prisma.$transaction (CORE §3).
 

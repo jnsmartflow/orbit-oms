@@ -176,7 +176,8 @@ async function loadSheetCore(trips: CoreTrip[]): Promise<Map<number, SheetCore>>
 
   // 2. The trips' own bills — removed out here, held out below. THROUGH THE
   // INVOICE ROWS (v27.66, lib/order-invoices/trip-read.ts): each OBD once per
-  // trip, on the stop of its lowest-seq row there. Totals stay per OBD.
+  // trip, on the stop of its lowest-seq row there. The count stays per OBD; a
+  // split OBD's quantities are its invoices on this trip (step 5, below).
   const dropIds = drops.map((d) => d.id);
   const own: Array<BillRow & { tripDropId: number }> = drops.length
     ? placeOnTrips(

@@ -98,10 +98,13 @@ export const PICK_CHECKED = "pick_checked";
 /**
  * The terminal stage — the goods have left the depot (rank 100).
  *
- * 🔴 NOTHING IN THE APP WRITES IT, AND 4,137 ROWS ARE ALREADY AT IT. They came
- * from hand-run SQL sweeps in July (CLAUDE_FLOOR.md §7 records 238 of them);
- * the rest are unattributed because a raw UPDATE writes no log row. A one-time
- * cutover will add roughly 2,600 more.
+ * 🔴 ALMOST NOTHING IN THE APP WRITES IT. Two writers exist: lib/floor/dispatch.ts
+ * markBillsDispatched (its route, POST /api/floor/trips/[id]/dispatch, has no
+ * client caller since slice 7) and, for a SPLIT OBD, settleObdDone in
+ * lib/order-invoices/dispatch.ts (6.4, 2026-10-19). Most rows at it came from
+ * hand-run SQL sweeps (CLAUDE_FLOOR_TRIPS.md §14). As of 2026-09-11 there were
+ * 4,137 (a dated count, not a live one); a cutover that day was planned to add
+ * roughly 2,600. (Said "nothing in the app writes it" until 2026-10-24.)
  *
  * 🔴 THE CONSTANT EXISTS SO READERS CAN NAME IT WITHOUT TOUCHING A SHARED ARRAY.
  * It is deliberately NOT added to PICKING_OPEN_STAGES, PICKING_ACTIVE_STAGES or

@@ -596,8 +596,9 @@ export interface FloorHoldRow extends FloorPartyFields {
    *  order)", logged or not; null ("—") only when nothing is known. */
   heldByName: string | null;
   /** How many SAP invoices the OBD carries (order_invoices rows; 1 = unsplit).
-   *  Add invoices Phase 4: a split OBD stays ONE row on On hold (per-invoice
-   *  hold is Phase 6) and says "n invoices". */
+   *  An OBD drawn as one row says "n invoices". Per-invoice hold shipped in 6.1:
+   *  the held invoices come in invoiceRows, below, one drawn row each. (Said
+   *  "per-invoice hold is Phase 6" until 2026-10-24.) */
   invoiceCount: number;
   /** 6.1 (2026-10-19) — a SPLIT OBD with held invoices: the HELD ones (seq
    *  order, each with heldAt / heldByName), one drawn row each on the On hold

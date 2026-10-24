@@ -141,8 +141,9 @@ export async function checkCards(dateIso: string, cards: SnapshotCard[], ctx: Lo
     ? await prisma.trip_drops.findMany({ where: { tripId: { in: tripIds } }, select: { id: true, tripId: true } })
     : [];
   // Every bill on those trips THROUGH THE INVOICE ROWS (v27.66 readers B,
-  // trip-read.ts): once per trip, on its lowest-seq row's stop. Kg stays per
-  // OBD until Phase 5.
+  // trip-read.ts): once per trip, on its lowest-seq row's stop. A split OBD's kg
+  // is its invoices on that trip (loadSplitInvoiceRows, below); an unsplit OBD
+  // keeps its own. (Said "kg stays per OBD until Phase 5" until 2026-10-24.)
   const tripOfDrop = new Map(tripDrops.map((d) => [d.id, d.tripId] as const));
   const tripDropIds = tripDrops.map((d) => d.id);
   const tripOrders = tripDrops.length

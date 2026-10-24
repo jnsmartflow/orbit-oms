@@ -1533,11 +1533,12 @@ model ship_to_copies {
 // ── v27.66 (2026-10-12, sql/2026-10-12-order-invoices-dispatch-unit.sql, PARTS
 // 1,2,5,3,4,6a,8 run by the owner 12 Oct 2026) — THE ROW IS THE DISPATCH UNIT.
 // tripDropId / isHeld / heldAt / heldById / isDispatched / dispatchedAt /
-// dispatchedById, back-filled for UNSPLIT OBDs only (row := OBD). Nothing in the
-// app writes them yet (Phase 3 commit 2 onward) EXCEPT Add invoices save, which
-// writes seq 1's tripDropId / isHeld / heldAt / heldById onto every row it
-// CREATES ("split inside the trip", lib/order-invoices/plan.ts). Derived OBD
-// rules: CORE §7 v27.66.
+// dispatchedById, back-filled for UNSPLIT OBDs only (row := OBD). PART 6c + 7 ran
+// 2026-10-23 (v27.74). All seven are written by the app now, each by ONE writer:
+// trip — lib/order-invoices/trip-link.ts; hold — hold.ts; dispatched —
+// dispatch.ts; Add invoices save copies seq 1's onto every row it CREATES
+// (lib/order-invoices/plan.ts). (Said "nothing in the app writes them yet"
+// until 2026-10-24.) Derived OBD rules: CORE §7 v27.66, CLAUDE_ORDER_INVOICES §3.
 // 🔴 Three tables now point here ON DELETE RESTRICT (trip_bill_copies,
 // trip_redeliveries, ci_returns "orderInvoiceId"), which is why Add invoices
 // save EDITS IN PLACE since v27.66 (lib/order-invoices/split.ts) — do not
@@ -4203,7 +4204,8 @@ model trips {
   // BILLING DONE (Print v2, 2026-10-05, Schema v27.56). Billing's manual "Done —
   // all copied" on the Print tab moves the trip to "Done today". Null = not done.
   // From v2 `billingCopiedAt` above means only "the latest copy press"; which
-  // BILLS were copied lives in trip_bill_copies, one row per (trip, bill). The
+  // BILLS were copied lives in trip_bill_copies, one row per (trip, invoice row)
+  // since v27.74 (was per (trip, bill) until 2026-10-23). The
   // EIGHTH FK to `users`, named on both sides. ⚠ The live FK was created
   // UNQUOTED, so its stored name is lowercase — hence the explicit `map:`.
   billingDoneAt     DateTime?             @db.Timestamptz(6)
@@ -4421,7 +4423,8 @@ model trip_activity {
 // TRIP RE-DELIVERIES (2026-10-03, Schema v27.53, sql/2026-10-03-trip-redelivery.sql)
 //
 // A bill that already went out on a truck and came back undelivered, put on a
-// LATER trip as attempt 2, 3 … One row per (trip, bill). Plan of record:
+// LATER trip as attempt 2, 3 … One row per (trip, invoice row) since v27.74
+// (PART 7, 2026-10-23; was per (trip, bill)). Plan of record:
 // docs/prompts/drafts/web-update-2026-10-03-trip-redelivery.md (rev 5, §3).
 // Applied by hand in the Supabase SQL Editor 2026-10-03 11:25 IST and
 // hand-mirrored here (CORE §3).
@@ -4502,7 +4505,9 @@ model trip_redeliveries {
 // sql/2026-10-05-billing-print-v2.sql — applied live by Smart Flow the same day)
 // ─────────────────────────────────────────────────────────────────────────────
 //
-// One row per (trip, bill) billing has copied on the Print tab — by OBD
+// One row per (trip, INVOICE ROW) billing has copied on the Print tab (v27.74;
+// was per (trip, bill) until 2026-10-23 — a pre-split whole-OBD copy still
+// covers every invoice, lib/billing/print.ts) — by OBD
 // number, or (v27.61) by invoice number via "Copy inv". Keyed per TRIP on purpose: a bill moved to another trip reads uncopied
 // there (a new truck is a new print run). NEVER writes orders — a copy is not a
 // stage event, and an orders write would fire every orders-keyed marker.

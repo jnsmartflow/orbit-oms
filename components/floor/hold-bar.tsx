@@ -64,8 +64,10 @@ export function HoldBar({
    * the OBD keeps its own. A slot picked anyway is ignored for them.
    */
   slotOptional?: boolean;
-  /** 6.1 — Cancel / Raise CI act on the WHOLE OBD: grey with this reason while
-   *  an OBD's held invoices are only partly ticked (wholeObdReason). */
+  /** Greys Cancel / Raise CI with this reason. ⚠ NO CALLER PASSES IT (checked
+   *  2026-10-24 — hold-tab.tsx, the only mount): since 6.3 Raise CI acts per
+   *  ticked held invoice, so the 6.1 "partly ticked → grey" rule is gone. Kept,
+   *  unused; defaults to null. */
   offFloorBlock?: string | null;
 }) {
   const [slot, setSlot] = useState<DispatchSlotValue | null>(null);

@@ -9,8 +9,10 @@
 // toggle). The ⋯ (details) button stays INERT — the detail panel is a later
 // step. On history/upcoming variants everything stays read-only.
 //
-// COLUMNS: ☐ · OBD+date · Invoice · Ship to · Route · Due · Vol/KG · Article tag
-//          · Article (supervisor's article no., 2026-10-06) · Status
+// COLUMNS: ☐ · OBD+date · Invoice (Operator on Tinting) · Ship to · SO · Route
+//          (Area on a route card) · Due · Vol/KG · Article tag · Article
+//          (supervisor's article no., 2026-10-06) · DC · Status — the <th> row
+//          is the authority. (SO and DC were missing here until 2026-10-24.)
 //  - The # and Picker columns were REMOVED 2026-09-10 with the trip desk. See
 //    the width arrays for the before/after counts.
 //  - 🔴 DUE IS THE OLD `showSlot` COLUMN PROMOTED, not a new one beside it.

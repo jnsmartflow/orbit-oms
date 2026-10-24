@@ -4,15 +4,16 @@
 // reference docs/mockups/trip-redelivery/trip-redelivery.html states 1–9).
 //
 // A bill that already went out on a truck and came back is put on THIS trip as
-// attempt 2, 3 … The planner types one full OBD or invoice number; the server
+// attempt 2, 3 … The planner types one full OBD, SO or invoice number; the server
 // (GET /api/floor/trips/[id]/redeliveries?q=) returns every matching bill, each
 // already JUDGED against this trip (lib/trips/redelivery.ts judgeBillForTrip):
 //   ok      — tickable
 //   warn    — tickable, but the latest attempt is on a trip dated today or later:
 //             the planner must tick "Truck came back" (sent as confirmedReturn)
 //   refused — shown with its reason, never tickable
-// POST { action: "add", orderIds, reason, note?, confirmedReturn? } writes one
-// trip_redeliveries row per bill and NOTHING on the bill itself. The server
+// POST { action: "add", orderIds, invoiceRowIds?, reason, note?, confirmedReturn? }
+// writes one trip_redeliveries row per INVOICE ROW (v27.74; was per bill until
+// 2026-10-23 — see PER INVOICE below) and NOTHING on the bill itself. The server
 // re-judges every bill; whatever it refuses comes back per bill and is shown here.
 //
 // PER INVOICE (Add invoices P5-5, v27.74): a SPLIT bill comes back as ONE

@@ -609,7 +609,8 @@ export async function addRedeliveries(
       const history = (await getAttemptHistories([orderId])).get(orderId) ?? [];
       const own = await ownTripIds([order]);
       // Any re-delivery of this OBD on this trip, through its invoice row
-      // (P5-4) — not the (tripId, orderId) unique, which PART 7 drops.
+      // (P5-4) — not the old (tripId, orderId) unique, which PART 7 dropped
+      // (v27.74, 2026-10-23).
       const existing = await prisma.trip_redeliveries.findFirst({
         where: { tripId, ...recordsOfObds([orderId]) },
         select: { id: true },

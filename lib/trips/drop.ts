@@ -38,10 +38,11 @@ import { dealerDisplayName } from "@/lib/orders/dealer-name";
  *
  * ⚠ INVOICE ROWS COUNT (v27.66, 2026-10-12). order_invoices.tripDropId is ON
  * DELETE SET NULL, so deleting a stop an invoice row still sits on would
- * silently take that row off its trip. While every move is whole-OBD
- * (lib/order-invoices/trip-link.ts) the rows sit exactly where their orders do,
- * so this changes nothing today; from Phase 5 a row can sit on a stop its OBD
- * does not point at, and then this is the check that keeps the stop.
+ * silently take that row off its trip. Since Phase 5 moves are per invoice
+ * (lib/order-invoices/trip-link.ts setRowsTrip), so a row can sit on a stop its
+ * OBD's orders."tripDropId" does not point at — this is the check that keeps
+ * that stop. (Said "every move is whole-OBD … changes nothing today" until
+ * 2026-10-24.)
  *
  * After a delete the trip's stops close up 1..N (compactTripDropSeq, owner
  * 2026-10-17). Not on cancel — cancel never comes here, and a cancelled trip's

@@ -236,8 +236,10 @@ export type PageKey =
   // floor_add_invoices — "Add invoices" on Floor (2026-10-10, owner): record the
   // other SAP invoices of ONE OBD that SAP billed as several
   // (app/api/floor/orders/[orderId]/invoices POST/DELETE). canEdit is its only
-  // meaning, on top of floor canEdit — the billing_* / tint_* pattern. Phase 2
-  // is RECORD-ONLY: trips, hold, picking and CI still act on the whole OBD.
+  // meaning, on top of floor canEdit — the billing_* / tint_* pattern. Was
+  // RECORD-ONLY in Phase 2; since Phases 3–6 (to 2026-10-23) each invoice row is
+  // the dispatch unit — trips, hold, dispatch, Print copies, re-deliveries and
+  // Floor CIs act per invoice (CLAUDE_ORDER_INVOICES.md). Picking stays per OBD.
   | "floor_add_invoices"
   | "dashboard"
   | "users"
@@ -344,12 +346,10 @@ export type PageKey =
   // hold that one and nothing here may touch it. A page key and a route can
   // share a word.
   //
-  // ⚠ REGISTERED ONLY — NOTHING READS IT YET. The tab still gates on
-  // `mail_orders` at every one of its sites (the tab bar and body mounts in
-  // review-view.tsx, and the five /api/billing/picking/* routes). This key
-  // exists so /admin/access can show a row and Smart Flow can grant people
-  // BEFORE the gates are repointed, which is the order that avoids anybody
-  // losing the tab for a page load.
+  // READ SINCE 2026-09-11 (was "registered only — nothing reads it yet"). The
+  // /mail-orders layout reads it for the tab, the five /api/billing/picking/*
+  // routes gate on it (canView: list / marker / order; canEdit: mark-done /
+  // undo), and /api/billing/sync for the Picking arm (CLAUDE_BILLING.md §4).
   //
   // ⚠ DELIBERATELY NOT IN PAGE_NAV_MAP and NOT IN ICON_MAP. It is a TAB inside
   // /mail-orders, not a route, so there is nothing for a sidebar entry to link
@@ -409,10 +409,9 @@ export type PageKey =
   // CI — Goods Return Note (2026-09-01). Live `role_permissions` rows exist for
   // billing_operator / floor_supervisor / operations, and prisma/seed.ts carries
   // them, so the key is real — the API routes gate on it today.
-  // ⚠ DELIBERATELY NOT IN PAGE_NAV_MAP YET. There is no /ci page until step 5;
-  // a nav entry now would put a sidebar link in front of three roles that 404s.
-  // It joins the nav in step 6, and its POSITION there is behaviour, not
-  // cosmetics — see the PAGE_NAV_MAP comment above `mrn`.
+  // IN PAGE_NAV_MAP since 55c3cdc6 (2026-08-31, step 6), placed after `mrn` (was
+  // "deliberately not in PAGE_NAV_MAP yet"). Its POSITION there is behaviour,
+  // not cosmetics — see the PAGE_NAV_MAP comment above `mrn`.
   | "ci"
   // Freight Trips (2026-10-02) — the report-only "paper trip" layer over HELD
   // bills (lib/freight-trips, app/api/freight-trips). canView = read the pool,
@@ -554,13 +553,11 @@ const ACTION_PAGES: Record<Exclude<ActionKey, "canView">, readonly PageKey[]> = 
   canEdit: [
     "mrn", "picking", "tint_manager", "tint_operator", "mail_orders", "floor",
     "sampling_library", "routes_areas", "customers", "skus", "vehicles",
-    // billing_picking — listed AHEAD of its own call sites, on purpose, and it
-    // is the one entry in this map that is not yet backed by a check. Mark done
-    // (api/billing/picking/mark-done:58) and Undo (undo:49) gate on canEdit
-    // today, against `mail_orders`; they move to this key once the gates are
-    // repointed. Without the entry /admin/access draws a DASH, and a dash is a
-    // switch nobody can turn on — which would make it impossible to grant the
-    // Edit half before the repoint, i.e. impossible to do the repoint safely.
+    // billing_picking — Mark done (api/billing/picking/mark-done) and Undo
+    // (undo) gate on THIS key's canEdit since 2026-09-11 (was `mail_orders`).
+    // It was listed ahead of those checks so the Edit half could be granted
+    // before the repoint. Without the entry /admin/access draws a DASH, and a
+    // dash is a switch nobody can turn on.
     "billing_picking",
     // billing_print (slice 9) — Copy on the Print tab records the copy; gated on
     // canEdit in api/billing/print/trip/[id]/copy. Backed by that check from day one.

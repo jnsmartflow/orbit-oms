@@ -5,8 +5,8 @@
 //
 // MODEL A (v27.66): a trip link lives on the INVOICE ROW (order_invoices.
 // "tripDropId"). orders."tripDropId" is still dual-written (lib/order-invoices/
-// trip-link.ts) but is only DERIVED — and from Phase 5, when single rows of a
-// split OBD can sit on different stops, it is WRONG for those OBDs. So trip
+// trip-link.ts) but is only DERIVED — since Phase 5 single rows of a split OBD
+// can sit on different stops, and then it holds only the lowest-seq row's stop. So trip
 // readers go through the rows:
 //   · "bills on these stops"  → onStopsWhere(dropIds): any invoice row on one of
 //     them. orders.findMany returns each OBD ONCE.
@@ -16,9 +16,11 @@
 //     the LOWEST-seq row that has one — the v27.66 derived rule, the SAME rule
 //     trip-link.ts writes into orders."tripDropId" (deriveObdTripDropId, below,
 //     is that rule's one home).
-// 🔴 TOTALS STAY PER OBD for now: a bill on a trip brings its WHOLE OBD's
-// litres / kg / count. Phase 5 makes them per row (an OBD half on this truck
-// brings half its litres) — not here.
+// 🔴 THESE READS RETURN OBDs, so the COUNT stays per OBD. Litres / kg of a
+// split OBD are per invoice row on that trip — the callers do it with
+// loadSplitInvoiceRows + placeLoad (lib/order-invoices/invoice-load.ts,
+// lib/floor/invoice-rows.ts), not here. (Said "totals stay per OBD … Phase 5
+// makes them per row" until 2026-10-24; Phase 5 shipped.)
 //
 //   · "where is this OBD on THIS trip" (one bill, one trip — the trip actions'
 //     guards, readers C) → obdStopOnTrip: its lowest-seq row's stop on that trip.

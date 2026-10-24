@@ -26,6 +26,7 @@ interface Failed {
  * Body: `{ orderIds: number[], action: "add" | "remove",
  *          invoiceRowIds?: { [orderId]: number[] } }`
  * Response: `{ attached|detached: number[], skipped: number[], failed: [...] }`
+ * for add / remove; a move answers differently (MOVE, below).
  *
  * 🔴 PER INVOICE (Add invoices, Phase 5 commit 2, 2026-10-15). The invoice ROW
  * is the dispatch unit (Schema v27.66). `invoiceRowIds` names, per OBD, which
@@ -39,8 +40,8 @@ interface Failed {
  *   · remove — strips only rows on THIS trip, never another trip's.
  * An OBD in `attached` / `detached` may ALSO have `failed` entries (one per
  * refused invoice, with `invoiceRowId`). An unsplit OBD's messages are
- * unchanged, word for word. The Floor screen still sends whole OBDs (P5-3
- * adds per-invoice ticks).
+ * unchanged, word for word. The Floor screen sends `invoiceRowIds` for a
+ * partly ticked OBD since P5-3 (2026-10-17; lib/floor/selection.ts billsBodyOf).
  *
  * 🔴 MOVE (2026-10-17): `{ action: "move", fromTripId, orderIds, invoiceRowIds? }`
  * on the TARGET trip's URL takes the ticked rows that sit on `fromTripId` straight
@@ -433,8 +434,12 @@ export async function POST(
 
       // 🔴 HAND vs TRUCK (2026-09-24, design web-update-2026-09-24-billing-mo-
       // actions.md §4). A bill the dealer collects never joins a truck, and a
-      // truck bill never joins a Hand trip. THIS route is the only runtime
-      // writer of tripDropId (through lib/order-invoices/trip-link.ts since v27.66), so every add path — the rail, the add band,
+      // truck bill never joins a Hand trip. THIS route is the only runtime path
+      // that PUTS a bill on a trip (all tripDropId writes go through
+      // lib/order-invoices/trip-link.ts setRowsTrip; the trip cancel and a ship-to
+      // change on a trip bill also call it, but only take bills off a trip or
+      // move them between its stops — was "the only runtime writer" until
+      // 2026-10-24), so every add path — the rail, the add band,
       // "+ New trip", load plan "Make trip" — is held to it here, per bill.
       // To move a bill across, clear its Hand mark first.
       const isHandBill = order.handAt !== null;
