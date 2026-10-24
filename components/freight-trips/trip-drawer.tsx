@@ -11,9 +11,9 @@
 // vehicle size, no diesel. The Floor drawer itself is untouched.
 //
 // Vehicle: a master vehicle from /api/freight-trips/options, OR a typed plate —
-// never both (chk_freight_trips_vehicle_one_of). The vehicle list is the chosen
-// transporter's fleet (Floor's rule); a plate not in it is offered as a typed
-// plate. Picking a vehicle copies its driver into the driver inputs; both stay
+// never both (chk_freight_trips_vehicle_one_of). The vehicle list is every
+// active vehicle, each row naming its transporter (Floor's rule, 2026-10-24); a
+// plate not in it is offered as a typed plate. Picking a vehicle copies its driver into the driver inputs; both stay
 // editable (a typed driver wins — owner, 2026-10-02). SNAPSHOTS on the trip.
 //
 // 🔴 THE MANUAL DISPATCH TIME IS REQUIRED on create AND on every edit save,
@@ -227,11 +227,6 @@ export function TripDrawer({
             setDriverPhone(v.driverPhone ?? "");
           }}
         />
-        {options?.transportersFallback && (
-          <p className="-mt-2 text-[11px] text-gray-400">
-            Showing all active transporters — none is marked as a real carrier yet.
-          </p>
-        )}
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className={TRIP_LABEL} htmlFor="freight-driver-name">Driver name</label>

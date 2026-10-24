@@ -6,8 +6,9 @@ export const dynamic = "force-dynamic";
 
 /**
  * GET /api/freight-trips/options — active vehicles (with the driver to copy) and
- * transporters. `transportersFallback: true` = no transporter is marked
- * isRealTransporter yet, so every active one is listed. Read-only.
+ * active transporters. Until 2026-10-24 transporters also required
+ * isRealTransporter = true; removed by owner decision — every active
+ * transporter shows. Do not re-add. Read-only.
  */
 export async function GET(): Promise<NextResponse> {
   const gate = await freightGate("canView");

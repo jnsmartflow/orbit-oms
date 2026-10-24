@@ -48,8 +48,8 @@ import {
 import { initialManualDispatch, manualDispatchIso } from "@/lib/trips/diesel-dispatch";
 
 function initialVehicle(trip: TripSummary): VehiclePick | null {
-  // The STORED vehicle, even when it is not in the current transporter's fleet
-  // (or not active any more) — a legacy trip must not silently lose it.
+  // The STORED vehicle, even when it is not in the picker list (not
+  // active any more) — a legacy trip must not silently lose it.
   if (trip.vehicleId !== null) {
     return { kind: "master", id: trip.vehicleId, plate: trip.vehicleNo ?? `#${trip.vehicleId}`, driver: trip.driverName };
   }

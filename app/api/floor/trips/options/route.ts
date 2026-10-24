@@ -63,18 +63,11 @@ export async function GET(): Promise<NextResponse> {
     orderBy: { vehicleNo: "asc" },
   });
 
-  // ⚠ `isRealTransporter` FILTERS THIS LIST, and that is what the column is for.
-  // `transporter_master` holds 25 rows of which seven are SAP status codes that
-  // arrived as names — DELETE, CANCEL, HAND, PORTER, ewaybill, PICK DELETED, CI.
-  // They are kept (historical orders point at them; CORE §3 forbids deleting)
-  // and they must never appear in a picker.
-  //
-  // ⚠ THE FLAG DEFAULTS FALSE, so this list is EMPTY until somebody runs the
-  // marking UPDATE (trip-schema draft §D7, still commented out). An empty
-  // transporter dropdown is the expected state today and is not a bug — the
-  // field is optional and a trip is creatable without one.
+  // Every ACTIVE transporter — no other filter (owner, 2026-10-24).
+  // Until 2026-10-24 this also required isRealTransporter = true; removed by
+  // owner decision — every active transporter shows. Do not re-add.
   const transporters = await prisma.transporter_master.findMany({
-    where: { isRealTransporter: true, isActive: true },
+    where: { isActive: true },
     select: { id: true, name: true },
     orderBy: { name: "asc" },
   });

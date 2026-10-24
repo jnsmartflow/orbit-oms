@@ -398,10 +398,12 @@ export function TripFields({
 // (components/freight-trips/trip-drawer.tsx, 2026-10-04). Moved here out of
 // TripFields unchanged — the Floor drawer renders them exactly as before.
 //
-// ⚠ TRANSPORTER COMES BEFORE VEHICLE, AND THE VEHICLE LIST IS THAT
-// TRANSPORTER'S FLEET; changing the transporter clears the vehicle. Picking a
-// vehicle with no transporter set takes the vehicle's own. A plate not in the
-// fleet is offered as a TYPED plate ("Use … as typed plate", 4+ characters).
+// ⚠ THE VEHICLE LIST IS EVERY ACTIVE VEHICLE, each row naming its transporter
+// (owner, 2026-10-24 — until then it was only the chosen transporter's fleet).
+// Picking a vehicle SETS the transporter to the vehicle's own; the transporter
+// stays editable afterwards and changing it no longer clears the vehicle. A
+// plate not in the list is offered as a TYPED plate ("Use … as typed plate",
+// 4+ characters).
 //
 // `required` only draws the red * — the rule itself is the caller's (Floor
 // requires both off a Hand trip; Freight requires neither).
@@ -427,24 +429,24 @@ export function TransporterVehiclePickers<V extends VehicleOption>({
   /** After a MASTER vehicle is picked — Freight copies its driver into its own inputs. */
   onVehiclePicked?: (v: V) => void;
 }) {
-  // The selected transporter's fleet. Not set → every active vehicle.
-  const fleet = transporter ? vehicles.filter((v) => v.transporterId === transporter.id) : vehicles;
+  // Every active vehicle, whatever transporter is chosen. The transporter's
+  // name is shown on each row (and searchable) so the list stays scannable.
+  const transporterName = new Map(transporters.map((t) => [t.id, t.name]));
 
   function pickTransporter(t: { id: number; name: string } | null) {
-    const changed = (t?.id ?? null) !== (transporter?.id ?? null);
-    onChange({ transporter: t, ...(changed ? { vehicle: null } : {}) });
+    onChange({ transporter: t });
   }
 
   function pickVehicle(v: V) {
     const next: { transporter?: { id: number; name: string } | null; vehicle?: VehiclePick | null } = {
       vehicle: { kind: "master", id: v.id, plate: v.vehicleNo, driver: v.driverName },
     };
-    // Transporter Not set: take the vehicle's own, so the screen shows what the
-    // server would default to anyway.
-    if (!transporter) {
-      const own = transporters.find((t) => t.id === v.transporterId);
-      if (own) next.transporter = { id: own.id, name: own.name };
-    }
+    // The vehicle brings its own transporter, replacing whatever was set
+    // (including the Nagadhiraj preselect). Every active transporter is in the
+    // list since 2026-10-24, so the lookup only misses for an inactive one —
+    // then the current pick is left alone.
+    const own = transporters.find((t) => t.id === v.transporterId);
+    if (own) next.transporter = { id: own.id, name: own.name };
     onChange(next);
     onVehiclePicked?.(v);
   }
@@ -482,16 +484,21 @@ export function TransporterVehiclePickers<V extends VehicleOption>({
         </label>
         <SearchSelect<V>
           id="trip-vehicle"
-          items={fleet}
+          items={vehicles}
           getKey={(v) => v.id}
           matches={(v, q) => {
             const nq = normPlate(q);
             const lq = q.trim().toLowerCase();
             if (!lq) return true;
-            return (nq !== "" && normPlate(v.vehicleNo).includes(nq)) || (v.driverName ?? "").toLowerCase().includes(lq);
+            return (
+              (nq !== "" && normPlate(v.vehicleNo).includes(nq)) ||
+              (v.driverName ?? "").toLowerCase().includes(lq) ||
+              (transporterName.get(v.transporterId) ?? "").toLowerCase().includes(lq)
+            );
           }}
           renderItem={(v, q) => {
             const [s, e] = plateMatchSpan(v.vehicleNo, normPlate(q));
+            const tName = transporterName.get(v.transporterId);
             return (
               <>
                 <span className="shrink-0 font-mono">
@@ -500,6 +507,11 @@ export function TransporterVehiclePickers<V extends VehicleOption>({
                 {v.driverName && (
                   <span className="truncate font-normal text-gray-500">
                     <Highlight text={v.driverName} query={q} />
+                  </span>
+                )}
+                {tName && (
+                  <span className="ml-auto shrink-0 pl-2 text-[11.5px] font-normal text-gray-400">
+                    <Highlight text={tName} query={q} />
                   </span>
                 )}
               </>
@@ -521,12 +533,12 @@ export function TransporterVehiclePickers<V extends VehicleOption>({
             ) : null
           }
           placeholder="No vehicle yet"
-          searchPlaceholder={fleet.length > 0 ? "Search plate or driver" : "Type the plate"}
+          searchPlaceholder={vehicles.length > 0 ? "Search plate, driver or transporter" : "Type the plate"}
           onPick={pickVehicle}
           onClear={() => onChange({ vehicle: null })}
           extraRow={(q) => {
             const nq = normPlate(q);
-            if (nq.length < 4 || fleet.some((v) => normPlate(v.vehicleNo) === nq)) return null;
+            if (nq.length < 4 || vehicles.some((v) => normPlate(v.vehicleNo) === nq)) return null;
             return {
               key: "typed",
               render: (
