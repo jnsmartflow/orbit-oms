@@ -167,11 +167,12 @@ function assignGroupOf(row: PickingQueueRow): AssignGroup {
   return "local";
 }
 // The delivery-type identities (CLAUDE_UI.md §2.1 data.*, the §3 dot table).
-// Cross/IGT carries BOTH of its types' colours, Cross first.
-const ASSIGN_GROUP_COLORS: Record<AssignGroup, readonly string[]> = {
-  local: ["bg-data-blue"],
-  upc: ["bg-data-orange"],
-  crossIgt: ["bg-data-rose", "bg-data-teal"],
+// ONE colour per card (owner, 2026-10-24): Cross/IGT takes Cross's. The bill
+// cards inside keep their own per-bill delivery-type dot.
+const ASSIGN_GROUP_COLOR: Record<AssignGroup, string> = {
+  local: "bg-data-blue",
+  upc: "bg-data-orange",
+  crossIgt: "bg-data-rose",
 };
 
 // Level 2's chips group by route or by bay. Narrowed, never cast (§5.1).
@@ -1266,19 +1267,40 @@ function TintBillRow({ row }: { row: TintWorkloadBill }): React.JSX.Element {
   );
 }
 
-// ── Assign › Bills level 1: one delivery-type card (2026-10-24) ─────────────
-// The type name with its dot(s), a full-height left stripe in the same colour,
-// the type's waiting litres and a chevron — nothing else (owner). ~96px tall,
-// the picker card's shell (white, gray-200 border, CARD_SHADOW_V2, 16px radius).
-// 0 waiting bills → "All done" in the ok token, NOT tappable, and the card keeps
-// its place so the three never reshuffle.
-function AssignGroupDots({ group }: { group: AssignGroup }): React.JSX.Element {
+/// ── Assign › Bills level 1: one delivery-type card (2026-10-24, re-cut) ─────
+// Left: the type's dot + name, then its waiting litres as "820 L" and nothing
+// else. Right: a RING in the Trips view's trip-card shape (assign-trips.tsx
+// TripRing — an outer ring, a white disc, the number in the middle), drawn
+// here at a larger size because that one is private and segment-driven. No
+// progress fill and no "of N": a full ring in the type's colour around ONE
+// number — the bills still waiting for this type, the same set the litres
+// come from. 0 → full ring in the ok token, a check and "ALL DONE" (the trips
+// "ALL IN" treatment), the name only on the left, NOT tappable, and the card
+// keeps its place so the three never reshuffle. ~136px, so the three fill most
+// of a phone below the tinting strip. The picker card's shell (white, gray-200
+// border, CARD_SHADOW_V2, 16px radius).
+function AssignGroupDot({ group }: { group: AssignGroup }): React.JSX.Element {
+  return <span className={"w-2.5 h-2.5 rounded-full shrink-0 " + ASSIGN_GROUP_COLOR[group]} aria-hidden="true" />;
+}
+
+function AssignGroupRing({ group, bills }: { group: AssignGroup; bills: number }): React.JSX.Element {
+  const done = bills === 0;
   return (
-    <span className="flex items-center gap-1 shrink-0" aria-hidden="true">
-      {ASSIGN_GROUP_COLORS[group].map((c) => (
-        <span key={c} className={"w-2 h-2 rounded-full " + c} />
-      ))}
-    </span>
+    <div
+      className={"w-[76px] h-[76px] rounded-full shrink-0 grid place-items-center " + (done ? "bg-ok" : ASSIGN_GROUP_COLOR[group])}
+      aria-label={done ? "All done" : `${bills} ${bills === 1 ? "bill" : "bills"} waiting`}
+    >
+      <div className="w-[60px] h-[60px] rounded-full bg-white grid place-items-center leading-none">
+        {done ? (
+          <span className="flex flex-col items-center">
+            <Check size={22} strokeWidth={3} className="text-ok" aria-hidden="true" />
+            <span className="text-[8.5px] font-bold tracking-wide text-gray-400 mt-[3px]">ALL DONE</span>
+          </span>
+        ) : (
+          <span className="text-[24px] font-bold tabular-nums text-gray-900">{bills}</span>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -1296,32 +1318,19 @@ function AssignGroupCard({
   const done = bills === 0;
   const body = (
     <>
-      {/* The stripe: absolutely placed, so it takes no part in layout; a
-          two-type card splits it top/bottom in the same order as its dots. */}
-      <span aria-hidden="true" className="absolute left-0 inset-y-0 w-[5px] flex flex-col pointer-events-none">
-        {ASSIGN_GROUP_COLORS[group].map((c) => (
-          <span key={c} className={"flex-1 " + c} />
-        ))}
-      </span>
-      <div className="flex items-center gap-3 pl-5 pr-3.5 min-h-[96px]">
+      {/* The stripe: absolutely placed, so it takes no part in layout. */}
+      <span aria-hidden="true" className={"absolute left-0 inset-y-0 w-[5px] pointer-events-none " + ASSIGN_GROUP_COLOR[group]} />
+      <div className="flex items-center gap-3 pl-5 pr-4 min-h-[136px]">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <AssignGroupDots group={group} />
-            <span className="text-[17px] font-semibold text-gray-900 truncate">{ASSIGN_GROUP_LABEL[group]}</span>
+            <AssignGroupDot group={group} />
+            <span className="text-[19px] font-semibold text-gray-900 truncate">{ASSIGN_GROUP_LABEL[group]}</span>
           </div>
-          {done ? (
-            <div className="mt-1.5 flex items-center gap-1 text-[13.5px] font-semibold text-ok">
-              <Check size={16} strokeWidth={2.5} aria-hidden="true" />
-              All done
-            </div>
-          ) : (
-            <div className="mt-1 text-[22px] font-semibold text-gray-900 tabular-nums">
-              {formatLitres(litres)}
-              <span className="text-[13px] font-medium text-gray-400"> L</span>
-            </div>
+          {!done && (
+            <div className="mt-1.5 text-[26px] font-semibold text-gray-900 tabular-nums">{formatLitres(litres)} L</div>
           )}
         </div>
-        {!done && <ChevronRight size={20} className="text-gray-400 shrink-0" aria-hidden="true" />}
+        <AssignGroupRing group={group} bills={bills} />
       </div>
     </>
   );
@@ -1622,9 +1631,9 @@ export function PickingBoardMobile(): React.JSX.Element {
 
   // ── Assign tab › Trips view (2026-10-13, slices 2–4) ─────────────────────
   // The view only GROUPS bills: every card, tap, detail and action below is the
-  // Bills view's own code path. Trips is the DEFAULT since 2026-10-24 (owner);
-  // plain state, so every board open starts on Trips.
-  const [assignView, setAssignView] = useState<AssignView>("trips");
+  // Bills view's own code path. Bills is the default (owner, 2026-10-24 — a
+  // brief Trips default in eabc3a44 was reverted); plain state, nothing saved.
+  const [assignView, setAssignView] = useState<AssignView>("bills");
   // Its own type pills (trips by stored typeCode) — never the Bills cards' state.
   const [tripTypeFilter, setTripTypeFilter] = useState<TypeFilter>("All");
   // The opened trip, or null for the list. Opening PUSHES ONE history entry
@@ -3708,7 +3717,7 @@ export function PickingBoardMobile(): React.JSX.Element {
               </button>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
-                  <AssignGroupDots group={openGroup} />
+                  <AssignGroupDot group={openGroup} />
                   <span className="text-[17px] font-semibold text-gray-900 truncate">{ASSIGN_GROUP_LABEL[openGroup]}</span>
                 </div>
                 <div className="text-[12.5px] font-medium text-gray-500 tabular-nums">
@@ -3717,10 +3726,11 @@ export function PickingBoardMobile(): React.JSX.Element {
                 </div>
               </div>
             </div>
-            {/* Route | Bay — what the chips below group by. Navigation, so ink
-                on grey like the Bills | Trips switch, never violet. Switching
-                drops the chip pick: a route name means nothing as a bay. */}
-            <div className="flex w-fit rounded-[10px] bg-gray-100 p-[3px] mt-1.5" role="tablist" aria-label="Group chips by">
+            {/* Route | Bay — what the chips below group by. Full width, the
+                Bills | Trips switch's own classes (navigation: ink on grey,
+                never violet). Switching drops the chip pick: a route name means
+                nothing as a bay. */}
+            <div className="flex rounded-[10px] bg-gray-100 p-[3px] mt-2" role="tablist" aria-label="Group chips by">
               {CHIP_MODE_KEYS.map((key) => (
                 <button
                   key={key}
@@ -3733,7 +3743,7 @@ export function PickingBoardMobile(): React.JSX.Element {
                     setActiveChip(null);
                   }}
                   className={
-                    "px-3.5 text-[12px] py-1 rounded-[8px] " +
+                    "flex-1 text-center text-[12.5px] py-1.5 rounded-[8px] " +
                     (chipMode === key
                       ? "bg-white text-gray-900 font-semibold shadow-[0_1px_2px_rgba(0,0,0,0.08)]"
                       : "text-gray-500 font-medium")
