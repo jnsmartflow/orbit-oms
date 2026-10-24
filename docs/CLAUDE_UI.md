@@ -1,5 +1,5 @@
 # CLAUDE_UI.md — OrbitOMS UI Design System
-# v5.39 · October 2026 · updated 2026-10-16 · No Schema stamp BY DESIGN (decided 2026-08-04) — this file tracks components, not tables · Lives in: orbit-oms/docs/
+# v5.40 · October 2026 · updated 2026-10-24 · No Schema stamp BY DESIGN (decided 2026-08-04) — this file tracks components, not tables · Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md
 
 Single source of truth for visual styling across all screens.
@@ -15,7 +15,8 @@ Single source of truth for visual styling across all screens.
 - **Three colour roles:**
   - Brand = brand action (commit button, focus, toggles ON, nav active, wordmark, active slot segment)
   - Gray / `ink` = structure (borders, text hierarchy, slot pills, filter chips) — avatars are identity and take `ink`, never brand (§10.1)
-  - Semantic = status only (green=done, **red=ERROR AND DESTRUCTIVE ONLY**, amber=urgent/waiting/timing). A status pill is never brand.
+  - Semantic = status only (green=done, **red=ERROR AND DESTRUCTIVE ONLY**, amber=urgent/waiting/timing/attention). A status pill is never brand.
+  - **Amber also means "look — part of this is somewhere else"** (`warn`, Floor, 2026-10-08 → 17): an invoice PAIR whose other OBD is not ready or not here, a SPLIT OBD whose other invoices are on another trip / held / returned (the split-across-places chip and bar), and the search-hit row. Not a fault, so never red; not a selection, so never brand (`CLAUDE_FLOOR.md` §4.9, §4.11).
 - 🔴 **Red is for something being WRONG, or about to be undone — a failed send, a bounced
   order, a blocked dealer, a Delete/Clear button. Never for a PRIORITY.** *(Corrected
   2026-09-08. This line read `red=urgent/error/blocker` and contradicted §12's attention chip,
@@ -24,7 +25,7 @@ Single source of truth for visual styling across all screens.
   priority, red has nothing left to say when something actually breaks, and a list of red
   chips on a busy morning stops registering at all. **`/po2` ships this** — its
   Urgent chip is amber-700 on amber-50 and the only red left on the route is on Delete, Clear
-  and "Replace what is here". ⚠ **Ten rendered elements in eight live files still ship Urgent
+  and "Replace what is here". ⚠ **Eleven rendered elements in nine live files (recount 2026-10-24) still ship Urgent
   in red and are the migration list, not counter-examples** — see the note under §3's
   Semantic table.
 - **Minimal chrome.** Header + controls in 2 rows max.
@@ -56,7 +57,9 @@ yet" — a stale claim; do not read it as current.
 | **`ink`** (violet-tinted neutral) | 0 · 25 · 50 · 100 · 200 · 400 · 500 · 600 · 700 · 900 — **no 300, no 800** | 25 `#FAFAFC` · 50 `#F4F3F8` · 100 `#E9E7F0` · 400 `#9C99AC` · 900 `#1B1826` | "Deliberately has no 300 and no 800 … do not invent the gaps" (config comment). Utility buttons are `ink-900` (primary Import, Download, New MRN, Generate PDF). |
 | **`tint`** (sky) | `bg` `#F0F9FF` · `bd` `#BAE6FD` · 600 `#0284C7` · 700 `#0369A1` | — | **"Nothing but tint may use this family."** Tint strips, chips, the operator progress mid-range (`tint-operator-content.tsx` `progressColor`). 13 files. |
 | **`ok`** | `DEFAULT` `#059669` · `bg` · `text` | — | Status: done, live, punched (e.g. the punched Mail Orders row §23, the /admin/access live banner §63, the attendance "Rollout activated" toast §50). Never brand, never tint. 14 files. |
-| **`warn`** | `DEFAULT` `#D97706` · `bg` · `text` | — | Status: attention (e.g. the Tint Manager "Split" tag, `board-table.tsx:263`). 10 files. |
+| **`warn`** | `DEFAULT` `#D97706` · `bg` `#FFFBEB` · `text` `#B45309` | — | Status: attention — and **urgency** (the `danger` comment: "Urgency is amber (`warn`)"). E.g. the Tint Manager "Split" tag; on Floor: the invoice-pair bar and place chips when a member is not fine, the split-across-places away chip and bar of a split OBD, the RE-DEL button, the Missing customer card, and the **search-hit row** (`SEARCH_HIT_ROW_CLS`: `warn-bg` ground + a 3px `warn` inset edge, shared by the Floor, Hold and Cancel & CI tables). 45 files read a `warn` class (grep, 2026-10-24; was "10 files"). |
+| **`pair`** | `DEFAULT` **`#818CF8`** (periwinkle) — one value | — | **"Invoice-pair bracket on Floor, and nothing else"** (config comment, 2026-10-08, owner): the 3px left bar beside OBDs that share ONE invoice, and the split-OBD block bar, **when every member is fine**. Three states on one bar: `pair` = fine · `warn` = a member not fine · `brand-600` = the group is ticked (selected outranks both). **Why not brand:** on Floor violet means "selected" — a brand bracket would read as ticked. Only class reader: `border-l-pair` in `components/floor/pair-cells.tsx` (`PAIR_BAR_BORDER`); the hexes are also copied inline in `PAIR_BAR_HEX` for the inset-shadow form — keep the two in step. Drawing → §27 *Floor row drawing*. |
+| **`direct`** | `DEFAULT` `#1B1826` · `text` `#FFFFFF` | — | **Direct Loading** (2026-10-03, owner) — a bill the picking supervisor sent straight to `pick_checked` with no picker (`orders.directLoadedAt`, v27.52). A STATUS, so never brand: solid ink-900's exact hex, white text — `bg-direct text-direct-text` is the pill (Floor `status-pill.tsx`), `bg-direct` the route-card / progress bar segment. Mirrors ink-900 by VALUE, not reference: if ink-900 moves, decide on purpose. |
 | **`danger`** | `DEFAULT` `#E11D48` · `bg` · `text` · `bd` | — | **NAMED `danger`, NOT `urgent`, and the name is the rule** — error and destructive only (§1). Only reader today: `app/login/login-form.tsx` (`border-danger`, `text-danger-text`). |
 | **`fav`** | one value, `#F59E0B` | — | "The favourite star, and nothing else." No class reads it yet (`grep` for `-fav` in components/app/lib: 0). |
 | **`data.*`** | `teal` `#0D9488` · `blue` `#2563EB` · `orange` `#EA580C` · `rose` `#E11D48` · `cyan` `#0891B2` · `lime` `#65A30D` · `pink` `#DB2777` · `slate` `#475569` · `brown` `#8B5A2B` · `plum` `#86198F` | — | **IDENTITIES, never states. Never reassign a shipped data colour.** `data.rose` shares `danger`'s hex by a recorded decision — do not "resolve" it. `data.slate` is spoken for (§59.9). **`data.blue` = the Local delivery type ONLY** (the Telephonic CI tag used it 2026-09-23 → 24 and moved off). **CI = SOLID `ink-900`** (`bg-ink-900 text-white`) everywhere in billing — never the pale ink chip, which read as disabled. **`data.brown` · Hand** (the dealer collects; owner 2026-09-24) — 5.84:1 on white, 5.31:1 on its pale tint. **`data.plum` · owner ODB tag (orders.isObdImport)** — the import window's ODB source, 2026-10-16; the visible label is "ODB" (renamed from "OBD" 2026-10-16, owner), while the code keeps `isObdImport` / `ObdBadge` / `obd-paste`. The `ObdBadge` pill (`components/shared/obd-badge.tsx`) and Floor's square ODB block tag. **SOLID ONLY: `bg-data-plum text-white`, 8.24:1.** A pale plum pill fails beside CHALLAN: plum's fuchsia-50 ground `#FDF4FF` against CHALLAN's purple-50 `#FAF5FF` is ΔE 1.5 (invisible) and the text hues sit 12° apart, so the two would differ only by their word. Solid plum is ΔE 91 from CHALLAN's ground and ΔE 45 from the solid TINT fill `#DB2777`. 🔴 **`#BE185D` is NOT free either:** it is the HARDCODED (not a token) tint/BASE pink — the BASE badge (`card-atoms.tsx` `COLOUR_WORK_PINK.baseFill`), Floor's TINT block tag, the "With operator" status pill, trip add mode and Picking's tinting strip. Do not reuse it for a new category. **No `data.*` colour is free — the next category needs a new token.** |
@@ -139,19 +142,25 @@ tile baked in here — callers own both" (`orbit-wordmark.tsx:9-11`). Was a draw
 🔴 **The `Urgent` row above is a RECORD OF SHIPPED CODE, NOT THE RULE, and the two now
 disagree.** §1's palette rule changed on 2026-09-08 — red is error and destructive only, urgency
 is amber — but this table describes what live components actually render, and canon must
-never claim a colour a screen does not paint. Recounted 2026-09-19 at HEAD: **ten rendered
-elements in eight live files** paint Urgent red:
+never claim a colour a screen does not paint. Recounted 2026-10-24 at `e817f01f` (grep for ⚡ / "Urgent"
+with a red colour; anchors are file + what it draws, never line numbers): **eleven rendered
+elements in nine live files** paint Urgent red:
 
 | still red | what it draws |
 |---|---|
-| `components/shared/status-badge.tsx:31` + `:70` — the `urgent` badge and its default dot | `bg-red-50 text-red-700 border-red-200` · `bg-red-500` |
-| `components/floor/floor-table.tsx:867` — the ⚡ mark-urgent toggle, ON | `border-red-200 bg-red-50 text-red-500` |
-| `components/floor/floor-table.tsx:1044` — the ⚡ glyph in the row | `#ef4444` |
-| `components/floor/hold-tab.tsx:110` · `cancelled-tab.tsx:139` — ⚡ glyph | `text-[#ef4444]` |
-| `components/floor/detail-panel.tsx:542` — "⚡ Urgent" pill | `bg-[#fef2f2] text-[#b91c1c]` |
-| `components/tint/manager/board-table.tsx:303` — ⚡ glyph | `#ef4444` |
-| `components/tint/manager/board-rail.tsx:188` — "⚡ Urgent" pill | `bg-red-50 text-red-700 border-red-200` |
-| `components/picking/bill-symbols.tsx:70` — `URGENT_COLOR` ⚡ glyph | `#DC2626` |
+| `components/shared/status-badge.tsx` — the `urgent` badge and its default dot | `bg-red-50 text-red-700 border-red-200` · `bg-red-500` |
+| `components/floor/floor-table.tsx` — the ⚡ mark-urgent toggle, ON | `border-red-200 bg-red-50 text-red-500` |
+| `components/floor/floor-table.tsx` — the ⚡ glyph in the row | `#ef4444` |
+| `components/floor/hold-table.tsx` — ⚡ glyph (On hold + Freight Trips; it moved out of `hold-tab.tsx` with the shared table) | `text-[#ef4444]` |
+| `components/floor/detail-panel.tsx` — "⚡ Urgent" pill | `bg-[#fef2f2] text-[#b91c1c]` |
+| `components/tint/manager/board-table.tsx` — ⚡ glyph | `#ef4444` |
+| `components/tint/manager/board-rail.tsx` — ⚡ glyph (was a "⚡ Urgent" pill) | `#ef4444` |
+| `components/tint/manager/board-base-tab.tsx` — ⚡ glyph | `#ef4444` |
+| `components/tint/manager/board-detail-panel.tsx` — ⚡ glyph | `#ef4444` |
+| `components/picking/bill-symbols.tsx` — `URGENT_COLOR` ⚡ glyph | `#DC2626` |
+
+*(Was "ten in eight", 2026-09-19: Floor's Cancel & CI table no longer draws a ⚡; the Tint Manager
+gained its Base tab and detail panel glyphs; the rail's pill became a glyph.)*
 
 (`components/tint/tint-table-view.tsx:174` also paints a red "🚨 Urgent" badge, but that file
 has no importer. `components/shared/duplicate-so-tag.tsx` cites this row for its own red — it
@@ -159,7 +168,7 @@ marks a duplicate SO, not urgency. The full inventory, and why the migration is 
 decision, is `docs/prompts/drafts/code-discovery-2026-09-08-urgent-red-migration.md`.)
 ⚠ **The `danger` block comment in `tailwind.config.ts` says "Twelve live sites" — a stale
 claim:** it counted `components/floor/rail-card.tsx` (deleted in `79bcc412`) and the
-orphaned `tint-table-view.tsx`. Ten is the live figure.
+orphaned `tint-table-view.tsx`. Eleven is the live figure (2026-10-24).
 
 **That is a migration list.** `/po2` already ships Urgent in amber-700 on amber-50.
 Move these to the `Waiting` row's amber and this row becomes `bg-amber-50 /
@@ -352,7 +361,9 @@ Age badge (1+ days old, on the Tint Manager rail — `components/tint/manager/bo
 
 **Route cards** — `components/floor/route-cards.tsx` (2026-09-19): Floor's By route view on a tab with route clubs — one grid of equal-size cards (4/3/2 per row at 1470/1100px) — the clubs, then one display-only "Other routes" card for every unclubbed route and No route — each a button showing name, big kilos, stops · litres and one line per route with a 4px status bar, opening its bills full width under its row. Behaviour → `CLAUDE_FLOOR.md §2.1`.
 
-**Load plan cards** — `components/floor/load-plan.tsx` (2026-09-19): Floor's Upcountry Load plan — a summary line, then one card per suggested truck on the same equal-size grid (routes, big kilos, grey "Big truck · N stops", a 4px fill bar green ≥ 50% / amber below, a brief violet border flash when a regroup changed it) and one full-width panel with the reason and Make trip. Behaviour → `CLAUDE_FLOOR.md §2.2`.
+**Load plan cards** — `components/floor/load-plan.tsx` (2026-09-19): Floor's Upcountry Load plan — a summary line, then one card per suggested truck on the same equal-size grid (routes, big kilos, grey "Big truck · N stops", a 4px fill bar green ≥ 50% / amber below, a brief violet border flash when a regroup changed it) and one full-width panel with the reason and Make trip. ⚠ Since 2026-09-21 the LIVE Upcountry view is v2 (`components/floor/load-plan-v2.tsx`, same grid and panel pattern, plus Replan / pins / moves); v1 renders only in History. Behaviour → `CLAUDE_FLOOR.md §2.2`.
+
+**Bill rows that are not one OBD = one row** — Floor's invoice PAIRS (one invoice, several OBDs) and SPLIT OBDs (one OBD, several invoices) are table rows, not cards: the drawing standard is **§27 → *Floor row drawing — pair and split blocks***.
 
 ---
 
@@ -541,6 +552,8 @@ red.
 ## 13. Modal pattern
 
 Backdrop: `bg-black/40`. Panel: `bg-white rounded-lg shadow-xl w-[400px]`. Confirm button: `bg-gray-900` (not brand). Destructive confirm: `bg-red-600`.
+
+**Floor's centred dialogs on this pattern** (`bg-black/40` scrim at `z-[120]`, all 2026-10): the **Add invoices** dialog (`components/floor/add-invoices-dialog.tsx`, `w-[680px]` — one paper at a time, then a summary; inner confirms "Discard these invoices?" / "Undo the split?" / "Same invoice covers both?" are steps inside the same panel, not a second modal), the **Cancel or Raise CI** dialog (`off-floor-dialog.tsx`) and the rail's **add / move confirm** (`AddToTripConfirm` in `trip-rail.tsx` — centred so a double-click on a rail card cannot land on its button, focus starts on Cancel, the scrim is Cancel). Their commit button is the floor bar's own `BAR_PRIMARY` (`components/floor/floor-action-bar.tsx`: 44px, `bg-brand-600 hover:bg-brand-700`, grey when disabled per §10), with `BAR_SECONDARY` (white, `ink-200` border) and `BAR_DANGER` (`bg-danger`, for Discard / Cancel-the-bill) — NOT this section's `bg-gray-900`; the dialog's commit is the screen's one brand button while it is open. Screen behaviour → `CLAUDE_FLOOR.md §4.6 / §4.7`.
 
 ### Two-stage confirm (used by Mark Done partial qty, Remove OBD)
 
@@ -749,6 +762,35 @@ All data tables use `table-layout: fixed` with `<colgroup>` percentage widths.
 
 **Support never belonged on this list.** Its tables were CSS Grid, not `<table>` (board retired
 2026-07-27 — §58); the live takeaway is the Grid-native equivalent rule below.
+
+### Floor row drawing — pair and split blocks (2026-10-08 → 2026-10-17)
+
+Floor's tables (`floor-table.tsx`, `hold-table.tsx`, `cancelled-tab.tsx`) stay §27 fixed tables, but two
+kinds of BLOCK break "one bill = one row". What each shows and why → `CLAUDE_FLOOR.md` §4.9 (split OBD) and
+§4.11 (invoice pairs); the visual rules, which hold on every Floor table:
+
+- **A block is its own `<tbody>`.** Rows inside it are divided by a **dashed** line
+  (`border-ink-100 [border-bottom-style:dashed]`); the block's last row keeps the solid `#f0f0f0` divider,
+  so a block reads as one thing.
+- **Spanned cells map POSITIONALLY.** A merged invoice PAIR spans the ☐ cell and the Invoice cell
+  (`rowSpan = n`, the invoice `align-middle`); rows 2..n leave out EXACTLY those cells, so every column to
+  their right still lines up. The widths, the `<th>`s and the `<td>`s map POSITIONALLY (`floor-table.tsx`'s
+  own warning — one missing cell has shifted every column to its right once already, to Route), so a new
+  column must be counted on the spanning row AND the follower rows of every width arm (e.g. interactive +
+  extra 12 → 10 cells). A per-OBD cell such as DC is never merged — every row draws its own.
+- **A SPLIT OBD spans nothing.** Its OBD cell **repeats on every invoice row** (owner, 2026-10-13, `d2852ebd`
+  — it was rowspan'd in `e8942595` and put back the same day after a look on localhost; do not merge it
+  again), with an "n invoices" chip under it; the Invoice cell carries a "k/n" chip. Chips:
+  `InvoicePartChip` "k/n" `bg-ink-100 text-ink-700 text-[10px] font-semibold tabular-nums`; `KOfNChip`
+  "k of n" (pairs) `bg-ink-50 text-ink-600 text-[9.5px]`; place / away chips `PairPlaceChip` — amber
+  `bg-warn-bg text-warn-text` when something is wrong or elsewhere, `bg-ink-50 text-ink-600` when not.
+- **ONE 3px left bar per block**, three states — `pair` (fine) · `warn` (a member or invoice elsewhere / not
+  ready) · `brand-600` (ticked; outranks both). Drawn as an inline `inset 3px 0 0` shadow on the spanned ☐
+  cell (one cell, so one unbroken line), or, where there is no tick column, as a collapsed
+  `border-l-[3px] border-l-pair | border-l-warn | border-l-brand-600` on each row's OBD cell (collapsed
+  borders join across rows; an inset shadow would leave a 1px gap per row). Tokens → §2.1.
+- **Approximate kg** reads `~{kg} kg` (title "Approximate — the OBD's kg shared by litres").
+- **History / upcoming rows** draw the merge and "k of n" only — no place chips, no amber.
 
 ### Grid-native equivalent — percentage tracks on CSS Grid (2026-07-09)
 
@@ -2014,6 +2056,17 @@ Closes on outside click, Escape, or navigation. ⚠ The comment at `admin-sideba
 
 ---
 
+## Change log — v5.40 (2026-10-24, canon batch B2: Add invoices + invoice pairs)
+
+Evidence: `tailwind.config.ts` and greps over `components/ app/ lib/` at `e817f01f`; `components/floor/pair-cells.tsx`, `floor-table.tsx`, `bill-ref-cells.tsx`, `add-invoices-dialog.tsx`, `off-floor-dialog.tsx`, `trip-rail.tsx`, `floor-action-bar.tsx` read at the claims below. Plan: `docs/prompts/drafts/code-discovery-2026-10-24-canon-add-invoices.md` (step 4a, UI rows). No schema stamp, by design.
+
+- §1: amber also means "part of this is somewhere else" — the pair / split-across-places marks and the search hit.
+- §2.1: **new `pair` row** (`#818CF8`, Floor's pair / split block bar only; three bar states; why it is not brand — violet means selected on Floor; `PAIR_BAR_HEX` kept in step). **New `direct` row** (Direct Loading, `#1B1826`, 2026-10-03 — missing until now). `warn` row: its hexes, urgency, the Floor uses, the shared search-hit class; "10 files" → 45.
+- §3: the red-Urgent list recounted — eleven elements in nine files; line-number anchors replaced by what each draws.
+- §8: the Load plan v2 note; a pointer from cards to the pair / split row standard.
+- §13: Floor's centred dialogs (Add invoices, Cancel or Raise CI, the rail add / move confirm) — scrim, `z-[120]`, the `BAR_*` buttons.
+- §27: **new *Floor row drawing — pair and split blocks*** — own `<tbody>`, dashed inner line, spanned cells map positionally, the split OBD repeats its OBD on every row (the `d2852ebd` reversal kept as a do-not-revert line), the chips, the one 3px bar in two drawing forms, `~` kg, history rows.
+
 ## Change log — v5.31 (2026-09-19, canon sweep batch C1)
 
 Evidence: `tailwind.config.ts`, import/grep sweeps over `components/ app/ lib/` at HEAD `b574cecc`, the sweep report `docs/prompts/drafts/code-discovery-2026-09-18-canon-sweep.md` (UI worker section), every changed claim re-read in code. No schema stamp, by design.
@@ -2050,4 +2103,4 @@ Evidence: component import sweeps + folder listings + git log 2026-07-31→08-03
 
 - UI-13 (v5.18, final-pass 12b 2026-08-05): §55's four `po-page.tsx` line-number references replaced with file+symbol anchors per §62.1's own rule — each symbol re-verified live; the numbers had already drifted by 8 lines.
 
-*UI v5.39 · OrbitOMS · updated 2026-10-16 · **§2.1: `data.plum` `#86198F` added, owner ODB tag (orders.isObdImport; visible label renamed OBD → ODB the same day) — SOLID only, since a pale plum pill is CHALLAN's lavender (ΔE 1.5 ground); `#BE185D` recorded as the hardcoded tint/BASE pink, not free.** Prior, v5.38 (2026-10-09) · §56: the Trip module gains NTS Trips (same panel). Prior, v5.37 (2026-10-04) · §56: the Reports popup's Trip module lists Trip Detail, Freight Report and Trip Detail — Old Format. Prior, v5.36 (2026-10-03) · No Schema stamp by design (see above) — **§6: `/freight-trips` is the SECOND named `<UniversalHeader />` exception** (a Billing-style search box, top right, copied into `components/freight-trips/search-bar.tsx`; the title lives in the rail); its row added to the per-board table. Prior, v5.35 (2026-09-24) — **§2.1: `data.blue` is the Local delivery type ONLY; CI is SOLID `ink-900` everywhere in billing** (the Telephonic CI tag moved off blue, `components/billing/billing-telephonic-tab.tsx`). Prior, v5.34 (2026-09-24): **§2.1: `data.brown` `#8B5A2B` added, owner Hand (dealer collects); after it no `data.*` colour is free.** Prior, v5.33 (2026-09-19): **§8: the Load plan cards (`components/floor/load-plan.tsx`) added, behaviour in `CLAUDE_FLOOR.md §2.2`.** Prior, v5.32 (2026-09-19): **§8: the Floor route cards (`components/floor/route-cards.tsx`) added, one line, behaviour in `CLAUDE_FLOOR.md §2.1`.** Prior, v5.31 (2026-09-19): **canon sweep C1: the file no longer says teal is the brand.** §2 is now the Orbit token system from `tailwind.config.ts` (`data.teal` = IGT only) plus `OrbitWordmark`; ~30 sections re-coloured against code; §57 Tags, §63 Access (39 keys) and the header roster recounted; §64 admin shell added; the nested `@page mo-landscape` recorded as a defect. Full list: the v5.31 change log above. Prior, v5.30 (2026-09-17): **§59.9 created: one violet per mobile screen.** A screen's budget is its title (§59.8's named brand element) plus one commit; selection moves to `data.slate` #475569 (now spoken for), status to `ok`, counts to ink, nav to ink-900 + a brand-600 underline, text actions to brand-700. Two named exceptions: a sheet's commit takes over from the screen's, and read-only/list screens have no commit. MRN's green End unloading recorded as a standing question. §59.3 and §62 updated to match. Prior, v5.29 (2026-09-09): **§59.8 extended to DETAIL and sub-screen headers.** The v5.28 pass reached the list screens through `ModuleMobileHeader` and missed every screen carrying a hand-rolled header, so opening a bill from Picking took you from a pale masthead to a filled brand-600 band — one flow, two headers. Seven more headers now take the same ground: the Picking bill detail, the My Picks bill detail, CI new-return, CI submitted detail, the MRN detail, and both Trip Report mobile headers. Title `brand-600` at unchanged size and weight, second line `ink-500`, back button white with an `ink-600` chevron and an `ink-100` border, white action chips given the same border. `/trips` gained the status-bar override alongside them. 🔴 Recorded so it is not flattened later: **the duplicate-SO branch keeps its red** — both picking detail headers swap the whole band to `#dc2626` when `hasDuplicateSo` and flip title, subtitle and back button back to white, and the pale ground is the ELSE arm of that condition, never a replacement for the warning. Prior, v5.28 (2026-09-09): §59.8 created — the pale masthead replaces the filled band on `/po` and across `ModuleMobileHeader`'s seven consumers, with the brand.600-over-brand.800 ruling, the white-avatar exception and the status-bar coupling. Prior, v5.27: §10.1, avatars are identity not emphasis. Prior, v5.26: the login panel's ramp dialled back. Prior, v5.25: the rings removed from the login panel.*
+*UI v5.40 · OrbitOMS · updated 2026-10-24 · **Add invoices + invoice pairs (canon B2): §2.1 gains the `pair` token (#818CF8, Floor's pair / split bar only — not brand, because violet means selected there) and the missing `direct` token; §1 / §2.1 amber's "somewhere else" meaning; §27 the pair / split row drawing standard; §13 Floor's centred dialogs; §3's red-Urgent list recounted (11 in 9 files).** Prior, v5.39 (2026-10-16) · **§2.1: `data.plum` `#86198F` added, owner ODB tag (orders.isObdImport; visible label renamed OBD → ODB the same day) — SOLID only, since a pale plum pill is CHALLAN's lavender (ΔE 1.5 ground); `#BE185D` recorded as the hardcoded tint/BASE pink, not free.** Prior, v5.38 (2026-10-09) · §56: the Trip module gains NTS Trips (same panel). Prior, v5.37 (2026-10-04) · §56: the Reports popup's Trip module lists Trip Detail, Freight Report and Trip Detail — Old Format. Prior, v5.36 (2026-10-03) · No Schema stamp by design (see above) — **§6: `/freight-trips` is the SECOND named `<UniversalHeader />` exception** (a Billing-style search box, top right, copied into `components/freight-trips/search-bar.tsx`; the title lives in the rail); its row added to the per-board table. Prior, v5.35 (2026-09-24) — **§2.1: `data.blue` is the Local delivery type ONLY; CI is SOLID `ink-900` everywhere in billing** (the Telephonic CI tag moved off blue, `components/billing/billing-telephonic-tab.tsx`). Prior, v5.34 (2026-09-24): **§2.1: `data.brown` `#8B5A2B` added, owner Hand (dealer collects); after it no `data.*` colour is free.** Prior, v5.33 (2026-09-19): **§8: the Load plan cards (`components/floor/load-plan.tsx`) added, behaviour in `CLAUDE_FLOOR.md §2.2`.** Prior, v5.32 (2026-09-19): **§8: the Floor route cards (`components/floor/route-cards.tsx`) added, one line, behaviour in `CLAUDE_FLOOR.md §2.1`.** Prior, v5.31 (2026-09-19): **canon sweep C1: the file no longer says teal is the brand.** §2 is now the Orbit token system from `tailwind.config.ts` (`data.teal` = IGT only) plus `OrbitWordmark`; ~30 sections re-coloured against code; §57 Tags, §63 Access (39 keys) and the header roster recounted; §64 admin shell added; the nested `@page mo-landscape` recorded as a defect. Full list: the v5.31 change log above. Prior, v5.30 (2026-09-17): **§59.9 created: one violet per mobile screen.** A screen's budget is its title (§59.8's named brand element) plus one commit; selection moves to `data.slate` #475569 (now spoken for), status to `ok`, counts to ink, nav to ink-900 + a brand-600 underline, text actions to brand-700. Two named exceptions: a sheet's commit takes over from the screen's, and read-only/list screens have no commit. MRN's green End unloading recorded as a standing question. §59.3 and §62 updated to match. Prior, v5.29 (2026-09-09): **§59.8 extended to DETAIL and sub-screen headers.** The v5.28 pass reached the list screens through `ModuleMobileHeader` and missed every screen carrying a hand-rolled header, so opening a bill from Picking took you from a pale masthead to a filled brand-600 band — one flow, two headers. Seven more headers now take the same ground: the Picking bill detail, the My Picks bill detail, CI new-return, CI submitted detail, the MRN detail, and both Trip Report mobile headers. Title `brand-600` at unchanged size and weight, second line `ink-500`, back button white with an `ink-600` chevron and an `ink-100` border, white action chips given the same border. `/trips` gained the status-bar override alongside them. 🔴 Recorded so it is not flattened later: **the duplicate-SO branch keeps its red** — both picking detail headers swap the whole band to `#dc2626` when `hasDuplicateSo` and flip title, subtitle and back button back to white, and the pale ground is the ELSE arm of that condition, never a replacement for the warning. Prior, v5.28 (2026-09-09): §59.8 created — the pale masthead replaces the filled band on `/po` and across `ModuleMobileHeader`'s seven consumers, with the brand.600-over-brand.800 ruling, the white-avatar exception and the status-bar coupling. Prior, v5.27: §10.1, avatars are identity not emphasis. Prior, v5.26: the login panel's ramp dialled back. Prior, v5.25: the rings removed from the login panel.*
