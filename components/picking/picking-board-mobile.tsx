@@ -175,22 +175,16 @@ const ASSIGN_GROUP_COLOR: Record<AssignGroup, string> = {
   crossIgt: "bg-data-teal",
 };
 
-// Level 2's chips group by route or by bay. Narrowed, never cast (§5.1).
-type ChipMode = "route" | "bay";
-const CHIP_MODE_KEYS: readonly ChipMode[] = ["route", "bay"];
-function isChipMode(key: string): key is ChipMode {
-  return (CHIP_MODE_KEYS as readonly string[]).includes(key);
+// Level 2's chips are ROUTES only (owner, 2026-10-24 — a Route | Bay switch
+// was tried and removed). The "No route" chip is a sentinel, not the label, so
+// a real route that happens to be called "No Route" can never merge with
+// route-less bills.
+const NO_ROUTE_KEY = "__none__";
+function chipKeyOf(row: PickingQueueRow): string {
+  return row.route ?? NO_ROUTE_KEY;
 }
-// The "No route" / "No bay" chip. A sentinel, not the label, so a real route
-// that happens to be called "No Route" can never merge with route-less bills.
-const NO_CHIP_KEY = "__none__";
-function chipKeyOf(row: PickingQueueRow, mode: ChipMode): string {
-  if (mode === "route") return row.route ?? NO_CHIP_KEY;
-  return row.bayNumber === null ? NO_CHIP_KEY : String(row.bayNumber);
-}
-function chipLabel(key: string, mode: ChipMode): string {
-  if (key === NO_CHIP_KEY) return mode === "route" ? "No route" : "No bay";
-  return mode === "route" ? key : `Bay ${key}`;
+function chipLabel(key: string): string {
+  return key === NO_ROUTE_KEY ? "No route" : key;
 }
 
 // Detail-interactions Build A (2026-07-19) — which of the four already-
@@ -1617,12 +1611,11 @@ export function PickingBoardMobile(): React.JSX.Element {
   const [searching, setSearching] = useState(false);
   const [query, setQuery] = useState("");
   // ── Assign › Bills (2026-10-24) ───────────────────────────────────────────
-  // The delivery-type card that is open (null = level 1, the three cards), what
-  // its chips group by, and the chip picked (null = "All"). Plain state, nothing
-  // saved: every board open starts on level 1, Route mode, All. These replace
-  // the type pill, the route dropdown and the ODB toggle that lived here.
+  // The delivery-type card that is open (null = level 1, the three cards) and
+  // the route chip picked (null = "All"). Plain state, nothing saved: every
+  // board open starts on level 1, All. These replace the type pill, the route
+  // dropdown and the ODB toggle that lived here.
   const [openGroup, setOpenGroup] = useState<AssignGroup | null>(null);
-  const [chipMode, setChipMode] = useState<ChipMode>("route");
   const [activeChip, setActiveChip] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<number>>(new Set());
 
@@ -2190,8 +2183,8 @@ export function PickingBoardMobile(): React.JSX.Element {
     () => (openGroup === null ? [] : waitingRows.filter((r) => assignGroupOf(r) === openGroup)),
     [waitingRows, openGroup],
   );
-  // One chip per route (or bay) present in the open card, with counts. Routes
-  // A→Z, bays low→high, the "No route" / "No bay" chip last.
+  // One chip per route present in the open card, with counts. A→Z, the
+  // "No route" chip last.
   //
   // ⚠ A PICKED CHIP NEVER VANISHES UNDER A THUMB. If a background refresh takes
   // its last bill, it stays on the strip at 0 rather than disappearing and
@@ -2200,16 +2193,15 @@ export function PickingBoardMobile(): React.JSX.Element {
   const chipOptions: { key: string; label: string; count: number }[] = useMemo(() => {
     const counts = new Map<string, number>();
     for (const r of openGroupRows) {
-      const k = chipKeyOf(r, chipMode);
+      const k = chipKeyOf(r);
       counts.set(k, (counts.get(k) ?? 0) + 1);
     }
     if (activeChip !== null && !counts.has(activeChip)) counts.set(activeChip, 0);
-    const keys = Array.from(counts.keys()).filter((k) => k !== NO_CHIP_KEY);
-    if (chipMode === "route") keys.sort((a, b) => a.localeCompare(b, "en", { sensitivity: "base" }));
-    else keys.sort((a, b) => Number(a) - Number(b));
-    if (counts.has(NO_CHIP_KEY)) keys.push(NO_CHIP_KEY);
-    return keys.map((k) => ({ key: k, label: chipLabel(k, chipMode), count: counts.get(k) ?? 0 }));
-  }, [openGroupRows, chipMode, activeChip]);
+    const keys = Array.from(counts.keys()).filter((k) => k !== NO_ROUTE_KEY);
+    keys.sort((a, b) => a.localeCompare(b, "en", { sensitivity: "base" }));
+    if (counts.has(NO_ROUTE_KEY)) keys.push(NO_ROUTE_KEY);
+    return keys.map((k) => ({ key: k, label: chipLabel(k), count: counts.get(k) ?? 0 }));
+  }, [openGroupRows, activeChip]);
 
   const q = query.trim().toLowerCase();
   // The Bills list: the open card, then its chip, then the search. With NO card
@@ -2221,12 +2213,12 @@ export function PickingBoardMobile(): React.JSX.Element {
     return waitingRows.filter((r) => {
       if (openGroup !== null) {
         if (assignGroupOf(r) !== openGroup) return false;
-        if (activeChip !== null && chipKeyOf(r, chipMode) !== activeChip) return false;
+        if (activeChip !== null && chipKeyOf(r) !== activeChip) return false;
       }
       if (q && !matchesPickingSearch(r, q)) return false;
       return true;
     });
-  }, [waitingRows, openGroup, activeChip, chipMode, q]);
+  }, [waitingRows, openGroup, activeChip, q]);
   // Level 2, or a search from level 1, shows bills; otherwise the three cards.
   const showBillList = openGroup !== null || q !== "";
 
@@ -2594,8 +2586,8 @@ export function PickingBoardMobile(): React.JSX.Element {
   // closeGroupLevel is the REAL close, run only from the popstate handler (the
   // header ‹ calls history.back()), so Android back / iOS swipe return to the
   // three cards instead of leaving /picking. Selection is scoped to the card,
-  // so it is cleared both ways; the chip resets per card (routes differ), the
-  // Route | Bay mode is kept. closeGroupLevel touches only setters and refs —
+  // so it is cleared both ways; the chip resets per card (routes differ).
+  // closeGroupLevel touches only setters and refs —
   // the popstate listener registers once and must not close over render state.
   function openGroupLevel(group: AssignGroup): void {
     listScrollTopRef.current = scrollRef.current?.scrollTop ?? 0;
@@ -3635,7 +3627,7 @@ export function PickingBoardMobile(): React.JSX.Element {
 
       {/* Filter row (swaps for search when active) — shared by both tabs.
           Assign › Bills: the Bills | Trips switch + tinting strip (level 1)
-          or the open card's header, Route | Bay switch and chips (level 2).
+          or the open card's header and route chips (level 2).
           Picking / Done: type pills (own state) + their own controls and
           summary strip (FIX 3/4). */}
       <div className="bg-white border-b border-gray-200 px-4 pt-2.5">
@@ -3699,7 +3691,7 @@ export function PickingBoardMobile(): React.JSX.Element {
           </>
         ) : activeTab === "assign" && openGroup !== null ? (
           // ── BILLS LEVEL 2 (2026-10-24) — one delivery-type card open: its own
-          // header, the Route | Bay switch and the round chips. No Bills | Trips
+          // header, then the round route chips. No Bills | Trips
           // switch here (the trip screen's hide-at-level-2 rule) and no tinting
           // strip — that stays on the home.
           <div className="pb-2.5">
@@ -3723,36 +3715,10 @@ export function PickingBoardMobile(): React.JSX.Element {
                 </div>
               </div>
             </div>
-            {/* Route | Bay — what the chips below group by. Full width, the
-                Bills | Trips switch's own classes (navigation: ink on grey,
-                never violet). Switching drops the chip pick: a route name means
-                nothing as a bay. */}
-            <div className="flex rounded-[10px] bg-gray-100 p-[3px] mt-2" role="tablist" aria-label="Group chips by">
-              {CHIP_MODE_KEYS.map((key) => (
-                <button
-                  key={key}
-                  type="button"
-                  role="tab"
-                  aria-selected={chipMode === key}
-                  onClick={() => {
-                    if (!isChipMode(key) || key === chipMode) return;
-                    setChipMode(key);
-                    setActiveChip(null);
-                  }}
-                  className={
-                    "flex-1 text-center text-[12.5px] py-1.5 rounded-[8px] " +
-                    (chipMode === key
-                      ? "bg-white text-gray-900 font-semibold shadow-[0_1px_2px_rgba(0,0,0,0.08)]"
-                      : "text-gray-500 font-medium")
-                  }
-                >
-                  {key === "route" ? "Route" : "Bay"}
-                </button>
-              ))}
-            </div>
-            {/* The chips — "All" first, then one per route (or bay), scrolling
-                sideways. Same round look as TypeFilterPills. */}
-            <div className="flex items-center gap-1.5 overflow-x-auto mt-2.5 -mx-4 px-4 [scrollbar-width:none]">
+            {/* The route chips — "All" first, then one per route, scrolling
+                sideways. The round TypeFilterPills look at a bigger size
+                (~40px tall, 15px), using the room the Route | Bay switch left. */}
+            <div className="flex items-center gap-2 overflow-x-auto mt-2.5 -mx-4 px-4 [scrollbar-width:none]">
               {[{ key: null, label: "All", count: groupStats[openGroup].bills }, ...chipOptions].map((c) => (
                 <button
                   key={c.key ?? "__all__"}
@@ -3762,7 +3728,7 @@ export function PickingBoardMobile(): React.JSX.Element {
                     setSelected(new Set());
                   }}
                   className={
-                    "shrink-0 text-[12.5px] font-medium px-3 py-1.5 rounded-full border whitespace-nowrap " +
+                    "shrink-0 h-10 text-[15px] font-medium px-4 rounded-full border whitespace-nowrap " +
                     (activeChip === c.key
                       ? "bg-gray-900 border-gray-900 text-white font-semibold"
                       : "bg-white border-gray-200 text-gray-700")
