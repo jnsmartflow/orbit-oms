@@ -29,7 +29,7 @@ export const REPORT_CATALOG: readonly ReportCatalogItem[] = [
   // Same rows, the old NTS 26-column layout. Same tick — it is the same report
   // in another shape, not a new permission.
   { id: "trip-detail-old", label: "Trip Detail — Old Format", pageKey: "reports_trip_detail", module: "Trip" },
-  // One row per Nagadhiraj Floor trip, Smart Flow's Tempo Report layout
+  // One row per Nagadhiraj + JNL (ids 4, 32) Floor trip, Smart Flow's Tempo Report layout
   // (2026-10-09). Same tick (owner).
   { id: "nts-trips", label: "NTS Trips", pageKey: "reports_trip_detail", module: "Trip" },
   { id: "tint-summary", label: "Tint Summary", pageKey: "reports_tint_summary", module: "Tint" },

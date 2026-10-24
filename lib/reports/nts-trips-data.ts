@@ -1,7 +1,7 @@
 // lib/reports/nts-trips-data.ts
 //
-// The rows behind the NTS TRIPS report (2026-10-09, Smart Flow) — Nagadhiraj's
-// trip-wise summary, the old NTS "Tempo Report". ONE row per Floor trip.
+// The rows behind the NTS TRIPS report (2026-10-09, Smart Flow) — Nagadhiraj +
+// JNL's (ids 4, 32) trip-wise summary, the old NTS "Tempo Report". ONE row per Floor trip.
 // Read by app/api/reports/nts-trips/route.ts and nothing else.
 //
 // 🔴 READ-ONLY. SELECTs only, sequential awaits, never prisma.$transaction
@@ -10,8 +10,8 @@
 //
 // ── WHICH TRIPS (owner, 2026-10-09) ──────────────────────────────────────────
 //   Orbit FLOOR trips only (`trips`) — never freight_trips, never trip_report.
-//   trips.transporterId = 4, Nagadhiraj (verified 2026-10-09 as the only
-//   transporter_master row of that name). EVERY such trip that is not
+//   trips.transporterId in (4, 32) — Nagadhiraj + JNL (owner, 2026-10-24; ids
+//   verified live that day). EVERY such trip that is not
 //   cancelled — including trips with zero bills, and typed plates such as
 //   "HAND", "CI" or "TESTTRIP", printed exactly as typed (owner: no exclusions).
 //   Period: trips.createdAt as an IST date (NOT manualDispatchAt — owner).
@@ -52,9 +52,9 @@ import {
   loadSnapshots,
 } from "@/lib/reports/bill-facts";
 
-/** transporter_master.id of Nagadhiraj — the transporter this report is for
- *  (owner, 2026-10-09; the only row of that name, verified live that day). */
-export const NTS_TRANSPORTER_ID = 4;
+/** transporter_master ids this report is for — Nagadhiraj + JNL (ids 4, 32;
+ *  owner, 2026-10-24). */
+export const NTS_TRANSPORTER_IDS = [4, 32] as const; // 4 Nagadhiraj, 32 JNL. Ids verified live 2026-10-24
 
 /** One trip, already resolved to what the sheet prints. */
 export interface NtsTripRow {
@@ -82,6 +82,8 @@ export interface NtsTripRow {
   diesel: number;
   /** trips.note (the drawer's "Reason / note"), line breaks → space; "" when empty. */
   tripNote: string;
+  /** transporter_master.name exactly as stored ("Nagadhiraj", "JNL"). */
+  transporterName: string | null;
 }
 
 export interface NtsTripsParams {
@@ -112,10 +114,10 @@ export async function getNtsTripsRows(params: NtsTripsParams): Promise<NtsTripRo
   const winStart = new Date(fromDate.getTime() - IST_MS);
   const winEnd = new Date(toDate.getTime() + DAY_MS - IST_MS);
 
-  // ── 1. Nagadhiraj's trips created in the period ─────────────────────────
+  // ── 1. Nagadhiraj + JNL's (ids 4, 32) trips created in the period ─────────────────────────
   const trips = await prisma.trips.findMany({
     where: {
-      transporterId: NTS_TRANSPORTER_ID,
+      transporterId: { in: [...NTS_TRANSPORTER_IDS] },
       status: { not: TRIP_CANCELLED },
       createdAt: { gte: winStart, lt: winEnd },
       ...(params.deliveryTypeId ? { deliveryTypeId: params.deliveryTypeId } : {}),
@@ -131,6 +133,7 @@ export async function getNtsTripsRows(params: NtsTripsParams): Promise<NtsTripRo
       note: true,
       deliveryType: { select: { id: true, name: true } },
       vehicle: { select: { vehicleNo: true, category: true } },
+      transporter: { select: { name: true } },
     },
     orderBy: [{ createdAt: "asc" }, { tripNumber: "asc" }],
   });
@@ -306,6 +309,7 @@ export async function getNtsTripsRows(params: NtsTripsParams): Promise<NtsTripRo
       remarks: acc.remarks.join(", "),
       diesel: t.dieselAmount === null ? 0 : Math.round(t.dieselAmount.toNumber()),
       tripNote: (t.note ?? "").replace(/\s*[\r\n]+\s*/g, " ").trim(),
+      transporterName: blank(t.transporter?.name),
     };
   });
 }

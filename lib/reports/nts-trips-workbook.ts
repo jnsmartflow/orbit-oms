@@ -6,7 +6,7 @@
 // 🔴 SERVER-ONLY (xlsx). Same library as the other trip workbooks.
 //
 // 🔴 LAYOUT IS COPIED, NOT DESIGNED: headers on row 1, data from row 2 (the
-// Tempo Report's 9 empty top rows dropped — owner, 2026-10-09), one sheet "NTS Trips", 16 columns. Unlike the Freight Report,
+// Tempo Report's 9 empty top rows dropped — owner, 2026-10-09), one sheet "NTS Trips", 17 columns. Unlike the Freight Report,
 // cells are REAL values: Month / Dispatch Date / Dispatch Time are Excel dates
 // and times with a number format, Total Dealer / Ltr / Total KG / Diesel Amt
 // are numbers.
@@ -15,7 +15,8 @@ import * as XLSX from "xlsx";
 import type { NtsTripRow } from "./nts-trips-data";
 
 /** Headers character for character from the Tempo Report, plus the owner's
- *  Remarks, Diesel Amt and Trip Note (2026-10-09). Widths per the owner's spec. */
+ *  Remarks, Diesel Amt and Trip Note (2026-10-09) and Transporter (2026-10-24,
+ *  last). Widths per the owner's spec. */
 const COLUMNS: { header: string; width: number }[] = [
   { header: "Trip No", width: 12 },
   { header: "Month", width: 10.1 },
@@ -33,6 +34,7 @@ const COLUMNS: { header: string; width: number }[] = [
   { header: "Remarks", width: 40 },
   { header: "Diesel Amt", width: 10 },
   { header: "Trip Note", width: 40 },
+  { header: "Transporter", width: 14 },
 ];
 
 const SHEET_NAME = "NTS Trips";
@@ -86,6 +88,7 @@ export function buildNtsTripsWorkbook(rows: readonly NtsTripRow[]): ArrayBuffer 
     put(r, 13, text(row.remarks));
     put(r, 14, num(row.diesel, "0"));
     put(r, 15, text(row.tripNote));
+    put(r, 16, text(row.transporterName));
   });
 
   ws["!ref"] = XLSX.utils.encode_range({

@@ -263,7 +263,7 @@ export function ReportsDialog({
                   deliveryTypes={options.deliveryTypes}
                   endpoint="/api/reports/nts-trips"
                   title="NTS Trips"
-                  description="One row per Nagadhiraj trip — Tempo Report layout"
+                  description="One row per Nagadhiraj + JNL trip — Tempo Report layout"
                   filePrefix="NTSTrips"
                 />
               )}
