@@ -13,6 +13,9 @@
 //   · app/api/floor/trips/[id]/cancel/route.ts  detach every row on that trip
 //   · lib/trips/ship-to-on-trip.ts              ship-to change → the new
 //                                                 shop's stop, same trip
+//   · lib/tint/manual-pull.ts                   a bill pulled into tinting
+//                                                 comes off every trip (and its
+//                                                 revert, off any it joined since)
 // call setRowsTrip. A new writer goes through here too.
 //
 // 🔴 WRITE ORDER, PER OBD — rows first, the OBD last:
@@ -46,6 +49,7 @@
 //
 // Sequential awaits, never prisma.$transaction (CORE §3).
 
+import type { Prisma } from "@prisma/client";
 import { prisma } from "../prisma";
 import { deriveObdTripDropId, derivePartlyOnTrip } from "./trip-read";
 
@@ -151,8 +155,12 @@ export async function setRowsTrip(
   rowIds: readonly number[] | "all",
   tripDropId: number | null,
   opts: RowsTripOpts = {},
-  /** Written in step 3's one orders.update beside the derived values. */
-  orderData?: RowsTripOrderData,
+  /** Written in step 3's one orders.update beside the derived values. A
+   *  ship-to change (RowsTripOrderData), or — since 2026-10-24 — the manual
+   *  tint pull's whole bill write (lib/tint/manual-pull.ts buildPullData), so a
+   *  bill pulled off a trip into tinting is still ONE orders.update. The
+   *  derived tripDropId / partlyOnTrip are spread last and always win. */
+  orderData?: RowsTripOrderData | Prisma.ordersUncheckedUpdateInput,
 ): Promise<{ rowIdsUpdated: number[]; derived: number | null; partlyOnTrip: boolean }> {
   // 1.
   const rows = await prisma.order_invoices.findMany({

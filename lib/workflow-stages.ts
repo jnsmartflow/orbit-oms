@@ -96,6 +96,36 @@ export const PICK_DONE = "pick_done";
 export const PICK_CHECKED = "pick_checked";
 
 /**
+ * The stages a bill may be pulled into tinting from ONLY BY CANCELLING ITS PICK
+ * (Add to Tint server build, 2026-10-24 — owner design of the same day).
+ *
+ * A picker has the bill (or had it — picked, or checked), so the pull takes it
+ * off him: his pick_assignments row is deleted and he is pushed "Bill moved to
+ * tinting" (lib/tint/manual-pull.ts). The modal must say so and send
+ * `confirmCancelPick: true`; a pull without it is a 409 PICK_CONFIRM_REQUIRED,
+ * which is also the guard against a modal opened before a picker took the bill.
+ *
+ * Everything in neither list is refused: dispatched, cancelled, the legacy
+ * `closed`, challan_linked, and every tint stage. Declared beside
+ * MANUAL_TINT_PULLABLE_STAGES so the verdict (manualTintStageVerdict) reads
+ * both from one file.
+ */
+export const MANUAL_TINT_PICK_CANCEL_STAGES: string[] = [PICK_ASSIGNED, PICK_DONE, PICK_CHECKED];
+
+/**
+ * What a manual tint pull may do with a bill at this stage:
+ *   "pull"        — nobody has picked it (MANUAL_TINT_PULLABLE_STAGES)
+ *   "cancel_pick" — allowed, but the pick is cancelled (MANUAL_TINT_PICK_CANCEL_STAGES)
+ *   "refused"     — everything else, including legacy `closed`
+ * Fails closed: an unknown stage is refused.
+ */
+export function manualTintStageVerdict(stage: string): "pull" | "cancel_pick" | "refused" {
+  if (MANUAL_TINT_PULLABLE_STAGES.includes(stage)) return "pull";
+  if (MANUAL_TINT_PICK_CANCEL_STAGES.includes(stage)) return "cancel_pick";
+  return "refused";
+}
+
+/**
  * The terminal stage — the goods have left the depot (rank 100).
  *
  * 🔴 ALMOST NOTHING IN THE APP WRITES IT. Two writers exist: lib/floor/dispatch.ts

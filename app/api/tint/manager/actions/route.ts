@@ -105,7 +105,7 @@ export async function POST(req: Request): Promise<NextResponse> {
     try {
       const order = await prisma.orders.findUnique({
         where: { id: orderId },
-        select: { ...BILL_ACTION_ORDER_SELECT, orderType: true, smu: true },
+        select: { ...BILL_ACTION_ORDER_SELECT, orderType: true, smu: true, manualTintEntry: true },
       });
       const notTint =
         action === "sample" || action === "unsample" ? tintBillRefusal(order) : tintManagerBillRefusal(order, action);
@@ -117,7 +117,7 @@ export async function POST(req: Request): Promise<NextResponse> {
       // hold rule applies — refused once a picker has it (owner §I-1). Decided by
       // Picking's colour rule (getColourWorkByOrder), only on the stages it matters.
       if (action === "hold" && order.orderType === "tint" && (order.workflowStage === "pick_assigned" || order.workflowStage === "pick_done")) {
-        const colour = await getColourWorkByOrder([{ orderId, smu: order.smu, orderType: order.orderType }]);
+        const colour = await getColourWorkByOrder([{ orderId, smu: order.smu, orderType: order.orderType, manualTintEntry: order.manualTintEntry }]);
         if (colour.get(orderId) === "base") {
           failed.push({ orderId, error: BASE_PICKER_HOLD_REFUSAL });
           continue;

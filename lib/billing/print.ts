@@ -304,6 +304,8 @@ export async function loadPrintTrips(tripIds: number[]): Promise<PrintTrip[]> {
             workflowStage: true,
             orderType: true,
             smu: true,
+            // The TINT pill on a hand-pulled bill of any division (colour-work-query.ts).
+            manualTintEntry: true,
             directLoadedAt: true,
             shipToCustomerName: true,
             materialType: true,
@@ -398,7 +400,7 @@ export async function loadPrintTrips(tripIds: number[]): Promise<PrintTrip[]> {
   // no phase (lib/floor/queries.ts getFloorBoard). Zero queries unless a
   // project-division tint bill is loaded (lib/picking/colour-work-query.ts).
   const colourWorkByOrder = await getColourWorkByOrder(
-    orders.map((o) => ({ orderId: o.id, smu: o.smu, orderType: o.orderType })),
+    orders.map((o) => ({ orderId: o.id, smu: o.smu, orderType: o.orderType, manualTintEntry: o.manualTintEntry })),
   );
 
   const userIds = Array.from(

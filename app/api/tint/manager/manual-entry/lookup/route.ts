@@ -1,168 +1,82 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { checkAnyPermission } from "@/lib/permissions";
-import { prisma } from "@/lib/prisma";
-import { CHALLAN_LINKED, MANUAL_TINT_PULLABLE_STAGES } from "@/lib/workflow-stages";
+import { lookupManualPull } from "@/lib/tint/manual-pull";
 
 export const dynamic = "force-dynamic";
 
-type ErrorCode =
-  | "BAD_REQUEST"
-  | "NOT_FOUND"
-  | "ALREADY_TINT"
-  | "PAST_TINT"
-  | "TOO_OLD"
-  | "INVALID_SMU"
-  | "CHALLAN_ORDER";
-
-const ELIGIBLE_SMUS = ["Retail Offtake", "Decorative Projects"];
-const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
-
-function err(code: ErrorCode, message: string, status: number): NextResponse {
-  return NextResponse.json({ ok: false, errorCode: code, message }, { status });
-}
-
+/**
+ * GET /api/tint/manager/manual-entry/lookup?obd=<OBD or invoice>
+ *
+ * "+ Add to Tint" step 1 — find the bill(s) and judge each (2026-10-24, the Add
+ * to Tint server build). The reads and the rules are lib/tint/manual-pull.ts +
+ * manual-pull-rules.ts; this route is the gate and the status codes.
+ *
+ * Returns `{ ok: true, term, matches: PullMatch[] }` — ALWAYS A LIST: one
+ * invoice can be on two OBDs, and every bill found carries its own verdict
+ * (ok / confirm / refused) and reason. `{ ok: false, errorCode, message }` only
+ * when nothing could be looked up: BAD_REQUEST, NOT_FOUND, UNAUTHORIZED,
+ * FORBIDDEN.
+ *
+ * ⚠ TRANSITIONAL — `order`. The modal still reads the old single-bill shape
+ * until its rebuild (step 7): when the term found exactly ONE bill and it is
+ * pullable, that bill is ALSO returned as `order`, and a single refused bill
+ * also answers in the old error shape, so today's modal keeps working. Step 7
+ * reads `matches` and removes both.
+ */
 export async function GET(req: NextRequest): Promise<NextResponse> {
   const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!session?.user) {
+    return NextResponse.json({ ok: false, errorCode: "UNAUTHORIZED", message: "Unauthorized" }, { status: 401 });
+  }
 
   // Per-user tick, not a job title (2026-09-06).
   //
   // 🔴 THIS GATE MUST NOT BE NARROWER THAN THE POST IT FEEDS. The manual-entry
-  // modal calls THIS route first (manual-tint-entry-modal.tsx:150) and only then
-  // POSTs to ../manual-entry (:188). When 64f897a9 widened the POST to
-  // tint_manager/canEdit it left this GET on requireRole([TINT_MANAGER, ADMIN]),
-  // so Prakash (operation_manager) held the write and was refused the read —
-  // and the failure was invisible: requireRole redirects 307, fetch follows it
-  // to an HTML page, res.json() throws, and the modal's own catch at :168
-  // swallowed it into an empty box. canView rather than canEdit because this
-  // route only reads; the holder sets are identical today and the POST beside it
-  // is the thing that decides whether an entry may actually be made.
+  // modal calls THIS route first and only then POSTs to ../manual-entry. When
+  // 64f897a9 widened the POST to tint_manager/canEdit it left this GET on
+  // requireRole([TINT_MANAGER, ADMIN]), so Prakash (operation_manager) held the
+  // write and was refused the read — and the failure was invisible: requireRole
+  // redirects 307, fetch follows it to an HTML page, res.json() throws, and the
+  // modal's own catch swallowed it into an empty box. canView rather than
+  // canEdit because this route only reads; the holder sets are identical today
+  // and the POST beside it is the thing that decides whether an entry may
+  // actually be made. Both refusals are JSON with an errorCode (2026-10-24), so
+  // the modal can say which.
   const roles = session.user.roles ?? [session.user.role];
   const allowed = await checkAnyPermission(roles, "tint_manager", "canView");
-  if (!allowed) return NextResponse.json({ error: "Permission denied" }, { status: 403 });
-
-  const obdRaw = req.nextUrl.searchParams.get("obd");
-  const obd = (obdRaw ?? "").trim();
-  if (!obd) {
-    return err("BAD_REQUEST", "Missing 'obd' query parameter", 400);
+  if (!allowed) {
+    return NextResponse.json({ ok: false, errorCode: "FORBIDDEN", message: "Permission denied" }, { status: 403 });
   }
 
-  const order = await prisma.orders.findFirst({
-    where: { obdNumber: obd, isRemoved: false },
-    include: {
-      customer: { select: { customerName: true } },
-    },
-  });
-
-  if (!order) {
-    return err("NOT_FOUND", `No order found for OBD ${obd}`, 404);
+  const result = await lookupManualPull(req.nextUrl.searchParams.get("obd") ?? "");
+  if (!result.ok) {
+    return NextResponse.json(result, { status: result.errorCode === "NOT_FOUND" ? 404 : 400 });
   }
 
-  // 🔴 CHALLAN ORDERS ARE NON-TINT IN PHASE 1 (2026-10-06, Challan orders slice 2,
-  // design D5). An ORB order (the challan itself) is refused outright, and so is
-  // a SAP bill already linked to one ('challan_linked' — off every board; the
-  // MANUAL_TINT_PULLABLE_STAGES test below would refuse it too, but as "already
-  // picked", which is the wrong reason). Checked BEFORE the tint-type test so the
-  // operator is told the real reason. The modal maps the code to its message.
-  if (order.isChallanOrder || order.workflowStage === CHALLAN_LINKED) {
-    return err(
-      "CHALLAN_ORDER",
-      order.isChallanOrder
-        ? "Challan orders are non-tint in Phase 1"
-        : "This bill is linked to a challan order and cannot be pulled into tinting",
-      400,
+  // TRANSITIONAL (see the header) — removed with the modal rebuild.
+  const only = result.matches.length === 1 ? result.matches[0] : null;
+  if (only !== null && only.verdict === "refused") {
+    return NextResponse.json(
+      { ...result, ok: false, errorCode: only.refusalCode, message: only.reason },
+      { status: 400 },
     );
   }
-
-  if (order.orderType !== "non_tint") {
-    return err(
-      "ALREADY_TINT",
-      "This OBD is already in the tint workflow",
-      400,
-    );
-  }
-
-  // ── WIDENED 2026-09-11 ─────────────────────────────────────────────────────
-  // 🔴 THIS READ `!== "pending_support"` AND WOULD HAVE BROKEN THE WHOLE SCREEN.
-  // From today a non-tint bill is released to `pending_picking` the moment it is
-  // imported (the no-mail-order fallback in app/api/import/obd/route.ts), so
-  // almost NO bill is at `pending_support` any more and manual tint entry would
-  // have found nothing to pull in.
-  //
-  // ⚠ THE REAL QUESTION THIS GUARD ASKS IS "HAS A PICKER TOUCHED IT YET", and
-  // `pending_support` was only ever a proxy for that. Both stages below mean
-  // nobody has: `pending_support` is the desk, `pending_picking` is on the floor
-  // and waiting. Every later stage — pick_assigned, pick_done, pick_checked,
-  // dispatched — means the material is off the shelf, and cancelled/closed mean
-  // the bill is finished. All of those are still refused, which is the safety
-  // this guard was actually providing.
-  //
-  // ⚠ STILL SAFE because the two checks above it do the heavy lifting: the bill
-  // must exist and must be `orderType: "non_tint"`, so a bill already in the
-  // tint workflow can never reach here whatever its stage.
-  if (!MANUAL_TINT_PULLABLE_STAGES.includes(order.workflowStage)) {
-    return err(
-      "PAST_TINT",
-      "This OBD has already been picked and cannot be pulled into tinting",
-      400,
-    );
-  }
-
-  if (!order.orderDateTime) {
-    return err(
-      "TOO_OLD",
-      "This OBD has no order date — cannot determine eligibility",
-      400,
-    );
-  }
-
-  const ageMs = Date.now() - order.orderDateTime.getTime();
-  if (ageMs < 0 || ageMs > SEVEN_DAYS_MS) {
-    return err(
-      "TOO_OLD",
-      "This OBD's date is outside the eligible window (must be within the last 7 days)",
-      400,
-    );
-  }
-
-  if (!order.smu || !ELIGIBLE_SMUS.includes(order.smu)) {
-    return err(
-      "INVALID_SMU",
-      "Tinting is only allowed for SMU 'Retail Offtake' or 'Decorative Projects'",
-      400,
-    );
-  }
-
-  const lines = await prisma.import_raw_line_items.findMany({
-    where: {
-      obdNumber:  order.obdNumber,
-      rowStatus:  "valid",
-      lineStatus: "active",
-    },
-    orderBy: { lineId: "asc" },
-    select: {
-      id:                true,
-      lineId:            true,
-      skuCodeRaw:        true,
-      skuDescriptionRaw: true,
-      unitQty:           true,
-      volumeLine:        true,
-      isTinting:         true,
-    },
-  });
-
   return NextResponse.json({
-    ok: true,
-    order: {
-      id:            order.id,
-      obdNumber:     order.obdNumber,
-      customerName:  order.customer?.customerName ?? order.shipToCustomerName ?? null,
-      smu:           order.smu,
-      orderDateTime: order.orderDateTime.toISOString(),
-      workflowStage: order.workflowStage,
-      orderType:     order.orderType as "tint" | "non_tint",
-      lines,
-    },
+    ...result,
+    ...(only !== null
+      ? {
+          order: {
+            id: only.orderId,
+            obdNumber: only.obdNumber,
+            customerName: only.customerName,
+            smu: only.smu,
+            orderDateTime: only.orderDateTime,
+            workflowStage: only.workflowStage,
+            orderType: only.orderType,
+            lines: only.lines,
+          },
+        }
+      : {}),
   });
 }

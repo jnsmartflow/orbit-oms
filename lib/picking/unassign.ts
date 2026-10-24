@@ -9,6 +9,9 @@
 // in the SAME order, never a second spelling of them:
 //   - app/api/picking/unassign/route.ts  — the supervisor's / Floor panel's Unassign
 //   - lib/floor/release.ts               — Release on a held pick_assigned bill
+// and, through takeBillOffPicker (same two writes, same order, the caller's own
+// stage write), lib/tint/manual-pull.ts — a bill pulled into tinting from a
+// picker's hands (2026-10-24).
 // Other paths that delete an assignment (Floor cancel, Floor CI, Picking
 // cancel, pick-delete) set `cancelled`, not `pending_picking`, and are not
 // callers today.
@@ -48,14 +51,39 @@ export async function returnAssignedBillToQueue(
   /** For the console warning only — who called. */
   source = "picking/unassign",
 ): Promise<{ assignmentRowsDeleted: number }> {
-  // (1) FIRST write — revert the stage (plus whatever the caller adds).
-  await prisma.orders.update({
-    where: { id: orderId },
-    data: { ...alsoWrite, workflowStage: SUPPORT_DONE_OUTPUT },
-  });
+  return takeBillOffPicker(
+    orderId,
+    // (1) FIRST write — revert the stage (plus whatever the caller adds).
+    async () => {
+      await prisma.orders.update({
+        where: { id: orderId },
+        data: { ...alsoWrite, workflowStage: SUPPORT_DONE_OUTPUT },
+      });
+    },
+    source,
+  );
+}
 
-  // (2) SECOND write — delete the assignment row. deleteMany (not delete) so a
-  // missing row is NOT an error — log and continue rather than throw.
+/**
+ * The header's ORDER, for a caller whose stage write is not "back to the
+ * queue" (2026-10-24, the manual tint pull — lib/tint/manual-pull.ts, which
+ * sends the bill to the tint room and may write through setRowsTrip).
+ *
+ * (1) `write` — the caller's ONE orders.update, run first and awaited.
+ * (2) the pick_assignments delete. deleteMany (not delete) so a missing row is
+ * NOT an error — log and continue rather than throw.
+ *
+ * returnAssignedBillToQueue above is this with the queue write; its behaviour
+ * did not change when it was moved onto it.
+ */
+export async function takeBillOffPicker(
+  orderId: number,
+  write: () => Promise<void>,
+  /** For the console warning only — who called. */
+  source: string,
+): Promise<{ assignmentRowsDeleted: number }> {
+  await write();
+
   const deleted = await prisma.pick_assignments.deleteMany({ where: { orderId } });
   if (deleted.count === 0) {
     console.warn(`[${source}] No pick_assignments row found for order ${orderId} during unassign.`);

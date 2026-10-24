@@ -6,6 +6,7 @@
 //   • Floor Release        — lib/floor/release.ts (releaseBillsToFloor)
 //   • Floor unhold         — app/api/floor/actions/route.ts ("unhold")
 //   • Picking cancel       — app/api/picking/cancel/route.ts
+//   • Manual tint pull     — lib/tint/manual-pull.ts (lookup + pull, 2026-10-24)
 //   (Floor Restore has refused a live CI since 2026-09-22 with its own read —
 //   app/api/floor/actions/route.ts "restore" — and keeps its own wording.)
 //
@@ -54,6 +55,6 @@ export async function findLiveCi(orderId: number, invoiceRowIds?: readonly numbe
 }
 
 /** "This bill has CI-2026-00112 — it cannot be released here." */
-export function liveCiRefusal(ci: LiveCi, verb: "released" | "cancelled"): string {
+export function liveCiRefusal(ci: LiveCi, verb: "released" | "cancelled" | "pulled into tinting"): string {
   return `This bill has ${ci.ciNumber ?? `CI #${ci.id}`} — it cannot be ${verb} here.`;
 }

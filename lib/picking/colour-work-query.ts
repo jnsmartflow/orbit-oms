@@ -6,9 +6,11 @@ import { isProjectSmu, resolveColourWork, type ColourWork } from "./colour-work"
 
 // ── The batched read behind ColourWork ──────────────────────────────────────
 //
-// 🔴 ONE OWNER, FIVE CALLERS. The picking queue (lib/picking/queue.ts), Floor's
-// board, hold and cancelled feeds (lib/floor/queries.ts) and Floor's detail
-// payload (app/api/floor/order/[orderId]/route.ts) all ask THIS function. The
+// 🔴 ONE OWNER, EVERY CALLER. The picking queue (lib/picking/queue.ts), Floor's
+// board, hold and cancelled feeds (lib/floor/queries.ts), Floor's detail
+// payload (lib/floor/order-detail.ts), Billing's Print (lib/billing/print.ts)
+// and the Tint Manager's hold check (app/api/tint/manager/actions/route.ts)
+// all ask THIS function, and all pass manualTintEntry. The
 // rule itself is one step further out, in ./colour-work.ts, so a caller can
 // neither re-ask it differently nor re-answer it.
 //
@@ -33,10 +35,12 @@ export interface ColourWorkBill {
   smu: string | null;
   orderType: string;
   /** `orders.manualTintEntry` (2026-10-24). A hand-pulled TINT bill carries the
-   *  signal whatever its division (resolveColourWork). Optional: a caller that
-   *  omits it gets the project-division rule exactly as before — today only
-   *  Floor's feeds and detail payload pass it. */
-  manualTintEntry?: boolean;
+   *  signal whatever its division (resolveColourWork). REQUIRED since the Add to
+   *  Tint server build (2026-10-24): it was optional and only Floor passed it,
+   *  so a hand-pulled Deco Retail bill said TINT on Floor and nothing on
+   *  Picking or Billing's Print. Required, every caller is a compile error until
+   *  it passes the column — one answer on every surface. */
+  manualTintEntry: boolean;
 }
 
 /**

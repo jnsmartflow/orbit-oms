@@ -1,5 +1,5 @@
 # CLAUDE_NOTIFICATIONS.md — Push Notifications
-# v1.5 · Schema v27.24 · September 2026 · updated 2026-09-30
+# v1.6 · Schema v27.24 · October 2026 · updated 2026-10-24
 # Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md
 
@@ -43,6 +43,7 @@ from `/floor` buzzes the picker exactly like one from the supervisor board.
 | **Assign a bill** | `app/api/picking/assign/route.ts` (after both writes per bill) | that **picker** (`pickerId`) | `New pick assigned` / `{customer} · {obdNumber}` | not yet on device (§6) |
 | **Mark a pick done** | `app/api/picking/done/route.ts` (after the writes) | **all supervisors** (`getPickingSupervisorUserIds()`) | `Pick completed` / `{picker} finished {customer} · {obdNumber}` | ✅ on device |
 | **Cancel a bill** | `app/api/picking/cancel/route.ts` (after the writes; 00d7da22 / af075572, 2026-08-20) | the **picker holding the bill** (`pickAssignment.pickerId`); skipped when nobody held it | `Bill cancelled` / `{customer} · {obdNumber} — stop picking this bill` | not recorded on device |
+| **Pull a picker's bill into tinting** (2026-10-24) | `lib/tint/manual-pull.ts` `pushPickCancelled` — the Tint Manager's "+ Add to Tint" on a bill at `pick_assigned` / `pick_done` / `pick_checked` (after every write) | the **picker who held it** (`pickAssignment.pickerId`, read before the row is deleted) + **all supervisors** (`getPickingSupervisorUserIds()`), de-duped, minus the actor (`pullPushRecipients`, `lib/tint/manual-pull-rules.ts`); nothing when no picker held it | picker: `Bill moved to tinting` / `{customer} · {obdNumber} — stop picking this bill` · supervisors: `Pick cancelled for tint` / `{picker}'s pick of {customer} · {obdNumber}` · tag `pick-cancelled-{orderId}` (the existing pattern, so `sw.js` needs no change) | not yet on device |
 
 - **Customer** = the effective dealer, same fallback chain in all three bodies:
   `shipToOverrideCustomer?.customerName ?? customer?.customerName ?? shipToCustomerName ?? "(Unmatched)"`
@@ -304,6 +305,10 @@ and its API route calls itself a "THROWAWAY proof" (`app/api/picking/push-test/r
 
 ---
 
+## Change log — v1.6 (2026-10-24, Add to Tint server build)
+
+- §2 triggers table: a row for the manual tint pull's push (`lib/tint/manual-pull.ts`). ⚠ The §2 caller sweep above it ("exactly four callers") predates this and is stale on other callers too (`direct-load`, `lib/billing/pick-delete.ts`, `lib/push/hand.ts`); not re-swept here.
+
 ## Change log — v1.5 (2026-09-30, live feed picking 4b)
 
 - §5: `public/sw.js` posts `{ type: "orbit-push", tag, kind, orderId }` to open windows after a picking notification (assigned / done / cancelled); a Picking page on the change feed re-reads that bill at once. No fetch handler, no caches — landmine 1 unchanged.
@@ -340,4 +345,4 @@ and its API route calls itself a "THROWAWAY proof" (`app/api/picking/push-test/r
 
 ---
 
-*CLAUDE_NOTIFICATIONS.md v1.4 · Schema v27.24 · Push Notifications · OrbitOMS · updated 2026-09-18*
+*CLAUDE_NOTIFICATIONS.md v1.6 · Schema v27.24 · Push Notifications · OrbitOMS · updated 2026-10-24*

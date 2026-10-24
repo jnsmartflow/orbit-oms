@@ -733,7 +733,7 @@ export async function getPickingQueue(
   // already in memory: the findMany uses `include`, which returns every base
   // scalar. Sequential await, never prisma.$transaction (CORE §3).
   const colourWorkByOrder = await getColourWorkByOrder(
-    orders.map((o) => ({ orderId: o.id, smu: o.smu, orderType: o.orderType })),
+    orders.map((o) => ({ orderId: o.id, smu: o.smu, orderType: o.orderType, manualTintEntry: o.manualTintEntry })),
   );
 
   // (A dispatch_slot_master read used to sit here, purely to build the removed

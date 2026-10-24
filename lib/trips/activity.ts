@@ -318,20 +318,31 @@ export async function logTripBills(opts: {
   orderIds: number[];
   obdNumbers: string[];
   movedWith?: { tripId: number; tripNumber: string };
+  /**
+   * WHY the bills left, when it was not a planner's remove (2026-10-24): a
+   * bill pulled into tinting by hand (lib/tint/manual-pull.ts) comes off its
+   * trip from the Tint Manager. Same action (`bills_removed`, no CHECK change);
+   * the summary says it and `detail.reason` carries the key. Remove only.
+   */
+  reason?: "pulled_into_tint";
 }): Promise<void> {
   if (opts.orderIds.length === 0) return; // nothing happened, nothing to say
   const added = opts.direction === "add";
   const moved = opts.movedWith;
+  const pulled = !added && opts.reason === "pulled_into_tint";
   await writeActivity({
     tripId: opts.tripId,
     action: added ? TRIP_BILLS_ADDED : TRIP_BILLS_REMOVED,
     actorId: opts.actorId,
     summary: moved
       ? `${bills(opts.orderIds.length)} ${added ? "moved in from" : "moved to"} ${moved.tripNumber}`
-      : `${bills(opts.orderIds.length)} ${added ? "added to" : "removed from"} the trip`,
+      : pulled
+        ? `${bills(opts.orderIds.length)} pulled into tinting — off the trip`
+        : `${bills(opts.orderIds.length)} ${added ? "added to" : "removed from"} the trip`,
     detail: {
       orderIds: opts.orderIds,
       obdNumbers: opts.obdNumbers,
+      ...(pulled ? { reason: "pulled_into_tint", obd: opts.obdNumbers[0] ?? null } : {}),
       ...(moved
         ? added
           ? { movedFrom: { tripId: moved.tripId, tripNumber: moved.tripNumber } }

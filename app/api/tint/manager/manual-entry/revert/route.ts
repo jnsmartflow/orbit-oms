@@ -2,10 +2,33 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { checkAnyPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
+import { SUPPORT_DONE_OUTPUT } from "@/lib/workflow-stages";
+import { setRowsTrip } from "@/lib/order-invoices/trip-link";
+import { deleteTripDropIfEmpty } from "@/lib/trips/drop";
+import { logTripBills } from "@/lib/trips/activity";
+import { cancelledPickerFromNote } from "@/lib/tint/manual-pull-rules";
 
 export const dynamic = "force-dynamic";
 
+// ── WHERE A REVERTED BILL GOES (2026-10-24, Add to Tint server build) ────────
+// Was: `pending_support` with a slot recomputed from the order time — the desk,
+// which nothing reads any more (every non-tint bill is released on import,
+// CLAUDE_IMPORT.md §2.1). Now:
+//   - `pending_picking` (SUPPORT_DONE_OUTPUT) + dispatchStatus "dispatch" — the
+//     Assign tab, waiting for a picker; or `pending_support` when the bill is
+//     HELD (dispatchStatus "hold"): a revert never releases a held bill, the
+//     same rule as a tint completion (CLAUDE_TINT.md §2).
+//   - the SLOT is left as the pull left it: the legacy columns null, a
+//     hand-set dispatch slot kept, an auto one already cleared.
+//   - OFF ANY TRIP: a tint bill can be put on a trip while it waits; a revert
+//     takes it off (setRowsTrip, the same one write), and an emptied stop goes.
+//   - SAMPLE untouched — it is the bill's own mark, not the pull's.
+//   - The pick a pull cancelled is NOT restored: the response names the picker
+//     (read from the pull's status-log note) so the popup can say so.
+
 type ErrorCode =
+  | "UNAUTHORIZED"
+  | "FORBIDDEN"
   | "BAD_REQUEST"
   | "INVALID_REASON"
   | "REASON_NOTES_REQUIRED"
@@ -29,29 +52,9 @@ function isPositiveInt(n: unknown): n is number {
   return typeof n === "number" && Number.isInteger(n) && n > 0;
 }
 
-// Mirrors resolveSlot from app/api/import/obd/route.ts.
-// Time-based slot assignment, IST. See CLAUDE_CORE.md §9.
-function resolveSlot(
-  emailTime: string | null,
-): { dispatchSlot: string; slotId: number } {
-  if (!emailTime)          return { dispatchSlot: "Night",     slotId: 4 };
-  if (emailTime < "10:30") return { dispatchSlot: "Morning",   slotId: 1 };
-  if (emailTime < "12:30") return { dispatchSlot: "Afternoon", slotId: 2 };
-  if (emailTime < "15:30") return { dispatchSlot: "Evening",   slotId: 3 };
-  return { dispatchSlot: "Night", slotId: 4 };
-}
-
-// Convert UTC Date to IST "HH:MM" string for resolveSlot.
-function istTimeFromDate(d: Date): string {
-  const ist = new Date(d.getTime() + 5.5 * 3600 * 1000);
-  const hh = String(ist.getUTCHours()).padStart(2, "0");
-  const mm = String(ist.getUTCMinutes()).padStart(2, "0");
-  return `${hh}:${mm}`;
-}
-
 export async function POST(req: NextRequest): Promise<NextResponse> {
   const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!session?.user) return err("UNAUTHORIZED", "Unauthorized", 401);
 
   // Per-user tick, not a job title (2026-09-06). The old gate was the NARROW
   // [TINT_MANAGER, ADMIN] — every other manager route also named OPERATIONS and
@@ -60,7 +63,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // taken on gate report section 3 — do not re-narrow it.
   const roles = session.user.roles ?? [session.user.role];
   const allowed = await checkAnyPermission(roles, "tint_manager", "canEdit");
-  if (!allowed) return NextResponse.json({ error: "Permission denied" }, { status: 403 });
+  if (!allowed) return err("FORBIDDEN", "Permission denied", 403);
 
   let body: unknown;
   try {
@@ -111,6 +114,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   const order = await prisma.orders.findFirst({
     where: { id: orderId, isRemoved: false },
+    include: {
+      // The trips the bill joined while it waited (see the header).
+      invoices: { select: { tripDropId: true, tripDrop: { select: { tripId: true } } } },
+      tripDrop: { select: { tripId: true } },
+    },
   });
 
   if (!order) {
@@ -222,28 +230,55 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       );
     }
 
-    // Step D — restore non-tint workflow + slot assignment from orderDateTime
-    const istTime = order.orderDateTime ? istTimeFromDate(order.orderDateTime) : null;
-    const { dispatchSlot, slotId } = resolveSlot(istTime);
+    // Step D — back to the non-tint workflow (see the header for where). ONE
+    // orders.update — through setRowsTrip when the bill is on a trip.
+    const held    = order.dispatchStatus === "hold";
+    const toStage = held ? "pending_support" : SUPPORT_DONE_OUTPUT;
+    const revertData = {
+      orderType:       "non_tint",
+      workflowStage:   toStage,
+      manualTintEntry: false,
+      slotId:          null,
+      originalSlotId:  null,
+      dispatchSlot:    null,
+      ...(held ? {} : { dispatchStatus: "dispatch" }),
+    };
+    const dropIds = new Map<number, number>(); // dropId → tripId
+    for (const r of order.invoices) {
+      if (r.tripDropId !== null && r.tripDrop !== null) dropIds.set(r.tripDropId, r.tripDrop.tripId);
+    }
+    if (order.tripDropId !== null && order.tripDrop !== null) dropIds.set(order.tripDropId, order.tripDrop.tripId);
 
-    await prisma.orders.update({
-      where: { id: order.id },
-      data: {
-        orderType:       "non_tint",
-        workflowStage:   "pending_support",
-        manualTintEntry: false,
-        slotId,
-        originalSlotId:  slotId,
-        dispatchSlot,
-      },
+    if (dropIds.size > 0) {
+      await setRowsTrip(order.id, "all", null, {}, revertData);
+      for (const dropId of Array.from(dropIds.keys())) await deleteTripDropIfEmpty(dropId);
+      for (const tripId of Array.from(new Set(dropIds.values()))) {
+        await logTripBills({
+          tripId,
+          actorId: performedById,
+          direction: "remove",
+          orderIds: [order.id],
+          obdNumbers: [order.obdNumber],
+        });
+      }
+    } else {
+      await prisma.orders.update({ where: { id: order.id }, data: revertData });
+    }
+
+    // The pick the pull cancelled, if any — named for the popup, never restored.
+    const pullLog = await prisma.order_status_logs.findFirst({
+      where:   { orderId: order.id, note: { startsWith: "Manual tint pull:" } },
+      orderBy: { id: "desc" },
+      select:  { note: true },
     });
+    const cancelledPickerName = cancelledPickerFromNote(pullLog?.note ?? null);
 
     // Step E — write order_status_logs audit row
     await prisma.order_status_logs.create({
       data: {
         orderId:     order.id,
         fromStage:   "pending_tint_assignment",
-        toStage:     "pending_support",
+        toStage,
         changedById: performedById,
         note:
           `Manual tint reverted: ${reasonCode}` +
@@ -268,8 +303,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       order: {
         id:            order.id,
         obdNumber:     order.obdNumber,
-        workflowStage: "pending_support",
+        workflowStage: toStage,
       },
+      // "Pick not restored" — the picker the pull took the bill from, or null;
+      // and how many trips the revert took the bill off.
+      cancelledPickerName,
+      tripsLeft: new Set(dropIds.values()).size,
     });
   } catch (e) {
     console.error("[manual-entry revert] Failed to apply revert:", {
