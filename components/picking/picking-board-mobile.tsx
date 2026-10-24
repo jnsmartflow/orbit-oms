@@ -439,21 +439,22 @@ function formatAssignedTime(assignedAt: Date | string | null): string | null {
   return d.toLocaleTimeString("en-US", { timeZone: "Asia/Kolkata", hour: "numeric", minute: "2-digit", hour12: true });
 }
 
-// ── Assigned-by strip (2026-10-24, owner) ───────────────────────────────────
+// ── Assigned-by line (2026-10-24, owner "option A") ────────────────────────
 // Who handed the bill to the picker and when — pick_assignments.assignedById
 // (→ assignedByName) and assignedAt, already on every row (lib/picking/queue.ts).
-// NEUTRAL on purpose: the same band shape as the Done tab's green footer, in
-// ink, because "assigned" is a fact, not a status. Renders NOTHING when the
-// name is missing — never "Unknown". Undo deletes the assignment row and the
-// next assign writes a new one, so this always names the LATEST assigner.
-// On a duplicate-SO card it takes the shared red wash, like the shelf.
-function AssignedByStrip({
+// ONE quiet line in the card BODY, under the route / litres row — not a band of
+// its own (the first cut, f6b39886, was a bordered strip; owner replaced it).
+// Muted ink, normal weight: "assigned" is a fact, not a status. Renders NOTHING
+// when the name is missing — never "Unknown". Undo deletes the assignment row
+// and the next assign writes a new one, so this always names the LATEST
+// assigner. On a duplicate-SO card it takes the shared muted-on-red colour.
+function AssignedByLine({
   row,
   label = false,
   onRed = false,
 }: {
   row: PickingQueueRow;
-  /** Done tab: "Assigned {name}" in place of the icon. */
+  /** Done tab: "Assigned {name} · {time}" — the word in front of the name. */
   label?: boolean;
   onRed?: boolean;
 }): React.JSX.Element | null {
@@ -462,19 +463,15 @@ function AssignedByStrip({
   const time = formatAssignedTime(row.assignedAt);
   return (
     <div
-      className={
-        "border-t px-4 py-2 flex items-center justify-between gap-2.5 text-[12px] " +
-        (onRed ? "" : "bg-ink-25 border-ink-100 text-ink-600")
-      }
-      style={onRed ? { background: DUP_SO_BAND, borderColor: DUP_SO_WASH_BORDER, color: DUP_SO_MUTED } : undefined}
+      className={"flex items-center gap-1.5 mt-2.5 text-[13px] min-w-0 " + (onRed ? "" : "text-ink-500")}
+      style={onRed ? { color: DUP_SO_MUTED } : undefined}
     >
-      <span className="flex items-center gap-1.5 min-w-0">
-        {label ? "Assigned" : <UserCheck size={14} className="shrink-0" aria-label="Assigned by" />}
-        <span className={"font-medium truncate min-w-0 " + (onRed ? "" : "text-ink-900")} style={onRed ? { color: DUP_SO_TEXT } : undefined}>
-          {name}
-        </span>
+      <UserCheck size={14} className="shrink-0" aria-label="Assigned by" />
+      <span className="truncate min-w-0">
+        {label && "Assigned "}
+        {name}
+        {time !== null && <> &middot; <span className="tabular-nums">{time}</span></>}
       </span>
-      {time !== null && <span className="shrink-0 tabular-nums">{time}</span>}
     </div>
   );
 }
@@ -579,9 +576,10 @@ function PickingCard({
    */
   hidePickerName?: boolean;
   /**
-   * The assigned-by strip on a "picking" card (2026-10-24). Passed ONLY by the
-   * Picking tab's level-2 list (one picker's bills) — not the flat bill view,
-   * not the Trips view. doneChecked renders its own strip without this flag.
+   * The assigned-by line + roomier body spacing (2026-10-24). Passed ONLY by
+   * the Picking tab's level-2 list (one picker's bills, variant "picking") and
+   * the Done tab's Checked band (variant "doneChecked") — never the flat bill
+   * view or the Trips view. Ignored on every other variant.
    */
   showAssignedBy?: boolean;
   /**
@@ -614,6 +612,11 @@ function PickingCard({
 }): React.JSX.Element {
   const rich = variant === "assign" || variant === "assignLocked" || variant === "picking";
   const muted = variant === "assignLocked" || variant === "doneChecked";
+  // The assigned-by line + the roomier body spacing (2026-10-24). Only the two
+  // call sites that pass showAssignedBy get either — the Picking tab's
+  // one-picker list and the Done tab's Checked band — never the flat bill
+  // view, the Trips view or any other variant.
+  const roomy = showAssignedBy && (variant === "picking" || variant === "doneChecked");
   // ── Duplicate-SO red ──────────────────────────────────────────────────────
   // ALL FIVE VARIANTS. A duplicate is a duplicate at every stage: the case this
   // exists for includes "already handed to a picker when the twin arrives", so
@@ -861,11 +864,11 @@ function PickingCard({
         // detail, unchanged.
         onClick={variant === "assign" ? () => onToggleSelect?.() : onOpen}
       >
-      <div className={"flex items-start gap-3 " + (lead ? "pl-3.5 pr-4 pt-3.5 pb-3" : "px-4 pt-3.5 pb-3")}>
+      <div className={"flex items-start gap-3 " + (lead ? "pl-3.5 pr-4 pt-3.5 pb-3" : roomy ? "px-4 pt-3.5 pb-3.5" : "px-4 pt-3.5 pb-3")}>
         {lead}
-        <div className="flex-1 min-w-0">
+        <div className={"flex-1 min-w-0" + (roomy ? " leading-[1.4]" : "")}>
           {/* Caption: OBD (mono) · secondary (date-time or slot) — right cluster */}
-          <div className="flex items-center justify-between gap-2.5 mb-1.5">
+          <div className={"flex items-center justify-between gap-2.5 " + (roomy ? "mb-2" : "mb-1.5")}>
             <span
               className="flex items-center gap-1.5 min-w-0 text-[11.5px] overflow-hidden whitespace-nowrap"
               style={{ color: dup ? DUP_SO_MUTED : "#98a2b3" }}
@@ -955,7 +958,7 @@ function PickingCard({
           {/* Title: customer name (truncates, never pushes the slot) + slot hero */}
           <div className="flex items-baseline justify-between gap-3">
             <span
-              className="text-[16px] font-semibold leading-[1.25] truncate min-w-0"
+              className={"text-[16px] font-semibold truncate min-w-0 " + (roomy ? "leading-[1.4]" : "leading-[1.25]")}
               style={{ color: dup ? DUP_SO_TEXT : "#1d2939" }}
             >
               {row.dealerName}
@@ -1021,9 +1024,11 @@ function PickingCard({
             </span>
             {whereRightNode}
           </div>
+          {roomy && (variant === "picking" || row.directLoadedAt == null) && (
+            <AssignedByLine row={row} label={variant === "doneChecked"} onRed={dup} />
+          )}
         </div>
       </div>
-      {variant === "picking" && showAssignedBy && <AssignedByStrip row={row} onRed={dup} />}
       {rich && (
         // `chips` is what makes this shelf the PACK breakdown rather than the
         // family strip (see articleTagChips above). Passing it also suppresses
@@ -1093,9 +1098,6 @@ function PickingCard({
             </button>
           )}
         </div>
-      )}
-      {variant === "doneChecked" && row.directLoadedAt == null && (
-        <AssignedByStrip row={row} label onRed={dup} />
       )}
       {variant === "doneChecked" && row.directLoadedAt == null && (
         <div
@@ -4635,6 +4637,7 @@ export function PickingBoardMobile(): React.JSX.Element {
                   variant="doneChecked"
                   nowTick={nowTick}
                   captionSmu
+                  showAssignedBy
                   onOpen={() => openDetail(row.orderId, { kind: "checked" })}
                   onUndoDirect={row.directLoadedAt != null ? () => void handleUndoDirect(row) : undefined}
                   undoDirectBusy={undoingDirectIds.has(row.orderId)}

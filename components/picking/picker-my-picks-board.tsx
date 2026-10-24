@@ -31,13 +31,11 @@ import { HandBadge } from "@/components/shared/hand-badge";
 // with the IDENTICAL treatment, not a second one.
 import {
   DuplicateSoTag,
-  DUP_SO_BAND,
   DUP_SO_BORDER,
   DUP_SO_DIVIDER,
   DUP_SO_FILL,
   DUP_SO_MUTED,
   DUP_SO_TEXT,
-  DUP_SO_WASH_BORDER,
 } from "@/components/shared/duplicate-so-tag";
 import { PickDeletedBand } from "@/components/picking/pick-deleted-band";
 import { usePickerBoard } from "./picking-mobile-shell";
@@ -1605,7 +1603,9 @@ export function PickerMyPicksBoard({
                   four deliberate divergences are marked below; everything else
                   is the same language, so a supervisor and a picker looking at
                   the same bill see the same card. */}
-              <div className="px-4 pt-3.5 pb-3">
+              {/* Roomier body (2026-10-24, owner): 14px bottom, 8px caption gap,
+                  1.4 line-height — the lines no longer touch. */}
+              <div className="px-4 pt-3.5 pb-3.5 leading-[1.4]">
                 {/* Caption row — bill number left, signals right. NO created
                     timestamp: the supervisor's caption carries `· 19 Jul, 4:05
                     PM` here, but a picker fetching goods has no use for when
@@ -1614,7 +1614,7 @@ export function PickerMyPicksBoard({
                     cluster order and its gap-[7px]. Both are INFORMATION, not
                     controls — no button language, no handler; the whole card
                     is the single tap target. */}
-                <div className="flex items-center justify-between gap-2.5 mb-1.5">
+                <div className="flex items-center justify-between gap-2.5 mb-2">
                   <span
                     className="flex items-center gap-1.5 min-w-0 text-[11.5px] overflow-hidden whitespace-nowrap"
                     style={{ color: dup ? DUP_SO_MUTED : "#98a2b3" }}
@@ -1664,7 +1664,7 @@ export function PickerMyPicksBoard({
                     #475467). The name truncates; the slot never does. */}
                 <div className="flex items-baseline justify-between gap-3">
                   <span
-                    className="text-[16px] font-semibold leading-[1.25] truncate min-w-0"
+                    className="text-[16px] font-semibold leading-[1.4] truncate min-w-0"
                     style={{ color: dup ? DUP_SO_TEXT : "#1d2939" }}
                   >
                     {row.dealerName}
@@ -1765,35 +1765,27 @@ export function PickerMyPicksBoard({
                       justify-between row would reserve gap for it. */}
                   {isSmuBadged(row.smuCode) && <SmuBadge code={row.smuCode} />}
                 </div>
+                {/* Assigned-by line (2026-10-24, owner "option A") — which
+                    supervisor handed him this bill, and when. One quiet line
+                    under the route / litres row, the same as the supervisor
+                    board's AssignedByLine (picking-board-mobile.tsx); nothing
+                    when the name is missing, never "Unknown". */}
+                {row.assignedByName?.trim() ? (
+                  <div
+                    className={"flex items-center gap-1.5 mt-2.5 text-[13px] min-w-0 " + (dup ? "" : "text-ink-500")}
+                    style={dup ? { color: DUP_SO_MUTED } : undefined}
+                  >
+                    <UserCheck size={14} className="shrink-0" aria-label="Assigned by" />
+                    <span className="truncate min-w-0">
+                      {row.assignedByName.trim()}
+                      {formatAssignedTime(row.assignedAt) !== null && (
+                        <> &middot; <span className="tabular-nums">{formatAssignedTime(row.assignedAt)}</span></>
+                      )}
+                    </span>
+                  </div>
+                ) : null}
               </div>
 
-              {/* Assigned-by strip (2026-10-24, owner) — which supervisor
-                  handed him this bill, and when. Same neutral ink band as the
-                  supervisor board's AssignedByStrip (picking-board-mobile.tsx);
-                  nothing when the name is missing, never "Unknown". The red
-                  wash on a duplicate card, like the shelf below it. */}
-              {row.assignedByName?.trim() ? (
-                <div
-                  className={
-                    "border-t px-4 py-2 flex items-center justify-between gap-2.5 text-[12px] " +
-                    (dup ? "" : "bg-ink-25 border-ink-100 text-ink-600")
-                  }
-                  style={dup ? { background: DUP_SO_BAND, borderColor: DUP_SO_WASH_BORDER, color: DUP_SO_MUTED } : undefined}
-                >
-                  <span className="flex items-center gap-1.5 min-w-0">
-                    <UserCheck size={14} className="shrink-0" aria-label="Assigned by" />
-                    <span
-                      className={"font-medium truncate min-w-0 " + (dup ? "" : "text-ink-900")}
-                      style={dup ? { color: DUP_SO_TEXT } : undefined}
-                    >
-                      {row.assignedByName.trim()}
-                    </span>
-                  </span>
-                  {formatAssignedTime(row.assignedAt) !== null && (
-                    <span className="shrink-0 tabular-nums">{formatAssignedTime(row.assignedAt)}</span>
-                  )}
-                </div>
-              ) : null}
               {/* Shelf — the SHARED component (divider + grey band + chips +
                   fade). No arrow: the whole card opens detail here, so the
                   right slot carries the Done tab's receipt instead
