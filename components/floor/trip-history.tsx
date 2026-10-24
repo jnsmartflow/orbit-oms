@@ -43,6 +43,9 @@ const DOT: Record<string, string> = {
   // server writer (lib/trips/activity.ts), never re-worded here.
   redelivery_added: "bg-warn",
   redelivery_removed: "bg-[#94a3b8]",
+  // A bill on the trip changed ship-to and moved stop (2026-10-24) — violet,
+  // the ship-to modal's own brand.
+  ship_to_changed: "bg-brand-600",
 };
 
 function dotFor(action: string): string {

@@ -347,6 +347,10 @@ export interface FloorBoardRow extends PickingQueueRow {
   // Picking one).
   tripDropId: number | null;
   tripNumber: string | null;
+  /** The trip's id, beside its number (2026-10-24) — the detail panel's ship-to
+   *  posts to /api/floor/trips/[id]/ship-to. Optional: only the board's own
+   *  row builder sets it. */
+  tripId?: number | null;
   /** draft | released | loading | dispatched | cancelled — chk_trips_status. */
   tripStatus: string | null;
   // ── Route id + stop key, for the By route cards (2026-09-19) ─────────────

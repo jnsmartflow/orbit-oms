@@ -134,6 +134,18 @@ export const TRIP_REDELIVERY_REMOVED = "redelivery_removed";
 export const TRIP_RELEASED = "released";
 export const TRIP_DISPATCHED = "dispatched";
 
+/**
+ * Ship-to on a trip bill, and stop refresh (2026-10-24, Schema v27.75 —
+ * sql/2026-10-24-trip-activity-ship-to-refresh.sql).
+ *   ship_to_changed — a bill on this trip had its ship-to changed and moved to
+ *                     the new shop's stop on the same trip
+ *                     (lib/trips/ship-to-on-trip.ts, logTripShipToChanged).
+ *   stops_refreshed — the trip's stops re-read from master (button or
+ *                     automatic). No writer yet — it comes with Refresh stops.
+ */
+export const TRIP_SHIP_TO_CHANGED = "ship_to_changed";
+export const TRIP_STOPS_REFRESHED = "stops_refreshed";
+
 /** Every value `chk_trip_activity_action` admits. The CHECK is the backstop. */
 export const TRIP_ACTIONS = [
   TRIP_CREATED,
@@ -154,6 +166,8 @@ export const TRIP_ACTIONS = [
   TRIP_REDELIVERY_REMOVED,
   TRIP_BILLS_COPIED,
   TRIP_BILLING_DONE,
+  TRIP_SHIP_TO_CHANGED,
+  TRIP_STOPS_REFRESHED,
 ] as const;
 
 export type TripAction = (typeof TRIP_ACTIONS)[number];
@@ -323,6 +337,38 @@ export async function logTripBills(opts: {
           ? { movedFrom: { tripId: moved.tripId, tripNumber: moved.tripNumber } }
           : { movedTo: { tripId: moved.tripId, tripNumber: moved.tripNumber } }
         : {}),
+    },
+  });
+}
+
+/**
+ * A bill on this trip changed ship-to and moved stop (2026-10-24). ONE row per
+ * save. The summary names SHOPS, never stop numbers — stops renumber when one
+ * closes, and "stop 3" read a week later points at somebody else.
+ */
+export async function logTripShipToChanged(opts: {
+  tripId: number;
+  actorId: number;
+  orderId: number;
+  obdNumber: string;
+  newShop: string;
+  oldShop: string | null;
+  fromDropId: number | null;
+  toDropId: number;
+  oldStopClosed: boolean;
+}): Promise<void> {
+  const was = opts.oldShop !== null && opts.oldShop !== opts.newShop ? ` (was ${opts.oldShop})` : "";
+  await writeActivity({
+    tripId: opts.tripId,
+    action: TRIP_SHIP_TO_CHANGED,
+    actorId: opts.actorId,
+    summary: `Ship-to changed: ${opts.obdNumber} → ${opts.newShop}${was}`,
+    detail: {
+      orderIds: [opts.orderId],
+      obdNumbers: [opts.obdNumber],
+      fromDropId: opts.fromDropId,
+      toDropId: opts.toDropId,
+      oldStopClosed: opts.oldStopClosed,
     },
   });
 }

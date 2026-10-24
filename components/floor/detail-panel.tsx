@@ -187,6 +187,7 @@ export function DetailPanel({
   onClose,
   onNavigate,
   changeSignal,
+  trip = null,
 }: {
   orderId: number;
   source: FloorDetailSource;
@@ -260,6 +261,12 @@ export function DetailPanel({
    * data by itself: the operator may be mid-read or mid-action.
    */
   changeSignal?: number;
+  /**
+   * The trip the bill is on, from its board row (2026-10-24) — null when on
+   * none. Set → the ship-to modal saves through that trip's route and the bill
+   * moves to the new shop's stop instead of being refused (owner D2).
+   */
+  trip?: { tripId: number; tripNumber: string } | null;
 }) {
   const [detail, setDetail] = useState<FloorDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -417,6 +424,7 @@ export function DetailPanel({
             withBillingCiNumber={withBillingCiNumber}
             isHand={isHand}
             canEdit={canEdit}
+            trip={trip}
             canAddInvoices={canAddInvoices && onEditInvoices !== undefined}
             onEditInvoices={onEditInvoices}
             scope={scope}
@@ -480,6 +488,7 @@ function PanelBody({
   withBillingCiNumber,
   isHand,
   canEdit,
+  trip,
   canAddInvoices,
   onEditInvoices,
   scope,
@@ -509,6 +518,7 @@ function PanelBody({
   withBillingCiNumber: string | null;
   isHand: boolean;
   canEdit: boolean;
+  trip: { tripId: number; tripNumber: string } | null;
   canAddInvoices: boolean;
   onEditInvoices?: (orderId: number, obdNumber: string) => void;
   /** The invoice the panel is scoped to (null = the OBD view) and its k of n. */
@@ -550,6 +560,13 @@ function PanelBody({
   // two guarded regions. That is the whole zero-write proof, and it is one
   // grep — keep it that way.
   const readOnly = source === "history";
+  // ── A PAST DAY, FOR A FLOOR EDITOR (owner D1/D2, 2026-10-24) ──────────────
+  // The action row comes back with ONE live control, Ship-to — it can move a
+  // bill on a past day's trip to its right stop. Hold, Cancel / Raise CI and
+  // Release are drawn GREY and inert, and the slot chip shows 🔒: they change
+  // the bill TODAY, not the old plan. The zero-write proof above still holds:
+  // the only `actions.on` reachable here is the ship-to modal's onSaved.
+  const pastDay = readOnly && canEdit;
   const canReassign = source === "floor" && !d.isDone && !d.isChecked;
   const railReleasable = source === "rail" && d.workflowStage === "pending_support";
 
@@ -691,6 +708,16 @@ function PanelBody({
                 /api/floor/actions change-slot), and re-slotting a bill from a
                 past day would move a dispatch that has already happened. The
                 slot itself still reads on the Details tab. */}
+            {pastDay && (
+              <span
+                title="Past day — the slot changes the bill today. Use Back to Live."
+                className="inline-flex h-[26px] cursor-not-allowed items-center gap-1.5 rounded-md border border-gray-200 bg-gray-50 px-2 text-[11.5px] text-gray-400"
+              >
+                <ClockIcon />
+                <span>{slotText}</span>
+                <span aria-hidden className="ml-0.5 flex items-center border-l border-gray-200 pl-1.5 text-[10px]">🔒</span>
+              </span>
+            )}
             {source !== "cancelled" && !readOnly && (
               <SlotPickerButton
                 value={currentSlotValue}
@@ -816,7 +843,8 @@ function PanelBody({
           zero-write claim hold by construction; gating each control would leave
           the next control added here silently reachable from a past day. The
           panel keeps its header, tabs, Details / Items / Activity and Prev/Next. */}
-      {readOnly ? null : (
+      {readOnly && !pastDay ? null : (
+        <>
         <div className="flex items-center gap-2 border-y border-gray-200 bg-gray-50 px-4 py-2.5">
           {/* THE SHARED SHIP-TO MODAL (free-text ship-to P3, 2026-10-19) —
               replaced the inline ShipToEditor here (the Tint Manager keeps that
@@ -842,6 +870,7 @@ function PanelBody({
                 billedToCode: d.billToCode ?? d.customerCode,
               }}
               customerAreaId={d.customerAreaId}
+              trip={trip}
               onClose={() => setShipToOpen(false)}
               onSaved={() => void run(() => actions.onShipToSaved())}
             />
@@ -910,12 +939,12 @@ function PanelBody({
             type="button"
             onClick={() => setShipToOpen(true)}
             className={
-              source === "floor"
+              source === "floor" || pastDay
                 ? "inline-flex h-[34px] items-center gap-1.5 whitespace-nowrap rounded-md border border-brand-600 bg-brand-600 px-3.5 text-[12px] font-semibold text-white hover:bg-brand-700"
                 : "inline-flex h-[34px] items-center whitespace-nowrap rounded-md border border-gray-300 bg-white px-3.5 text-[12px] font-medium text-gray-700 hover:border-gray-400 hover:bg-gray-50"
             }
           >
-            {source === "floor" && (
+            {(source === "floor" || pastDay) && (
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7">
                 <path d="M12 21s-7-5.5-7-11a7 7 0 1 1 14 0c0 5.5-7 11-7 11z" />
                 <circle cx="12" cy="10" r="2.4" />
@@ -923,6 +952,21 @@ function PanelBody({
             )}
             Ship-to
           </button>
+
+          {/* PAST DAY (2026-10-24): the bill's own actions, drawn grey and inert
+              — no handler is attached, so nothing here can write. */}
+          {pastDay &&
+            ["Hold", "Cancel / Raise CI…", "Release"].map((label) => (
+              <span key={label} title="Past day — this changes the bill today" className="inline-flex">
+                <button
+                  type="button"
+                  disabled
+                  className="inline-flex h-[34px] cursor-not-allowed items-center whitespace-nowrap rounded-md border border-gray-200 bg-gray-100 px-3 text-[12px] font-medium text-gray-400"
+                >
+                  {label}
+                </button>
+              </span>
+            ))}
 
           {/* Assign / Reassign (floor waiting or assigned) — neutral joined unit. */}
           {canReassign && (
@@ -999,6 +1043,13 @@ function PanelBody({
             </div>
           )}
         </div>
+        {pastDay && (
+          <div className="border-b border-gray-200 bg-gray-50 px-4 py-2 text-[11.5px] text-gray-500">
+            Past day: Hold, Cancel, Release and Slot change this bill today. Use{" "}
+            <b className="font-semibold text-brand-700">Back to Live</b> for them.
+          </div>
+        )}
+        </>
       )}
 
       {/* ── Tabs (fixed) ────────────────────────────────────────────────────── */}

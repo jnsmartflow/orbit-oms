@@ -11,6 +11,8 @@
 //   · app/api/floor/trips/[id]/bills/route.ts   add / remove (whole OBD or
 //                                                 chosen invoice rows)
 //   · app/api/floor/trips/[id]/cancel/route.ts  detach every row on that trip
+//   · lib/trips/ship-to-on-trip.ts              ship-to change → the new
+//                                                 shop's stop, same trip
 // call setRowsTrip. A new writer goes through here too.
 //
 // 🔴 WRITE ORDER, PER OBD — rows first, the OBD last:
@@ -78,6 +80,20 @@ export interface RowsTripOpts {
 }
 
 /**
+ * Bill columns that must land in the SAME orders.update as the trip link
+ * (2026-10-24): a ship-to change on a bill that is on a trip moves it to the
+ * new shop's stop, and the ship-to and the stop are one fact — so they are one
+ * write, never two (the marker keys on MAX(orders.updatedAt)). Only the four
+ * ship-to columns; lib/trips/ship-to-on-trip.ts is the caller.
+ */
+export interface RowsTripOrderData {
+  shipToOverride: boolean;
+  shipToOverrideCustomerId: number | null;
+  shipToText: string | null;
+  shipToAreaId: number | null;
+}
+
+/**
  * Move some or all of an OBD's invoice rows onto stop `target` (null = off any
  * trip). `rowIds` = 'all' or the chosen rows; ids that are not this OBD's rows
  * are ignored (the caller validates them first).
@@ -135,6 +151,8 @@ export async function setRowsTrip(
   rowIds: readonly number[] | "all",
   tripDropId: number | null,
   opts: RowsTripOpts = {},
+  /** Written in step 3's one orders.update beside the derived values. */
+  orderData?: RowsTripOrderData,
 ): Promise<{ rowIdsUpdated: number[]; derived: number | null; partlyOnTrip: boolean }> {
   // 1.
   const rows = await prisma.order_invoices.findMany({
@@ -158,10 +176,11 @@ export async function setRowsTrip(
     });
   }
   // 3. ONE orders.update — the commit point. Both derived values in it, never
-  // a second write (the marker keys on MAX(orders.updatedAt)).
+  // a second write (the marker keys on MAX(orders.updatedAt)). A ship-to change
+  // on a trip bill rides in this same write (`orderData`).
   await prisma.orders.update({
     where: { id: orderId },
-    data: { tripDropId: move.derived, partlyOnTrip: move.partlyOnTrip },
+    data: { ...(orderData ?? {}), tripDropId: move.derived, partlyOnTrip: move.partlyOnTrip },
   });
   return { rowIdsUpdated: move.rowIdsToUpdate, derived: move.derived, partlyOnTrip: move.partlyOnTrip };
 }

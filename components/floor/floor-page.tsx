@@ -4519,6 +4519,13 @@ export function FloorPage({
           withBillingCiNumber={detailCiNumber}
           isHand={detailIsHand}
           canEdit={canEdit}
+          // The bill's trip, off its board row (2026-10-24): ship-to on a trip
+          // bill moves it to the new shop's stop (POST …/trips/[id]/ship-to).
+          trip={
+            detailBoardRow?.tripId != null && detailBoardRow.tripNumber !== null
+              ? { tripId: detailBoardRow.tripId, tripNumber: detailBoardRow.tripNumber }
+              : null
+          }
           // Add invoices (2026-10-10) — Add / Edit invoices in the panel's ··· menu.
           canAddInvoices={canAddInvoices}
           invoicesRefreshKey={invoicesRefreshKey}

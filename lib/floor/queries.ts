@@ -1613,6 +1613,7 @@ export async function getFloorBoard(
       tripDropId: order.tripDropId,
       tripNumber:
         order.tripDropId !== null ? (tripByDropId.get(order.tripDropId)?.tripNumber ?? null) : null,
+      tripId: order.tripDropId !== null ? (tripByDropId.get(order.tripDropId)?.id ?? null) : null,
       tripStatus:
         order.tripDropId !== null ? (tripByDropId.get(order.tripDropId)?.status ?? null) : null,
       // ── SHOW TO FLOOR, PER TRIP (slice 8, 2026-09-15) ──────────────────────

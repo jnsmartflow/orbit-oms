@@ -75,14 +75,28 @@ const BILL_SELECT = {
 } as const;
 
 /**
- * Read ONE live bill and apply the on-a-trip refusal. Exported so Floor's
- * multipart save can refuse BEFORE it uploads any copy; setShipTo re-runs it.
+ * THE CHECK, without the trip rule (2026-10-24 split): one live bill, or 404.
+ * Shared by loadShipToBill below and the trip path
+ * (lib/trips/ship-to-on-trip.ts), which moves an on-trip bill instead of
+ * refusing it — so both paths find "the bill" by the same rule.
  */
-export async function loadShipToBill(orderId: number) {
+export async function readShipToBill(orderId: number) {
   const order = await prisma.orders.findFirst({ where: { id: orderId, isRemoved: false }, select: BILL_SELECT });
   if (!order) {
     return { ok: false as const, status: 404, error: "Order not found" };
   }
+  return { ok: true as const, order };
+}
+
+/**
+ * Read ONE live bill and apply the on-a-trip refusal. Exported so Floor's
+ * multipart save can refuse BEFORE it uploads any copy; setShipTo re-runs it.
+ * Every caller but the trip path keeps this refusal (owner, 2026-10-24).
+ */
+export async function loadShipToBill(orderId: number) {
+  const read = await readShipToBill(orderId);
+  if (!read.ok) return read;
+  const order = read.order;
   // On a trip → refused (owner 2026-10-01). Before the target check, as
   // Billing refuses before anything else: the answer does not depend on which
   // site was asked for.
@@ -138,6 +152,50 @@ export function shipToColumns(target: ShipToTarget): {
   return { shipToOverride: false, shipToOverrideCustomerId: null, shipToText: null, shipToAreaId: null };
 }
 
+/** All four ship-to columns equal → nothing to write (not even updatedAt). */
+export function isShipToUnchanged(
+  order: { shipToOverride: boolean; shipToOverrideCustomerId: number | null; shipToText: string | null; shipToAreaId: number | null },
+  next: ReturnType<typeof shipToColumns>,
+): boolean {
+  return (
+    order.shipToOverride === next.shipToOverride &&
+    order.shipToOverrideCustomerId === next.shipToOverrideCustomerId &&
+    order.shipToText === next.shipToText &&
+    order.shipToAreaId === next.shipToAreaId
+  );
+}
+
+/**
+ * The ONE order_status_logs row a ship-to change writes — same shape Support's
+ * route wrote for a dealer. Shared with the trip path so both log alike.
+ */
+export async function logShipToChange(args: {
+  orderId: number;
+  before: { shipToOverrideCustomerId: number | null; shipToText: string | null };
+  next: ReturnType<typeof shipToColumns>;
+  target: ShipToTarget;
+  changedById: number;
+  note?: string | null;
+}): Promise<void> {
+  await prisma.order_status_logs.create({
+    data: {
+      orderId: args.orderId,
+      fromStage: stateLabel(args.before),
+      toStage: stateLabel(args.next) ?? "cleared",
+      changedById: args.changedById,
+      note: args.note !== undefined ? args.note : args.target.kind === "typed" ? `Ship-to typed: ${args.next.shipToText}` : null,
+    },
+  });
+}
+
+/** Dealer and Reset hide the bill's own Floor copies (they belonged to the
+ *  typed ship-to). Billing's SO copies are never touched from here. */
+export async function finishShipToCopies(target: ShipToTarget, orderId: number, changedById: number): Promise<void> {
+  if (target.kind !== "typed") {
+    await softRemoveCopies(activeOwnCopiesWhere("floor", orderId), changedById);
+  }
+}
+
 /** The log's from / to value: the dealer id (as before), "typed", or null. */
 function stateLabel(s: { shipToOverrideCustomerId: number | null; shipToText: string | null }): string | null {
   if (s.shipToOverrideCustomerId !== null) return String(s.shipToOverrideCustomerId);
@@ -178,12 +236,7 @@ export async function setShipTo(args: {
   // open board that this bill moved when it did not (CLAUDE_FLOOR §5). All
   // four columns are compared: a typed bill has no dealer id, so comparing the
   // id alone would make Reset a silent no-op on it.
-  if (
-    order.shipToOverride === next.shipToOverride &&
-    order.shipToOverrideCustomerId === next.shipToOverrideCustomerId &&
-    order.shipToText === next.shipToText &&
-    order.shipToAreaId === next.shipToAreaId
-  ) {
+  if (isShipToUnchanged(order, next)) {
     return { ok: true, orderId, ...shownIds(next), changed: false };
   }
 
@@ -194,19 +247,9 @@ export async function setShipTo(args: {
 
   // ONE log row. Same shape Support's route wrote for a dealer, so the audit
   // trail reads identically either side of the retirement.
-  await prisma.order_status_logs.create({
-    data: {
-      orderId,
-      fromStage: stateLabel(order),
-      toStage: stateLabel(next) ?? "cleared",
-      changedById,
-      note: args.note !== undefined ? args.note : target.kind === "typed" ? `Ship-to typed: ${next.shipToText}` : null,
-    },
-  });
+  await logShipToChange({ orderId, before: order, next, target, changedById, note: args.note });
 
-  if (target.kind !== "typed") {
-    await softRemoveCopies(activeOwnCopiesWhere("floor", orderId), changedById);
-  }
+  await finishShipToCopies(target, orderId, changedById);
 
   return { ok: true, orderId, ...shownIds(next), changed: true };
 }

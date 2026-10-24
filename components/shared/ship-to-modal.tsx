@@ -12,6 +12,9 @@
 //
 // EVERYTHING COMMITS ON SAVE, in ONE multipart request to the desk's route
 // (Billing POST /api/billing/mail-order/ship-to, Floor POST /api/floor/ship-to).
+// A Floor bill ON A TRIP (`trip`, 2026-10-24) saves to
+// POST /api/floor/trips/[id]/ship-to instead — it stays on the trip and moves
+// to the new shop's stop — and a dry run (`preview=1`) says where before Save.
 // Picked files, ✕'d copies and Reset are only staged until then, so Cancel
 // leaves nothing behind. The server re-checks every rule shown here (copy
 // required, 3 copies, 4 MB, who may remove what) — this screen is the
@@ -77,6 +80,17 @@ interface CopyRow {
   canRemove: boolean;
 }
 
+/** The trip route's dry run (lib/trips/ship-to-on-trip.ts TripShipToPreview). */
+interface TripPreview {
+  tripNumber: string;
+  unchanged: boolean;
+  sameStop: boolean;
+  joinsExisting: boolean;
+  newShop: string;
+  oldShop: string | null;
+  oldStopCloses: boolean;
+}
+
 interface FailedBill {
   obdNumber: string;
   reason: string;
@@ -119,6 +133,7 @@ export function ShipToModal({
   refLabel,
   current,
   searchUrl,
+  trip = null,
   onClose,
   onSaved,
 }: {
@@ -135,12 +150,21 @@ export function ShipToModal({
   /** Dealer search; `?q=` is appended. Default: the desk's own route. Reads
    *  either `{ results: [...] }` (Billing) or a bare array (Floor). */
   searchUrl?: string;
+  /** Floor only: the trip the bill is on. Set → the save goes to that trip's
+   *  ship-to route and a preview line shows the stop it lands on. */
+  trip?: { tripId: number; tripNumber: string } | null;
   onClose: () => void;
   /** After a save landed — the caller reloads. */
   onSaved: () => void;
 }): React.JSX.Element {
   const ownOwner: ShipToCopyOwner = desk;
-  const saveUrl = desk === "billing" ? "/api/billing/mail-order/ship-to" : "/api/floor/ship-to";
+  const onTrip = desk === "floor" && trip !== null;
+  const saveUrl =
+    desk === "billing"
+      ? "/api/billing/mail-order/ship-to"
+      : onTrip
+        ? `/api/floor/trips/${trip.tripId}/ship-to`
+        : "/api/floor/ship-to";
   const idField = desk === "billing" ? "moOrderId" : "orderId";
   const search = searchUrl ?? (desk === "billing" ? "/api/billing/ship-to-search" : "/api/floor/ship-to-search");
 
@@ -284,8 +308,63 @@ export function ShipToModal({
     !tooBig &&
     ownActive <= MAX_ACTIVE_COPIES &&
     (!asPerChallan || anyCopy >= 1);
+  // ── On a trip: the dry run (2026-10-24) ───────────────────────────────────
+  // Re-asked whenever the chosen target changes, debounced; nothing is
+  // uploaded and nothing is written. A refusal (D8, challan, held invoice…)
+  // shows in the red box and Save stays off.
+  const [preview, setPreview] = useState<TripPreview | null>(null);
+  const [previewErr, setPreviewErr] = useState<string | null>(null);
+  const previewSeq = useRef(0);
+  const previewKey = !onTrip
+    ? null
+    : resetPending
+      ? "reset"
+      : tab === "dealer"
+        ? picked !== null
+          ? `dealer:${picked.id}`
+          : null
+        : (asPerChallan || text.trim() !== "") && areaId !== ""
+          ? `typed:${asPerChallan ? "apc" : text.trim()}:${areaId}`
+          : null;
+  useEffect(() => {
+    const seq = ++previewSeq.current;
+    setPreview(null);
+    setPreviewErr(null);
+    if (previewKey === null || trip === null) return;
+    const t = window.setTimeout(async () => {
+      const form = new FormData();
+      form.append("orderId", String(ownerId));
+      form.append("preview", "1");
+      if (previewKey === "reset") form.append("mode", "reset");
+      else if (previewKey.startsWith("dealer:")) {
+        form.append("mode", "dealer");
+        form.append("customerId", previewKey.slice("dealer:".length));
+      } else {
+        form.append("mode", "typed");
+        if (asPerChallan) form.append("asPerChallan", "1");
+        else form.append("text", text.trim());
+        form.append("areaId", String(areaId));
+      }
+      try {
+        const res = await fetch(`/api/floor/trips/${trip.tripId}/ship-to`, { method: "POST", body: form });
+        const body = (await res.json().catch(() => null)) as { preview?: TripPreview; error?: string } | null;
+        if (seq !== previewSeq.current) return;
+        if (!res.ok) setPreviewErr(body?.error ?? `HTTP ${res.status}`);
+        else setPreview(body?.preview ?? null);
+      } catch {
+        if (seq === previewSeq.current) setPreviewErr("Could not check the trip — try again.");
+      }
+    }, 300);
+    return () => window.clearTimeout(t);
+    // previewKey carries every target field; the rest are read at fire time.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [previewKey, ownerId, trip?.tripId]);
+
   const canSave =
-    !busy && !preparing && (resetPending || (tab === "dealer" ? picked !== null : typedReady));
+    !busy &&
+    !preparing &&
+    previewErr === null &&
+    (resetPending || (tab === "dealer" ? picked !== null : typedReady));
 
   async function save() {
     if (!canSave) return;
@@ -707,7 +786,40 @@ export function ShipToModal({
         </>
       )}
 
+      {/* ON A TRIP — where the bill lands (mockup floor-past-trips tab 5). Shop
+          names, never stop numbers: the stops renumber. */}
+      {onTrip && preview !== null && !preview.unchanged && (
+        <div className="mt-[18px] flex items-start gap-2.5 rounded-[10px] border border-brand-200 bg-white px-3.5 py-[11px] text-[13px] text-ink-700">
+          <span aria-hidden className="flex h-[26px] w-[26px] flex-none items-center justify-center rounded-[7px] bg-brand-50 text-[14px] text-brand-700">
+            {preview.joinsExisting || preview.sameStop ? "⇄" : "＋"}
+          </span>
+          <div>
+            <div>
+              On trip <b className="font-mono text-ink-900">{preview.tripNumber}</b>:{" "}
+              {preview.sameStop ? (
+                <>stays with <b className="text-ink-900">{preview.newShop}</b>.</>
+              ) : preview.joinsExisting ? (
+                <>will join <b className="text-ink-900">{preview.newShop}</b>.</>
+              ) : (
+                <>will make <b className="text-ink-900">a new stop · {preview.newShop}</b>.</>
+              )}
+            </div>
+            {preview.oldStopCloses && preview.oldShop && (
+              <div className="mt-0.5 text-[12px] text-ink-500">
+                {preview.oldShop} will have no bills left. Its stop closes and the stops renumber.
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       <div className="mt-[18px] rounded-[10px] bg-brand-50 px-3 py-2.5 text-[13px] text-brand-700">{scopeLine}</div>
+
+      {previewErr && (
+        <div className="mt-3 rounded-[10px] border border-danger-bd bg-danger-bg px-3 py-2.5 text-[13px] font-medium text-danger-text">
+          {previewErr}
+        </div>
+      )}
 
       {err && (
         <div className="mt-3 rounded-[10px] border border-danger-bd bg-danger-bg px-3 py-2.5 text-[13px] font-medium text-danger-text">
