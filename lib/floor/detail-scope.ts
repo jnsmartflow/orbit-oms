@@ -13,9 +13,12 @@ export interface DetailKey {
   invoiceSeq: number | null;
 }
 
+import { drawOrderOf } from "./invoice-rows";
+
 type Walkable = {
   orderId: number;
-  invoiceRows?: ReadonlyArray<{ seq: number }>;
+  /** id / loadRootId: Split load — a part walks right after its paper. */
+  invoiceRows?: ReadonlyArray<{ seq: number; id?: number; loadRootId?: number }>;
   /** A NARROWED row's every invoice (the On hold tab's held ones, 6.1). */
   invoiceRowsAll?: ReadonlyArray<{ seq: number }>;
 };
@@ -29,10 +32,17 @@ const isSplitRow = (r: Walkable) => isSplit(r.invoiceRowsAll ?? r.invoiceRows);
  * invoice (seq order — the order the table draws them), anything else one key
  * for the OBD. So 716 → 713 → 714 → 715 → the next bill.
  */
+/** The table's draw order (parts under their paper); seq order — the same
+ *  array — when the OBD has no Split load row. */
+function walkOrder<R extends { seq: number; id?: number; loadRootId?: number }>(rows: readonly R[]): readonly R[] {
+  if (!rows.some((i) => i.loadRootId !== undefined)) return rows;
+  return drawOrderOf(rows.map((i) => ({ ...i, id: i.id ?? -i.seq })));
+}
+
 export function detailWalk(rows: readonly Walkable[], perInvoice = true): DetailKey[] {
   return rows.flatMap((r): DetailKey[] =>
     perInvoice && isSplitRow(r) && (r.invoiceRows?.length ?? 0) > 0
-      ? (r.invoiceRows ?? []).map((i) => ({ orderId: r.orderId, invoiceSeq: i.seq }))
+      ? walkOrder(r.invoiceRows ?? []).map((i) => ({ orderId: r.orderId, invoiceSeq: i.seq }))
       : [{ orderId: r.orderId, invoiceSeq: null }],
   );
 }

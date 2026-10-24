@@ -86,6 +86,15 @@ export function loadGroupsOf(rows: ReadonlyArray<Pick<LoadRow, "id" | "seq" | "l
   return out;
 }
 
+/**
+ * THE ONE FORMATTER of a part's place: "part 2" (k only) or "part 2 of 3".
+ * Every screen and message that names a part goes through it (with
+ * loadGroupsOf for k / n) — never a retyped "part" string.
+ */
+export function loadPartText(k: number, n?: number): string {
+  return n === undefined ? `part ${k}` : `part ${k} of ${n}`;
+}
+
 /** The row's group root: its parent when it is a part, else itself. */
 export function rootOf<R extends LoadRow>(rows: readonly R[], row: R): R {
   if (row.loadParentId === null) return row;
@@ -184,7 +193,7 @@ export function paperLabel(root: Pick<LoadRow, "seq" | "invoiceNo">, obdNumber: 
 export function partLabel(rows: readonly LoadRow[], row: LoadRow, obdNumber: string): string {
   const place = loadGroupsOf(rows).get(row.id);
   const name = paperLabel(rootOf(rows, row), obdNumber);
-  return place && place.n > 1 ? `${name} part ${place.k} of ${place.n}` : name;
+  return place && place.n > 1 ? `${name} ${loadPartText(place.k, place.n)}` : name;
 }
 
 // ── SPLIT ────────────────────────────────────────────────────────────────────

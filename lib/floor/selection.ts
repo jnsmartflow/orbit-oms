@@ -410,10 +410,13 @@ type CountRow = {
   invoicePartners?: readonly unknown[];
   /** A split OBD's invoices (Add invoices Phase 4) — 2+ entries when split.
    *  On a PARTLY ticked OBD: only the ticked ones (narrowToInvoiceIds). */
-  invoiceRows?: ReadonlyArray<{ invoiceNo: string | null }>;
+  invoiceRows?: ReadonlyArray<{ invoiceNo: string | null; loadRootId?: number }>;
   /** Every invoice of the OBD — set only when `invoiceRows` is narrowed (P5-3). */
-  invoiceRowsAll?: ReadonlyArray<{ invoiceNo: string | null }>;
+  invoiceRowsAll?: ReadonlyArray<{ invoiceNo: string | null; loadRootId?: number }>;
 };
+
+/** A row of a Split load group (lib/floor/invoice-rows.ts loadRootId). */
+const isLoadRow = (i: { loadRootId?: number }) => i.loadRootId !== undefined;
 
 const isSplitRow = (r: CountRow) => ((r.invoiceRowsAll ?? r.invoiceRows)?.length ?? 0) > 1;
 const isPartlyTicked = (r: CountRow) =>
@@ -430,9 +433,33 @@ const isPartlyTicked = (r: CountRow) =>
 // how many of how many — "1 OBD · 2 of 4 invoices". Counted by invoice ROW:
 // ticked invoices of each split OBD + every other invoiced bill, out of all
 // the selected OBDs' invoices; an un-invoiced bill is said apart, as above.
+//
+// SPLIT LOAD (phase 3, 2026-10-24): the truck parts of one invoice share its
+// number, so the distinct-number count would read two ticked parts as
+// "1 invoice" and stop there (discovery §4, MERGES SILENTLY). When the
+// selection holds a part, the bar ALSO counts parts: "1 OBD · 1 invoice ·
+// 2 parts", partly ticked "1 OBD · 1 invoice · 1 of 2 parts". A selection with
+// no part takes every branch below exactly as before.
 export function selectionCountLabel(rows: readonly CountRow[]): string | null {
   const n = rows.length;
   const obds = `${n} OBD${n === 1 ? "" : "s"}`;
+  if (rows.some((r) => (r.invoiceRowsAll ?? r.invoiceRows ?? []).some(isLoadRow))) {
+    const numbers = new Set<string>();
+    let notInvoiced = 0;
+    let parts = 0;
+    let allParts = 0;
+    for (const r of rows) {
+      if (isSplitRow(r)) {
+        for (const i of r.invoiceRows ?? []) if (i.invoiceNo !== null) numbers.add(i.invoiceNo);
+        parts += (r.invoiceRows ?? []).filter(isLoadRow).length;
+        allParts += (r.invoiceRowsAll ?? r.invoiceRows ?? []).filter(isLoadRow).length;
+      } else if (r.invoiceNo !== null) numbers.add(r.invoiceNo);
+      else notInvoiced++;
+    }
+    const m = numbers.size;
+    const partsText = parts === allParts ? `${parts} part${parts === 1 ? "" : "s"}` : `${parts} of ${allParts} parts`;
+    return `${obds} · ${m} invoice${m === 1 ? "" : "s"} · ${partsText}` + (notInvoiced > 0 ? ` + ${notInvoiced} not invoiced` : "");
+  }
   if (rows.some(isPartlyTicked)) {
     let ticked = 0;
     let total = 0;

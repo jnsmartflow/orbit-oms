@@ -27,6 +27,7 @@
 
 import { kgShare, lineLitres } from "@/lib/order-invoices/entry";
 import { detectStale } from "@/lib/order-invoices/rules";
+import { loadGroupsOf, loadPartText } from "@/lib/order-invoices/load-plan";
 
 /** One invoice of a SPLIT OBD, as the board row carries it. */
 export interface FloorInvoiceRow {
@@ -67,6 +68,13 @@ export interface FloorInvoiceRow {
   /** 6.4 — THIS invoice has shipped (order_invoices."isDispatched"). Never in
    *  To plan. Absent = not dispatched. */
   isDispatched?: boolean;
+  /** SPLIT LOAD (v27.76, phase 3) — the row's LOAD GROUP root: a truck part's
+   *  parent, or a root's own id when it has parts. ABSENT on every row not in a
+   *  load group, so an unsplit or Add-invoices payload is byte-identical. */
+  loadRootId?: number;
+  /** Split load — a row of this load-split OBD has no lines (a press died
+   *  half-way → Repair, commit 3). ABSENT unless true. */
+  halfWritten?: true;
 }
 
 /** One order_invoices row with its lines, as the board's read returns it. */
@@ -88,6 +96,8 @@ export interface InvoiceRowSource {
   ci?: { ciNumber: string | null; status: string } | null;
   /** The row has shipped (6.4). Omitted = no. */
   isDispatched?: boolean;
+  /** Split load (v27.76) — set on a truck part only. Omitted = none. */
+  loadParentId?: number | null;
 }
 
 /** One ACTIVE raw line of the OBD (import_raw_line_items, lineStatus 'active'). */
@@ -128,8 +138,13 @@ export function buildInvoiceRows(input: {
   const savedLines = rows.flatMap((r) => r.lines);
   // Half-written (a row with no lines) counts as stale — lib/order-invoices/split.ts loadSplitView.
   const stale = rows.some((r) => r.lines.length === 0) || detectStale(input.activeLines, savedLines);
+  // Split load: the roots that have parts, and "a press died half-way" — set
+  // ONLY on a load-split OBD (Add invoices' own half-writes stay plain stale).
+  const parents = new Set(rows.map((r) => r.loadParentId).filter((p): p is number => p !== null && p !== undefined));
+  const halfWritten = parents.size > 0 && rows.some((r) => r.lines.length === 0);
 
   return rows.map((r) => {
+    const loadRootId = r.loadParentId ?? (parents.has(r.id) ? r.id : undefined);
     const tins = r.lines.reduce((s, l) => s + l.qty, 0);
     const litres = r.lines.reduce((s, l) => {
       const line = activeById.get(l.rawLineItemId);
@@ -154,6 +169,9 @@ export function buildInvoiceRows(input: {
       heldById: r.heldById ?? null,
       ci: r.ci ?? null,
       isDispatched: r.isDispatched ?? false,
+      // Only when present — every other payload keeps its exact keys.
+      ...(loadRootId !== undefined ? { loadRootId } : {}),
+      ...(halfWritten ? { halfWritten: true as const } : {}),
     };
   });
 }
@@ -321,7 +339,7 @@ function narrowWhere<T extends Narrowable>(row: T, keep: (r: FloorInvoiceRow) =>
 
 /** The chip for the invoices of `all` that are not in `drawn`, or null when none are away. */
 export function awayChipOf(
-  all: readonly Pick<FloorInvoiceRow, "id" | "tripDropId" | "tripNumber" | "isHeld" | "ci">[],
+  all: readonly Pick<FloorInvoiceRow, "id" | "tripDropId" | "tripNumber" | "isHeld" | "ci" | "loadRootId">[],
   drawn: readonly Pick<FloorInvoiceRow, "id">[],
   shortTrip: (tripNumber: string) => string = (t) => t,
 ): { text: string; title: string } | null {
@@ -348,15 +366,92 @@ export function awayChipOf(
   }
   if (byPlace.size === 0) return null;
   const parts = Array.from(byPlace.values());
+  // Split load: every row is one invoice's truck parts → say "parts".
+  const noun = isOneLoadGroup(all) ? "parts" : "invoices";
   return {
     text: parts.map((p) => `${p.k} ${p.label}`).join(" · "),
-    title: `${parts.map((p) => `${p.k} of ${all.length} invoices ${p.long}`).join(", ")} — not shown here`,
+    title: `${parts.map((p) => `${p.k} of ${all.length} ${noun} ${p.long}`).join(", ")} — not shown here`,
   };
 }
 
-/** The typed invoice numbers (seq 2..n) — what the "+n" chip shows until commit 2. */
+/** The typed invoice numbers (seq 2..n) — what the "+n" chip shows until commit 2.
+ *  A Split load PART is not a typed paper (it repeats its root's number): skipped. */
 export function addedInvoiceNosOf(invoiceRows: FloorInvoiceRow[]): string[] {
-  return invoiceRows.filter((r) => r.seq > 1 && r.invoiceNo !== null).map((r) => r.invoiceNo as string);
+  return invoiceRows.filter((r) => r.seq > 1 && r.invoiceNo !== null && !isLoadPart(r)).map((r) => r.invoiceNo as string);
+}
+
+// ── SPLIT LOAD on the board (phase 3 commit 1, 2026-10-24) ──────────────────
+//
+// A truck PART is a row, but not a paper. Three things follow, all decided
+// here with load-plan.ts loadGroupsOf (the ONE home of "which group, which
+// part") and loadPartText (the ONE formatter) — never in a component:
+//   · the Add-invoices "k/n" counts PAPERS (a group once), so a pure split load
+//     has no "1/1" chip and its parts read "part 1 of 2" instead;
+//   · the OBD cell's "n invoices" counts papers (paperCountOf);
+//   · a group's parts are drawn directly under their paper (owner, 2026-10-24).
+// 🔴 On a bill with NO load row every answer is exactly what it was before.
+
+type GroupKey = Pick<FloorInvoiceRow, "id" | "seq" | "loadRootId">;
+
+/** A truck part (not the group's root). */
+function isLoadPart(r: Pick<FloorInvoiceRow, "id" | "loadRootId">): boolean {
+  return r.loadRootId !== undefined && r.loadRootId !== r.id;
+}
+
+/** The loadGroupsOf input for a board row. */
+function groupRow(r: GroupKey): { id: number; seq: number; loadParentId: number | null } {
+  return { id: r.id, seq: r.seq, loadParentId: isLoadPart(r) ? (r.loadRootId as number) : null };
+}
+
+/** Every row is one load group (a pure split load of one paper). */
+function isOneLoadGroup(rows: ReadonlyArray<Pick<FloorInvoiceRow, "loadRootId">>): boolean {
+  return rows.length > 0 && rows[0].loadRootId !== undefined && rows.every((r) => r.loadRootId === rows[0].loadRootId);
+}
+
+/** How many SAP PAPERS these rows are — a load group counts once. Equals
+ *  rows.length on every bill without a load row. */
+export function paperCountOf(rows: ReadonlyArray<Pick<FloorInvoiceRow, "id" | "loadRootId">>): number {
+  return new Set(rows.map((r) => r.loadRootId ?? r.id)).size;
+}
+
+/** Rows in DRAW order: papers by seq, each followed by its parts. The SAME
+ *  array back when no row is in a load group (seq order, as before). The
+ *  table (drawRowsOf) and the detail panel's Prev / Next (detail-scope.ts
+ *  detailWalk) both walk it, so they cannot disagree. */
+export function drawOrderOf<R extends GroupKey>(rows: readonly R[]): readonly R[] {
+  if (!rows.some((r) => r.loadRootId !== undefined)) return rows;
+  const bySeq = rows.slice().sort((a, b) => a.seq - b.seq);
+  const out: R[] = [];
+  for (const r of bySeq) {
+    // A part is drawn under its root (a part whose root is missing stays by seq).
+    if (isLoadPart(r) && bySeq.some((x) => x.id === r.loadRootId)) continue;
+    out.push(r);
+    if (r.loadRootId === r.id) out.push(...bySeq.filter((x) => isLoadPart(x) && x.loadRootId === r.id));
+  }
+  return out;
+}
+
+/**
+ * "part 1 gone" — on a WAITING part whose group already has a dispatched part
+ * (owner, 2026-10-24; amber, PairPlaceChip warn). null otherwise, and always
+ * null on a row not in a load group.
+ */
+export function goneChipOf(
+  all: ReadonlyArray<Pick<FloorInvoiceRow, "id" | "seq" | "invoiceNo" | "tripNumber" | "isDispatched" | "loadRootId">>,
+  row: Pick<FloorInvoiceRow, "id" | "tripDropId" | "isDispatched" | "loadRootId">,
+): { text: string; title: string } | null {
+  if (row.loadRootId === undefined || row.isDispatched === true || row.tripDropId !== null) return null;
+  const group = all.filter((r) => r.loadRootId === row.loadRootId);
+  const gone = group.filter((r) => r.id !== row.id && r.isDispatched === true);
+  if (gone.length === 0) return null;
+  const places = loadGroupsOf(group.map(groupRow));
+  const paper = group.find((r) => r.id === row.loadRootId)?.invoiceNo ?? "this invoice";
+  return {
+    text: `${gone.map((g) => loadPartText(places.get(g.id)!.k)).join(", ")} gone`,
+    title: gone
+      .map((g) => `${loadPartText(places.get(g.id)!.k)} of ${paper} left${g.tripNumber ? ` on ${g.tripNumber}` : ""}`)
+      .join("; "),
+  };
 }
 
 // ── Drawing (commits 2 and 3) ────────────────────────────────────────────────
@@ -369,11 +464,19 @@ export interface InvoiceDrawRow<T> {
   row: T;
   /** The invoice this draw row shows; null on an unsplit / re-delivery row. */
   invoice: FloorInvoiceRow | null;
-  /** 1-based position among the OBD's invoices, and their count (1 / 1 unsplit). */
+  /** 1-based position among the OBD's invoice ROWS (draw order), and their
+   *  count (1 / 1 unsplit). n > 1 ⇔ the row is drawn as an invoice row. */
   k: number;
   n: number;
   first: boolean;
   last: boolean;
+  /** The Add-invoices "k/n" chip to draw: the PAPER's place, a load group
+   *  counted once; null when the OBD is ONE paper (a pure split load) or the
+   *  row is not an invoice row. Equals { k, n } on every bill without a load row. */
+  chip: { k: number; n: number } | null;
+  /** Split load: this row's place in its load group ("part k of n"); null when
+   *  the row is not in one. */
+  load: { k: number; n: number } | null;
 }
 
 type Drawable = {
@@ -398,19 +501,33 @@ export function drawRowsOf<T extends Drawable>(row: T): InvoiceDrawRow<T>[] {
   const all = row.redelivery ? [] : row.invoiceRowsAll ?? row.invoiceRows ?? [];
   if (all.length < 2) {
     const key = row.redelivery ? `rd:${row.redelivery.id}` : String(row.orderId);
-    return [{ key, row, invoice: null, k: 1, n: 1, first: true, last: true }];
+    return [{ key, row, invoice: null, k: 1, n: 1, first: true, last: true, chip: null, load: null }];
   }
-  const inv = row.invoiceRows ?? [];
+  // Split load: papers by seq, each followed by its parts. With no load row
+  // drawOrderOf hands back the SAME array, and every value is as before.
+  const order = drawOrderOf(all);
+  const shown = row.invoiceRows ?? [];
+  const inv = order === all ? shown : order.filter((a) => shown.some((s) => s.id === a.id));
   const n = all.length;
-  return inv.map((invoice, i) => ({
-    key: `inv:${invoice.id}`,
-    row,
-    invoice,
-    k: all.findIndex((a) => a.id === invoice.id) + 1,
-    n,
-    first: i === 0,
-    last: i === inv.length - 1,
-  }));
+  const groups = order === all ? null : loadGroupsOf(order.map(groupRow));
+  const papers = groups === null ? null : order.filter((r) => !isLoadPart(r)).map((r) => r.id);
+  return inv.map((invoice, i) => {
+    const k = order.findIndex((a) => a.id === invoice.id) + 1;
+    const place = groups?.get(invoice.id);
+    const paperK = papers === null ? k : papers.indexOf(place?.rootId ?? invoice.id) + 1;
+    const paperN = papers === null ? n : papers.length;
+    return {
+      key: `inv:${invoice.id}`,
+      row,
+      invoice,
+      k,
+      n,
+      first: i === 0,
+      last: i === inv.length - 1,
+      chip: paperN > 1 ? { k: paperK, n: paperN } : null,
+      load: place !== undefined && place.n > 1 ? { k: place.k, n: place.n } : null,
+    };
+  });
 }
 
 /** Every OBD row of a list, expanded in order — ONE rule for the table and the pager. */

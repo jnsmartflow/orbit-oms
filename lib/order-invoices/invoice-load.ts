@@ -63,6 +63,9 @@ export async function loadSplitInvoiceRows(
       // 6.3 — the row's own CI, if any (not voided; newest first).
       ciReturns: { where: { isVoided: false }, orderBy: { id: "desc" }, take: 1, select: { ciNumber: true, status: true } },
       lines: { select: { rawLineItemId: true, qty: true } },
+      // Split load (v27.76) — the truck part's group root (buildInvoiceRows sets
+      // loadRootId ONLY on rows of a load group; every other payload is unchanged).
+      loadParentId: true,
     },
   });
   const obdById = new Map(orders.map((o) => [o.id, o.obdNumber]));

@@ -21,7 +21,7 @@ import { HandBadge } from "@/components/shared/hand-badge";
 import { ChallanBadge } from "@/components/shared/challan-badge";
 import { ObdBadge } from "@/components/shared/obd-badge";
 import { shipMarkers, shortTripNumber, SEARCH_HIT_ROW_CLS } from "./floor-table";
-import { InvoiceLines, ObdDateLine } from "./bill-ref-cells";
+import { InvoiceLines, LoadPartChip, ObdDateLine } from "./bill-ref-cells";
 import { PairPlaceChip, pairBarBorderCls, type PairBarKind } from "./pair-cells";
 import { awayChipOf, drawRowsOf, type FloorInvoiceRow } from "@/lib/floor/invoice-rows";
 import { formatLitres, formatWeightKg } from "./status-pill";
@@ -101,7 +101,15 @@ const DASH = <span className="text-ink-400">—</span>;
 
 /** One drawn invoice row of a split OBD (6.1): "k/n" and, on the first drawn
  *  row, where the OBD's other invoices are ("2 in To plan"). */
-type InvoicePart = { k: number; n: number; away: { text: string; title: string } | null; first: boolean };
+type InvoicePart = {
+  k: number;
+  n: number;
+  /** The "k/n" chip to draw (papers) and the Split load "part k of n" — drawRowsOf. */
+  chip: { k: number; n: number } | null;
+  load: { k: number; n: number } | null;
+  away: { text: string; title: string } | null;
+  first: boolean;
+};
 
 function Cell({ col, row, now, part = null }: { col: HoldColumn; row: FloorHoldRow; now: Date; part?: InvoicePart | null }) {
   switch (col) {
@@ -109,6 +117,8 @@ function Cell({ col, row, now, part = null }: { col: HoldColumn; row: FloorHoldR
       return (
         <td className={TD}>
           <span className="font-mono text-[11.5px] font-medium text-[#111827]">{row.obdNumber}</span>
+          {/* A truck part with no SAP number yet: its tag sits by the OBD number. */}
+          {part?.load && row.invoiceNo === null && <LoadPartChip k={part.load.k} n={part.load.n} className="ml-1.5" />}
           <ObdDateLine iso={row.obdDateTime} isEmailTime={false} />
         </td>
       );
@@ -117,7 +127,7 @@ function Cell({ col, row, now, part = null }: { col: HoldColumn; row: FloorHoldR
         <td className={TD}>
           {row.invoiceNo || row.invoiceDate ? (
             part ? (
-              <InvoiceLines invoiceNo={row.invoiceNo} invoiceDate={row.invoiceDate} part={{ k: part.k, n: part.n }} />
+              <InvoiceLines invoiceNo={row.invoiceNo} invoiceDate={row.invoiceDate} part={part.chip} load={part.load} />
             ) : (
               <InvoiceLines invoiceNo={row.invoiceNo} invoiceDate={row.invoiceDate} invoiceCount={row.invoiceCount} />
             )
@@ -300,7 +310,7 @@ export function HoldTable({
       tick: invKey(d.invoice!.id),
       row,
       cellRow: invoiceCellRow(row, d.invoice!),
-      part: { k: d.k, n: d.n, away, first: d.first },
+      part: { k: d.k, n: d.n, chip: d.chip, load: d.load, away, first: d.first },
       seq: d.invoice!.seq,
       last: d.last,
     }));

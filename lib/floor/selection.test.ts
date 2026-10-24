@@ -168,3 +168,27 @@ test("label: a PARTLY ticked split OBD → '1 OBD · 2 of 4 invoices'", () => {
   // Every invoice ticked → the Phase 4 label, unchanged.
   assert.equal(selectionCountLabel([{ invoiceNo: "I716", invoiceRows: all }]), "1 OBD · 4 invoices");
 });
+
+// ── Split load (phase 3 commit 1, 2026-10-24): parts share one number ───────
+
+test("split load: two ticked parts of ONE invoice say '1 invoice · 2 parts', never just '1 invoice'", () => {
+  const parts = [
+    { invoiceNo: "I536230716", loadRootId: 17010 },
+    { invoiceNo: "I536230716", loadRootId: 17010 },
+  ];
+  assert.equal(selectionCountLabel([{ invoiceNo: "I536230716", invoiceRows: parts }]), "1 OBD · 1 invoice · 2 parts");
+  // One of the two ticked (narrowed row keeps every part in invoiceRowsAll).
+  assert.equal(
+    selectionCountLabel([{ invoiceNo: "I536230716", invoiceRows: parts.slice(0, 1), invoiceRowsAll: parts }]),
+    "1 OBD · 1 invoice · 1 of 2 parts",
+  );
+  // A part beside an ordinary bill.
+  assert.equal(selectionCountLabel([{ invoiceNo: "I536230716", invoiceRows: parts }, r("I2")]), "2 OBDs · 2 invoices · 2 parts");
+});
+
+test("split load: a selection with NO part keeps today's labels word for word", () => {
+  const split = [{ invoiceNo: "I1" }, { invoiceNo: "I2" }];
+  assert.equal(selectionCountLabel([{ invoiceNo: "I1", invoiceRows: split }]), "1 OBD · 2 invoices");
+  assert.equal(selectionCountLabel([{ invoiceNo: "I1", invoiceRows: split.slice(0, 1), invoiceRowsAll: split }]), "1 OBD · 1 of 2 invoices");
+  assert.equal(selectionCountLabel([r("I1"), r("I2")]), null);
+});

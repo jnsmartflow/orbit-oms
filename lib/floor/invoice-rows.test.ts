@@ -6,7 +6,7 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { addedInvoiceNosOf, awayChipOf, buildInvoiceRows, drawRows, drawRowsOf, narrowToInvoiceIds, narrowToPlace, placeLoad, type FloorInvoiceRow, type InvoiceLineFacts, type InvoiceRowSource } from "./invoice-rows";
+import { addedInvoiceNosOf, awayChipOf, buildInvoiceRows, drawRows, drawRowsOf, goneChipOf, narrowToInvoiceIds, narrowToPlace, paperCountOf, placeLoad, type FloorInvoiceRow, type InvoiceLineFacts, type InvoiceRowSource } from "./invoice-rows";
 
 const LINES: InvoiceLineFacts[] = [
   { rawLineItemId: 62850, lineId: 1, skuCodeRaw: "5880380", unitQty: 13, volumeLine: 260, totalWeight: null },
@@ -198,4 +198,96 @@ test("awayChipOf: all in one place → null; split → '2 on L-20' in To plan, '
   // On two trips and To plan: each place named.
   const three = all.map((r) => (r.seq === 3 ? { ...r, tripDropId: 99, tripNumber: "L-261007-05" } : r));
   assert.equal(awayChipOf(three, three.filter((r) => r.tripDropId === STOP), short)?.text, "1 in To plan · 1 on L-05");
+});
+
+// ── Split load (phase 3 commit 1, 2026-10-24): parts are rows, not papers ───
+
+/** 18648 as a pure SPLIT LOAD: seq 1 (…716) keeps 25 tins, part 40001 takes 25. */
+const LOAD: InvoiceRowSource[] = [
+  { id: 17010, seq: 1, invoiceNo: "I536230716", invoiceDate: D, lines: [{ rawLineItemId: 62850, qty: 13 }, { rawLineItemId: 62851, qty: 12 }] },
+  { id: 40001, seq: 2, invoiceNo: "I536230716", invoiceDate: D, loadParentId: 17010, lines: [{ rawLineItemId: 62852, qty: 10 }, { rawLineItemId: 62853, qty: 15 }] },
+];
+/** Add invoices AND a split load: …716 (SAP) split into 2 trucks, …713 typed. */
+const MIXED: InvoiceRowSource[] = [
+  { id: 17010, seq: 1, invoiceNo: "I536230716", invoiceDate: D, lines: [{ rawLineItemId: 62850, qty: 13 }] },
+  { id: 17011, seq: 2, invoiceNo: "I536230713", invoiceDate: D, lines: [{ rawLineItemId: 62851, qty: 12 }] },
+  { id: 40001, seq: 3, invoiceNo: "I536230716", invoiceDate: D, loadParentId: 17010, lines: [{ rawLineItemId: 62852, qty: 10 }, { rawLineItemId: 62853, qty: 15 }] },
+];
+
+test("split load: loadRootId / halfWritten are ABSENT on every bill without a load row — the payload keeps its keys", () => {
+  const plain = buildInvoiceRows({ rows: ROWS, activeLines: LINES, obdKg: 1357 });
+  assert.ok(plain.every((r) => !("loadRootId" in r) && !("halfWritten" in r)));
+  // An Add invoices half-write stays plain stale, no halfWritten flag.
+  const half = buildInvoiceRows({ rows: [...ROWS.slice(0, 3), { ...ROWS[3], lines: [] }], activeLines: LINES, obdKg: 1357 });
+  assert.ok(half.every((r) => r.stale && !("halfWritten" in r)));
+  const load = buildInvoiceRows({ rows: LOAD, activeLines: LINES, obdKg: 1357 });
+  assert.deepEqual(load.map((r) => r.loadRootId), [17010, 17010]);
+  const dead = buildInvoiceRows({ rows: [LOAD[0], { ...LOAD[1], lines: [] }], activeLines: LINES, obdKg: 1357 });
+  assert.ok(dead.every((r) => r.halfWritten === true && r.stale));
+});
+
+test("drawRowsOf: on a bill WITHOUT a load row, chip === { k, n } and load is null on every row (unchanged drawing)", () => {
+  const invoiceRows = buildInvoiceRows({ rows: ROWS, activeLines: LINES, obdKg: 1357 });
+  for (const d of drawRowsOf({ orderId: 18648, invoiceRows })) {
+    assert.deepEqual(d.chip, { k: d.k, n: d.n });
+    assert.equal(d.load, null);
+  }
+  const unsplit = drawRowsOf({ orderId: 7, invoiceRows: [] })[0];
+  assert.deepEqual([unsplit.chip, unsplit.load], [null, null]);
+});
+
+test("drawRowsOf: a pure split load is ONE paper — no '1/1' chip, 'part 1 of 2' / 'part 2 of 2'", () => {
+  const invoiceRows = buildInvoiceRows({ rows: LOAD, activeLines: LINES, obdKg: 1357 });
+  assert.deepEqual(drawRowsOf({ orderId: 18648, invoiceRows }).map((d) => [d.key, d.k, d.n, d.chip, d.load]), [
+    ["inv:17010", 1, 2, null, { k: 1, n: 2 }],
+    ["inv:40001", 2, 2, null, { k: 2, n: 2 }],
+  ]);
+});
+
+test("drawRowsOf: Add invoices + split load — the Add-invoices k/n counts PAPERS, parts drawn under their paper", () => {
+  const invoiceRows = buildInvoiceRows({ rows: MIXED, activeLines: LINES, obdKg: 1357 });
+  assert.deepEqual(drawRowsOf({ orderId: 18648, invoiceRows }).map((d) => [d.key, d.chip, d.load, d.first, d.last]), [
+    ["inv:17010", { k: 1, n: 2 }, { k: 1, n: 2 }, true, false],
+    ["inv:40001", { k: 1, n: 2 }, { k: 2, n: 2 }, false, false],
+    ["inv:17011", { k: 2, n: 2 }, null, false, true],
+  ]);
+  // Narrowed to To plan with part 2 on a trip: only what is here, same labels.
+  const pool = { orderId: 18648, volumeLitres: 1000, weightKg: 1357, invoiceRows: invoiceRows.filter((r) => r.id !== 40001), invoiceRowsAll: invoiceRows };
+  assert.deepEqual(drawRowsOf(pool).map((d) => [d.key, d.chip, d.load]), [
+    ["inv:17010", { k: 1, n: 2 }, { k: 1, n: 2 }],
+    ["inv:17011", { k: 2, n: 2 }, null],
+  ]);
+});
+
+test("paperCountOf / addedInvoiceNosOf: a part is not a paper", () => {
+  const plain = buildInvoiceRows({ rows: ROWS, activeLines: LINES, obdKg: 1357 });
+  assert.equal(paperCountOf(plain), 4);
+  const load = buildInvoiceRows({ rows: LOAD, activeLines: LINES, obdKg: 1357 });
+  assert.equal(paperCountOf(load), 1);
+  assert.deepEqual(addedInvoiceNosOf(load), []);
+  const mixed = buildInvoiceRows({ rows: MIXED, activeLines: LINES, obdKg: 1357 });
+  assert.equal(paperCountOf(mixed), 2);
+  assert.deepEqual(addedInvoiceNosOf(mixed), ["I536230713"]);
+});
+
+test("goneChipOf: a WAITING part whose sibling is dispatched → amber 'part 1 gone'; else null", () => {
+  const rows = buildInvoiceRows({
+    rows: [{ ...LOAD[0], tripDropId: 2763, tripNumber: "L-261024-04", isDispatched: true }, LOAD[1]],
+    activeLines: LINES,
+    obdKg: 1357,
+  });
+  assert.deepEqual(goneChipOf(rows, rows[1]), { text: "part 1 gone", title: "part 1 of I536230716 left on L-261024-04" });
+  assert.equal(goneChipOf(rows, rows[0]), null); // the dispatched one itself
+  const waiting = buildInvoiceRows({ rows: LOAD, activeLines: LINES, obdKg: 1357 });
+  assert.equal(goneChipOf(waiting, waiting[1]), null);
+  const plain = buildInvoiceRows({ rows: ROWS, activeLines: LINES, obdKg: 1357 });
+  assert.equal(goneChipOf(plain, plain[1]), null);
+});
+
+test("awayChipOf: a pure split load says 'parts' in its title; Add invoices keeps 'invoices'", () => {
+  const rows = buildInvoiceRows({ rows: [{ ...LOAD[0], tripDropId: STOP, tripNumber: "L-261007-20" }, LOAD[1]], activeLines: LINES, obdKg: 1357 });
+  assert.deepEqual(awayChipOf(rows, rows.filter((r) => r.tripDropId === null), short), {
+    text: "1 on L-20",
+    title: "1 of 2 parts on L-261007-20 — not shown here",
+  });
 });

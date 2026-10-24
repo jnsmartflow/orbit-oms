@@ -57,6 +57,7 @@ import {
   loadBillRefusal,
   loadGroupsOf,
   loadMergeRefusal,
+  loadPartText,
   loadSplitRefusal,
   mergeAwayRefusal,
   paperLabel,
@@ -361,7 +362,7 @@ export async function saveLoadSplit(
 
   // 7. One status log row.
   const root = rootOf(rows, source);
-  const shares = [plan.sourceLines, ...plan.creates.map((c) => c.lines)].map((ls, i) => `part ${i + 1}: ${sumTins(ls)} tins`);
+  const shares = [plan.sourceLines, ...plan.creates.map((c) => c.lines)].map((ls, i) => `${loadPartText(i + 1)}: ${sumTins(ls)} tins`);
   await prisma.order_status_logs.create({
     data: {
       orderId,
@@ -430,7 +431,7 @@ export async function mergeLoadParts(
       fromStage: bill.workflowStage,
       toStage: bill.workflowStage,
       changedById: req.actorId,
-      note: `${SPLIT_LOAD_MERGED_NOTE}: part${ks.length > 1 ? "s" : ""} ${ks.join(", ")} of ${paperLabel(rootOf(rows, survivor), bill.obdNumber)} into part ${groups.get(plan.survivorId)!.k} (${tins} tins)`,
+      note: `${SPLIT_LOAD_MERGED_NOTE}: part${ks.length > 1 ? "s" : ""} ${ks.join(", ")} of ${paperLabel(rootOf(rows, survivor), bill.obdNumber)} into ${loadPartText(groups.get(plan.survivorId)!.k)} (${tins} tins)`,
       orderInvoiceIds: [plan.survivorId],
     },
   });

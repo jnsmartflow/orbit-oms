@@ -47,9 +47,9 @@ import { formatArticleTag } from "@/lib/floor/format";
 // (2026-10-02) so the Tint Manager renders Floor's markup, not a copy. Output
 // here is byte-identical. formatDateIST (the shared date-only formatter the
 // panel's "Invoice date" reads) is used inside InvoiceLines.
-import { InvoiceCountChip, InvoiceLines, ObdDateLine, fmtDateTime } from "./bill-ref-cells";
+import { InvoiceCountChip, InvoiceLines, LoadPartChip, ObdDateLine, fmtDateTime } from "./bill-ref-cells";
 // ONE FLOOR ROW PER INVOICE (Add invoices Phase 4 commit 2) — the draw rule.
-import { awayChipOf, drawRowsOf, type InvoiceDrawRow } from "@/lib/floor/invoice-rows";
+import { awayChipOf, drawRowsOf, goneChipOf, paperCountOf, type InvoiceDrawRow } from "@/lib/floor/invoice-rows";
 // TINT / BASE -- one owner for the word, shared with both picking boards. The
 // pinks it paints are copied FROM this module's neighbour status-pill.tsx.
 import { ColourWorkBadge } from "@/components/picking/card-atoms";
@@ -1124,6 +1124,9 @@ export function FloorTable({
     // list that draws every invoice (not narrowed) has none away.
     const away =
       split && variant === "live" ? awayChipOf(row.invoiceRowsAll ?? row.invoiceRows, row.invoiceRows, shortTripNumber) : null;
+    // SPLIT LOAD (phase 3): a waiting truck part whose sibling already left —
+    // "part 1 gone" (amber). Live tables only, like the away chip.
+    const gone = inv !== null && variant === "live" ? goneChipOf(row.invoiceRowsAll ?? row.invoiceRows, inv) : null;
     const barKind: PairBarKind | null = split
       ? splitSelected
         ? "selected"
@@ -1695,8 +1698,19 @@ export function FloorTable({
                 {/* A split OBD: "n invoices" under the number — on EVERY row of its
                     block, or on the single row of a layout that does not expand
                     (no Invoice cell: Tinting). */}
-                {(split || (!invCell && (row.invoiceRows?.length ?? 0) > 1)) && (
-                  <InvoiceCountChip n={row.invoiceRows.length} of={row.invoiceRowsAll?.length} className="ml-1.5" />
+                {/* Counted in PAPERS (paperCountOf): a Split load part is not an
+                    invoice of its own, so a bill split only by load has no chip. */}
+                {(split || (!invCell && (row.invoiceRows?.length ?? 0) > 1)) && paperCountOf(row.invoiceRowsAll ?? row.invoiceRows) > 1 && (
+                  <InvoiceCountChip
+                    n={paperCountOf(row.invoiceRows)}
+                    of={row.invoiceRowsAll ? paperCountOf(row.invoiceRowsAll) : undefined}
+                    className="ml-1.5"
+                  />
+                )}
+                {/* A truck part with NO SAP number yet: its "part k of n" sits
+                    beside the OBD number (the Invoice cell is empty). */}
+                {inv !== null && inv.invoiceNo === null && draw!.load && (
+                  <LoadPartChip k={draw!.load.k} n={draw!.load.n} className="ml-1.5" />
                 )}
               </>
             }
@@ -1766,16 +1780,22 @@ export function FloorTable({
             <td className={`${TD} align-middle`} rowSpan={merged ? pair.size : undefined}>
               {inv ? (
                 // ONE invoice of a split OBD — its own number and date, "k/n".
-                <InvoiceLines invoiceNo={inv.invoiceNo} invoiceDate={inv.invoiceDate} part={{ k: draw!.k, n: draw!.n }} />
+                // "k/n" counts PAPERS (draw.chip); a truck part adds "part k of n".
+                <InvoiceLines invoiceNo={inv.invoiceNo} invoiceDate={inv.invoiceDate} part={draw!.chip} load={draw!.load} />
               ) : (
                 // A split OBD drawn as one row (a re-delivery row) says "n invoices".
-                <InvoiceLines invoiceNo={row.invoiceNo} invoiceDate={row.invoiceDate} invoiceCount={row.invoiceRows?.length ?? 0} />
+                <InvoiceLines invoiceNo={row.invoiceNo} invoiceDate={row.invoiceDate} invoiceCount={paperCountOf(row.invoiceRows ?? [])} />
               )}
               {/* P5-3: where this OBD's other invoices are — "2 on L-02" / "2 in
                   To plan" (amber, the bar's partner) — on the first drawn row. */}
               {away !== null && draw!.first && (
                 <div className="mt-0.5 overflow-hidden text-ellipsis">
                   <PairPlaceChip chip={{ text: away.text, warn: true, title: away.title }} />
+                </div>
+              )}
+              {gone !== null && (
+                <div className="mt-0.5 overflow-hidden text-ellipsis">
+                  <PairPlaceChip chip={{ text: gone.text, warn: true, title: gone.title }} />
                 </div>
               )}
               {/* The pair's chip names SAP's invoice — seq 1, the block's first row. */}

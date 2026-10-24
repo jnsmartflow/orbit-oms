@@ -11,6 +11,7 @@ import { Mail } from "lucide-react";
 // formatDateIST is the SHARED date-only formatter — the same one the detail
 // panel's "Invoice date" cell reads. One formatter, so the surfaces cannot disagree.
 import { formatDateIST } from "@/lib/floor/format";
+import { loadPartText } from "@/lib/order-invoices/load-plan";
 
 /** "01 Oct 14:05" in IST — the OBD cell's date line (and Floor's other day+time reads). */
 export function fmtDateTime(iso: string | null): string {
@@ -68,16 +69,22 @@ export function ObdDateLine({
 //   `invoiceCount` — a split OBD drawn as ONE row anyway (On hold, Cancel & CI,
 //                    a re-delivery row): "n invoices" after SAP's number.
 // Both omitted (every other caller, and every unsplit bill) → exactly as before.
+//   `load`         — SPLIT LOAD (phase 3, 2026-10-24): this row is a truck part
+//                    of its invoice — "part k of n" (LoadPartChip) after the
+//                    number. With no number yet the caller puts the tag beside
+//                    the OBD number instead (this component draws nothing then).
 export function InvoiceLines({
   invoiceNo,
   invoiceDate,
   part,
   invoiceCount,
+  load,
 }: {
   invoiceNo: string | null;
   invoiceDate: string | null;
-  part?: { k: number; n: number };
+  part?: { k: number; n: number } | null;
   invoiceCount?: number;
+  load?: { k: number; n: number } | null;
 }) {
   const many = invoiceCount !== undefined && invoiceCount > 1 ? invoiceCount : null;
   return (
@@ -86,6 +93,7 @@ export function InvoiceLines({
         <span className="font-mono text-[11.5px] font-medium text-[#111827]">
           {invoiceNo}
           {part && <InvoicePartChip k={part.k} n={part.n} />}
+          {load && <LoadPartChip k={load.k} n={load.n} />}
           {many !== null && <InvoiceCountChip n={many} />}
         </span>
       )}
@@ -107,6 +115,21 @@ export function InvoicePartChip({ k, n }: { k: number; n: number }) {
       className="ml-1 rounded-[4px] bg-ink-100 px-1 py-px font-sans text-[10px] font-semibold tabular-nums text-ink-700"
     >
       {k}/{n}
+    </span>
+  );
+}
+
+/** "part 1 of 2" — a truck PART of one SAP invoice (Split load, owner
+ *  2026-10-24): grey ink and the WORD "part", so it is never read as Add
+ *  invoices' "1/2" (a second paper) or a pair's "1 of 2". Not violet — violet
+ *  means "selected" on Floor (CLAUDE_UI §2.1). Text from loadPartText only. */
+export function LoadPartChip({ k, n, className = "ml-1" }: { k: number; n: number; className?: string }) {
+  return (
+    <span
+      title={`Truck load ${loadPartText(k, n)} of this invoice — every part carries the same invoice number`}
+      className={`${className} whitespace-nowrap rounded-[4px] bg-ink-100 px-1 py-px font-sans text-[10px] font-semibold tabular-nums text-ink-700`}
+    >
+      {loadPartText(k, n)}
     </span>
   );
 }

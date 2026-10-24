@@ -28,7 +28,7 @@
 // same invoice is already on this trip". Only rows of a load group carry
 // loadRootId, so every other row — and every wording above — is unchanged.
 
-import { loadGroupsOf } from "./load-plan";
+import { loadGroupsOf, loadPartText } from "./load-plan";
 
 /** One invoice row of the OBD, with where it sits now. */
 export interface TripBillRow {
@@ -82,7 +82,7 @@ function sameInvoiceOnTrip(
   const places = loadGroupsOf(rows.map((x) => ({ id: x.id, seq: x.seq, loadParentId: x.loadRootId === undefined || x.loadRootId === null || x.loadRootId === x.id ? null : x.loadRootId })));
   const me = places.get(r.id)!;
   const root = rows.find((x) => x.id === rootId) ?? r;
-  return `${invoiceLabel(root, obdNumber)} part ${me.k} of ${me.n} — part ${places.get(other.id)!.k} of the same invoice is already on this trip`;
+  return `${invoiceLabel(root, obdNumber)} ${loadPartText(me.k, me.n)} — ${loadPartText(places.get(other.id)!.k)} of the same invoice is already on this trip`;
 }
 
 /** The rows a press is about: every row ('all') or the chosen ones. */

@@ -107,3 +107,17 @@ test("panel scope → action: a scoped invoice of a split OBD acts on that row; 
     invoiceRowIds: { 18648: [36799] },
   });
 });
+
+test("detailWalk (Split load, 2026-10-24): a part walks right after its paper, as the table draws it", () => {
+  const rows = [
+    {
+      orderId: 18648,
+      invoiceRows: [
+        { id: 17010, seq: 1, loadRootId: 17010 },
+        { id: 17011, seq: 2 },
+        { id: 40001, seq: 3, loadRootId: 17010 },
+      ],
+    },
+  ];
+  assert.deepEqual(detailWalk(rows).map((k) => k.invoiceSeq), [1, 3, 2]);
+});
