@@ -56,6 +56,17 @@ function istSerials(d: Date): { day: number; time: number } {
   };
 }
 
+/** The tripDate (UTC midnight, @db.Date) → its Excel day serial. No IST shift. */
+function daySerial(d: Date): number {
+  return Math.round((d.getTime() - EXCEL_EPOCH_MS) / DAY_MS);
+}
+
+/** A slot's "H:MM" / "HH:MM[:SS]" → an Excel time serial, or null when unreadable. */
+function slotSerial(t: string | null): number | null {
+  const m = t === null ? null : /^(\d{1,2}):(\d{2})(?::\d{2})?$/.exec(t.trim());
+  return m ? (Number(m[1]) * 60 + Number(m[2])) / 1440 : null;
+}
+
 const text = (v: string | null): XLSX.CellObject | null => (v === null || v === "" ? null : { t: "s", v });
 const num = (v: number, z?: string): XLSX.CellObject => (z ? { t: "n", v, z } : { t: "n", v });
 
@@ -71,12 +82,16 @@ export function buildNtsTripsWorkbook(rows: readonly NtsTripRow[]): ArrayBuffer 
 
   rows.forEach((row, i) => {
     const r = HEADER_ROW + 1 + i;
-    const { day, time } = istSerials(row.createdAt);
+    // D7 (2026-10-24): the DAY is the trip's tripDate. The TIME is the entry
+    // time for a normal trip (unchanged), and the slot time for a backdated one
+    // — blank with no slot, never the entry time.
+    const day = daySerial(row.tripDate);
+    const time = row.backdated ? slotSerial(row.slotTime) : istSerials(row.createdAt).time;
     put(r, 0, text(row.tripNo));
     put(r, 1, num(day, "mmm-yy"));
     put(r, 2, num(row.dealerCount, "0"));
     put(r, 3, num(day, "dd/mm/yyyy"));
-    put(r, 4, num(time, "hh:mm"));
+    put(r, 4, time === null ? null : num(time, "hh:mm"));
     put(r, 5, text(row.place));
     put(r, 6, num(row.litres, "0"));
     put(r, 7, num(row.kg)); // General — already rounded to 3 decimals; "0.###" would print "2901."

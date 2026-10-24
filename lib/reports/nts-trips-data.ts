@@ -14,7 +14,13 @@
 //   verified live that day). EVERY such trip that is not
 //   cancelled — including trips with zero bills, and typed plates such as
 //   "HAND", "CI" or "TESTTRIP", printed exactly as typed (owner: no exclusions).
-//   Period: trips.createdAt as an IST date (NOT manualDispatchAt — owner).
+//   Period: trips.tripDate — the day the truck LEFT (owner D7, 2026-10-24) —
+//   compared as the plain @db.Date it is, no IST shift; sorted tripDate, then
+//   trip number. Never manualDispatchAt (owner). A BACKDATED trip (tripDate
+//   before the IST day of createdAt — made later from a past day on /floor)
+//   prints its slot time as Dispatch Time (blank with no slot), never the
+//   entry time, and "Entered DD-MM-YYYY HH:MM" (IST) in Remarks.
+//   Was createdAt (owner choice) until 2026-10-24; now tripDate (D7) because past days can be edited. Do not revert.
 //   Delivery type: the trip's OWN type (trips.deliveryTypeId).
 //
 // ── WHICH BILLS COUNT ON A TRIP ──────────────────────────────────────────────
@@ -59,8 +65,15 @@ export const NTS_TRANSPORTER_IDS = [4, 32] as const; // 4 Nagadhiraj, 32 JNL. Id
 /** One trip, already resolved to what the sheet prints. */
 export interface NtsTripRow {
   tripNo: string;
-  /** trips.createdAt — the instant; the workbook takes its IST day and time. */
+  /** trips.tripDate (UTC midnight) — Month and Dispatch Date (D7). */
+  tripDate: Date;
+  /** trips.createdAt — the instant; the workbook takes its IST time for a normal trip. */
   createdAt: Date;
+  /** tripDate is before the IST day of createdAt (made later from a past day). */
+  backdated: boolean;
+  /** The trip's dispatch slot (dispatch_slot_master.windowTime), or null. A
+   *  backdated trip's Dispatch Time. */
+  slotTime: string | null;
   dealerCount: number;
   /** Distinct effective areas, UPPERCASE, A–Z, ", " — "" for an empty trip. */
   place: string;
@@ -87,7 +100,7 @@ export interface NtsTripRow {
 }
 
 export interface NtsTripsParams {
-  /** YYYY-MM-DD, inclusive — the trip's CREATED date (IST). */
+  /** YYYY-MM-DD, inclusive — the trip's tripDate (D7, 2026-10-24). */
   from: string;
   to: string;
   /** The TRIP's own delivery type; null/absent = all. */
@@ -98,7 +111,19 @@ export interface NtsTripsParams {
 const STAGE_CANCELLED = "cancelled";
 
 const IST_MS = 5.5 * 60 * 60 * 1000;
-const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** The IST calendar day of an instant, as UTC midnight — tripDate's shape. */
+function istDayOf(d: Date): Date {
+  const s = new Date(d.getTime() + IST_MS);
+  return new Date(Date.UTC(s.getUTCFullYear(), s.getUTCMonth(), s.getUTCDate()));
+}
+
+/** "24-10-2026 10:12" in IST — a backdated trip's Remarks note. */
+function istDayTime(d: Date): string {
+  const s = new Date(d.getTime() + IST_MS);
+  const p2 = (n: number) => String(n).padStart(2, "0");
+  return `${p2(s.getUTCDate())}-${p2(s.getUTCMonth() + 1)}-${s.getUTCFullYear()} ${p2(s.getUTCHours())}:${p2(s.getUTCMinutes())}`;
+}
 
 /** A delivery type as the sheet writes it: UPPERCASE, Upcountry → "UPC". */
 function typeLabel(name: string): string {
@@ -110,23 +135,23 @@ export async function getNtsTripsRows(params: NtsTripsParams): Promise<NtsTripRo
   const fromDate = parseReportDate(params.from);
   const toDate = parseReportDate(params.to);
   if (fromDate.getTime() > toDate.getTime()) throw new Error("`from` is after `to`");
-  // The period as instants: IST midnight of `from` to IST midnight after `to`.
-  const winStart = new Date(fromDate.getTime() - IST_MS);
-  const winEnd = new Date(toDate.getTime() + DAY_MS - IST_MS);
-
-  // ── 1. Nagadhiraj + JNL's (ids 4, 32) trips created in the period ─────────────────────────
+  // ── 1. Nagadhiraj + JNL's (ids 4, 32) trips DATED in the period (D7) ──────
+  // tripDate is a @db.Date (UTC midnight) — compared as a plain date, both ends
+  // inclusive, exactly the shape parseReportDate returns.
   const trips = await prisma.trips.findMany({
     where: {
       transporterId: { in: [...NTS_TRANSPORTER_IDS] },
       status: { not: TRIP_CANCELLED },
-      createdAt: { gte: winStart, lt: winEnd },
+      tripDate: { gte: fromDate, lte: toDate },
       ...(params.deliveryTypeId ? { deliveryTypeId: params.deliveryTypeId } : {}),
     },
     select: {
       id: true,
       tripNumber: true,
       typeCode: true,
+      tripDate: true,
       createdAt: true,
+      dispatchWindow: { select: { windowTime: true } },
       adhocVehicleNo: true,
       driverName: true,
       dieselAmount: true,
@@ -135,7 +160,7 @@ export async function getNtsTripsRows(params: NtsTripsParams): Promise<NtsTripRo
       vehicle: { select: { vehicleNo: true, category: true } },
       transporter: { select: { name: true } },
     },
-    orderBy: [{ createdAt: "asc" }, { tripNumber: "asc" }],
+    orderBy: [{ tripDate: "asc" }, { tripNumber: "asc" }],
   });
   if (trips.length === 0) return [];
 
@@ -291,12 +316,18 @@ export async function getNtsTripsRows(params: NtsTripsParams): Promise<NtsTripRo
   return trips.map((t) => {
     const acc = accByTrip.get(t.id)!;
     const own = t.deliveryType.name;
+    // BACKDATED (D7): the trip's day is before the IST day it was entered.
+    const backdated = t.tripDate.getTime() < istDayOf(t.createdAt).getTime();
+    const entered = backdated ? `Entered ${istDayTime(t.createdAt)}` : null;
     const others = Array.from(acc.types.keys())
       .filter((n) => n !== own)
       .sort((a, b) => (typeRank.get(a) ?? 0) - (typeRank.get(b) ?? 0));
     return {
       tripNo: t.tripNumber,
+      tripDate: t.tripDate,
       createdAt: t.createdAt,
+      backdated,
+      slotTime: blank(t.dispatchWindow?.windowTime),
       dealerCount: acc.stops.size,
       place: Array.from(acc.places).sort((a, b) => a.localeCompare(b)).join(", "),
       litres: Math.round(acc.litres),
@@ -306,7 +337,7 @@ export async function getNtsTripsRows(params: NtsTripsParams): Promise<NtsTripRo
       vehicleModel: t.vehicle ? blank(t.vehicle.category) : null,
       deliveryTypes: [own, ...others].map(typeLabel).join(", "),
       typeLetter: t.typeCode,
-      remarks: acc.remarks.join(", "),
+      remarks: [acc.remarks.join(", "), entered].filter((x): x is string => x !== null && x !== "").join(" · "),
       diesel: t.dieselAmount === null ? 0 : Math.round(t.dieselAmount.toNumber()),
       tripNote: (t.note ?? "").replace(/\s*[\r\n]+\s*/g, " ").trim(),
       transporterName: blank(t.transporter?.name),

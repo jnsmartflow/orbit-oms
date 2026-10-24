@@ -15,7 +15,7 @@ const MAX_DAYS = 92;
  * GET /api/reports/nts-trips?from=YYYY-MM-DD&to=YYYY-MM-DD[&deliveryTypeId=N]
  * — NTS TRIPS (2026-10-09): one row per Nagadhiraj + JNL (ids 4, 32) Floor trip in Smart Flow's
  * "Tempo Report" layout (lib/reports/nts-trips-data.ts — which trips and which
- * bills are in its header). `from`/`to` are the trip's CREATED dates (IST);
+ * bills are in its header). `from`/`to` are the trip's tripDate (D7, 2026-10-24);
  * `deliveryTypeId` filters each TRIP by its own type.
  *
  * READ-ONLY. Same gate as Trip Detail — `reports_trip_detail` canExport (owner:
