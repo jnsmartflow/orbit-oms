@@ -23,6 +23,8 @@
 // menu's hint): a row dispatched; ANY ci_returns row on the OBD (void
 // included); rows on different stops / holds. A copy or re-delivery does NOT
 // block, but a row one points at is never deleted (RESTRICT guard).
+// SPLIT LOAD LOCK (v27.76, 2026-10-24): any 'load' row on the OBD refuses save /
+// undo / GET's blockedReason with rules.ts ADD_INVOICES_LOAD_LOCK, before any write.
 //
 // 🔴 NO TRANSACTION (CORE §3) — THE WRITE ORDER IS THE SAFETY. Every step is one
 // SQL statement (step 2 is one per changed row), each all-or-nothing on its own:
@@ -68,8 +70,10 @@
 
 import { prisma } from "../prisma";
 import { syncSapInvoiceRow } from "./sap-row";
+import { INVOICE_SOURCE } from "./source";
 import { obdStateRefusal, planSplitWrite, type CurrentRow, type ObdFacts, type TargetRow, type WritePlan } from "./plan";
 import {
+  ADD_INVOICES_LOAD_LOCK,
   addInvoicesRefusal,
   detectStale,
   validateSplit,
@@ -78,8 +82,10 @@ import {
 } from "./rules";
 
 const SAP_SEQ = 1;
-const SOURCE_SAP = "sap";
-const SOURCE_MANUAL = "manual";
+// The one vocabulary (source.ts, v27.76) — was two local literals until 2026-10-24.
+const SOURCE_SAP = INVOICE_SOURCE.SAP;
+const SOURCE_MANUAL = INVOICE_SOURCE.MANUAL;
+const SOURCE_LOAD = INVOICE_SOURCE.LOAD;
 
 export interface SplitActiveLine extends ActiveLine {
   description: string | null;
@@ -313,6 +319,8 @@ export async function loadSplitView(orderId: number): Promise<SplitView | null> 
     // message save / undo would return, so the More menu's hint never lies.
     blockedReason:
       addInvoicesRefusal({ isRemoved: order.isRemoved, workflowStage: order.workflowStage, sapInvoiceNo: sapNo }) ??
+      // Split load (v27.76): locked while any truck part exists — prepare()'s refusal.
+      (rows.some((r) => r.source === SOURCE_LOAD) ? ADD_INVOICES_LOAD_LOCK : null) ??
       obdStateRefusal(await loadCurrentRows(orderId), await loadObdFacts(orderId, order.obdNumber)),
   };
 }
@@ -354,6 +362,12 @@ async function prepare(orderId: number) {
   const sapNo = sapNumberOf(order, rows);
   const refusal = addInvoicesRefusal({ isRemoved: order.isRemoved, workflowStage: order.workflowStage, sapInvoiceNo: sapNo });
   if (refusal !== null) return { error: { ok: false as const, status: 409, error: refusal } };
+  // 🔴 SPLIT LOAD LOCK (v27.76) — before any write. A 'load' row would be read
+  // by planSplitWrite as the paper at its seq, and applyPlan's delete (manual
+  // only) would skip it; merge the parts back (Split load) first.
+  if (rows.some((r) => r.source === SOURCE_LOAD)) {
+    return { error: { ok: false as const, status: 409, error: ADD_INVOICES_LOAD_LOCK } };
+  }
   const seq1 = rows.find((r) => r.seq === SAP_SEQ && r.source === SOURCE_SAP);
   if (!seq1) return { error: { ok: false as const, status: 500, error: "This bill has no SAP invoice row — ask an admin" } };
   return { order, rows, seq1, sapNo: sapNo as string };
@@ -372,6 +386,8 @@ export function saveTargetOf(invoices: SaveInvoiceInput[], defaultDate: Date | n
 /** Read-only: the rows with their lock state, as save / undo plan from them.
  *  Exported for read-only checks (a dry run); writes nothing. */
 export { loadCurrentRows, loadObdFacts };
+/** The OBD's active raw lines (read-only) — also Split load's (load-split.ts). */
+export { loadActiveLines };
 
 /** POST — save or edit, IN PLACE by seq. See the header for the write order. */
 export async function saveSplit(

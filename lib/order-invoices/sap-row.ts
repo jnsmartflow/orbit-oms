@@ -21,7 +21,8 @@
 // 🔴 NULL-ONLY, THE SAME RULE AS ON orders. A field is filled only while the
 // seq-1 row's copy is NULL; a non-null number is never overwritten, and a
 // 'manual' row is never touched (seq 1 is always 'sap', the source filter
-// says so twice).
+// says so twice). Since v27.76 the same NULL-only fill reaches seq 1's Split
+// load parts ('load' rows whose "loadParentId" is seq 1) — read from seq 1.
 //
 // ⚠ NEVER THROWS. The order is already written when these run; failing the
 // import now would strand a live bill with an error response, and the
@@ -35,9 +36,11 @@
 
 // Relative, like lib/import-upsert/* which imports this file.
 import { prisma } from "../prisma";
+import { INVOICE_SOURCE } from "./source";
 
 const SAP_SEQ = 1;
-const SOURCE_SAP = "sap";
+const SOURCE_SAP = INVOICE_SOURCE.SAP;
+const SOURCE_LOAD = INVOICE_SOURCE.LOAD;
 
 /** chk_order_invoices_no_not_blank refuses a blank number; store NULL instead. */
 function cleanInvoiceNo(v: string | null): string | null {
@@ -110,6 +113,25 @@ export async function syncSapInvoiceRow(orderId: number): Promise<void> {
       await prisma.order_invoices.updateMany({
         where: { orderId, seq: SAP_SEQ, source: SOURCE_SAP, invoiceDate: null },
         data: { invoiceDate: order.invoiceDate },
+      });
+    }
+    // v27.76 — SPLIT LOAD: the truck parts of seq 1 copy its number / date,
+    // NULL-only, the same rule as seq 1 itself. Reads what seq 1 now HOLDS,
+    // never orders. An unsplit bill has no 'load' row: both match 0 rows.
+    const seq1 = await prisma.order_invoices.findFirst({
+      where: { orderId, seq: SAP_SEQ, source: SOURCE_SAP },
+      select: { id: true, invoiceNo: true, invoiceDate: true },
+    });
+    if (seq1 && seq1.invoiceNo !== null) {
+      await prisma.order_invoices.updateMany({
+        where: { orderId, source: SOURCE_LOAD, loadParentId: seq1.id, invoiceNo: null },
+        data: { invoiceNo: seq1.invoiceNo },
+      });
+    }
+    if (seq1 && seq1.invoiceDate !== null) {
+      await prisma.order_invoices.updateMany({
+        where: { orderId, source: SOURCE_LOAD, loadParentId: seq1.id, invoiceDate: null },
+        data: { invoiceDate: seq1.invoiceDate },
       });
     }
   } catch (err) {

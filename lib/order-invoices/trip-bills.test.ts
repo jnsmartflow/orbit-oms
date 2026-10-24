@@ -128,3 +128,44 @@ test("add: an invoice with its own CI is refused; an unsplit held bill keeps tod
   const held = unsplit(OFF).map((r) => ({ ...r, isHeld: true }));
   assert.deepEqual(planAddRows(held, "all", 668, KEY, "X").attach, [500]);
 });
+
+// ── Split load (2026-10-24): one part of an invoice per trip ────────────────
+
+/** 18648 split by load: 17010 …716 (root) + parts 40001, 40002 — all the same number. */
+const loadRows = (places: (typeof OFF | typeof ON_668 | typeof ON_605)[]): TripBillRow[] =>
+  [17010, 40001, 40002].map((id, i) => ({ id, seq: i + 1, invoiceNo: "I536230716", loadRootId: 17010, ...places[i] }));
+
+test("split load: a part is refused when another part of the SAME invoice is already on this trip", () => {
+  const plan = planAddRows(loadRows([ON_668, OFF, ON_605]), [40001], 668, KEY, OBD);
+  assert.deepEqual(plan.attach, []);
+  assert.deepEqual(plan.refused, [
+    { rowId: 40001, invoiceNo: "I536230716", error: "I536230716 part 2 of 3 — part 1 of the same invoice is already on this trip" },
+  ]);
+});
+
+test("split load: two parts of one invoice in ONE press — the first attaches, the second is refused", () => {
+  const plan = planAddRows(loadRows([ON_605, OFF, OFF]), "all", 668, KEY, OBD);
+  assert.deepEqual(plan.attach, [40001]);
+  assert.deepEqual(plan.refused.map((x) => x.error), [
+    // Every OTHER label still prints the bare number — phase 4 (design §F ⚠).
+    "I536230716 is already on L-261006-05 — remove it from that trip first",
+    "I536230716 part 3 of 3 — part 2 of the same invoice is already on this trip",
+  ]);
+});
+
+test("split load: a part on its own on another trip's press attaches", () => {
+  assert.deepEqual(planAddRows(loadRows([ON_605, OFF, OFF]), [40002], 668, KEY, OBD).attach, [40002]);
+});
+
+test("split load: rows WITHOUT loadRootId keep every wording byte for byte (null and absent alike)", () => {
+  for (const extra of [{}, { loadRootId: null }]) {
+    const u = unsplit(ON_605).map((r) => ({ ...r, ...extra }));
+    assert.deepEqual(planAddRows(u, "all", 668, KEY, OBD).refused, [
+      { rowId: 500, invoiceNo: "I1", error: "Already on L-261006-05 — remove it from that trip first." },
+    ]);
+    assert.equal(planAddRows(unsplit(ON_668).map((r) => ({ ...r, ...extra })), "all", 668, "C:2", OBD).refused[0].error, "Already attached to a different stop on this trip.");
+    assert.deepEqual(planAddRows(unsplit(OFF).map((r) => ({ ...r, ...extra })), "all", 668, KEY, OBD), { attach: [500], here: [], refused: [] });
+    const split = r18648([OFF, ON_605, OFF, OFF]).map((r) => ({ ...r, ...extra }));
+    assert.deepEqual(planAddRows(split, "all", 668, KEY, OBD).attach, [17010, 36799, 36800]);
+  }
+});

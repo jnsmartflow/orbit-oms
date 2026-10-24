@@ -116,6 +116,8 @@ const PAGES_CONFIG = [
   // Add invoices (2026-10-10) — Floor's first action tick. Same canEdit-only
   // meaning and ROLLBACK-editor caveat. (`floor` itself has no row here — pre-existing gap.)
   { key: "floor_add_invoices", label: "Floor · Add invoices", path: "/floor", section: "Operations" },
+  // Split load (2026-10-24) — same canEdit-only meaning and ROLLBACK-editor caveat.
+  { key: "floor_split_load", label: "Floor · Split load", path: "/floor", section: "Operations" },
 ] as const;
 
 const ACTIONS: { key: ActionKey; label: string; short: string }[] = [

@@ -205,3 +205,14 @@ export function addInvoicesRefusal(bill: AddInvoicesBill): string | null {
   if (bill.sapInvoiceNo === null) return "Wait for the SAP invoice — this bill has no invoice number from SAP yet";
   return null;
 }
+
+/**
+ * SPLIT LOAD LOCK (2026-10-24, v27.76): Add invoices is refused while the OBD
+ * carries any 'load' row (a truck part of one invoice). Its save plans by seq
+ * (plan.ts planSplitWrite: target i → seq i + 1) and deletes 'manual' rows only
+ * (split.ts applyPlan), so a part would be over-written as a typed paper or
+ * silently skipped. A refusal IN FRONT of validateSplit, like addInvoicesRefusal
+ * — the same text for GET's blockedReason and the save / undo 409.
+ */
+export const ADD_INVOICES_LOAD_LOCK =
+  "This bill is split across trucks — merge its parts back first, then change its invoices.";

@@ -20,6 +20,15 @@
 // "Already on L-… — remove it from that trip first." / "Already attached to a
 // different stop on this trip." / "Not on this trip". A SPLIT OBD's refusal
 // names the invoice: "I536230713 is already on L-… — remove it from that trip first".
+//
+// SPLIT LOAD (2026-10-24, v27.76): TWO PARTS OF ONE INVOICE NEVER RIDE ONE TRIP
+// — the paper is one, the trucks are several. A row whose group (`loadRootId`)
+// already has another row on THIS trip, or a second row of the group in this
+// press, is refused for that row only: "I536230716 part 2 of 2 — part 1 of the
+// same invoice is already on this trip". Only rows of a load group carry
+// loadRootId, so every other row — and every wording above — is unchanged.
+
+import { loadGroupsOf } from "./load-plan";
 
 /** One invoice row of the OBD, with where it sits now. */
 export interface TripBillRow {
@@ -36,6 +45,9 @@ export interface TripBillRow {
    *  an unsplit row's isHeld drifted and is never read. Omitted = neither. */
   isHeld?: boolean;
   ciNumber?: string | null;
+  /** Split load — the row's group root id (its own id when it is a root with
+   *  parts). Absent / null on every row not in a load group. */
+  loadRootId?: number | null;
 }
 
 export interface RowRefusal {
@@ -47,6 +59,30 @@ export interface RowRefusal {
 /** How a split OBD's invoice is named in a refusal: its number, else its place. */
 export function invoiceLabel(row: Pick<TripBillRow, "seq" | "invoiceNo">, obdNumber: string): string {
   return row.invoiceNo ?? `Invoice ${row.seq} of ${obdNumber}`;
+}
+
+/**
+ * Split load: "I536230716 part 2 of 2 — part 1 of the same invoice is already
+ * on this trip" when ANOTHER row of r's load group is on `tripId` or already
+ * attaching in this press, else null. Never fires for a row without loadRootId.
+ */
+function sameInvoiceOnTrip(
+  rows: readonly TripBillRow[],
+  r: TripBillRow,
+  tripId: number,
+  attaching: readonly number[],
+  obdNumber: string,
+): string | null {
+  if (r.loadRootId === undefined || r.loadRootId === null) return null;
+  const rootId = r.loadRootId;
+  const other = rows.find(
+    (x) => x.id !== r.id && x.loadRootId === rootId && ((x.tripDropId !== null && x.tripId === tripId) || attaching.includes(x.id)),
+  );
+  if (!other) return null;
+  const places = loadGroupsOf(rows.map((x) => ({ id: x.id, seq: x.seq, loadParentId: x.loadRootId === undefined || x.loadRootId === null || x.loadRootId === x.id ? null : x.loadRootId })));
+  const me = places.get(r.id)!;
+  const root = rows.find((x) => x.id === rootId) ?? r;
+  return `${invoiceLabel(root, obdNumber)} part ${me.k} of ${me.n} — part ${places.get(other.id)!.k} of the same invoice is already on this trip`;
 }
 
 /** The rows a press is about: every row ('all') or the chosen ones. */
@@ -98,7 +134,10 @@ export function planAddRows(
         error: `${invoiceLabel(r, obdNumber)} is returned on ${r.ciNumber === "" ? "a CI" : r.ciNumber} — it does not go out`,
       });
     } else if (r.tripDropId === null) {
-      plan.attach.push(r.id);
+      // Split load: one part of an invoice per trip (null on every other row).
+      const twin = sameInvoiceOnTrip(rows, r, tripId, plan.attach, obdNumber);
+      if (twin !== null) plan.refused.push({ rowId: r.id, invoiceNo: r.invoiceNo, error: twin });
+      else plan.attach.push(r.id);
     } else if (r.tripId === tripId) {
       if (r.dropKey === dropKey) plan.here.push(r.id);
       else plan.refused.push({ rowId: r.id, invoiceNo: r.invoiceNo, error: "Already attached to a different stop on this trip." });

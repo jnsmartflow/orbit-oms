@@ -105,6 +105,16 @@ export const TINT_CLEAR_HOLD_NOTE = "Hold cleared from Tint Manager";
 export const INVOICE_HOLD_NOTE = "Invoice held from floor";
 export const INVOICE_CLEAR_HOLD_NOTE = "Invoice hold cleared on floor";
 
+/** SPLIT LOAD (2026-10-24, v27.76) — one SAP invoice across trucks. Written by
+ *  lib/order-invoices/load-split.ts, one order_status_logs row per press,
+ *  followed by ": I536230716 → 2 trucks (part 1: 12 tins · part 2: 8 tins)" /
+ *  ": parts 2, 3 of I536230716 into part 1 (20 tins)" / ": …". The rows are in
+ *  the STRUCTURED "orderInvoiceIds" (v27.72). Not hold events — out of
+ *  HOLD_LOG_NOTES, on purpose. */
+export const SPLIT_LOAD_NOTE = "Split load";
+export const SPLIT_LOAD_MERGED_NOTE = "Split load merged";
+export const SPLIT_LOAD_REPAIRED_NOTE = "Split load repaired";
+
 /** The import's mail-order hold, PARSER-set (2026-10-01, F1): applyMailOrderEnrichment
  *  carried a 'Hold' mail order with no `mo_orders.heldById` onto the bill. changedById = 1 (system). */
 export const MAIL_ORDER_AUTO_HOLD_NOTE = "Held on import (mail order)";

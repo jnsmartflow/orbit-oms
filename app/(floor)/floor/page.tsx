@@ -19,12 +19,15 @@ export default async function Page() {
   // Add invoices (2026-10-10) — Floor's first action tick, on top of floor canEdit
   // (the route asks both). Decides what is DRAWN; the route re-checks.
   const canAddInvoices = canEdit ? await checkAnyPermission(roles, "floor_add_invoices", "canEdit") : false;
+  // Split load (2026-10-24) — the same rule; handed down, drawn in phase 3.
+  const canSplitLoad = canEdit ? await checkAnyPermission(roles, "floor_split_load", "canEdit") : false;
   return (
     <FloorPage
       canEdit={canEdit}
       canViewChallan={canViewChallan}
       canEditChallan={canEditChallan}
       canAddInvoices={canAddInvoices}
+      canSplitLoad={canSplitLoad}
       // S6-7: "Cancel OBD" on a linked bill in the Challan orders tab — admin only.
       isAdminChallan={isSuperuser(session)}
     />

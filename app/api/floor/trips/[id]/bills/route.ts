@@ -248,6 +248,8 @@ export async function POST(
           // 6.3 — a split OBD's held / CI'd invoice never joins a trip (planAddRows).
           isHeld: true,
           ciReturns: { where: { isVoided: false }, orderBy: { id: "desc" }, take: 1, select: { ciNumber: true } },
+          // Split load (v27.76) — one part of an invoice per trip (planAddRows).
+          loadParentId: true,
         },
       });
       const rows: TripBillRow[] = rowRecs.map((r) => ({
@@ -260,6 +262,8 @@ export async function POST(
         tripNumber: r.tripDrop?.trip.tripNumber ?? null,
         isHeld: r.isHeld,
         ciNumber: r.ciReturns.length > 0 ? r.ciReturns[0].ciNumber ?? "" : null,
+        // The group root: a part's parent, a root's own id when it has parts, else null.
+        loadRootId: r.loadParentId ?? (rowRecs.some((x) => x.loadParentId === r.id) ? r.id : null),
       }));
       const chosen = chosenRows.get(orderId) ?? "all";
       const foreign = foreignRowIds(rows, chosen);

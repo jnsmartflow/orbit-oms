@@ -538,6 +538,10 @@ export function FloorPage({
   canEdit?: boolean;
   /** `floor_add_invoices` canEdit (2026-10-10) — draws Add invoices (bar ··· More, panel). */
   canAddInvoices?: boolean;
+  /** `floor_split_load` canEdit (2026-10-24, Split load phase 2) — resolved and
+   *  handed down, NOT drawn yet: phase 3 draws the button (bar ··· More, panel).
+   *  Deliberately not destructured until then. */
+  canSplitLoad?: boolean;
   /** `challan_orders` canView / canEdit (2026-10-07) — the Challan orders tab. */
   canViewChallan?: boolean;
   canEditChallan?: boolean;
