@@ -95,6 +95,47 @@ export function loadPartText(k: number, n?: number): string {
   return n === undefined ? `part ${k}` : `part ${k} of ${n}`;
 }
 
+/** The same formatter for several parts: "part 2" (one) or "parts 2, 3". */
+export function loadPartsText(ks: readonly number[]): string {
+  return ks.length === 1 ? loadPartText(ks[0]) : `parts ${ks.join(", ")}`;
+}
+
+/** Owner answer 6 (2026-10-24): no CI on a single truck part until phase 4 —
+ *  a part's CI would be marked FULL holding only part of the tins. */
+export const LOAD_CI_LATER = "CI on split parts comes in the next update";
+
+/**
+ * WHICH ROWS A MERGE PRESS SENDS (owner answer 1, 2026-10-24): ONE ticked row
+ * → every WAITING row of its load group with the SAME hold (the root
+ * included), so the press merges what can merge into the oldest; TWO OR MORE
+ * ticked → exactly those. [] when the ticked row is not in a load group.
+ * planLoadMerge / loadMergeRefusal then say whether the server will accept it.
+ */
+export function mergeRowIdsOf(
+  rows: ReadonlyArray<Pick<LoadRow, "id" | "seq" | "loadParentId" | "tripDropId" | "isDispatched" | "isHeld">>,
+  tickedIds: readonly number[],
+): number[] {
+  const ticked = Array.from(new Set(tickedIds));
+  if (ticked.length >= 2) return ticked;
+  const row = rows.find((r) => r.id === ticked[0]);
+  if (!row) return [];
+  const groups = loadGroupsOf(rows);
+  const rootId = groups.get(row.id)!.rootId;
+  if (groups.get(row.id)!.n < 2) return [];
+  return rows
+    .filter((r) => groups.get(r.id)!.rootId === rootId && r.tripDropId === null && !r.isDispatched && r.isHeld === row.isHeld)
+    .sort((a, b) => a.seq - b.seq)
+    .map((r) => r.id);
+}
+
+/** "Merge parts 2, 3 back into part 1?" — the confirm question for a planned
+ *  merge, worded from the group's own k (loadGroupsOf). */
+export function mergeQuestionOf(rows: readonly LoadRow[], plan: { survivorId: number; deleteIds: readonly number[] }): string {
+  const groups = loadGroupsOf(rows);
+  const ks = plan.deleteIds.map((id) => groups.get(id)!.k).sort((a, b) => a - b);
+  return `Merge ${loadPartsText(ks)} back into ${loadPartText(groups.get(plan.survivorId)!.k)}?`;
+}
+
 /** The row's group root: its parent when it is a part, else itself. */
 export function rootOf<R extends LoadRow>(rows: readonly R[], row: R): R {
   if (row.loadParentId === null) return row;

@@ -21,6 +21,11 @@
 //                              — Add invoices GREY while an OBD is only partly
 //                                ticked (P5-3, `wholeObdBlock`); Hold (6.1) and
 //                                Raise CI (6.3) act on the ticked invoices
+//                              · Split load / Merge back / Repair split (Split
+//                                load phase 3, 2026-10-24) — the floor_split_load
+//                                tick; floor-page decides each item (null = not
+//                                drawn) from GET …/load-split. Cancel / Raise CI is
+//                                GREY on a ticked load part (`ciBlock`, phase 4)
 //
 // 🔴 IT RENDERS INSIDE THE BILLS COLUMN (2026-09-22). floor-page builds it and
 // TripDesk places it in its `relative` bills column, so it never runs under the
@@ -36,7 +41,7 @@
 // workflowStage. A dialog on an action repeated all afternoon is a tax, not a
 // safety net. Hold has no confirm either: its toast carries an Undo.
 
-import { FileText, Pause, X } from "lucide-react";
+import { FileText, Merge, Pause, Split, Wrench, X } from "lucide-react";
 import { FloorActionBar, MoreMenu, BarDivider, BAR_PRIMARY, type BarFigure } from "./floor-action-bar";
 
 export function FloorBottomBar({
@@ -63,6 +68,13 @@ export function FloorBottomBar({
   addInvoices = null,
   onAddInvoices,
   wholeObdBlock = null,
+  splitLoad = null,
+  onSplitLoad,
+  mergeBack = null,
+  onMergeBack,
+  repairSplit = null,
+  onRepairSplit,
+  ciBlock = null,
   newTripLabel = "+ New trip",
   billActions = true,
 }: {
@@ -152,6 +164,23 @@ export function FloorBottomBar({
    * (Said "Cancel / Raise CI and Add invoices … are GREY" until 2026-10-24.)
    */
   wholeObdBlock?: string | null;
+  /**
+   * SPLIT LOAD (phase 3, 2026-10-24) — the three items, each drawn directly
+   * under Add invoices in the Add invoices item's shape. null = not drawn
+   * (no floor_split_load tick; Merge back: no load part ticked; Repair split:
+   * the bill is not half-written). `disabled` + `hint` = grey with the reason.
+   */
+  splitLoad?: { hint: string; disabled: boolean } | null;
+  onSplitLoad?: () => void;
+  mergeBack?: { hint: string; disabled: boolean } | null;
+  onMergeBack?: () => void;
+  repairSplit?: { hint: string; disabled: boolean } | null;
+  onRepairSplit?: () => void;
+  /**
+   * Owner answer 6 (2026-10-24): a ticked Split load PART cannot be returned
+   * on a CI yet — Cancel / Raise CI is GREY with this reason. null = allowed.
+   */
+  ciBlock?: string | null;
   /**
    * The pool CTA's words. "+ New trip · 22 Oct" on a past day (2026-10-24): the
    * trip is born with that day's date (floor-page createTripWithSelection), and
@@ -262,6 +291,42 @@ export function FloorBottomBar({
                 },
               ]
             : []),
+          ...(splitLoad !== null && onSplitLoad
+            ? [
+                {
+                  key: "split-load",
+                  label: "Split load",
+                  hint: splitLoad.hint,
+                  icon: <Split size={15} strokeWidth={2.2} />,
+                  disabled: splitLoad.disabled,
+                  onSelect: onSplitLoad,
+                },
+              ]
+            : []),
+          ...(mergeBack !== null && onMergeBack
+            ? [
+                {
+                  key: "merge-back",
+                  label: "Merge back",
+                  hint: mergeBack.hint,
+                  icon: <Merge size={15} strokeWidth={2.2} />,
+                  disabled: mergeBack.disabled,
+                  onSelect: onMergeBack,
+                },
+              ]
+            : []),
+          ...(repairSplit !== null && onRepairSplit
+            ? [
+                {
+                  key: "repair-split",
+                  label: "Repair split",
+                  hint: repairSplit.hint,
+                  icon: <Wrench size={15} strokeWidth={2.2} />,
+                  disabled: repairSplit.disabled,
+                  onSelect: onRepairSplit,
+                },
+              ]
+            : []),
           {
             key: "off-floor",
             label: "Cancel / Raise CI…",
@@ -269,13 +334,15 @@ export function FloorBottomBar({
             // form offers no Cancel — that still acts on the whole OBD).
             hint: onTripSelection
               ? "Remove from trip first"
-              : wholeObdBlock !== null
+              : ciBlock !== null
+                ? ciBlock
+                : wholeObdBlock !== null
                 ? "Raise CI per ticked invoice · Cancel needs every invoice ticked"
                 : "Opens a form · choose Cancel or Raise CI",
             icon: <X size={15} strokeWidth={2.2} />,
             danger: true,
             dividerBefore: true,
-            disabled: onTripSelection,
+            disabled: onTripSelection || ciBlock !== null,
             onSelect: onOffFloor,
           },
         ]}

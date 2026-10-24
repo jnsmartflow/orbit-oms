@@ -46,6 +46,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "../prisma";
 import { SPLIT_LOAD_MERGED_NOTE, SPLIT_LOAD_NOTE, SPLIT_LOAD_REPAIRED_NOTE } from "../floor/hold-log";
 import { mirrorObdHold } from "./hold";
+import { learnedKgPerUnit } from "./kg-per-unit";
 import { detectStale } from "./rules";
 import { loadActiveLines, type SplitActiveLine } from "./split";
 import { INVOICE_SOURCE } from "./source";
@@ -58,6 +59,7 @@ import {
   loadGroupsOf,
   loadMergeRefusal,
   loadPartText,
+  loadPartsText,
   loadSplitRefusal,
   mergeAwayRefusal,
   paperLabel,
@@ -109,6 +111,33 @@ export interface LoadView {
   blockedReason: string | null;
   activeLines: SplitActiveLine[];
   rows: LoadViewRow[];
+  /**
+   * PHASE 3 (2026-10-24) — what the Split load dialog needs to show each
+   * truck's kg by the BOARD's own ladder (lib/floor/invoice-rows.ts invoiceKg:
+   * SAP line kg → SAP's learned kg per tin → the header kg shared by litres,
+   * "~"). Per active line: SAP's line kg ("totalWeight") and the learned kg per
+   * tin of its SKU (lib/order-invoices/kg-per-unit.ts); the OBD's header kg.
+   * Additive — the Add invoices GET (SplitActiveLine) is not touched.
+   */
+  kg: {
+    obdKg: number | null;
+    lines: Array<{ rawLineItemId: number; totalWeight: number | null; unitKg: number | null }>;
+  };
+}
+
+/** The dialog's kg facts (LoadView.kg) — two SELECTs, GET only. */
+async function loadKgFacts(orderId: number, obdNumber: string): Promise<LoadView["kg"]> {
+  const snap = await prisma.import_obd_query_summary.findUnique({ where: { orderId }, select: { totalWeight: true } });
+  const raw = await prisma.import_raw_line_items.findMany({
+    where: { obdNumber, lineStatus: "active" },
+    select: { id: true, skuCodeRaw: true, totalWeight: true },
+  });
+  const unit = await learnedKgPerUnit(raw.map((l) => l.skuCodeRaw));
+  return {
+    // 0 is a MISSING header kg (status-pill formatWeightKg), never a weight.
+    obdKg: snap && snap.totalWeight > 0 ? snap.totalWeight : null,
+    lines: raw.map((l) => ({ rawLineItemId: l.id, totalWeight: l.totalWeight ?? null, unitKg: unit.get(l.skuCodeRaw) ?? null })),
+  };
 }
 
 interface LoadState {
@@ -215,7 +244,9 @@ export async function loadLoadView(orderId: number): Promise<LoadView | null> {
   const { bill, rows, facts } = st;
   const groups = loadGroupsOf(rows);
   const halfWritten = isHalfWritten(rows);
+  const kg = await loadKgFacts(bill.id, bill.obdNumber);
   return {
+    kg,
     orderId: bill.id,
     obdNumber: bill.obdNumber,
     expectKey: rowsKey(rows),
@@ -431,7 +462,7 @@ export async function mergeLoadParts(
       fromStage: bill.workflowStage,
       toStage: bill.workflowStage,
       changedById: req.actorId,
-      note: `${SPLIT_LOAD_MERGED_NOTE}: part${ks.length > 1 ? "s" : ""} ${ks.join(", ")} of ${paperLabel(rootOf(rows, survivor), bill.obdNumber)} into ${loadPartText(groups.get(plan.survivorId)!.k)} (${tins} tins)`,
+      note: `${SPLIT_LOAD_MERGED_NOTE}: ${loadPartsText(ks)} of ${paperLabel(rootOf(rows, survivor), bill.obdNumber)} into ${loadPartText(groups.get(plan.survivorId)!.k)} (${tins} tins)`,
       orderInvoiceIds: [plan.survivorId],
     },
   });

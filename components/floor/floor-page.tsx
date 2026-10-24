@@ -64,9 +64,13 @@ import { CancelledTab } from "./cancelled-tab";
 import { DetailPanel, type DetailActions } from "./detail-panel";
 import { OffFloorDialog, type OffFloorFormBill, type CiReasonOption } from "./off-floor-dialog";
 import { AddInvoicesDialog } from "./add-invoices-dialog";
+import { LoadMergeConfirm, SplitLoadDialog } from "./split-load-dialog";
 // Add invoices Phase 4 commit 3 — the detail panel scoped to one invoice.
 import { detailWalk, resolveScope, scopedHoldBody, scopedInvoiceRowId, type DetailKey } from "@/lib/floor/detail-scope";
 import { invoiceCiRefusal } from "@/lib/order-invoices/ci-plan";
+import { LOAD_CI_LATER, LOAD_HALF_WRITTEN, mergeQuestionOf, mergeRowIdsOf, planLoadMerge } from "@/lib/order-invoices/load-plan";
+import { loadRowsOfView } from "@/lib/order-invoices/load-dialog";
+import type { LoadView } from "@/lib/order-invoices/load-split";
 import { offFloorRefusal } from "@/lib/floor/off-floor";
 import { SearchBox, SearchHits } from "./search-box";
 import { FilterSheet } from "./filter-sheet";
@@ -500,8 +504,11 @@ function invoiceBillOf(
 ): OffFloorFormBill {
   const all = r.invoiceRowsAll ?? r.invoiceRows;
   const ticked = all.filter((i) => rowIds.includes(i.id));
+  // Owner answer 6 (Split load, 2026-10-24): a truck PART is never returned on
+  // its own CI until phase 4. Every per-invoice opener (Floor bar, Hold bar,
+  // the panel's ⋯ Cancel) builds its bill here, so the refusal is in one place.
   const refusals = ticked
-    .map((i) => invoiceCiRefusal({ ...i, isDispatched: false, lines: [] }))
+    .map((i) => (i.loadRootId !== undefined ? LOAD_CI_LATER : invoiceCiRefusal({ ...i, isDispatched: false, lines: [] })))
     .filter((x): x is string => x !== null);
   return {
     orderId: r.orderId,
@@ -534,13 +541,13 @@ export function FloorPage({
   canEditChallan = false,
   isAdminChallan = false,
   canAddInvoices = false,
+  canSplitLoad = false,
 }: {
   canEdit?: boolean;
   /** `floor_add_invoices` canEdit (2026-10-10) — draws Add invoices (bar ··· More, panel). */
   canAddInvoices?: boolean;
-  /** `floor_split_load` canEdit (2026-10-24, Split load phase 2) — resolved and
-   *  handed down, NOT drawn yet: phase 3 draws the button (bar ··· More, panel).
-   *  Deliberately not destructured until then. */
+  /** `floor_split_load` canEdit (2026-10-24) — draws Split load / Merge back /
+   *  Repair split in the bar's ··· More (phase 3 commit 2). The routes re-check. */
   canSplitLoad?: boolean;
   /** `challan_orders` canView / canEdit (2026-10-07) — the Challan orders tab. */
   canViewChallan?: boolean;
@@ -2704,6 +2711,190 @@ export function FloorPage({
     };
   })();
 
+  // ── SPLIT LOAD (phase 3 commit 2, 2026-10-24) ─────────────────────────────
+  //
+  // ONE SAP invoice row across trucks (split-load-dialog.tsx → /api/floor/
+  // orders/[orderId]/load-split and …/load-merge). The ··· More items need
+  // EXACTLY ONE unit ticked (a whole unsplit bill, or one invoice row); their
+  // state is read from GET …/load-split when the menu opens — the addInvCheck
+  // pattern — so every grey item says the server's own reason. After a press:
+  // the Add invoices refresh (full load + the panel's re-read).
+  const singleLoadUnit =
+    canSplitLoad && selectedUnits.length === 1 && selectedRedeliveryIds.length === 0 && selectedRows.length === 1
+      ? { unit: selectedUnits[0], row: selectedRows[0] }
+      : null;
+  const [loadCheck, setLoadCheck] = useState<{ orderId: number; view: LoadView | null; error: string | null } | null>(null);
+  useEffect(() => {
+    if (!moreOpen || singleLoadUnit === null) return;
+    const id = singleLoadUnit.row.orderId;
+    let cancelled = false;
+    setLoadCheck(null);
+    void (async () => {
+      try {
+        const res = await fetch(`/api/floor/orders/${id}/load-split`, { cache: "no-store" });
+        const body = (await res.json().catch(() => ({}))) as Partial<LoadView> & { error?: string };
+        if (cancelled) return;
+        setLoadCheck(
+          res.ok && Array.isArray(body.rows)
+            ? { orderId: id, view: body as LoadView, error: null }
+            : { orderId: id, view: null, error: body.error ?? `HTTP ${res.status}` },
+        );
+      } catch {
+        if (!cancelled) setLoadCheck({ orderId: id, view: null, error: "Could not check this bill — try again" });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // The row object changes on every render; its id is the trigger.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [moreOpen, singleLoadUnit?.row.orderId]);
+  const loadView = loadCheck !== null && singleLoadUnit !== null && loadCheck.orderId === singleLoadUnit.row.orderId ? loadCheck : null;
+  // The one unit's invoice rows and which are ticked (a whole unit of a split
+  // OBD = all of them; an unsplit bill has none on the board — its own row).
+  const loadAllRows = singleLoadUnit ? singleLoadUnit.row.invoiceRowsAll ?? singleLoadUnit.row.invoiceRows : [];
+  const loadTickedIds = singleLoadUnit
+    ? singleLoadUnit.unit.invoiceRowIds ?? (loadAllRows.length >= 2 ? loadAllRows.map((r) => r.id) : [])
+    : [];
+  const splitLoadItem = (() => {
+    if (!canSplitLoad) return null;
+    if (singleLoadUnit === null) return { hint: "Tick one bill or one part to split", disabled: true };
+    // An unsplit bill splits its own row; a split OBD needs exactly ONE of its
+    // invoices / parts ticked.
+    const unsplit = loadAllRows.length < 2;
+    if (!unsplit && loadTickedIds.length !== 1) return { hint: "Tick one part to split", disabled: true };
+    if (loadView === null) return { hint: "Checking…", disabled: true };
+    if (loadView.view === null) return { hint: loadView.error ?? "Could not check this bill", disabled: true };
+    if (loadView.view.blockedReason !== null) return { hint: loadView.view.blockedReason, disabled: true };
+    const src = unsplit
+      ? loadView.view.rows.length === 1
+        ? loadView.view.rows[0]
+        : null
+      : loadView.view.rows.find((r) => r.id === loadTickedIds[0]);
+    if (!src) return { hint: "This bill changed — close the menu and try again", disabled: true };
+    if (src.canSplit !== null) return { hint: src.canSplit, disabled: true };
+    return { hint: "Divide this invoice across trucks", disabled: false };
+  })();
+  // MERGE BACK (owner answer 1): ONE ticked part → every waiting same-hold part
+  // of its invoice; 2+ ticked → those. Drawn only when a ticked row is in a
+  // load group (board loadRootId, commit 1). Grey with the reason.
+  const mergeTicksLoad = loadAllRows.some((r) => r.loadRootId !== undefined && loadTickedIds.includes(r.id));
+  const mergeCheck = (() => {
+    if (!canSplitLoad || singleLoadUnit === null || !mergeTicksLoad) return null;
+    const grey = (hint: string) => ({ item: { hint, disabled: true }, rowIds: [] as number[], question: "" });
+    if (loadView === null) return grey("Checking…");
+    const v = loadView.view;
+    if (v === null) return grey(loadView.error ?? "Could not check this bill");
+    if (v.blockedReason !== null) return grey(v.blockedReason);
+    if (v.halfWritten) return grey(LOAD_HALF_WRITTEN);
+    const rules = loadRowsOfView(v.rows);
+    const rowIds = mergeRowIdsOf(rules, loadTickedIds);
+    if (rowIds.length < 2) return grey("No other waiting part of this invoice with the same hold to merge with");
+    const planned = planLoadMerge(rules, rowIds, v.activeLines, v.obdNumber);
+    if (!planned.ok) return grey(planned.errors[0]);
+    // The RESTRICT guard (a copy, re-delivery or CI on a part that would go) —
+    // the GET's own per-row words.
+    const away = planned.plan.deleteIds.map((id) => v.rows.find((r) => r.id === id)?.canMergeAway ?? null).find((x) => x !== null);
+    if (away) return grey(away);
+    const question = mergeQuestionOf(rules, planned.plan);
+    return { item: { hint: question, disabled: false }, rowIds, question };
+  })();
+  // REPAIR SPLIT: only on a half-written bill (the GET says so).
+  const repairItem =
+    canSplitLoad && loadView?.view?.halfWritten === true
+      ? { hint: "The last split did not finish — put the bill back together", disabled: false }
+      : null;
+  // The CI rule (owner answer 6): any ticked load PART → Cancel / Raise CI grey.
+  const loadCiBlock = selectedUnits.some((u) => {
+    if (u.invoiceRowIds === null) return false;
+    const r = rows.find((x) => x.orderId === u.orderId);
+    const all = r ? r.invoiceRowsAll ?? r.invoiceRows : [];
+    return all.some((i) => u.invoiceRowIds!.includes(i.id) && i.loadRootId !== undefined);
+  })
+    ? LOAD_CI_LATER
+    : null;
+
+  const [splitDlg, setSplitDlg] = useState<{ orderId: number; obdNumber: string; sourceRowId: number | null } | null>(null);
+  const [splitEsc, setSplitEsc] = useState(0);
+  const splitBusyRef = useRef(false);
+  const setSplitBusy = useCallback((b: boolean) => {
+    splitBusyRef.current = b;
+  }, []);
+  const [mergeAsk, setMergeAsk] = useState<{
+    orderId: number;
+    obdNumber: string;
+    rowIds: number[];
+    expectKey: string;
+    question: string;
+    busy: boolean;
+    error: string | null;
+  } | null>(null);
+  const openSplitLoad = () => {
+    if (singleLoadUnit === null || splitLoadItem === null || splitLoadItem.disabled) return;
+    setMoreOpen(false);
+    setSplitDlg({
+      orderId: singleLoadUnit.row.orderId,
+      obdNumber: singleLoadUnit.row.obdNumber,
+      sourceRowId: loadAllRows.length < 2 ? null : loadTickedIds[0],
+    });
+  };
+  const openMergeBack = () => {
+    if (singleLoadUnit === null || mergeCheck === null || mergeCheck.item.disabled || !loadView?.view) return;
+    setMoreOpen(false);
+    setMergeAsk({
+      orderId: singleLoadUnit.row.orderId,
+      obdNumber: singleLoadUnit.row.obdNumber,
+      rowIds: mergeCheck.rowIds,
+      expectKey: loadView.view.expectKey,
+      question: mergeCheck.question,
+      busy: false,
+      error: null,
+    });
+  };
+  const confirmMerge = async () => {
+    if (mergeAsk === null || mergeAsk.busy) return;
+    const ask = mergeAsk;
+    setMergeAsk({ ...ask, busy: true, error: null });
+    try {
+      const res = await fetch(`/api/floor/orders/${ask.orderId}/load-merge`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rowIds: ask.rowIds, expectKey: ask.expectKey }),
+      });
+      const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      if (!res.ok || body.ok !== true) {
+        setMergeAsk({ ...ask, busy: false, error: body.error ?? `Merge failed (HTTP ${res.status})` });
+        return;
+      }
+      setMergeAsk(null);
+      clearSelection();
+      toast.success(`${ask.obdNumber}: parts merged back`);
+      setInvoicesRefreshKey((k) => k + 1);
+      void load();
+    } catch {
+      setMergeAsk({ ...ask, busy: false, error: "Could not reach the server — check your connection." });
+    }
+  };
+  const repairSplit = async () => {
+    if (singleLoadUnit === null) return;
+    const { orderId, obdNumber } = singleLoadUnit.row;
+    setMoreOpen(false);
+    try {
+      const res = await fetch(`/api/floor/orders/${orderId}/load-split`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "repair" }),
+      });
+      const body = (await res.json().catch(() => ({}))) as { ok?: boolean; changed?: boolean; error?: string };
+      if (!res.ok || body.ok !== true) toast.error(`Repair failed — ${body.error ?? `HTTP ${res.status}`}`);
+      else toast.success(body.changed ? `${obdNumber} is whole again` : `${obdNumber} needed no repair`);
+    } catch {
+      toast.error("Repair failed — check your connection.");
+    }
+    setInvoicesRefreshKey((k) => k + 1);
+    await load();
+  };
+
   // ── The Cancel / Raise CI form (2026-09-22, off-floor-dialog.tsx) ─────────
   //
   // One form, three openers — the Floor bar, the Hold bar and the detail panel.
@@ -2968,6 +3159,15 @@ export function FloorPage({
         if (!addInvBusyRef.current) setAddInvEsc((n) => n + 1);
         return;
       }
+      // SPLIT LOAD (2026-10-24) — the same rule: the dialog decides, refused mid-request.
+      if (splitDlg !== null) {
+        if (!splitBusyRef.current) setSplitEsc((n) => n + 1);
+        return;
+      }
+      if (mergeAsk !== null) {
+        if (!mergeAsk.busy) setMergeAsk(null);
+        return;
+      }
       // A DispatchSlotPicker popover is open (its portalled root carries this
       // marker only while open) — leave it to outside-click, as today.
       if (document.querySelector('[data-slot-popover="open"]')) return;
@@ -2997,7 +3197,7 @@ export function FloorPage({
     }
     window.addEventListener("keydown", onEsc);
     return () => window.removeEventListener("keydown", onEsc);
-  }, [offFloorOpen, closeOffFloor, detailOpen, moreOpen, holdMoreOpen, openRouteCard, selection, closeDetail, clearSelection, addingToTripId, stopAddingTo, redeliveryInfoId, redeliveryTripId, closeRedeliveryInfo, closeRedeliveryDialog, addInv]);
+  }, [offFloorOpen, closeOffFloor, detailOpen, moreOpen, holdMoreOpen, openRouteCard, selection, closeDetail, clearSelection, addingToTripId, stopAddingTo, redeliveryInfoId, redeliveryTripId, closeRedeliveryInfo, closeRedeliveryDialog, addInv, splitDlg, mergeAsk]);
 
   // Reconcile the floor SELECTION against fresh data WITHOUT moving the visible
   // board (design §13 rules 2 + 3): drop the tick on any selected row that
@@ -4446,6 +4646,14 @@ export function FloorPage({
                     onAddInvoices={() => {
                       if (singleAddInvRow) openAddInvoices(singleAddInvRow.orderId, singleAddInvRow.obdNumber);
                     }}
+                    // SPLIT LOAD (phase 3 commit 2) — null = not drawn.
+                    splitLoad={splitLoadItem}
+                    onSplitLoad={openSplitLoad}
+                    mergeBack={mergeCheck?.item ?? null}
+                    onMergeBack={openMergeBack}
+                    repairSplit={repairItem}
+                    onRepairSplit={() => void repairSplit()}
+                    ciBlock={loadCiBlock}
                     onOffFloor={() =>
                       // One tick per OBD in the form, all pre-ticked — an invoice
                       // pair's members arrive as two lines and either can be
@@ -4613,6 +4821,36 @@ export function FloorPage({
             toast.success(`${obdNumber} is back to its SAP invoice only`);
             void load();
           }}
+        />
+      )}
+
+      {/* SPLIT LOAD (2026-10-24) — above the panel, like Add invoices. */}
+      {splitDlg && (
+        <SplitLoadDialog
+          orderId={splitDlg.orderId}
+          obdNumber={splitDlg.obdNumber}
+          sourceRowId={splitDlg.sourceRowId}
+          escSignal={splitEsc}
+          onBusyChange={setSplitBusy}
+          onClose={() => setSplitDlg(null)}
+          onSaved={(n) => {
+            const { obdNumber } = splitDlg;
+            setSplitDlg(null);
+            clearSelection();
+            setInvoicesRefreshKey((k) => k + 1);
+            toast.success(`${obdNumber} split across ${n} trucks`);
+            void load();
+          }}
+        />
+      )}
+      {mergeAsk && (
+        <LoadMergeConfirm
+          question={mergeAsk.question}
+          detail={`${mergeAsk.obdNumber} · they become one row again`}
+          busy={mergeAsk.busy}
+          error={mergeAsk.error}
+          onCancel={() => setMergeAsk(null)}
+          onConfirm={() => void confirmMerge()}
         />
       )}
 

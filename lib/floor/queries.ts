@@ -104,6 +104,7 @@ import { divisionOf } from "./division-blocks";
 import { buildPartnerMap, partnersOf, type InvoicePartner } from "./invoice-pairs";
 import { addedInvoiceNosOf, narrowToHeld, narrowToInvoiceIds, type FloorInvoiceRow } from "./invoice-rows";
 import { loadSplitInvoiceRows } from "@/lib/order-invoices/invoice-load";
+import { INVOICE_SOURCE } from "@/lib/order-invoices/source";
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
@@ -665,13 +666,17 @@ export async function getBoardInvoiceRows(
  * stays ONE row and says "n invoices" (Add invoices Phase 4). ONE groupBy keyed
  * `orderId IN (…)` AND seq > 1 (order_invoices_orderId_seq_key), skipped when
  * the list is empty. SELECT-only.
+ *
+ * SPLIT LOAD (2026-10-24): counts SAP PAPERS — a 'load' row is a truck part of
+ * a paper that is already counted, so it is left out. A bill split only by
+ * load is 1 here (absent), like an unsplit one; no other count moves.
  */
 export async function getInvoiceCounts(orderIds: number[]): Promise<Map<number, number>> {
   const map = new Map<number, number>();
   if (orderIds.length === 0) return map;
   const groups = await prisma.order_invoices.groupBy({
     by: ["orderId"],
-    where: { orderId: { in: orderIds }, seq: { gt: 1 } },
+    where: { orderId: { in: orderIds }, seq: { gt: 1 }, source: { not: INVOICE_SOURCE.LOAD } },
     _count: { _all: true },
   });
   for (const g of groups) map.set(g.orderId, g._count._all + 1);
