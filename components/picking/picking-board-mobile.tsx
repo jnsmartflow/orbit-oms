@@ -68,9 +68,6 @@ import { aggregateArticleTags } from "@/lib/article-tag-parse";
 // the five fields, and has an Enter-driven numbers mode this board must not
 // inherit). Reasoning lives in the file.
 import { matchesPickingSearch } from "@/lib/picking/search";
-// The pick-bundling engine, shared with Floor's By-group view and used AS-IS.
-// Where the phone's shape differed, this caller adapted — the engine did not.
-import { buildPickGroups, buildOilGroups } from "@/lib/picking/grouping";
 import {
   FindingNote,
   FindingPopup,
@@ -150,16 +147,49 @@ const NO_PACK_KEY = "__no_pack__";
 
 type TypeFilter = "All" | "Local" | "Upcountry";
 
-// THE type-pill predicate, in one place (2026-08-21). Extracted when the route
-// sheet's option list started reading it: the list, the counts and the
-// reset-on-type-change below must agree about what "under this type" means, and
-// three hand-written copies of `t !== "All" && r.deliveryType !== t` is exactly
-// how the sheet came to list a route its own counts said had nothing in it.
-// Deliberately NOT applied to the Assign / Picking / Done list filters — those
-// are correct, out of scope, and changing them would be a silent refactor
-// inside a bug-fix commit.
-function matchesType(row: PickingQueueRow, type: TypeFilter): boolean {
-  return type === "All" || row.deliveryType === type;
+// ── Assign › Bills: the three delivery-type cards (2026-10-24, owner) ──────
+// They replace the Bills view's type pills, ODB toggle, route dropdown and
+// summary strip. THE grouping rule, in one place — the cards' figures, the
+// level-2 list and the "did that assign empty the card" test all ask it:
+//   Local     = deliveryType "Local" PLUS a bill with NO delivery type (an
+//               unmatched dealer, an area with no type). Any other unknown
+//               name lands here too rather than vanishing from every card.
+//   UPC       = "Upcountry".
+//   Cross/IGT = "Cross" or "IGT".
+// ⚠ ODB IS NOT A GROUP. `isObdImport` is a flag on a bill that already has its
+// own delivery type, so an ODB bill falls into the card its type belongs to.
+type AssignGroup = "local" | "upc" | "crossIgt";
+const ASSIGN_GROUPS: readonly AssignGroup[] = ["local", "upc", "crossIgt"];
+const ASSIGN_GROUP_LABEL: Record<AssignGroup, string> = { local: "Local", upc: "UPC", crossIgt: "Cross/IGT" };
+function assignGroupOf(row: PickingQueueRow): AssignGroup {
+  if (row.deliveryType === "Upcountry") return "upc";
+  if (row.deliveryType === "Cross" || row.deliveryType === "IGT") return "crossIgt";
+  return "local";
+}
+// The delivery-type identities (CLAUDE_UI.md §2.1 data.*, the §3 dot table).
+// Cross/IGT carries BOTH of its types' colours, Cross first.
+const ASSIGN_GROUP_COLORS: Record<AssignGroup, readonly string[]> = {
+  local: ["bg-data-blue"],
+  upc: ["bg-data-orange"],
+  crossIgt: ["bg-data-rose", "bg-data-teal"],
+};
+
+// Level 2's chips group by route or by bay. Narrowed, never cast (§5.1).
+type ChipMode = "route" | "bay";
+const CHIP_MODE_KEYS: readonly ChipMode[] = ["route", "bay"];
+function isChipMode(key: string): key is ChipMode {
+  return (CHIP_MODE_KEYS as readonly string[]).includes(key);
+}
+// The "No route" / "No bay" chip. A sentinel, not the label, so a real route
+// that happens to be called "No Route" can never merge with route-less bills.
+const NO_CHIP_KEY = "__none__";
+function chipKeyOf(row: PickingQueueRow, mode: ChipMode): string {
+  if (mode === "route") return row.route ?? NO_CHIP_KEY;
+  return row.bayNumber === null ? NO_CHIP_KEY : String(row.bayNumber);
+}
+function chipLabel(key: string, mode: ChipMode): string {
+  if (key === NO_CHIP_KEY) return mode === "route" ? "No route" : "No bay";
+  return mode === "route" ? key : `Bay ${key}`;
 }
 
 // Detail-interactions Build A (2026-07-19) — which of the four already-
@@ -462,7 +492,6 @@ function PickingCard({
   variant,
   nowTick = 0,
   selected = false,
-  stripe = null,
   hidePickerName = false,
   shelfTrailing = null,
   captionSmu = false,
@@ -522,20 +551,6 @@ function PickingCard({
    * Optional and defaulted false, so every existing call site is unchanged.
    */
   captionSmu?: boolean;
-  /**
-   * Pick-bundling hint (2026-08-18) — a 4px full-height bar on the card's LEFT
-   * EDGE, inside its rounded corners. `"ok"` = SAME MATERIAL (Rule 1),
-   * `"amber"` = MOSTLY SAME (Rule 2), null/omitted = no bar.
-   *
-   * ⚠ OPTIONAL AND DEFAULTED, so every existing call site is byte-identical —
-   * this adds nothing to the card's layout, props-in-use, or render for any
-   * caller that does not pass it.
-   *
-   * It is a HINT, not a control: it carries no tap target and changes no
-   * behaviour. The supervisor still taps the card to select and uses the assign
-   * bar he already has.
-   */
-  stripe?: "ok" | "amber" | null;
   onOpen: () => void;
   onToggleSelect?: () => void;
   onLockTap?: () => void;
@@ -789,26 +804,6 @@ function PickingCard({
         // detail, unchanged.
         onClick={variant === "assign" ? () => onToggleSelect?.() : onOpen}
       >
-      {/* THE STRIPE. Absolutely positioned, so it takes NO part in layout —
-          nothing below it moves by a pixel, which is why the card's padding is
-          untouched. It overlays the leftmost 4px of the existing 16px (`px-4`)
-          left padding, i.e. it is absorbed by padding that was already there
-          rather than paid for with new space. `inset-y-0` makes it full-height
-          including the shelf; the card's own `overflow-hidden` clips it to the
-          20px corner radius, so it reads as part of the card, not a bar beside
-          it. `pointer-events-none` so it can never eat a tap meant for the card
-          body — this is a hint, and a hint must not be tappable.
-          ⚠ Only rendered when `stripe` is passed, so every other call site's
-          DOM is unchanged. */}
-      {stripe !== null && (
-        <span
-          aria-hidden="true"
-          className={
-            "absolute left-0 inset-y-0 w-[4px] pointer-events-none " +
-            (stripe === "ok" ? "bg-ok" : "bg-amber-400")
-          }
-        />
-      )}
       <div className={"flex items-start gap-3 " + (lead ? "pl-3.5 pr-4 pt-3.5 pb-3" : "px-4 pt-3.5 pb-3")}>
         {lead}
         <div className="flex-1 min-w-0">
@@ -1085,24 +1080,7 @@ function PickingCard({
   );
 }
 
-// ── Pick-bundling headings (2026-08-18) ──────────────────────────────────
-//
-// One small grey caps line with a coloured dot, sitting above each bundle. The
-// dot is the ONLY colour, and it is the same colour as that bundle's card
-// stripe — so the eye joins heading to cards without a box, a border or a
-// background band, none of which this board uses anywhere else.
-//
-// THE WORDS ARE THE FLOOR'S WORDS, deliberately: SAME MATERIAL / MOSTLY SAME /
-// SINGLE PICKS. One supervisor moves between the desk screen and his phone
-// inside one shift; two vocabularies for the same two ideas is a defect, not a
-// detail. "· one picker" is the phone's own tail — the desk screen has an
-// assign bar in view that says it, the phone does not.
-//
-// ⚠ NOT ON THIS HEADING, all considered and rejected: a bill count (the cards
-// under it are countable and few), a "saves N trips" figure (Rule 2 has no such
-// number and showing one only for Rule 1 would make the two kinds read as
-// different sorts of thing), and any button — this is a hint, not a control.
-// ── The Tinting section's three pieces (2026-09-18) ─────────────────────────
+/// ── The Tinting section's three pieces (2026-09-18) ─────────────────────────
 //
 // 🔴 THE CARD IS THE PICKER CARD. `TintCard` below is the level-1 picker card's
 // markup with different words in it: the same `<button>` classes, the same
@@ -1288,25 +1266,77 @@ function TintBillRow({ row }: { row: TintWorkloadBill }): React.JSX.Element {
   );
 }
 
-function BundleHeading({
-  label,
-  tone,
-}: {
-  label: string;
-  tone: "ok" | "amber" | "grey";
-}): React.JSX.Element {
+// ── Assign › Bills level 1: one delivery-type card (2026-10-24) ─────────────
+// The type name with its dot(s), a full-height left stripe in the same colour,
+// the type's waiting litres and a chevron — nothing else (owner). ~96px tall,
+// the picker card's shell (white, gray-200 border, CARD_SHADOW_V2, 16px radius).
+// 0 waiting bills → "All done" in the ok token, NOT tappable, and the card keeps
+// its place so the three never reshuffle.
+function AssignGroupDots({ group }: { group: AssignGroup }): React.JSX.Element {
   return (
-    <div className="flex items-center gap-[7px] text-[11px] font-bold uppercase tracking-wider text-gray-500 mb-[7px] px-[2px]">
-      {tone !== "grey" && (
-        <span
-          aria-hidden="true"
-          className={
-            "w-[7px] h-[7px] rounded-full shrink-0 " + (tone === "ok" ? "bg-ok" : "bg-amber-400")
-          }
-        />
-      )}
-      {label}
-    </div>
+    <span className="flex items-center gap-1 shrink-0" aria-hidden="true">
+      {ASSIGN_GROUP_COLORS[group].map((c) => (
+        <span key={c} className={"w-2 h-2 rounded-full " + c} />
+      ))}
+    </span>
+  );
+}
+
+function AssignGroupCard({
+  group,
+  bills,
+  litres,
+  onOpen,
+}: {
+  group: AssignGroup;
+  bills: number;
+  litres: number;
+  onOpen: () => void;
+}): React.JSX.Element {
+  const done = bills === 0;
+  const body = (
+    <>
+      {/* The stripe: absolutely placed, so it takes no part in layout; a
+          two-type card splits it top/bottom in the same order as its dots. */}
+      <span aria-hidden="true" className="absolute left-0 inset-y-0 w-[5px] flex flex-col pointer-events-none">
+        {ASSIGN_GROUP_COLORS[group].map((c) => (
+          <span key={c} className={"flex-1 " + c} />
+        ))}
+      </span>
+      <div className="flex items-center gap-3 pl-5 pr-3.5 min-h-[96px]">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <AssignGroupDots group={group} />
+            <span className="text-[17px] font-semibold text-gray-900 truncate">{ASSIGN_GROUP_LABEL[group]}</span>
+          </div>
+          {done ? (
+            <div className="mt-1.5 flex items-center gap-1 text-[13.5px] font-semibold text-ok">
+              <Check size={16} strokeWidth={2.5} aria-hidden="true" />
+              All done
+            </div>
+          ) : (
+            <div className="mt-1 text-[22px] font-semibold text-gray-900 tabular-nums">
+              {formatLitres(litres)}
+              <span className="text-[13px] font-medium text-gray-400"> L</span>
+            </div>
+          )}
+        </div>
+        {!done && <ChevronRight size={20} className="text-gray-400 shrink-0" aria-hidden="true" />}
+      </div>
+    </>
+  );
+  const shell = "relative w-full text-left bg-white border border-gray-200 rounded-[16px] overflow-hidden";
+  if (done) {
+    return (
+      <div className={shell} style={{ boxShadow: CARD_SHADOW_V2 }}>
+        {body}
+      </div>
+    );
+  }
+  return (
+    <button type="button" onClick={onOpen} className={shell + " active:opacity-70"} style={{ boxShadow: CARD_SHADOW_V2 }}>
+      {body}
+    </button>
   );
 }
 
@@ -1411,10 +1441,11 @@ function LockGlyph({ className }: { className: string }): React.JSX.Element {
 
 // [All][Local][UPC] delivery-type pills — the Assign tab's exact UI,
 // extracted so the Check tab's FIX 3 pills reuse this verbatim instead of a
-// second copy. Each tab passes its OWN state (Assign's activeType, Check's
-// own checkTypeFilter) — the two filters are deliberately independent, never
-// shared, so setting one tab's type filter can never silently change the
-// other tab's results (constraint: no behaviour change to Assign).
+// second copy. Each caller passes its OWN state (the Picking tab's
+// checkTypeFilter, the Done tab's checkedTypeFilter, the Trips view's
+// tripTypeFilter) — never shared, so one tab's type filter can never silently
+// change another's results. The Assign tab's Bills view stopped using these
+// pills on 2026-10-24 (the three delivery-type cards replaced them).
 function TypeFilterPills({
   value, onChange, counts,
 }: {
@@ -1579,20 +1610,22 @@ export function PickingBoardMobile(): React.JSX.Element {
 
   const [searching, setSearching] = useState(false);
   const [query, setQuery] = useState("");
-  const [activeType, setActiveType] = useState<TypeFilter>("All");
-  const [activeRoute, setActiveRoute] = useState<string | null>(null); // null = "All routes"
-  // OBD toggle (2026-10-16) — Assign tab only, default OFF = every bill. ON keeps
-  // only OBD imports (orders.isObdImport). Narrows the list like type/route do;
-  // the route sheet's counts stay as they were.
-  const [obdOnly, setObdOnly] = useState<boolean>(false);
-  const [routeSheetOpen, setRouteSheetOpen] = useState(false);
+  // ── Assign › Bills (2026-10-24) ───────────────────────────────────────────
+  // The delivery-type card that is open (null = level 1, the three cards), what
+  // its chips group by, and the chip picked (null = "All"). Plain state, nothing
+  // saved: every board open starts on level 1, Route mode, All. These replace
+  // the type pill, the route dropdown and the ODB toggle that lived here.
+  const [openGroup, setOpenGroup] = useState<AssignGroup | null>(null);
+  const [chipMode, setChipMode] = useState<ChipMode>("route");
+  const [activeChip, setActiveChip] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<number>>(new Set());
 
   // ── Assign tab › Trips view (2026-10-13, slices 2–4) ─────────────────────
   // The view only GROUPS bills: every card, tap, detail and action below is the
-  // Bills view's own code path. Bills is the default and stays byte-identical.
-  const [assignView, setAssignView] = useState<AssignView>("bills");
-  // Its own type pills (trips by stored typeCode) — never `activeType`.
+  // Bills view's own code path. Trips is the DEFAULT since 2026-10-24 (owner);
+  // plain state, so every board open starts on Trips.
+  const [assignView, setAssignView] = useState<AssignView>("trips");
+  // Its own type pills (trips by stored typeCode) — never the Bills cards' state.
   const [tripTypeFilter, setTripTypeFilter] = useState<TypeFilter>("All");
   // The opened trip, or null for the list. Opening PUSHES ONE history entry
   // (openTrip) and the single popstate authority below closes it, so hardware
@@ -1614,7 +1647,7 @@ export function PickingBoardMobile(): React.JSX.Element {
   // trip list. Keyed on activeTab only — never on data — so a background
   // refresh can never close the screen under a thumb.
   useEffect(() => {
-    if (activeTab !== "assign" && navStateRef.current.tripOpen) window.history.back();
+    if (activeTab !== "assign" && (navStateRef.current.tripOpen || navStateRef.current.groupOpen)) window.history.back();
   }, [activeTab]);
 
   // ── Picking tab VIEW toggle (2026-08-22) ─────────────────────────────────
@@ -1636,9 +1669,8 @@ export function PickingBoardMobile(): React.JSX.Element {
   // the change that exposes it. There is no cast anywhere in this file.
   const [pickingView, setPickingView] = useState<PickingView>("picker");
   // FIX 3 (reversed decision) — Check's OWN delivery-type filter. Deliberately
-  // NOT shared with Assign's activeType: switching one tab's type pills must
-  // never silently change what the other tab shows (no behaviour change to
-  // Assign, per constraints).
+  // never shared with another tab's: switching one tab's type pills must never
+  // silently change what another tab shows.
   const [checkTypeFilter, setCheckTypeFilter] = useState<TypeFilter>("All");
 
   // Checked tab (2026-07-18) — its OWN type filter + picker filter, same
@@ -1924,6 +1956,9 @@ export function PickingBoardMobile(): React.JSX.Element {
     // band card) and closes first, like the picker sheet.
     tripOpen: false,
     releaseOpen: false,
+    // Bills level 2 (2026-10-24): one delivery-type card open — a history-
+    // tracked level under the detail, exactly like the trip screen.
+    groupOpen: false,
   });
   // The popstate listener registers ONCE, so it must not close over a
   // `recorder` object rebuilt on every render.
@@ -1935,7 +1970,7 @@ export function PickingBoardMobile(): React.JSX.Element {
   // real page transition. Only openDetail() calls this; goNext/goPrev swap
   // detailOrderId WITHOUT pushing, so paging through several bills still
   // costs exactly one history entry for the whole detail "session".
-  function pushScreen(screen: "detail" | "trip" = "detail"): void {
+  function pushScreen(screen: "detail" | "trip" | "group" = "detail"): void {
     if (typeof window === "undefined") return;
     window.history.pushState({ pickingScreen: screen }, "");
     depthRef.current += 1;
@@ -2126,53 +2161,68 @@ export function PickingBoardMobile(): React.JSX.Element {
     [openTripId, tripBand],
   );
 
-  // Route counts — one bill each, narrowed by the active Type pill.
-  //
-  // ⚠ NOT ZONE-FILTERED, on purpose. An "upcoming" (locked) bill still counts
-  // its route as present: the supervisor can open and read a locked bill, so a
-  // route that has one is a route he may legitimately want to filter to. This
-  // is why the number here can exceed the lane strip's `{filteredWaitingDue
-  // .length} due` — different questions, both correct.
-  const routeCounts = useMemo(() => {
-    const map = new Map<string, number>();
+  // ── Bills level 1 / level 2 data (2026-10-24) ─────────────────────────────
+  // Per card: bills and litres over EVERY waiting bill of that group — due AND
+  // upcoming, before chip or search — so a card's figure is exactly what opening
+  // it shows. A gift adds no litres (loadLitres), same as everywhere else here.
+  const groupStats: Record<AssignGroup, { bills: number; litres: number }> = useMemo(() => {
+    const out: Record<AssignGroup, { bills: number; litres: number }> = {
+      local: { bills: 0, litres: 0 },
+      upc: { bills: 0, litres: 0 },
+      crossIgt: { bills: 0, litres: 0 },
+    };
     for (const r of waitingRows) {
-      if (r.route === null) continue;
-      if (!matchesType(r, activeType)) continue;
-      map.set(r.route, (map.get(r.route) ?? 0) + 1);
+      const g = out[assignGroupOf(r)];
+      g.bills += 1;
+      g.litres += loadLitres(r.volumeLitres, r.isGift);
     }
-    return map;
-  }, [waitingRows, activeType]);
-
-  // ⚠ THE OPTION LIST COMES OFF THE COUNT MAP — this is the whole 2026-08-21 fix.
+    return out;
+  }, [waitingRows]);
+  // The open card's waiting bills, chip not applied — the chips' source and the
+  // "did that assign empty the card" test.
+  const openGroupRows: PickingQueueRow[] = useMemo(
+    () => (openGroup === null ? [] : waitingRows.filter((r) => assignGroupOf(r) === openGroup)),
+    [waitingRows, openGroup],
+  );
+  // One chip per route (or bay) present in the open card, with counts. Routes
+  // A→Z, bays low→high, the "No route" / "No bay" chip last.
   //
-  // It used to be a SECOND memo (`availableRoutes`) that walked `waitingRows`
-  // and never read `activeType`, so the list and the counts answered two
-  // different questions: with Local selected the sheet still offered "Vapi",
-  // an Upcountry-only route, and the `?? 0` below printed a literal 0 beside
-  // it. Deriving the keys from the already-narrowed map means a route with no
-  // bill under the active type CANNOT appear — the zero row is unreachable by
-  // construction rather than filtered out after the fact, and `?? 0` is now
-  // dead code kept only for the type.
-  //
-  // Same shape as `pickerOptions` / `checkedPickerOptions` below, which have
-  // always been built this way and have never had this bug. Three sheets, one
-  // pattern.
-  const routeOptions: FilterSheetOption[] = useMemo(() => {
-    return Array.from(routeCounts.keys())
-      .sort((a, b) => a.localeCompare(b, "en", { sensitivity: "base" }))
-      .map((route) => ({ value: route, label: route, count: routeCounts.get(route) ?? 0 }));
-  }, [routeCounts]);
+  // ⚠ A PICKED CHIP NEVER VANISHES UNDER A THUMB. If a background refresh takes
+  // its last bill, it stays on the strip at 0 rather than disappearing and
+  // leaving an empty list with nothing picked — the same rule the old route
+  // dropdown's reset kept out of an effect.
+  const chipOptions: { key: string; label: string; count: number }[] = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const r of openGroupRows) {
+      const k = chipKeyOf(r, chipMode);
+      counts.set(k, (counts.get(k) ?? 0) + 1);
+    }
+    if (activeChip !== null && !counts.has(activeChip)) counts.set(activeChip, 0);
+    const keys = Array.from(counts.keys()).filter((k) => k !== NO_CHIP_KEY);
+    if (chipMode === "route") keys.sort((a, b) => a.localeCompare(b, "en", { sensitivity: "base" }));
+    else keys.sort((a, b) => Number(a) - Number(b));
+    if (counts.has(NO_CHIP_KEY)) keys.push(NO_CHIP_KEY);
+    return keys.map((k) => ({ key: k, label: chipLabel(k, chipMode), count: counts.get(k) ?? 0 }));
+  }, [openGroupRows, chipMode, activeChip]);
 
   const q = query.trim().toLowerCase();
+  // The Bills list: the open card, then its chip, then the search. With NO card
+  // open the list renders only for a search (level 1 shows the cards), and then
+  // it searches every waiting bill. Everything downstream — the Due / Upcoming
+  // split, the detail's swipe order (filteredWaiting) and the selection-bar
+  // trim (selectedRows) — reads this, so all three follow the card and chip.
   const filteredWaitingAll: PickingQueueRow[] = useMemo(() => {
     return waitingRows.filter((r) => {
-      if (activeType !== "All" && r.deliveryType !== activeType) return false;
-      if (activeRoute !== null && r.route !== activeRoute) return false;
-      if (obdOnly && !r.isObdImport) return false;
+      if (openGroup !== null) {
+        if (assignGroupOf(r) !== openGroup) return false;
+        if (activeChip !== null && chipKeyOf(r, chipMode) !== activeChip) return false;
+      }
       if (q && !matchesPickingSearch(r, q)) return false;
       return true;
     });
-  }, [waitingRows, activeType, activeRoute, obdOnly, q]);
+  }, [waitingRows, openGroup, activeChip, chipMode, q]);
+  // Level 2, or a search from level 1, shows bills; otherwise the three cards.
+  const showBillList = openGroup !== null || q !== "";
 
   // ── Zone partition (step 5a) ─────────────────────────────────────────────
   // A DISPLAY partition, not a sort. Array.filter preserves the server's
@@ -2183,58 +2233,6 @@ export function PickingBoardMobile(): React.JSX.Element {
     () => filteredWaitingAll.filter((r) => r.zone === "due"),
     [filteredWaitingAll],
   );
-  // ── Pick bundling — ASSIGN TAB, ZONE 1 ONLY (2026-08-18) ─────────────────
-  //
-  // Runs over `filteredWaitingDue`, i.e. AFTER the type/route/search filters,
-  // for the same reason Floor's By-group view does: those narrow "which bills
-  // are we talking about", a fair question to ask of a bundle. Zone 2 is never
-  // fed in — an upcoming bill is not assignable, so bundling it would offer the
-  // supervisor work he is not allowed to hand out.
-  //
-  // ⚠️ ORDER OF PLAY, owned by the engine's contract: Rule 1 FIRST over the
-  // whole set, Rule 2 only over what Rule 1 left. A bill is never in both.
-  //
-  // ⚠ THE ENGINE IS USED AS-IS (lib/picking/grouping.ts, shared with Floor).
-  // Where the phone's shape differed, THE CALLER ADAPTED: the engine wants
-  // { orderId, obdNumber, skus }, so we build that from the payload's
-  // `waitingSkus` sibling here rather than teaching the engine about
-  // PickingQueueRow. Both boards therefore hand it the identical shape and can
-  // never disagree about a bundle.
-  //
-  // With PICKING_GROUPING_ENABLED false the payload's two arrays are empty, so
-  // `skusById` is empty, every candidate has zero SKUs, the engine drops them
-  // all, and this yields no groups and an `ungrouped` that is the whole list —
-  // which renders as today's flat list.
-  const bundles = useMemo(() => {
-    const skusById = new Map((data?.waitingSkus ?? []).map((w) => [w.orderId, w.skus] as const));
-    const oil = new Set<string>();
-    for (const entry of data?.oilSkus ?? []) {
-      for (const code of entry.skus) oil.add(code);
-    }
-    const rowById = new Map(filteredWaitingDue.map((r) => [r.orderId, r] as const));
-    const candidates = filteredWaitingDue.map((r) => ({
-      orderId: r.orderId,
-      obdNumber: r.obdNumber,
-      skus: skusById.get(r.orderId) ?? [],
-    }));
-
-    const one = buildPickGroups(candidates);
-    const leftover = new Set(one.ungrouped);
-    const two = buildOilGroups(candidates.filter((c) => leftover.has(c.orderId)), oil);
-
-    const rowsFor = (ids: { orderId: number }[]) =>
-      ids.map((m) => rowById.get(m.orderId)).filter((r): r is PickingQueueRow => r !== undefined);
-
-    return {
-      same: one.groups.map((g) => rowsFor([g.main, ...g.riders])).filter((rs) => rs.length > 0),
-      mostly: two.groups.map((g) => ({
-        rows: rowsFor(g.members),
-        hasNonOil: g.hasNonOil,
-      })).filter((g) => g.rows.length > 0),
-      singles: rowsFor(two.ungrouped.map((id) => ({ orderId: id }))),
-    };
-  }, [data?.waitingSkus, data?.oilSkus, filteredWaitingDue]);
-
   const filteredWaitingUpcoming: PickingQueueRow[] = useMemo(
     () => filteredWaitingAll.filter((r) => r.zone === "upcoming"),
     [filteredWaitingAll],
@@ -2249,52 +2247,6 @@ export function PickingBoardMobile(): React.JSX.Element {
   const filteredWaiting: PickingQueueRow[] = useMemo(
     () => [...filteredWaitingDue, ...filteredWaitingUpcoming],
     [filteredWaitingDue, filteredWaitingUpcoming],
-  );
-
-  // Lane strip counts the WORKING list only. An upcoming bill is not "ready
-  // to load" — folding it in would overstate the floor's actual workload.
-  // A GIFT bill adds no litres (lib/orders/gift.ts); it still counts as "due".
-  const totalLitres = filteredWaitingDue.reduce((sum, r) => sum + loadLitres(r.volumeLitres, r.isGift), 0);
-  // Unchanged, and now provably consistent: the options ARE `routeCounts`'
-  // keys, so this sum is exactly the sum of the numbers on screen. Before the
-  // fix it was already the sum of the counts — but the list carried extra rows
-  // at 0, so "All routes 306" sat above rows that did not add up to it.
-  const allRoutesCount = Array.from(routeCounts.values()).reduce((a, b) => a + b, 0);
-
-  // The sheet describes what it is actually showing. The old string,
-  // "counts reflect the current Type filter", stopped being the interesting
-  // fact the moment the LIST started reflecting it too.
-  const routeSheetSubtitle =
-    activeType === "Local"
-      ? "Single-select · only routes with a Local bill"
-      : activeType === "Upcountry"
-        ? "Single-select · only routes with an Upcountry bill"
-        : "Single-select · every route with a waiting bill";
-
-  // ⚠ CHANGING THE TYPE CAN ORPHAN THE SELECTED ROUTE. Vapi is Upcountry-only,
-  // so switching to Local leaves `activeRoute = "Vapi"` pointing at a route the
-  // sheet no longer offers: the board goes empty and the pill keeps showing a
-  // confident teal "Vapi" with nothing on screen explaining why. Reset to All
-  // routes when — and only when — the selection has no bill under the new type.
-  //
-  // ⚠ THIS LIVES IN THE PILL'S HANDLER, NOT AN EFFECT, and that is load-bearing.
-  // An effect keyed on `routeCounts` would also fire on the 15s marker refetch
-  // (§10), clearing a supervisor's filter the instant somebody else assigned the
-  // last bill on his route — a background refresh must never move the ground
-  // under a hand. Here it can only ever be the consequence of his own tap.
-  //
-  // ⚠ There was NO existing reset to lean on. `setActiveRoute` had exactly one
-  // caller (the sheet's own onChange) and nothing reset it on tab change either
-  // — CLAUDE_PICKING.md §3 claims the route filter "resets to 'All' on tab
-  // change"; the code has never done that. Doc drift, reported, not fixed here.
-  const handleTypeChange = useCallback(
-    (next: TypeFilter): void => {
-      setActiveType(next);
-      if (activeRoute === null) return;
-      const survives = waitingRows.some((r) => r.route === activeRoute && matchesType(r, next));
-      if (!survives) setActiveRoute(null);
-    },
-    [activeRoute, waitingRows],
   );
 
   // ⚠ `pickerCounts` / `pickerOptions` / `allPickersCount` STOOD HERE and were
@@ -2522,11 +2474,6 @@ export function PickingBoardMobile(): React.JSX.Element {
     });
   }
 
-  const laneLabel =
-    [activeType !== "All" ? (activeType === "Upcountry" ? "UPC" : activeType) : null, obdOnly ? "ODB" : null, activeRoute]
-      .filter(Boolean)
-      .join(" · ") || "All routes";
-
   // Selected rows narrowed to what's currently VISIBLE under the active
   // type/route/search filters — a row hidden by a later filter change drops
   // out of the bar/assign payload rather than silently riding along
@@ -2636,6 +2583,46 @@ export function PickingBoardMobile(): React.JSX.Element {
     window.requestAnimationFrame(() => scrollRef.current?.scrollTo(0, top));
   }
 
+  // ── Bills level 2 open / close (2026-10-24) ───────────────────────────────
+  // The trip screen's pair, one view over: opening a card PUSHES ONE entry and
+  // closeGroupLevel is the REAL close, run only from the popstate handler (the
+  // header ‹ calls history.back()), so Android back / iOS swipe return to the
+  // three cards instead of leaving /picking. Selection is scoped to the card,
+  // so it is cleared both ways; the chip resets per card (routes differ), the
+  // Route | Bay mode is kept. closeGroupLevel touches only setters and refs —
+  // the popstate listener registers once and must not close over render state.
+  function openGroupLevel(group: AssignGroup): void {
+    listScrollTopRef.current = scrollRef.current?.scrollTop ?? 0;
+    setSelected(new Set());
+    setActiveChip(null);
+    setOpenGroup(group);
+    navStateRef.current = { ...navStateRef.current, groupOpen: true };
+    pushScreen("group");
+    scrollRef.current?.scrollTo(0, 0);
+  }
+  function closeGroupLevel(): void {
+    setOpenGroup(null);
+    setActiveChip(null);
+    setSelected(new Set());
+    const top = listScrollTopRef.current;
+    window.requestAnimationFrame(() => scrollRef.current?.scrollTo(0, top));
+  }
+  // Set by an assign FROM THE DETAIL that emptied the open card: the detail's
+  // pop lands first, then the handler pops the card's entry (two traversals,
+  // never two back() calls in one tick).
+  const closeGroupAfterPopRef = useRef(false);
+  // Would taking these bills out empty the open card? Asked by the assign and
+  // Direct Loading handlers with the ids they acted on — upcoming (locked)
+  // bills cannot be assigned, so a card holding one never empties this way.
+  const emptiesOpenGroup = useCallback(
+    (ids: readonly number[]): boolean => {
+      if (openGroup === null || tripScreenOpen || openGroupRows.length === 0) return false;
+      const gone = new Set(ids);
+      return openGroupRows.every((r) => gone.has(r.orderId));
+    },
+    [openGroup, tripScreenOpen, openGroupRows],
+  );
+
   // Live-resolved list for the open detail's prev/next paging — re-picked
   // every render from `detailListKey`, off the SAME already-memoized arrays
   // the board itself renders, so a post-Undo refetch is reflected
@@ -2700,8 +2687,9 @@ export function PickingBoardMobile(): React.JSX.Element {
       countOpen: countTarget !== null,
       tripOpen: openTripId !== null,
       releaseOpen: releaseTarget !== null,
+      groupOpen: openGroup !== null,
     };
-  }, [detailOpen, pickerSheetOpen, recorder.target, countTarget, openTripId, releaseTarget]);
+  }, [detailOpen, pickerSheetOpen, recorder.target, countTarget, openTripId, releaseTarget, openGroup]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -2741,6 +2729,12 @@ export function PickingBoardMobile(): React.JSX.Element {
       }
       if (navStateRef.current.detailOpen) {
         closeDetail();
+        // An assign from the detail just emptied the open delivery-type card:
+        // pop the card entry too, in its own traversal now this one has landed.
+        if (closeGroupAfterPopRef.current) {
+          closeGroupAfterPopRef.current = false;
+          window.history.back();
+        }
         return;
       }
       // ── TRIP SCREEN (2026-10-13) — the level under the detail ─────────────
@@ -2761,6 +2755,23 @@ export function PickingBoardMobile(): React.JSX.Element {
       }
       if (navStateRef.current.tripOpen) {
         closeTrip();
+        return;
+      }
+      // ── BILLS LEVEL 2 (2026-10-24) — one delivery-type card open. Same
+      // shape as the trip screen: a sheet floating over it closes first and
+      // re-pushes, then the card closes back to the three cards.
+      if (navStateRef.current.groupOpen && navStateRef.current.pickerSheetOpen) {
+        setPickerSheetOpen(false);
+        pushScreen("group");
+        return;
+      }
+      if (navStateRef.current.groupOpen && navStateRef.current.releaseOpen) {
+        setReleaseTarget(null);
+        pushScreen("group");
+        return;
+      }
+      if (navStateRef.current.groupOpen) {
+        closeGroupLevel();
         return;
       }
       // Nothing tracked open (depth already 0) — let the pop fall through:
@@ -3039,7 +3050,18 @@ export function PickingBoardMobile(): React.JSX.Element {
         // open and never pushed an entry, so calling history.back()
         // unconditionally here would incorrectly pop/exit instead of being
         // the harmless no-op this comment used to describe.
+        // The open delivery-type card just emptied → back to its home (owner,
+        // 2026-10-24). Decided HERE, off the rows the supervisor acted on, so a
+        // background refresh can never navigate him away.
+        const empties = failedList.length === 0 && emptiesOpenGroup(assignTarget.map((r) => r.orderId));
         if (detailOpen) {
+          // The detail's own pop lands first; the popstate handler then pops
+          // the card's entry in a second, separate traversal.
+          if (empties) closeGroupAfterPopRef.current = true;
+          window.history.back();
+        } else if (empties) {
+          // Synced NOW: the pop must not find the just-closed sheet still open.
+          navStateRef.current = { ...navStateRef.current, pickerSheetOpen: false };
           window.history.back();
         }
         // Live feed 4b: the acted-on ids (ignored off the feed — full refetch as before).
@@ -3050,7 +3072,7 @@ export function PickingBoardMobile(): React.JSX.Element {
         setAssigning(false);
       }
     },
-    [assignTarget, assigning, refetchQueue, detailOpen],
+    [assignTarget, assigning, refetchQueue, detailOpen, emptiesOpenGroup],
   );
 
   // Undo — mirrors picking-queue.tsx's handleUnassign: single-order payload
@@ -3134,15 +3156,23 @@ export function PickingBoardMobile(): React.JSX.Element {
       if (done.length > 0) setSelected(new Set());
       setPickerSheetOpen(false);
       // Same rule as handleAssign: pop the detail entry only when the sheet was
-      // opened from the detail screen's own CTA.
-      if (detailOpen) window.history.back();
+      // opened from the detail screen's own CTA — and the card's entry too when
+      // this emptied the open delivery-type card.
+      const empties = emptiesOpenGroup(done);
+      if (detailOpen) {
+        if (empties) closeGroupAfterPopRef.current = true;
+        window.history.back();
+      } else if (empties) {
+        navStateRef.current = { ...navStateRef.current, pickerSheetOpen: false };
+        window.history.back();
+      }
       await refetchQueue({ ids });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Direct Loading failed");
     } finally {
       setAssigning(false);
     }
-  }, [assignTarget, assigning, detailOpen, refetchQueue]);
+  }, [assignTarget, assigning, detailOpen, refetchQueue, emptiesOpenGroup]);
 
   // Undo from the Done tab's ink footer. The row carries no invoice fields, so
   // the link always shows and the route decides: its 409 reason ("already
@@ -3396,6 +3426,9 @@ export function PickingBoardMobile(): React.JSX.Element {
             onOpenBills={() => {
               setAssignView("bills");
               setSelected(new Set());
+              // Lands inside Local (owner, 2026-10-24) — the Bills home has no
+              // "All" any more, and the jump should arrive on a bill list.
+              openGroupLevel("local");
             }}
           />
         )}
@@ -3595,9 +3628,10 @@ export function PickingBoardMobile(): React.JSX.Element {
       <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto overscroll-contain pb-[76px]">
 
       {/* Filter row (swaps for search when active) — shared by both tabs.
-          Assign: type pills + route dropdown + lane strip. Check: the SAME
-          type pills (own state) + picker dropdown + check summary strip
-          (FIX 3/4) — mirrors Assign's row exactly, pills left/dropdown right. */}
+          Assign › Bills: the Bills | Trips switch + tinting strip (level 1)
+          or the open card's header, Route | Bay switch and chips (level 2).
+          Picking / Done: type pills (own state) + their own controls and
+          summary strip (FIX 3/4). */}
       <div className="bg-white border-b border-gray-200 px-4 pt-2.5">
         {searching && !inTripsView ? (
           <div className="flex items-center gap-2 pb-2.5">
@@ -3657,58 +3691,91 @@ export function PickingBoardMobile(): React.JSX.Element {
             </div>
             {assignViewSwitch}
           </>
+        ) : activeTab === "assign" && openGroup !== null ? (
+          // ── BILLS LEVEL 2 (2026-10-24) — one delivery-type card open: its own
+          // header, the Route | Bay switch and the round chips. No Bills | Trips
+          // switch here (the trip screen's hide-at-level-2 rule) and no tinting
+          // strip — that stays on the home.
+          <div className="pb-2.5">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => window.history.back()}
+                aria-label="Back to delivery types"
+                className="w-11 h-11 -ml-2.5 shrink-0 flex items-center justify-center rounded-[10px] text-gray-500 active:bg-gray-100"
+              >
+                <ChevronLeft size={22} />
+              </button>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <AssignGroupDots group={openGroup} />
+                  <span className="text-[17px] font-semibold text-gray-900 truncate">{ASSIGN_GROUP_LABEL[openGroup]}</span>
+                </div>
+                <div className="text-[12.5px] font-medium text-gray-500 tabular-nums">
+                  {groupStats[openGroup].bills} {groupStats[openGroup].bills === 1 ? "bill" : "bills"}
+                  &nbsp;·&nbsp;{formatLitres(groupStats[openGroup].litres)} L
+                </div>
+              </div>
+            </div>
+            {/* Route | Bay — what the chips below group by. Navigation, so ink
+                on grey like the Bills | Trips switch, never violet. Switching
+                drops the chip pick: a route name means nothing as a bay. */}
+            <div className="flex w-fit rounded-[10px] bg-gray-100 p-[3px] mt-1.5" role="tablist" aria-label="Group chips by">
+              {CHIP_MODE_KEYS.map((key) => (
+                <button
+                  key={key}
+                  type="button"
+                  role="tab"
+                  aria-selected={chipMode === key}
+                  onClick={() => {
+                    if (!isChipMode(key) || key === chipMode) return;
+                    setChipMode(key);
+                    setActiveChip(null);
+                  }}
+                  className={
+                    "px-3.5 text-[12px] py-1 rounded-[8px] " +
+                    (chipMode === key
+                      ? "bg-white text-gray-900 font-semibold shadow-[0_1px_2px_rgba(0,0,0,0.08)]"
+                      : "text-gray-500 font-medium")
+                  }
+                >
+                  {key === "route" ? "Route" : "Bay"}
+                </button>
+              ))}
+            </div>
+            {/* The chips — "All" first, then one per route (or bay), scrolling
+                sideways. Same round look as TypeFilterPills. */}
+            <div className="flex items-center gap-1.5 overflow-x-auto mt-2.5 -mx-4 px-4 [scrollbar-width:none]">
+              {[{ key: null, label: "All", count: groupStats[openGroup].bills }, ...chipOptions].map((c) => (
+                <button
+                  key={c.key ?? "__all__"}
+                  type="button"
+                  onClick={() => {
+                    setActiveChip(c.key);
+                    setSelected(new Set());
+                  }}
+                  className={
+                    "shrink-0 text-[12.5px] font-medium px-3 py-1.5 rounded-full border whitespace-nowrap " +
+                    (activeChip === c.key
+                      ? "bg-gray-900 border-gray-900 text-white font-semibold"
+                      : "bg-white border-gray-200 text-gray-700")
+                  }
+                >
+                  {c.label}
+                  <span className={"ml-1 font-medium tabular-nums " + (activeChip === c.key ? "text-gray-300" : "text-gray-400")}>
+                    {c.count}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
         ) : activeTab === "assign" ? (
           <>
-            <div className="flex items-center justify-between gap-2 pb-2.5">
-              {/* handleTypeChange, not setActiveType — it also drops an
-                  orphaned route selection. See its comment. */}
-              <TypeFilterPills value={activeType} onChange={handleTypeChange} />
-              {/* OBD toggle (2026-10-16). SELECTION colours when on (data.slate,
-                  CLAUDE_UI §59.9), the same pair the route pill uses — never the
-                  plum pill colour, which marks a bill, not a chosen filter. */}
-              <button
-                type="button"
-                aria-pressed={obdOnly}
-                onClick={() => setObdOnly((v) => !v)}
-                className={
-                  "shrink-0 text-[12.5px] font-medium px-3 py-1.5 rounded-full border whitespace-nowrap " +
-                  (obdOnly
-                    ? "border-data-slate bg-ink-25 text-ink-900 font-semibold"
-                    : "border-gray-200 bg-white text-gray-700")
-                }
-              >
-                ODB
-              </button>
-              <button
-                type="button"
-                onClick={() => setRouteSheetOpen(true)}
-                className={
-                  "flex-1 min-w-0 max-w-[150px] flex items-center justify-between gap-1.5 text-[12.5px] font-medium px-3 py-1.5 rounded-full border " +
-                  (activeRoute !== null
-                    ? "border-data-slate bg-ink-25 text-ink-900"
-                    : "border-gray-200 bg-white text-gray-500")
-                }
-              >
-                <span className="truncate">{activeRoute ?? "All routes"}</span>
-                <ChevronDown size={13} className="shrink-0" />
-              </button>
-            </div>
-            {/* Bills | Trips (2026-10-13) — the ONLY addition to this view. */}
+            {/* BILLS LEVEL 1 (2026-10-24). The type pills, the ODB button, the
+                route button and the "All routes · N due" summary strip that
+                stood here are gone: the three delivery-type cards below the
+                filter row replace all four. */}
             {assignViewSwitch}
-
-            {/* 🔴 NEUTRAL, NOT brand-50, AND THE REASON IS A HEX COLLISION.
-                brand-50 is #F5F3FF, which is the exact ground the module
-                masthead took on 2026-09-09. Left violet, this strip became a
-                second identical wash on the same screen and read as a second
-                header stacked under the first. A summary of what the filters
-                currently show is inert, so it takes the inert fill and lets the
-                numbers carry themselves. All THREE tab strips move together. */}
-            <div className="mx-[-16px] bg-ink-50 border-t border-ink-100 px-4 py-2 text-[12px] font-medium text-ink-600 flex items-center gap-1">
-              <b className="font-bold">{laneLabel}</b>
-              <span>
-                &nbsp;·&nbsp;{filteredWaitingDue.length} due&nbsp;·&nbsp;{formatLitres(totalLitres)} L ready to load
-              </span>
-            </div>
             {/* ── THE TINT ROOM, ONE LINE (2026-09-18) ──────────────────────
                 Work that is COMING to this tab but is not on it yet: a tint
                 bill reaches Assign only when the tint room finishes it. Without
@@ -3952,7 +4019,9 @@ export function PickingBoardMobile(): React.JSX.Element {
         {/* ── TRIPS VIEW (2026-10-13) ── the list, or one opened trip. */}
         {inTripsView && (tripScreenOpen ? tripScreen : tripList)}
 
-        {/* ── BILLS VIEW — today's list, unchanged (a fragment adds no DOM). */}
+        {/* ── BILLS VIEW (2026-10-24) — level 1 is the three delivery-type
+            cards; level 2 (one card open) or a search shows the bill list.
+            (A fragment adds no DOM.) */}
         {!inTripsView && (<>
         {loading && <p className="text-[13px] text-gray-400 text-center py-16">Loading queue&hellip;</p>}
 
@@ -3962,7 +4031,21 @@ export function PickingBoardMobile(): React.JSX.Element {
           </p>
         )}
 
-        {!loading && !error && data && (
+        {!loading && !error && data && !showBillList && (
+          <div className="flex flex-col gap-2.5">
+            {ASSIGN_GROUPS.map((g) => (
+              <AssignGroupCard
+                key={g}
+                group={g}
+                bills={groupStats[g].bills}
+                litres={groupStats[g].litres}
+                onOpen={() => openGroupLevel(g)}
+              />
+            ))}
+          </div>
+        )}
+
+        {!loading && !error && data && showBillList && (
           filteredWaitingDue.length === 0 && filteredWaitingUpcoming.length === 0 ? (
             <p className="text-[13px] text-gray-400 text-center py-16">No bills here right now.</p>
           ) : (
@@ -3980,14 +4063,11 @@ export function PickingBoardMobile(): React.JSX.Element {
                 <p className="text-[12.5px] text-gray-400 text-center py-6">
                   Nothing to assign right now.
                 </p>
-              ) : bundles.same.length === 0 && bundles.mostly.length === 0 ? (
-                /* NO BUNDLES TODAY — the flat list, exactly as it has always
-                   been. No "SINGLE PICKS" heading over the whole screen: with
-                   nothing to distinguish them FROM, it would be chrome
-                   labelling the obvious, the same call this tab already makes
-                   for its "Due now" header above. This is ALSO the branch
-                   PICKING_GROUPING_ENABLED=false always lands in, which is what
-                   makes the flag-off board byte-identical to today. */
+              ) : (
+                /* ONE PLAIN LIST (2026-10-24, owner). The pick-bundling
+                   headings (SAME MATERIAL / MOSTLY SAME / SINGLE PICKS) are
+                   gone from this board; the server still ships the bundling
+                   siblings, which nothing here reads any more. */
                 filteredWaitingDue.map((row) => (
                   <PickingCard
                     key={row.orderId}
@@ -3998,76 +4078,6 @@ export function PickingBoardMobile(): React.JSX.Element {
                     onToggleSelect={() => toggleSelect(row.orderId)}
                   />
                 ))
-              ) : (
-                /* BUNDLES PRESENT. Order is locked: SAME MATERIAL, then MOSTLY
-                   SAME, then SINGLE PICKS. Same-material leads because it is
-                   unconditionally the better deal — the supervisor should spend
-                   the ones that cost his picker nothing before he weighs one
-                   that costs him steps. Inside each kind the engine's own order
-                   is kept untouched. */
-                <>
-                  {bundles.same.map((rows) => (
-                    <div key={`same-${rows[0].orderId}`} className="mb-[6px]">
-                      <BundleHeading label="Same material · one picker" tone="ok" />
-                      {rows.map((row) => (
-                        <PickingCard
-                          key={row.orderId}
-                          row={row}
-                          variant="assign"
-                          stripe="ok"
-                          selected={selected.has(row.orderId)}
-                          onOpen={() => openDetail(row.orderId, { kind: "waiting" })}
-                          onToggleSelect={() => toggleSelect(row.orderId)}
-                        />
-                      ))}
-                    </div>
-                  ))}
-
-                  {bundles.mostly.map((g) => (
-                    <div key={`mostly-${g.rows[0].orderId}`} className="mb-[6px]">
-                      <BundleHeading label="Mostly same · one picker" tone="amber" />
-                      {/* The honest line. A MOSTLY SAME bundle earns its place
-                          on the premise that the material sits in one end of
-                          the depot — and sometimes part of it does not. Saying
-                          so is the point: he decides, and he can only decide if
-                          he is told. Grey, no red, no badge, no block. */}
-                      {g.hasNonOil && (
-                        <div className="text-[11px] leading-relaxed text-gray-400 mb-[7px] px-[2px]">
-                          Some items here are outside the oil paint area
-                        </div>
-                      )}
-                      {g.rows.map((row) => (
-                        <PickingCard
-                          key={row.orderId}
-                          row={row}
-                          variant="assign"
-                          stripe="amber"
-                          selected={selected.has(row.orderId)}
-                          onOpen={() => openDetail(row.orderId, { kind: "waiting" })}
-                          onToggleSelect={() => toggleSelect(row.orderId)}
-                        />
-                      ))}
-                    </div>
-                  ))}
-
-                  {bundles.singles.length > 0 && (
-                    <div className="mb-[6px]">
-                      {/* No dot: these are not a bundle, and a coloured dot
-                          would imply they were a third kind. */}
-                      <BundleHeading label="Single picks" tone="grey" />
-                      {bundles.singles.map((row) => (
-                        <PickingCard
-                          key={row.orderId}
-                          row={row}
-                          variant="assign"
-                          selected={selected.has(row.orderId)}
-                          onOpen={() => openDetail(row.orderId, { kind: "waiting" })}
-                          onToggleSelect={() => toggleSelect(row.orderId)}
-                        />
-                      ))}
-                    </div>
-                  )}
-                </>
               )}
 
               {/* ── ZONE 2 · UPCOMING (LOCKED) ──────────────────────────────
@@ -4609,24 +4619,15 @@ export function PickingBoardMobile(): React.JSX.Element {
           fixed-inset-0 restructure since position:fixed always resolves
           against the true viewport regardless of ancestor layout. */}
 
-      {/* Route bottom sheet (Assign) — reuses FilterBottomSheet */}
-      <FilterBottomSheet
-        open={routeSheetOpen}
-        onClose={() => setRouteSheetOpen(false)}
-        title="Filter by route"
-        subtitle={routeSheetSubtitle}
-        allLabel="All routes"
-        allCount={allRoutesCount}
-        options={routeOptions}
-        value={activeRoute}
-        onChange={setActiveRoute}
-      />
+      {/* ⚠ THE ASSIGN TAB'S ROUTE SHEET STOOD HERE and went 2026-10-24 with
+          the route button: routes are now the round chips inside each
+          delivery-type card (level 2). */}
 
       {/* ⚠ THE PICKING TAB'S "Filter by picker" SHEET STOOD HERE and was
           removed 2026-08-22 with its dropdown. The Picker | Bill toggle answers
           the shape question and search answers the who question.
-          FilterBottomSheet itself is UNCHANGED and still has two instances —
-          the route filter above and the Done tab's own picker filter below. */}
+          FilterBottomSheet itself is UNCHANGED and has ONE instance left —
+          the Done tab's own picker filter below. */}
 
       {/* Picker filter sheet (Checked tab, 2026-07-18) — SAME reused sheet,
           own data/state — this dropdown filters by picker (who picked the
