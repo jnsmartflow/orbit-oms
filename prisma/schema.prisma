@@ -1552,10 +1552,22 @@ model ship_to_copies {
 //
 // LIVE CHECKs — NOT EXPRESSIBLE IN PRISMA, pg_get_constraintdef read back 2026-10-10:
 //   chk_order_invoices_seq_positive   CHECK ((seq >= 1))
-//   chk_order_invoices_source         CHECK ((source = ANY (ARRAY['sap'::text, 'manual'::text])))
+//   chk_order_invoices_source         CHECK ((source = ANY (ARRAY['sap'::text, 'manual'::text, 'load'::text])))   ← v27.76 (+ 'load')
 //   chk_order_invoices_manual_has_no  CHECK (((source <> 'manual'::text) OR ("invoiceNo" IS NOT NULL)))
 //   chk_order_invoices_no_not_blank   CHECK ((("invoiceNo" IS NULL) OR (btrim("invoiceNo") <> ''::text)))
-// Every constraint and index name below is Prisma's default, so none needs `map:`.
+//
+// v27.76 — SPLIT LOAD (sql/2026-10-24-split-load-schema.sql; schema only, no
+// writer yet). A 'load' row is a PART of one invoice row on another truck;
+// "loadParentId" names the ORIGINAL row whose number it shares (one flat group).
+// LIVE CHECKs, pg_get_constraintdef read back 2026-10-24:
+//   chk_order_invoices_load_parent    CHECK (((source = 'load'::text) = ("loadParentId" IS NOT NULL)))
+//   chk_order_invoices_load_not_self  CHECK ((("loadParentId" IS NULL) OR ("loadParentId" <> id)))
+// PARTIAL INDEX — not modellable in Prisma, so deliberately NOT an @@index:
+//   order_invoices_loadParentId_idx ON order_invoices ("loadParentId") WHERE "loadParentId" IS NOT NULL
+// SAME OBD is a DATABASE rule: the FK is composite ("loadParentId", "orderId")
+// → (id, "orderId"), hence @@unique([id, orderId]). FLAT GROUP (the parent is
+// not itself 'load') and the number copy are APP rules.
+// Every other constraint and index name below is Prisma's default, so needs no `map:`.
 // ─────────────────────────────────────────────────────────────────────────────
 model order_invoices {
   id          Int       @id @default(autoincrement())
@@ -1566,7 +1578,7 @@ model order_invoices {
   invoiceNo   String?
   invoiceDate DateTime? @db.Timestamptz(6)
   seq         Int
-  /// 'sap' | 'manual' (chk_order_invoices_source). Seq 1 of every order is 'sap'.
+  /// 'sap' | 'manual' | 'load' (chk_order_invoices_source). Seq 1 of every order is 'sap'.
   source      String
   // NULL = system (back-fill, import, patch-headers). Live FK
   // order_invoices_createdById_fkey ON DELETE SET NULL. NAMED — users carries
@@ -1594,6 +1606,14 @@ model order_invoices {
   dispatchedById Int?
   dispatchedBy   users?      @relation("OrderInvoiceDispatchedBy", fields: [dispatchedById], references: [id], onDelete: SetNull)
 
+  // ── v27.76 — Split load. Set ⇔ source 'load' (chk_order_invoices_load_parent).
+  // Live FK order_invoices_loadParentId_fkey ("loadParentId", "orderId") →
+  // (id, "orderId") ON DELETE RESTRICT — the parent is on the SAME OBD and
+  // cannot be deleted while a part points at it. NAMED on both sides (self).
+  loadParentId Int?
+  loadParent   order_invoices?  @relation("OrderInvoiceLoadParent", fields: [loadParentId, orderId], references: [id, orderId], onDelete: Restrict, map: "order_invoices_loadParentId_fkey")
+  loadParts    order_invoices[] @relation("OrderInvoiceLoadParent")
+
   lines        order_invoice_lines[]
   // v27.66 per-row keys pointing here, all ON DELETE RESTRICT.
   billCopies   trip_bill_copies[]
@@ -1604,6 +1624,8 @@ model order_invoices {
   // serves every lookup by orderId, so there is deliberately no separate
   // @@index([orderId]) (the ci_return_lines precedent).
   @@unique([orderId, seq])
+  // v27.76 — the composite FK's target (id alone is already unique).
+  @@unique([id, orderId], map: "order_invoices_id_orderId_key")
   @@index([invoiceNo])
   // v27.66 — "which rows are on this stop". Prisma's default name.
   @@index([tripDropId])

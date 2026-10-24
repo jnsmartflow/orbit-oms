@@ -1,5 +1,5 @@
 # CLAUDE_ORDER_INVOICES.md — Add invoices: one OBD, many SAP invoices (the invoice row is the dispatch unit)
-# v1.0 · Schema v27.74 · October 2026 · updated 2026-10-24 · Lives in: orbit-oms/docs/
+# v1.0 · Schema v27.76 · October 2026 · updated 2026-10-24 · Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md — plus the domain file of the screen you touch
 
 **Purpose.** SAP sometimes bills ONE OBD as SEVERAL invoices; Orbit imports only one. "Add invoices"
@@ -79,6 +79,8 @@ Since v27.66 (`sql/2026-10-12-order-invoices-dispatch-unit.sql`) each row carrie
 | `"isHeld"` / `"heldAt"` / `"heldById"` | Held. 🔴 `heldAt` is the WALL-CLOCK hold moment — NOT `orders."heldAt"`, which is the ARRIVAL date |
 | `"isDispatched"` / `"dispatchedAt"` / `"dispatchedById"` | This invoice has left on a truck |
 | CHECKs | `chk_order_invoices_hold_shape`, `chk_order_invoices_dispatch_shape`, `chk_order_invoices_held_not_dispatched` (a row is never both) |
+
+2026-10-24 v27.76: source 'load' + loadParentId landed for Split load (schema only — no writer yet). Plan: docs/prompts/drafts/web-update-2026-10-24-split-load-plan.md.
 
 Three tables point at a row ON DELETE RESTRICT: `trip_bill_copies."orderInvoiceId"` and
 `trip_redeliveries."orderInvoiceId"` (both NOT NULL since v27.74, one row per (trip, invoice row)), and
@@ -441,6 +443,6 @@ invoice-pair leftovers (tint warning, partner line in the panel — not built) �
 
 ---
 
-*CLAUDE_ORDER_INVOICES.md v1.0 · Schema v27.74 · OrbitOMS · updated 2026-10-24 — new owner file for Add
+*CLAUDE_ORDER_INVOICES.md v1.0 · Schema v27.76 · OrbitOMS · updated 2026-10-24 — new owner file for Add
 invoices: Model A, derived OBD rules, single writers + mirrors, hand-SQL rules, the Add invoices lock rules.
 Written from the code at `a05769b7` and the live read-only check of 2026-10-24.*
