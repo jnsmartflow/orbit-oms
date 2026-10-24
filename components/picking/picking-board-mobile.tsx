@@ -167,12 +167,12 @@ function assignGroupOf(row: PickingQueueRow): AssignGroup {
   return "local";
 }
 // The delivery-type identities (CLAUDE_UI.md §2.1 data.*, the §3 dot table).
-// ONE colour per card (owner, 2026-10-24): Cross/IGT takes Cross's. The bill
-// cards inside keep their own per-bill delivery-type dot.
+// ONE colour per card (owner, 2026-10-24): Cross/IGT takes data.teal (IGT's
+// identity). The bill cards inside keep their own per-bill delivery-type dot.
 const ASSIGN_GROUP_COLOR: Record<AssignGroup, string> = {
   local: "bg-data-blue",
   upc: "bg-data-orange",
-  crossIgt: "bg-data-rose",
+  crossIgt: "bg-data-teal",
 };
 
 // Level 2's chips group by route or by bay. Narrowed, never cast (§5.1).
@@ -1274,8 +1274,8 @@ function TintBillRow({ row }: { row: TintWorkloadBill }): React.JSX.Element {
 // here at a larger size because that one is private and segment-driven. No
 // progress fill and no "of N": a full ring in the type's colour around ONE
 // number — the bills still waiting for this type, the same set the litres
-// come from. 0 → full ring in the ok token, a check and "ALL DONE" (the trips
-// "ALL IN" treatment), the name only on the left, NOT tappable, and the card
+// come from. 0 → full ring in the ok token with a check only (no words), the
+// name only on the left, NOT tappable, and the card
 // keeps its place so the three never reshuffle. ~136px, so the three fill most
 // of a phone below the tinting strip. The picker card's shell (white, gray-200
 // border, CARD_SHADOW_V2, 16px radius).
@@ -1292,10 +1292,7 @@ function AssignGroupRing({ group, bills }: { group: AssignGroup; bills: number }
     >
       <div className="w-[60px] h-[60px] rounded-full bg-white grid place-items-center leading-none">
         {done ? (
-          <span className="flex flex-col items-center">
-            <Check size={22} strokeWidth={3} className="text-ok" aria-hidden="true" />
-            <span className="text-[8.5px] font-bold tracking-wide text-gray-400 mt-[3px]">ALL DONE</span>
-          </span>
+          <Check size={26} strokeWidth={3} className="text-ok" aria-hidden="true" />
         ) : (
           <span className="text-[24px] font-bold tabular-nums text-gray-900">{bills}</span>
         )}
