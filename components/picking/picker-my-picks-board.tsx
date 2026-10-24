@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
-import { ChevronLeft, ChevronRight, Plus, Star, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Plus, Star, UserCheck, X } from "lucide-react";
 import { toast } from "sonner";
 import {
   FindingNote,
@@ -31,11 +31,13 @@ import { HandBadge } from "@/components/shared/hand-badge";
 // with the IDENTICAL treatment, not a second one.
 import {
   DuplicateSoTag,
+  DUP_SO_BAND,
   DUP_SO_BORDER,
   DUP_SO_DIVIDER,
   DUP_SO_FILL,
   DUP_SO_MUTED,
   DUP_SO_TEXT,
+  DUP_SO_WASH_BORDER,
 } from "@/components/shared/duplicate-so-tag";
 import { PickDeletedBand } from "@/components/picking/pick-deleted-band";
 import { usePickerBoard } from "./picking-mobile-shell";
@@ -119,6 +121,19 @@ function formatPickedTime(pickedAt: Date | string | null): string | null {
   const d = new Date(pickedAt);
   if (Number.isNaN(d.getTime())) return null;
   return d.toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "numeric", minute: "2-digit", hour12: true });
+}
+
+// Same rule as picking-board-mobile.tsx's formatAssignedTime — duplicated (see
+// file-top note), not imported. When the supervisor assigned the bill, in IST:
+// today → "12:07 PM"; any other day → "23 Oct, 6:10 PM".
+function formatAssignedTime(assignedAt: Date | string | null): string | null {
+  if (assignedAt === null) return null;
+  const d = new Date(assignedAt);
+  if (Number.isNaN(d.getTime())) return null;
+  const istDay = (x: Date) => x.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+  const time = d.toLocaleTimeString("en-US", { timeZone: "Asia/Kolkata", hour: "numeric", minute: "2-digit", hour12: true });
+  if (istDay(d) === istDay(new Date())) return time;
+  return `${d.toLocaleDateString("en-GB", { timeZone: "Asia/Kolkata", day: "numeric", month: "short" })}, ${time}`;
 }
 
 // Same rounding/formatting rule as picking-board-mobile.tsx's formatLitres —
@@ -1752,6 +1767,33 @@ export function PickerMyPicksBoard({
                 </div>
               </div>
 
+              {/* Assigned-by strip (2026-10-24, owner) — which supervisor
+                  handed him this bill, and when. Same neutral ink band as the
+                  supervisor board's AssignedByStrip (picking-board-mobile.tsx);
+                  nothing when the name is missing, never "Unknown". The red
+                  wash on a duplicate card, like the shelf below it. */}
+              {row.assignedByName?.trim() ? (
+                <div
+                  className={
+                    "border-t px-4 py-2 flex items-center justify-between gap-2.5 text-[12px] " +
+                    (dup ? "" : "bg-ink-25 border-ink-100 text-ink-600")
+                  }
+                  style={dup ? { background: DUP_SO_BAND, borderColor: DUP_SO_WASH_BORDER, color: DUP_SO_MUTED } : undefined}
+                >
+                  <span className="flex items-center gap-1.5 min-w-0">
+                    <UserCheck size={14} className="shrink-0" aria-label="Assigned by" />
+                    <span
+                      className={"font-medium truncate min-w-0 " + (dup ? "" : "text-ink-900")}
+                      style={dup ? { color: DUP_SO_TEXT } : undefined}
+                    >
+                      {row.assignedByName.trim()}
+                    </span>
+                  </span>
+                  {formatAssignedTime(row.assignedAt) !== null && (
+                    <span className="shrink-0 tabular-nums">{formatAssignedTime(row.assignedAt)}</span>
+                  )}
+                </div>
+              ) : null}
               {/* Shelf — the SHARED component (divider + grey band + chips +
                   fade). No arrow: the whole card opens detail here, so the
                   right slot carries the Done tab's receipt instead

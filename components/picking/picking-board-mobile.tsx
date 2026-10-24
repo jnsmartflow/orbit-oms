@@ -26,6 +26,8 @@ import {
   Truck,
   // "Edit article no." in a checked bill's ⋯ menu (2026-10-06).
   Pencil,
+  // The assigned-by strip on the Picking card (2026-10-24).
+  UserCheck,
 } from "lucide-react";
 import { doneSortAt } from "@/lib/picking/direct-load";
 import { toast } from "sonner";
@@ -424,6 +426,59 @@ function formatObdDateTime(v: Date | string | null): string | null {
   return `${date}, ${time}`;
 }
 
+// When the supervisor assigned the bill (pick_assignments.assignedAt), in IST.
+// Today → time only ("12:07 PM"); any other day → formatObdDateTime's
+// "23 Oct, 6:10 PM", so a bill carried over from yesterday says so.
+// Copied in picker-my-picks-board.tsx (see its file-top note) — keep in step.
+function formatAssignedTime(assignedAt: Date | string | null): string | null {
+  if (assignedAt === null) return null;
+  const d = new Date(assignedAt);
+  if (Number.isNaN(d.getTime())) return null;
+  const istDay = (x: Date) => x.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+  if (istDay(d) !== istDay(new Date())) return formatObdDateTime(d);
+  return d.toLocaleTimeString("en-US", { timeZone: "Asia/Kolkata", hour: "numeric", minute: "2-digit", hour12: true });
+}
+
+// ── Assigned-by strip (2026-10-24, owner) ───────────────────────────────────
+// Who handed the bill to the picker and when — pick_assignments.assignedById
+// (→ assignedByName) and assignedAt, already on every row (lib/picking/queue.ts).
+// NEUTRAL on purpose: the same band shape as the Done tab's green footer, in
+// ink, because "assigned" is a fact, not a status. Renders NOTHING when the
+// name is missing — never "Unknown". Undo deletes the assignment row and the
+// next assign writes a new one, so this always names the LATEST assigner.
+// On a duplicate-SO card it takes the shared red wash, like the shelf.
+function AssignedByStrip({
+  row,
+  label = false,
+  onRed = false,
+}: {
+  row: PickingQueueRow;
+  /** Done tab: "Assigned {name}" in place of the icon. */
+  label?: boolean;
+  onRed?: boolean;
+}): React.JSX.Element | null {
+  const name = row.assignedByName?.trim();
+  if (!name) return null;
+  const time = formatAssignedTime(row.assignedAt);
+  return (
+    <div
+      className={
+        "border-t px-4 py-2 flex items-center justify-between gap-2.5 text-[12px] " +
+        (onRed ? "" : "bg-ink-25 border-ink-100 text-ink-600")
+      }
+      style={onRed ? { background: DUP_SO_BAND, borderColor: DUP_SO_WASH_BORDER, color: DUP_SO_MUTED } : undefined}
+    >
+      <span className="flex items-center gap-1.5 min-w-0">
+        {label ? "Assigned" : <UserCheck size={14} className="shrink-0" aria-label="Assigned by" />}
+        <span className={"font-medium truncate min-w-0 " + (onRed ? "" : "text-ink-900")} style={onRed ? { color: DUP_SO_TEXT } : undefined}>
+          {name}
+        </span>
+      </span>
+      {time !== null && <span className="shrink-0 tabular-nums">{time}</span>}
+    </div>
+  );
+}
+
 // RouteDot (+ its colour map) and CARD_SHADOW_V2 moved to ./card-atoms.tsx
 // (2026-07-29) when the picker card adopted this card's language — colour
 // values live in exactly one place. Imported at the top of this file; every
@@ -488,6 +543,7 @@ function PickingCard({
   nowTick = 0,
   selected = false,
   hidePickerName = false,
+  showAssignedBy = false,
   shelfTrailing = null,
   captionSmu = false,
   onOpen,
@@ -522,6 +578,12 @@ function PickingCard({
    * Assign, Done's two bands, and level 2's own future callers — is unchanged.
    */
   hidePickerName?: boolean;
+  /**
+   * The assigned-by strip on a "picking" card (2026-10-24). Passed ONLY by the
+   * Picking tab's level-2 list (one picker's bills) — not the flat bill view,
+   * not the Trips view. doneChecked renders its own strip without this flag.
+   */
+  showAssignedBy?: boolean;
   /**
    * An already-styled node for the SHELF's right slot — CardShelf's `trailing`,
    * the same slot the picker board's Done receipt uses. The Picking tab's
@@ -961,6 +1023,7 @@ function PickingCard({
           </div>
         </div>
       </div>
+      {variant === "picking" && showAssignedBy && <AssignedByStrip row={row} onRed={dup} />}
       {rich && (
         // `chips` is what makes this shelf the PACK breakdown rather than the
         // family strip (see articleTagChips above). Passing it also suppresses
@@ -1030,6 +1093,9 @@ function PickingCard({
             </button>
           )}
         </div>
+      )}
+      {variant === "doneChecked" && row.directLoadedAt == null && (
+        <AssignedByStrip row={row} label onRed={dup} />
       )}
       {variant === "doneChecked" && row.directLoadedAt == null && (
         <div
@@ -4452,6 +4518,7 @@ export function PickingBoardMobile(): React.JSX.Element {
                   variant="picking"
                   nowTick={nowTick}
                   hidePickerName
+                  showAssignedBy
                   onOpen={() =>
                     openDetail(row.orderId, { kind: "stillPicking", pickerId: openPickerGroup.pickerId })
                   }
