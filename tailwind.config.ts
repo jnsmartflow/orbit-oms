@@ -128,6 +128,14 @@ const config: Config = {
           DEFAULT: "#1B1826",
           text:    "#FFFFFF",
         },
+        // SAMPLE mark (2026-10-24, owner) — the bill is a sample (orders.sampleAt,
+        // v27.77). Its OWN token because no data.* colour is free (CLAUDE_UI §2.1).
+        // A DEEP teal: teal family by the owner's choice, kept clear of data.teal
+        // #0D9488 (IGT — SOLID fill, so the pale SAMPLE pill never reads as it) and
+        // data.cyan #0891B2. Light #115E59 / dark #5EEAD4, from the --sample
+        // variable in app/globals.css (:root / .dark), so the /10 and /30 opacity
+        // forms work. The pill: components/shared/sample-badge.tsx.
+        sample: "rgb(var(--sample) / <alpha-value>)",
         // 🔴 NAMED `danger`, NOT `urgent`, AND THE NAME IS THE RULE.
         // CLAUDE_UI.md v5.21 (2026-09-08): red is ERROR AND DESTRUCTIVE ONLY —
         // a failed send, a bounced order, a blocked dealer, Delete/Clear/Replace,

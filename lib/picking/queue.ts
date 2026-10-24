@@ -930,6 +930,8 @@ export async function getPickingQueue(
       // cards show the ship-to-changed tag off this.
       isShipToOverride: isRedirected(order),
       isHand: order.handAt !== null,
+      // SAMPLE pill (2026-10-24) — a scalar the `include` already brings.
+      isSample: order.sampleAt !== null,
       // CHALLAN pill (2026-10-07) — a scalar the `include` already brings.
       isChallanOrder: order.isChallanOrder,
       // OBD pill (2026-10-16) — a scalar the `include` already brings.

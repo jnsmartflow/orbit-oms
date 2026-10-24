@@ -178,7 +178,7 @@ export async function getOrderDetail(orderId: number): Promise<FloorDetail | nul
   const nonCancelledSplits = tintSplits.filter((s) => s.status !== "cancelled");
   // One bill, the shared rule. Sequential await, SELECT-only.
   const colourWorkByOrder = await getColourWorkByOrder([
-    { orderId: order.id, smu: order.smu, orderType: order.orderType },
+    { orderId: order.id, smu: order.smu, orderType: order.orderType, manualTintEntry: order.manualTintEntry },
   ]);
   // Whose bill it is — the SAME helper the board rows use (division rule,
   // challan cascade, mail-order name), for one bill. At most one read.
@@ -223,6 +223,8 @@ export async function getOrderDetail(orderId: number): Promise<FloorDetail | nul
     isTint: order.orderType === "tint",
     // CHALLAN pill (2026-10-07) — a scalar the `include` already brings.
     isChallanOrder: order.isChallanOrder,
+    // SAMPLE pill + toggle (2026-10-24) — a scalar the `include` already brings.
+    isSample: order.sampleAt !== null,
     // OBD pill (2026-10-16) — a scalar the `include` already brings.
     isObdImport: order.isObdImport,
     // TINT / BASE / nothing — through the SHARED loader (lib/picking/

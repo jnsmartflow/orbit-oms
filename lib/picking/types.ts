@@ -50,6 +50,13 @@ export interface PickingQueueRow {
    */
   isHand: boolean;
   /**
+   * SAMPLE — orders.sampleAt set (2026-10-24, v27.77). The SAMPLE pill beside
+   * HAND on the card, the detail header and the picker's face. A scalar the
+   * queue's `include` already brings — no predicate term (buildPickingWhere
+   * untouched).
+   */
+  isSample: boolean;
+  /**
    * CHALLAN — an ORB order (orders.isChallanOrder, Challan orders slice 4,
    * 2026-10-07): goods sent on an Orbit challan with no SAP bill yet. Drives the
    * CHALLAN pill (components/shared/challan-badge.tsx). A scalar the queue's

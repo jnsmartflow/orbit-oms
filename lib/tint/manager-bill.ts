@@ -93,14 +93,29 @@ const ACTION_WORDS: Record<TintAction, string> = {
   "ti-bulk":       "write bulk Tinter Issue",
 };
 
+/** Tint Manager actions with NO tick of their own — `tint_manager` canEdit
+ *  ALONE (owner 2026-10-24: SAMPLE gets no new permission key). Kept OUT of
+ *  TintAction on purpose: TINT_ACTION_KEY stays a total map of real ticks, and
+ *  checkTintAction below branches on this list explicitly. The layout draws the
+ *  button on `canEdit` (app/(tint)/tint/manager/layout.tsx), the same rule. */
+export type TintHostAction = "sample" | "unsample";
+export const TINT_HOST_ACTIONS: readonly TintHostAction[] = ["sample", "unsample"];
+
+function isTintHostAction(action: TintAction | TintHostAction): action is TintHostAction {
+  return (TINT_HOST_ACTIONS as readonly string[]).includes(action);
+}
+
 /**
  * May these roles press this action on the Tint Manager? `tint_manager`
- * canEdit AND the action key's canEdit. Returns the 403 text when refused, or
- * null when allowed — the route answers `{ error }` with status 403.
+ * canEdit AND the action key's canEdit — except a TintHostAction, which needs
+ * `tint_manager` canEdit only. Returns the 403 text when refused, or null when
+ * allowed — the route answers `{ error }` with status 403.
  */
-export async function checkTintAction(roles: string[], action: TintAction): Promise<string | null> {
+export async function checkTintAction(roles: string[], action: TintAction | TintHostAction): Promise<string | null> {
   const host = await checkAnyPermission(roles, "tint_manager", "canEdit");
   if (!host) return "Permission denied";
+  // SAMPLE / unsample: the host tick is the whole gate (no key to check).
+  if (isTintHostAction(action)) return null;
   const key = await checkAnyPermission(roles, TINT_ACTION_KEY[action], "canEdit");
   if (!key) return `You don't have permission to ${ACTION_WORDS[action]} on the Tint Manager`;
   return null;

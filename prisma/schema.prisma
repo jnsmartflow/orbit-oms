@@ -275,6 +275,9 @@ model users {
   // Picking Direct Loading (2026-10-03, Schema v27.52) — the NINTH named users
   // relation on `orders`. Same rule: named on both sides or generate fails.
   ordersDirectLoaded          orders[]                 @relation("OrderDirectLoadedBy")
+  // SAMPLE mark (2026-10-24, Schema v27.77) — the TENTH named users relation on
+  // `orders`. Same rule: named on both sides or generate fails.
+  ordersSample                orders[]                 @relation("OrderSampleBy")
   // Trip module (2026-09-09) — FOUR FKs from `trips` to `users`. The largest
   // such cluster after Mrn*, and the same rule binds: all four MUST stay
   // explicitly named on BOTH sides or generate fails with an ambiguity ERROR.
@@ -1387,6 +1390,19 @@ model orders {
   directLoadedAt   DateTime? @db.Timestamptz(6)
   directLoadedById Int?
   directLoadedBy   users?    @relation("OrderDirectLoadedBy", fields: [directLoadedById], references: [id], onDelete: SetNull)
+
+  // SAMPLE mark (2026-10-24, Schema v27.77, run live by the owner the same day).
+  // A per-ORDER flag — the bill is a sample. Set = sampleAt IS NOT NULL.
+  // Timestamp + actor, the house shape for a decision (no boolean to drift). Set
+  // and cleared by the sample / unsample bill actions (lib/floor/bill-actions.ts)
+  // from Floor and the Tint Manager. Survives the return to picking after tinting
+  // — nothing on the tint path writes it. No CHECK (ON DELETE SET NULL would fight
+  // a both-or-neither rule, same as Hand) and no index.
+  // Live FK orders_sampleById_fkey ON DELETE SET NULL (Prisma's default name, no
+  // `map:`). The TENTH FK from `orders` to `users` — named on both sides.
+  sampleAt   DateTime? @db.Timestamptz(6)
+  sampleById Int?
+  sampleBy   users?    @relation("OrderSampleBy", fields: [sampleById], references: [id], onDelete: SetNull)
 
   // ── CHALLAN ORDERS (2026-10-06, Schema v27.60, sql/2026-10-06-challan-orders-ddl.sql,
   // run live by the owner the same day). Design:

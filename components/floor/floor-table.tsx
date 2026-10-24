@@ -55,6 +55,7 @@ import { awayChipOf, drawRowsOf, goneChipOf, paperCountOf, type InvoiceDrawRow }
 import { ColourWorkBadge } from "@/components/picking/card-atoms";
 import { GiftBadge } from "./gift-badge";
 import { HandBadge } from "@/components/shared/hand-badge";
+import { SampleBadge } from "@/components/shared/sample-badge";
 import { ChallanBadge } from "@/components/shared/challan-badge";
 import { ObdBadge } from "@/components/shared/obd-badge";
 import { ChallanCell } from "./challan-cell";
@@ -356,6 +357,9 @@ const BLOCK_TAG_URGENT = "bg-danger-bg text-danger-text";
 // HandBadge's own colours (components/shared/hand-badge.tsx) WITHOUT its 1px
 // border, so every block tag is one height (owner, 2026-10-06).
 const BLOCK_TAG_HAND = "bg-data-brown/10 text-data-brown";
+// SampleBadge's own colours (components/shared/sample-badge.tsx) without its
+// border — the HAND treatment (2026-10-24).
+const BLOCK_TAG_SAMPLE = "bg-sample/10 text-sample";
 // DUP_SO_SOFT_BADGE_CLASS's colours (components/shared/duplicate-so-tag.tsx)
 // without its border — same reason.
 const BLOCK_TAG_SAME = "bg-[#fef2f2] text-[#b91c1c]";
@@ -398,6 +402,8 @@ function blockTags(row: FloorBoardRow, dup: boolean): ReactNode[] {
       title: "Hand — the dealer collects from the depot. Plan it on a Hand trip.",
       label: "✋ Hand",
     });
+  // SAMPLE (2026-10-24, v27.77) — straight after HAND, the pills' order.
+  if (row.isSample) tags.push({ key: "sample", cls: BLOCK_TAG_SAMPLE, title: "Sample — this bill is a sample", label: "Sample" });
   if (dup)
     tags.push({
       key: "same",
@@ -1868,6 +1874,12 @@ export function FloorTable({
           {row.isHand && (
             <span className="ml-1 inline-block align-[-1px]">
               <HandBadge />
+            </span>
+          )}
+          {/* SAMPLE (2026-10-24) — beside HAND, same spacing. */}
+          {row.isSample && (
+            <span className="ml-1 inline-block align-[-1px]">
+              <SampleBadge />
             </span>
           )}
           {isSite && (

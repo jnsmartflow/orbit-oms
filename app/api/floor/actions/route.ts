@@ -20,7 +20,7 @@ export const dynamic = "force-dynamic";
 
 // Floor Control — bulk + single actions on floor/rail bills (design §7.8-§7.11,
 // §9). NOT assignment: Assign/Unassign go through the existing Picking endpoints
-// unchanged (see components/floor/floor-page.tsx). This route owns the eight
+// unchanged (see components/floor/floor-page.tsx). This route owns the ten
 // state actions below.
 //
 // Since 2026-10-01 (Tint Manager tabs build step 2) the per-bill rule and the

@@ -29,6 +29,7 @@ import { FloorSkeleton } from "./floor-skeleton";
 // TINT / BASE — one owner for the word (components/picking/card-atoms.tsx).
 import { ColourWorkBadge } from "@/components/picking/card-atoms";
 import { HandBadge } from "@/components/shared/hand-badge";
+import { SampleBadge } from "@/components/shared/sample-badge";
 import { ChallanBadge } from "@/components/shared/challan-badge";
 import { ObdBadge } from "@/components/shared/obd-badge";
 import { shipMarkers, SEARCH_HIT_ROW_CLS } from "./floor-table";
@@ -344,6 +345,11 @@ export function CancelledTab({
                       {row.isHand && (
                         <span className="ml-1 inline-block align-[-1px]">
                           <HandBadge />
+                        </span>
+                      )}
+                      {row.isSample && (
+                        <span className="ml-1 inline-block align-[-1px]">
+                          <SampleBadge />
                         </span>
                       )}
                       {isSite && <div className="text-[10.5px] text-[#9ca3af]">billed to {row.billToName ?? "—"}</div>}

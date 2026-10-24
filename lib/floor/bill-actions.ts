@@ -44,9 +44,34 @@ import { TINT_STATUS_DONE } from "@/lib/tint/assignment-status";
  *  them back — the mark itself is orders.handAt. */
 const HAND_SET_NOTE = "Hand — dealer collects";
 const HAND_CLEAR_NOTE = "Hand cleared";
+/** The log notes for the SAMPLE mark (2026-10-24, v27.77). Plain strings, like
+ *  Hand's — the mark itself is orders.sampleAt. */
+const SAMPLE_SET_NOTE = "Marked Sample";
+const SAMPLE_CLEAR_NOTE = "Sample removed";
 
-export type BillAction = "mark-urgent" | "change-slot" | "hold" | "cancel" | "restore" | "unhold" | "hand" | "unhand";
-export const BILL_ACTIONS: BillAction[] = ["mark-urgent", "change-slot", "hold", "cancel", "restore", "unhold", "hand", "unhand"];
+export type BillAction =
+  | "mark-urgent"
+  | "change-slot"
+  | "hold"
+  | "cancel"
+  | "restore"
+  | "unhold"
+  | "hand"
+  | "unhand"
+  | "sample"
+  | "unsample";
+export const BILL_ACTIONS: BillAction[] = [
+  "mark-urgent",
+  "change-slot",
+  "hold",
+  "cancel",
+  "restore",
+  "unhold",
+  "hand",
+  "unhand",
+  "sample",
+  "unsample",
+];
 
 /** Who is pressing the button. Chooses the hold / clear-hold log note only. */
 export type BillActionSurface = "floor" | "tint";
@@ -64,6 +89,8 @@ export const BILL_ACTION_ORDER_SELECT = {
   orderType: true,
   // hand / unhand: the repeat-press skip.
   handAt: true,
+  // sample / unsample: the repeat-press refusal.
+  sampleAt: true,
   // cancel's refusals (offFloorRefusal) — the trip number is for the message.
   tripDropId: true,
   tripDrop: { select: { trip: { select: { tripNumber: true } } } },
@@ -167,7 +194,7 @@ export async function applyBillAction(
   let toStage = order.workflowStage;
   let note: string;
   // Set by 'cancel' only — see the write block below. Declared here rather
-  // than inside the branch because the writes are shared by all eight
+  // than inside the branch because the writes are shared by all ten
   // actions and must stay in ONE place.
   let clearAssignment = false;
 
@@ -228,6 +255,26 @@ export async function applyBillAction(
     }
     updateData = setting ? { handAt: new Date(), handById: changedById } : { handAt: null, handById: null };
     note = setting ? HAND_SET_NOTE : HAND_CLEAR_NOTE;
+  } else if (action === "sample" || action === "unsample") {
+    // SAMPLE — the bill is a sample (2026-10-24, Schema v27.77). Hand's shape:
+    // a timestamp + actor, one update, one log. It changes nothing else about
+    // the bill — no stage, slot, trip or hold — so the only refusals are a
+    // bill that is no longer live: removed or cancelled. Any other stage is
+    // allowed (tint room, picked, dispatched): it is a label on the bill.
+    // ⚠ A repeat press is REFUSED with a message, not skipped: nothing is
+    // written either way, but the person sees why nothing changed.
+    const setting = action === "sample";
+    if (order.isRemoved) {
+      return { kind: "failed", error: "Order not found" };
+    }
+    if (order.workflowStage === "cancelled") {
+      return { kind: "failed", error: setting ? "Cannot mark a cancelled bill as Sample" : "Cannot change Sample on a cancelled bill" };
+    }
+    if (setting === (order.sampleAt !== null)) {
+      return { kind: "failed", error: setting ? "Already marked Sample" : "Not marked Sample" };
+    }
+    updateData = setting ? { sampleAt: new Date(), sampleById: changedById } : { sampleAt: null, sampleById: null };
+    note = setting ? SAMPLE_SET_NOTE : SAMPLE_CLEAR_NOTE;
   } else if (action === "cancel") {
     // 🔴 A CHALLAN (ORB) ORDER: ADMIN ONLY (S5-4), before any other rule — and
     // admin still meets every refusal below.

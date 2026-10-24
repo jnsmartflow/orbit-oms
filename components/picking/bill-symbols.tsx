@@ -28,6 +28,7 @@ import { GiftBadge } from "@/components/floor/gift-badge";
 import { ChallanBadge } from "@/components/shared/challan-badge";
 import { ObdBadge } from "@/components/shared/obd-badge";
 import { HandBadge } from "@/components/shared/hand-badge";
+import { SampleBadge } from "@/components/shared/sample-badge";
 import type { ColourWork } from "@/lib/picking/colour-work";
 
 /** The fields the run reads — narrow, not the whole PickingQueueRow. */
@@ -47,6 +48,8 @@ export interface BillSymbolSource {
   isGift: boolean;
   /** HAND — the dealer collects (2026-09-24): a pill after GIFT. */
   isHand: boolean;
+  /** SAMPLE (2026-10-24): a pill after HAND. */
+  isSample: boolean;
   /** CHALLAN — an ORB order (2026-10-07): the first pill in the run. */
   isChallanOrder: boolean;
   /** OBD — an OBD import (2026-10-16): straight after CHALLAN. */
@@ -71,6 +74,8 @@ export function hasBillSymbols(row: BillSymbolSource): boolean {
     row.isGift ||
     // Same rule again: the Hand pill must open the run's separator too.
     row.isHand ||
+    // …and the SAMPLE pill (2026-10-24).
+    row.isSample ||
     // And the CHALLAN pill (2026-10-07).
     row.isChallanOrder ||
     row.isObdImport ||
@@ -161,6 +166,8 @@ export function BillSymbols({ row }: { row: BillSymbolSource }): React.JSX.Eleme
       {row.isGift && <GiftBadge />}
       {/* HAND — the dealer collects (2026-09-24): "to counter", the shared pill. */}
       {row.isHand && <HandBadge label="✋ Hand — to counter" />}
+      {/* SAMPLE (2026-10-24) — after HAND, the shared pill. */}
+      {row.isSample && <SampleBadge />}
       {/* ⚠ THE NUMBER, WITHOUT SmuBadge's PILL — and SmuBadge itself is NOT
           touched. It still renders its indigo/cyan pill on both CARD where-rows
           (picking-board-mobile.tsx + picker-my-picks-board.tsx), which is the

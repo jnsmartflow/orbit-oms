@@ -28,6 +28,7 @@
 import { cn } from "@/lib/utils";
 import { ageDays, istDateTime } from "./board-bits";
 import { siteNameOf } from "./rows";
+import { SampleBadge } from "@/components/shared/sample-badge";
 import type { TintOrder } from "./types";
 import { MissingShipToLine, missingCardCls, useMissingCustomers } from "./missing-customer";
 
@@ -100,6 +101,12 @@ export function BoardRail({
                           (board-table.tsx copies the same two). */}
                       {o.isKeyCustomer && <span className="ml-1.5 text-[14px]" style={{ color: "#f59e0b" }} title="Key customer">★</span>}
                       {o.priorityLevel <= 2 && <span className="ml-1 text-[14px]" style={{ color: "#ef4444" }} title="Urgent">⚡</span>}
+                      {/* SAMPLE (2026-10-24) — a pulled-in sample lands on this rail. */}
+                      {o.sampleAt != null && (
+                        <span className="ml-1.5 inline-block align-[2px]">
+                          <SampleBadge />
+                        </span>
+                      )}
                     </p>
                     {/* Missing customer: SAP ship-to code + "+ Add Ship to" (replaces the
                         old ⚠ icon; the Assign / Base — No Tint interceptor is unchanged). */}

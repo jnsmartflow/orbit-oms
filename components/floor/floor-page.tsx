@@ -2904,6 +2904,15 @@ export function FloorPage({
         }
         await load();
       },
+      // SAMPLE (2026-10-24). A repeat press comes back as a refusal with its
+      // reason ("Already marked Sample"), which reportWrite shows.
+      onSample: async (orderId, set) => {
+        const r = await postJson("/api/floor/actions", { action: set ? "sample" : "unsample", orderIds: [orderId] });
+        if (reportWrite(set ? "Mark Sample" : "Remove Sample", r)) {
+          toast.success(set ? "Marked Sample." : "Sample removed.");
+        }
+        await load();
+      },
     }),
     [load, data, holdRows, openOffFloor, closeDetail, detail, detailScopeRowId, detailScopeLabel, undoHold],
   );

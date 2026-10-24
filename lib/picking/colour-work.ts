@@ -76,8 +76,16 @@ export function resolveColourWork(input: {
   finishedByRealOperator: boolean;
   /** A finished whole-OBD assignment owned by the Base — No Tint placeholder. */
   finishedByBaseOperator: boolean;
+  /**
+   * `orders.manualTintEntry` — pulled into tint by hand ("+ Add to Tint",
+   * 2026-10-24). Such a bill carries the signal WHATEVER its division: somebody
+   * chose to send it to the tint room, so the floor must see what came out.
+   * Optional (absent = false) so callers that do not pass it are unchanged.
+   */
+  manualTintEntry?: boolean;
 }): ColourWork | null {
-  if (!isProjectSmu(input.smuCode)) return null;
+  const manualTint = input.manualTintEntry === true && input.orderType === "tint";
+  if (!manualTint && !isProjectSmu(input.smuCode)) return null;
   // Never classified tint at import ⇒ nothing was ever going to be mixed.
   if (input.orderType !== "tint") return "base";
   if (input.finishedByRealOperator) return "tint";

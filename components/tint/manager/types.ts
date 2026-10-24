@@ -91,6 +91,9 @@ export interface TintOrder {
   /** orders.handAt (ISO) — the dealer collects. Spread onto the payload by the
    *  route's `...o`; null/absent = not Hand. Read by the bar's Hand toggle. */
   handAt?:            string | null;
+  /** orders.sampleAt (ISO) — the SAMPLE mark (2026-10-24, v27.77). Spread by
+   *  the same `...o`; null/absent = not a sample. */
+  sampleAt?:          string | null;
 
   customer: {
     customerName:       string;
@@ -227,6 +230,8 @@ export interface SplitCard {
   order: {
     id:        number;
     obdNumber: string;
+    /** orders.sampleAt — the route's order `include` brings every scalar (v27.77). */
+    sampleAt?: string | null;
     customer: {
       customerName:       string;
       salesOfficerGroup:  { salesOfficer: { name: string } } | null;
@@ -285,6 +290,8 @@ export interface CompletedAssignment {
     id:                 number;
     obdNumber:          string;
     shipToCustomerName: string | null;
+    /** orders.sampleAt — the route's order `include` brings every scalar (v27.77). */
+    sampleAt?:          string | null;
     customer: {
       customerName:      string;
       area:              { name: string };
@@ -398,6 +405,9 @@ export interface BoardRow {
   pausedAt:       string | null;
   /** orders.handAt set (orders only). */
   isHand:         boolean;
+  /** orders.sampleAt set (2026-10-24) — a per-ORDER mark, so a split row and a
+   *  finished row wear it too (from their order). */
+  isSample:       boolean;
   /** The job's work / pause segments (2026-10-03, lib/tint/job-track.ts) —
    *  whole-OBD running, paused and done jobs; null for assigned rows and splits
    *  (a split never pauses: the board draws startedAt → completedAt / now). */

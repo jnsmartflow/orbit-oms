@@ -46,6 +46,7 @@ import { AlertCircle, History, Loader2, Pause, Scissors, SkipForward, Undo2, X }
 import { cn } from "@/lib/utils";
 import { OrderAuditHistory } from "@/components/shared/order-audit-history";
 import { HandBadge } from "@/components/shared/hand-badge";
+import { SampleBadge } from "@/components/shared/sample-badge";
 import { DetailItems } from "@/components/floor/detail-items";
 import { DetailDetails } from "@/components/floor/detail-details";
 import { DetailActivity } from "@/components/floor/detail-activity";
@@ -86,6 +87,8 @@ export interface TintPanelActions {
   onHold:        (orderId: number) => void;
   onReleaseHold: (orderId: number) => void;
   onHand:        (orderId: number, set: boolean) => void;
+  /** SAMPLE on / off (2026-10-24) — tint_manager canEdit only, no tick. */
+  onSample:      (orderId: number, set: boolean) => void;
   /** null clears the redirect. Resolves true when it saved. */
   onShipTo:      (orderId: number, customerId: number | null) => Promise<boolean>;
   onCancel:      (bill: PanelBill) => void;
@@ -305,6 +308,17 @@ export function BoardDetailPanel({
     if (access.canHand) {
       items.push({ key: "hand", label: isHand ? "Clear Hand" : "Hand — dealer collects", fn: () => actions.onHand(orderId, !isHand) });
     }
+    // SAMPLE (2026-10-24, v27.77) — next to Hand. `tint_manager` canEdit ONLY
+    // (no tick of its own — TintHostAction, lib/tint/manager-bill.ts). Tint
+    // bills only: this branch never draws for a Base bill. The mark is read off
+    // the shared detail payload (FloorDetail.isSample).
+    if (access.canEdit && d.workflowStage !== "cancelled") {
+      items.push({
+        key: "sample",
+        label: d.isSample ? "Remove Sample" : "Mark Sample",
+        fn: () => actions.onSample(orderId, !d.isSample),
+      });
+    }
     if (access.canCancel && d.workflowStage !== "cancelled") {
       items.push(
         inTintRoom
@@ -409,6 +423,7 @@ export function BoardDetailPanel({
             )}
             {held && <span className={`rounded-[4px] px-2 py-[2px] text-[10px] font-semibold ${ON_HOLD_PILL_CLS}`}>⚑ Hold</span>}
             {isHand && <HandBadge />}
+            {d?.isSample && <SampleBadge />}
             {row?.type === "split" && (
               <span className="inline-flex items-center gap-1 rounded-[3px] bg-warn-bg px-[5px] py-px text-[9.5px] font-bold text-warn-text">
                 <Scissors size={8} /> Split #{row.splitNumber}

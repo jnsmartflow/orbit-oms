@@ -32,6 +32,11 @@ export interface ColourWorkBill {
   orderId: number;
   smu: string | null;
   orderType: string;
+  /** `orders.manualTintEntry` (2026-10-24). A hand-pulled TINT bill carries the
+   *  signal whatever its division (resolveColourWork). Optional: a caller that
+   *  omits it gets the project-division rule exactly as before — today only
+   *  Floor's feeds and detail payload pass it. */
+  manualTintEntry?: boolean;
 }
 
 /**
@@ -55,10 +60,12 @@ export async function getColourWorkByOrder(
   // Resolve the division once per bill and drop everything that cannot carry
   // the signal. `SMU_CODE_BY_NAME` is the importer's own inverse map — imported
   // rather than re-declared for the same reason queue.ts imports it for smuCode.
-  const candidates: Array<ColourWorkBill & { smuCode: string }> = [];
+  // A hand-pulled tint bill (manualTintEntry) stays in whatever its division.
+  const candidates: Array<ColourWorkBill & { smuCode: string | null }> = [];
   for (const bill of bills) {
     const smuCode = bill.smu !== null ? (SMU_CODE_BY_NAME[bill.smu] ?? null) : null;
-    if (!isProjectSmu(smuCode)) continue;
+    const manualTint = bill.manualTintEntry === true && bill.orderType === "tint";
+    if (!manualTint && !isProjectSmu(smuCode)) continue;
     candidates.push({ ...bill, smuCode });
   }
   if (candidates.length === 0) return out;
@@ -123,6 +130,7 @@ export async function getColourWorkByOrder(
       orderType: bill.orderType,
       finishedByRealOperator: realDone.has(bill.orderId),
       finishedByBaseOperator: baseDone.has(bill.orderId),
+      manualTintEntry: bill.manualTintEntry,
     });
     if (work !== null) out.set(bill.orderId, work);
   }

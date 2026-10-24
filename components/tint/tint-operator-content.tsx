@@ -9,6 +9,7 @@ import { OperatorPartyCards } from "@/components/tint/operator/party-cards";
 import { HistoryPanel, type HistoryJob } from "@/components/tint/operator/history-panel";
 import { useCanImportObds } from "@/lib/hooks/use-can-import-obds";
 import { cn } from "@/lib/utils";
+import { SampleBadge } from "@/components/shared/sample-badge";
 import { useSkuDisplayMode } from "@/lib/hooks/use-sku-display-mode";
 import { pickSkuDisplay, type SkuDisplay } from "@/types/sku-display";
 import { SkuDisplayToggle } from "@/components/tint/sku-display-toggle";
@@ -71,6 +72,8 @@ interface OperatorSplit {
   orderId:           number;
   order: {
     obdNumber:          string;
+    // SAMPLE mark (2026-10-24) — the route spreads `...s.order`, every scalar.
+    sampleAt?:          string | null;
     shipToCustomerId:   string;
     shipToCustomerName: string | null;
     billToCustomerId:   string | null;
@@ -93,6 +96,8 @@ interface OperatorSplit {
 interface OperatorOrder {
   id:                 number;
   obdNumber:          string;
+  // SAMPLE mark (2026-10-24, v27.77) — the route's `...o` spreads every scalar.
+  sampleAt?:          string | null;
   workflowStage:      string;
   dispatchSlot:       string | null;
   createdAt:          string;
@@ -203,6 +208,8 @@ interface Job {
   startedAt:        string | null;
   customerName:     string;
   obdNumber:        string;
+  /** orders.sampleAt set (2026-10-24) — the SAMPLE pill on the chip + queue. */
+  isSample:         boolean;
   splitNumber?:     number;
   dispatchSlot:     string | null;
   articleTag:       string | null;
@@ -243,6 +250,8 @@ interface CompletedAssignment {
   completedAt: string | null;
   order: {
     obdNumber:          string;
+    // SAMPLE mark (2026-10-24) — the route spreads `...s.order`, every scalar.
+    sampleAt?:          string | null;
     shipToCustomerId:   string;
     shipToCustomerName: string | null;
     customer:           { customerName: string; area: { name: string } } | null;
@@ -258,6 +267,8 @@ interface CompletedSplit {
   orderId:     number;
   order: {
     obdNumber:          string;
+    // SAMPLE mark (2026-10-24) — the route spreads `...s.order`, every scalar.
+    sampleAt?:          string | null;
     shipToCustomerId:   string;
     shipToCustomerName: string | null;
     customer:           { customerName: string; area: { name: string } } | null;
@@ -710,6 +721,7 @@ export function TintOperatorContent() {
         startedAt:        s.startedAt,
         customerName:      s.order.customer?.customerName ?? s.order.shipToCustomerName ?? "—",
         obdNumber:         s.order.obdNumber,
+        isSample:          s.order.sampleAt != null,
         splitNumber:       s.splitNumber,
         dispatchSlot:      s.order.dispatchSlot,
         articleTag:        s.articleTag,
@@ -749,6 +761,7 @@ export function TintOperatorContent() {
         startedAt:        o.tintAssignments[0]?.startedAt ?? null,
         customerName:      o.customer?.customerName ?? o.shipToCustomerName ?? "—",
         obdNumber:         o.obdNumber,
+        isSample:          o.sampleAt != null,
         splitNumber:       undefined,
         dispatchSlot:      o.dispatchSlot,
         articleTag:        o.querySnapshot?.articleTag ?? null,
@@ -1675,6 +1688,7 @@ export function TintOperatorContent() {
                       <span className="text-[11px] font-semibold opacity-80">#{jobs.indexOf(selectedJob) + 1}</span>
                       <span className="text-[13px] font-semibold truncate max-w-[180px]">{selectedJob.customerName}</span>
                       <span className="font-mono text-[11px] opacity-70">{selectedJob.obdNumber}</span>
+                      {selectedJob.isSample && <SampleBadge onBrand />}
                       <ChevronDown size={14} className={cn("opacity-70 transition-transform flex-shrink-0", queueDropdownOpen && "rotate-180")} />
                     </div>
                   ) : (
@@ -1726,6 +1740,7 @@ export function TintOperatorContent() {
                               <span className="text-[10px] font-mono text-gray-400">#1</span>
                               <span className="text-[12px] font-semibold text-gray-900 truncate flex-1">{job.customerName}</span>
                               <span className="font-mono text-[11px] text-gray-500">{job.obdNumber}</span>
+                              {job.isSample && <SampleBadge />}
                               {inProgress ? (
                                 <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded border bg-green-50 text-green-700 border-green-200">In Progress</span>
                               ) : (
@@ -1780,6 +1795,7 @@ export function TintOperatorContent() {
                                   <div className="flex items-center gap-2">
                                     <span className="text-[12px] font-semibold text-gray-900 truncate flex-1">{job.customerName}</span>
                                     <span className="font-mono text-[11px] text-gray-600">{job.obdNumber}</span>
+                                    {job.isSample && <SampleBadge />}
                                     <span className="inline-flex items-center gap-1 text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-700 text-white">
                                       <Pause size={9} fill="currentColor" />
                                       Paused{job.pauseCount > 1 ? ` ${job.pauseCount}×` : ""}
@@ -1897,6 +1913,7 @@ export function TintOperatorContent() {
                                 <span className="font-mono text-[11px] text-gray-500">{job.obdNumber}</span>
                                 <span className="text-gray-400">·</span>
                                 <span className="font-medium text-gray-700 truncate flex-1">{job.customerName}</span>
+                                {job.isSample && <SampleBadge />}
                                 {tintingCount > 0 && (
                                   <span className="text-[10px] text-gray-400">{tintingCount} SKU{tintingCount === 1 ? "" : "s"}</span>
                                 )}

@@ -106,6 +106,9 @@ html, body { overscroll-behavior: none; }
     --input: 214.3 31.8% 91.4%;
     --ring: 222.2 84% 4.9%;
     --radius: 0.5rem;
+    /* SAMPLE mark (2026-10-24) — the `sample` token in tailwind.config.ts.
+       RGB channels, so bg-sample/10 and border-sample/30 work. #115E59. */
+    --sample: 17 94 89;
   }
 
   .dark {
@@ -128,6 +131,8 @@ html, body { overscroll-behavior: none; }
     --border: 217.2 32.6% 17.5%;
     --input: 217.2 32.6% 17.5%;
     --ring: 212.7 26.8% 83.9%;
+    /* SAMPLE on a dark ground — #5EEAD4. */
+    --sample: 94 234 212;
   }
 
   * {

@@ -18,6 +18,7 @@
 import { Building2 } from "lucide-react";
 import { ColourWorkBadge } from "@/components/picking/card-atoms";
 import { HandBadge } from "@/components/shared/hand-badge";
+import { SampleBadge } from "@/components/shared/sample-badge";
 import { ChallanBadge } from "@/components/shared/challan-badge";
 import { ObdBadge } from "@/components/shared/obd-badge";
 import { shipMarkers, shortTripNumber, SEARCH_HIT_ROW_CLS } from "./floor-table";
@@ -169,6 +170,11 @@ function Cell({ col, row, now, part = null }: { col: HoldColumn; row: FloorHoldR
           {row.isHand && (
             <span className="ml-1 inline-block align-[-1px]">
               <HandBadge />
+            </span>
+          )}
+          {row.isSample && (
+            <span className="ml-1 inline-block align-[-1px]">
+              <SampleBadge />
             </span>
           )}
           {isSite && <div className="text-[10.5px] text-[#9ca3af]">billed to {row.billToName ?? "—"}</div>}

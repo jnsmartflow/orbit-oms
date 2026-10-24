@@ -1314,7 +1314,7 @@ export async function getFloorBoard(
   // shared `floorLiveBaseWhere`. Costs nothing on a board with no
   // project-division tint bill on it (the helper returns before querying).
   const colourWorkByOrder = await getColourWorkByOrder(
-    orders.map((o) => ({ orderId: o.id, smu: o.smu, orderType: o.orderType })),
+    orders.map((o) => ({ orderId: o.id, smu: o.smu, orderType: o.orderType, manualTintEntry: o.manualTintEntry })),
   );
 
   // ── The bill's TRIP (2026-09-09) ─────────────────────────────────────────
@@ -1602,6 +1602,7 @@ export async function getFloorBoard(
       routeId: area?.primaryRoute?.id ?? null,
       // Hand — the dealer collects (2026-09-24). A scalar the include already brings.
       isHand: order.handAt !== null,
+      isSample: order.sampleAt !== null,
       // CHALLAN pill (2026-10-07) — a scalar the `include` already brings.
       isChallanOrder: order.isChallanOrder,
       // OBD pill (2026-10-16) — a scalar the `include` already brings.
@@ -1841,7 +1842,7 @@ export async function getFloorHold(
   // rows are their own type, so it fills the field itself). Batched once,
   // predicate untouched, sequential await.
   const colourWorkByOrder = await getColourWorkByOrder(
-    orders.map((o) => ({ orderId: o.id, smu: o.smu, orderType: o.orderType })),
+    orders.map((o) => ({ orderId: o.id, smu: o.smu, orderType: o.orderType, manualTintEntry: o.manualTintEntry })),
   );
 
   // Add invoices Phase 4 — "n invoices" on a split OBD's one row.
@@ -1928,6 +1929,7 @@ export async function getFloorHold(
       orderId: order.id,
       obdNumber: order.obdNumber,
       isHand: order.handAt !== null,
+      isSample: order.sampleAt !== null,
       // CHALLAN pill (2026-10-07) — a scalar the `include` already brings.
       isChallanOrder: order.isChallanOrder,
       // OBD pill (2026-10-16) — a scalar the `include` already brings.
@@ -2164,7 +2166,7 @@ export async function getFloorCancelled(
   // TINT vs BASE — see the Hold feed above. A cancelled bill keeps whatever was
   // true of it: the record should read the same after cancellation as before.
   const colourWorkByOrder = await getColourWorkByOrder(
-    orders.map((o) => ({ orderId: o.id, smu: o.smu, orderType: o.orderType })),
+    orders.map((o) => ({ orderId: o.id, smu: o.smu, orderType: o.orderType, manualTintEntry: o.manualTintEntry })),
   );
   const billTo = await billToByObd(orders.map((o) => o.obdNumber));
   // Add invoices Phase 4 — "n invoices" on a split OBD's one row.
@@ -2204,6 +2206,7 @@ export async function getFloorCancelled(
       orderId: order.id,
       obdNumber: order.obdNumber,
       isHand: order.handAt !== null,
+      isSample: order.sampleAt !== null,
       // CHALLAN pill (2026-10-07) — a scalar the `include` already brings.
       isChallanOrder: order.isChallanOrder,
       // OBD pill (2026-10-16) — a scalar the `include` already brings.

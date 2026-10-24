@@ -1367,7 +1367,7 @@ export function TintManagerContent() {
    * landed; failures are NAMED, never swallowed (FLOOR §6(b)).
    */
   const postTintAction = useCallback(async (
-    action: "hold" | "unhold" | "hand" | "unhand" | "change-slot" | "mark-urgent",
+    action: "hold" | "unhold" | "hand" | "unhand" | "change-slot" | "mark-urgent" | "sample" | "unsample",
     orderIds: number[],
     opts: { slot?: DispatchSlotValue; keepSelection?: boolean; urgent?: boolean } = {},
   ) => {
@@ -1394,6 +1394,7 @@ export function TintManagerContent() {
       const words: Record<typeof action, string> = {
         hold: "on hold", unhold: "released from hold", hand: "marked Hand", unhand: "Hand cleared", "change-slot": "due date set",
         "mark-urgent": opts.urgent === false ? "urgent cleared" : "marked urgent",
+        sample: "marked Sample", unsample: "Sample removed",
       };
       const failed = body.failed ?? [];
       const obdOf = (id: number) => barBills.find((b) => b.orderId === id)?.obdNumber ?? `#${id}`;
@@ -1589,6 +1590,7 @@ export function TintManagerContent() {
     onHold:        (orderId) => { void postTintAction("hold", [orderId], { keepSelection: true }); },
     onReleaseHold: (orderId) => { void postTintAction("unhold", [orderId], { keepSelection: true }); },
     onHand:        (orderId, set) => { void postTintAction(set ? "hand" : "unhand", [orderId], { keepSelection: true }); },
+    onSample:      (orderId, set) => { void postTintAction(set ? "sample" : "unsample", [orderId], { keepSelection: true }); },
     onShipTo:      handleShipTo,
     onCancel:      (b) => openOffFloor("cancel", [b]),
     onStopCancel:  (b) => setStopCancelBill({ orderId: b.orderId, obdNumber: b.obdNumber, siteName: b.siteName, operatorName: b.operatorName, status: b.status }),

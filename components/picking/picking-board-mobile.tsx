@@ -91,6 +91,7 @@ import { GiftBadge } from "@/components/floor/gift-badge";
 import { ChallanBadge } from "@/components/shared/challan-badge";
 import { ObdBadge } from "@/components/shared/obd-badge";
 import { HandBadge } from "@/components/shared/hand-badge";
+import { SampleBadge } from "@/components/shared/sample-badge";
 import { loadLitres } from "@/lib/orders/gift";
 import type { PickingDetailLine, PickingLineFinding, PickingQueueRow, PickingTrip } from "@/lib/picking/types";
 // Assign tab › Trips view (2026-10-13) — the trip row, ring and header. The
@@ -906,6 +907,8 @@ function PickingCard({
               {/* HAND — the dealer collects (2026-09-24): the goods go to the counter,
                   not a truck. Same shared pill Floor draws. */}
               {row.isHand && <HandBadge label="✋ Hand — to counter" />}
+              {/* SAMPLE (2026-10-24) — after HAND, the shared pill. */}
+              {row.isSample && <SampleBadge />}
               {/* STOP N — Trips view only (stopNumber is null everywhere else,
                   so nothing renders and no gap is spent). shrink-0 so the
                   date-time truncates first. */}

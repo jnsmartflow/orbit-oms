@@ -8,7 +8,7 @@ import {
   BILL_ACTION_ORDER_SELECT,
   type ResolvedSlot,
 } from "@/lib/floor/bill-actions";
-import { BASE_PICKER_HOLD_REFUSAL, checkTintAction, tintManagerBillRefusal } from "@/lib/tint/manager-bill";
+import { BASE_PICKER_HOLD_REFUSAL, checkTintAction, tintBillRefusal, tintManagerBillRefusal } from "@/lib/tint/manager-bill";
 import { getColourWorkByOrder } from "@/lib/picking/colour-work-query";
 
 export const dynamic = "force-dynamic";
@@ -42,8 +42,14 @@ export const dynamic = "force-dynamic";
 // mark-urgent (2026-10-02, owner): Floor's own mark-urgent arm of applyBillAction
 // (priorityLevel 1 ↔ 3), on its own tick tint_urgent, tint AND Base bills.
 // `urgent` true sets, false clears; omitted toggles (Floor's contract).
-type TintBoardAction = "hold" | "unhold" | "hand" | "unhand" | "change-slot" | "mark-urgent";
-const TINT_BOARD_ACTIONS: TintBoardAction[] = ["hold", "unhold", "hand", "unhand", "change-slot", "mark-urgent"];
+//
+// sample / unsample (2026-10-24, v27.77): Floor's own sample arm of
+// applyBillAction. Gate = tint_manager canEdit ONLY — no tick of its own
+// (TintHostAction in lib/tint/manager-bill.ts, the explicit branch in
+// checkTintAction). TINT bills only (tintBillRefusal): not a Base action — a
+// Base bill is marked from Floor.
+type TintBoardAction = "hold" | "unhold" | "hand" | "unhand" | "change-slot" | "mark-urgent" | "sample" | "unsample";
+const TINT_BOARD_ACTIONS: TintBoardAction[] = ["hold", "unhold", "hand", "unhand", "change-slot", "mark-urgent", "sample", "unsample"];
 
 interface Body {
   action?: TintBoardAction;
@@ -101,7 +107,8 @@ export async function POST(req: Request): Promise<NextResponse> {
         where: { id: orderId },
         select: { ...BILL_ACTION_ORDER_SELECT, orderType: true, smu: true },
       });
-      const notTint = tintManagerBillRefusal(order, action);
+      const notTint =
+        action === "sample" || action === "unsample" ? tintBillRefusal(order) : tintManagerBillRefusal(order, action);
       if (notTint !== null || order === null) {
         failed.push({ orderId, error: notTint ?? "Order not found" });
         continue;

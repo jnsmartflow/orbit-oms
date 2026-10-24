@@ -25,6 +25,7 @@ import { GiftBadge } from "@/components/floor/gift-badge";
 import { ChallanBadge } from "@/components/shared/challan-badge";
 import { ObdBadge } from "@/components/shared/obd-badge";
 import { HandBadge } from "@/components/shared/hand-badge";
+import { SampleBadge } from "@/components/shared/sample-badge";
 // The duplicate-SO red is owned by ONE file — never re-type its hexes here.
 // Same import list, same tokens and the same tag the supervisor board and Floor
 // use; this face was deliberately left out on 2026-08-20 and is now included
@@ -1637,6 +1638,8 @@ export function PickerMyPicksBoard({
                     {row.isGift && <GiftBadge />}
                     {/* HAND — the dealer collects (2026-09-24): to the counter. */}
                     {row.isHand && <HandBadge label="✋ Hand — to counter" />}
+                    {/* SAMPLE (2026-10-24) — same pill as the supervisor card. */}
+                    {row.isSample && <SampleBadge />}
                   </span>
                   {/* The tag LEADS the right cluster, so it is the first thing
                       read after the OBD — same order as the supervisor card.

@@ -24,6 +24,7 @@ import { MissingShipToLine, missingRowCls, useMissingCustomers } from "./missing
 import type { DispatchSlotValue, DispatchWindow } from "@/components/floor/dispatch-slot-picker";
 import { formulaRows, formulaText } from "@/lib/tint/job-track";
 import type { BoardGroup, BoardRow } from "./types";
+import { SampleBadge } from "@/components/shared/sample-badge";
 
 // ── Column widths ────────────────────────────────────────────────────────────
 // ☐ 4 · # 4 · OBD 13 · SMU 5 · Bill To 17 · Ship To 20 · Route 9 · Vol 6 ·
@@ -403,6 +404,12 @@ export function TintBoardRow({
         <span className="text-[11.5px] font-medium text-[#111827]">{row.siteName}</span>
         {row.isKeyCustomer && <span className="ml-1.5" style={{ color: "#f59e0b" }} title="Key customer">★</span>}
         {row.isUrgent && <span className="ml-1" style={{ color: "#ef4444" }} title="Urgent">⚡</span>}
+        {/* SAMPLE (2026-10-24) — after ★/⚡, before the skip count. */}
+        {row.isSample && (
+          <span className="ml-1.5 inline-block align-[-1px]">
+            <SampleBadge />
+          </span>
+        )}
         {row.skipCount > 0 && (
           <span
             className="ml-1.5 rounded-[3px] px-[5px] py-px text-[9.5px] font-bold bg-[#f3f4f6] text-[#6b7280]"

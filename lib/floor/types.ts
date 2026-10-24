@@ -62,6 +62,8 @@ export interface FloorPartyFields {
   /** Hand — the dealer collects (orders.handAt set, 2026-09-24). Never a
    *  dispatchStatus value; drives the ✋ HAND chip (UI in build step 6b). */
   isHand: boolean;
+  /** SAMPLE — orders.sampleAt set (2026-10-24, v27.77). Drives the SAMPLE pill. */
+  isSample: boolean;
   /** An ORB order (orders.isChallanOrder, 2026-10-07) — drives the CHALLAN pill. */
   isChallanOrder: boolean;
   /** An OBD import (orders.isObdImport, v27.68) — drives the OBD pill + filter flag. */
@@ -364,6 +366,8 @@ export interface FloorBoardRow extends PickingQueueRow {
   /** Hand — the dealer collects (orders.handAt set, 2026-09-24). Left out of
    *  route-card and pool totals and the load plan; planned on a Hand trip. */
   isHand: boolean;
+  /** SAMPLE — orders.sampleAt set (2026-10-24, v27.77). Drives the SAMPLE pill. */
+  isSample: boolean;
   // `stopKey` is the bill's STOP: `computeDropKey` (lib/trips/drop-key.ts), the
   // one definition of "which customer does this bill go to" that trip_drops is
   // built on. A route card's "N stops" is the count of distinct keys, so a pool
@@ -809,6 +813,11 @@ export interface FloorDetail {
   isTint: boolean;
   /** An ORB order (orders.isChallanOrder, 2026-10-07) — the CHALLAN pill in the header. */
   isChallanOrder: boolean;
+  /** SAMPLE (orders.sampleAt set, 2026-10-24, v27.77) — the SAMPLE pill in the
+   *  header AND the Mark / Remove Sample toggle. On the payload (unlike isHand,
+   *  which the panel takes from its row) because the Tint Manager's panel reads
+   *  this same payload and its targets carry no row flag for it. */
+  isSample: boolean;
   /** An OBD import (orders.isObdImport, v27.68) — drives the OBD pill + filter flag. */
   isObdImport: boolean;
   /** TINT / BASE / nothing — the same field, and the same warning, as

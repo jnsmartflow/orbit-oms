@@ -24,6 +24,7 @@ import { Building2, Truck, X } from "lucide-react";
 // TINT / BASE -- one owner for the word (components/picking/card-atoms.tsx).
 import { ColourWorkBadge } from "@/components/picking/card-atoms";
 import { HandBadge } from "@/components/shared/hand-badge";
+import { SampleBadge } from "@/components/shared/sample-badge";
 import { ChallanBadge } from "@/components/shared/challan-badge";
 import { ObdBadge } from "@/components/shared/obd-badge";
 import type { DispatchWindow } from "@/components/floor/dispatch-slot-picker";
@@ -88,6 +89,8 @@ export interface DetailActions {
   onUnassign: (orderId: number) => Promise<void>;
   /** Hand (dealer collects) on / off — POST /api/floor/actions hand | unhand. */
   onHand: (orderId: number, set: boolean) => Promise<void>;
+  /** SAMPLE on / off — POST /api/floor/actions sample | unsample (2026-10-24). */
+  onSample: (orderId: number, set: boolean) => Promise<void>;
 }
 
 function fmtDateTime(iso: string | null): string {
@@ -628,6 +631,16 @@ function PanelBody({
         : { label: "Mark Hand (dealer collects)", fn: () => actions.onHand(d.orderId, true) },
     );
   }
+  // SAMPLE (2026-10-24, v27.77) — next to Hand, the same gate: Floor + Hold
+  // panels, `floor` canEdit, HIDDEN otherwise (UI §10). The route refuses a
+  // removed or cancelled bill and a repeat press. The mark is on the payload.
+  if (canEdit && (source === "floor" || source === "hold")) {
+    overflow.push(
+      d.isSample
+        ? { label: "Remove Sample", fn: () => actions.onSample(d.orderId, false) }
+        : { label: "Mark Sample", fn: () => actions.onSample(d.orderId, true) },
+    );
+  }
 
   // ADD / EDIT INVOICES (Add invoices Phase 4 commit 3 — was the Items tab's
   // Invoices section). The same tick (`floor_add_invoices`) and the same modal
@@ -829,6 +842,8 @@ function PanelBody({
           <ColourWorkBadge work={d.colourWork} />
           {/* HAND — the dealer collects (2026-09-24), beside TINT / BASE. */}
           {isHand && <HandBadge />}
+          {/* SAMPLE (2026-10-24) — beside HAND, off the detail payload. */}
+          {d.isSample && <SampleBadge />}
           {/* A split OBD seen as a whole (On hold, Cancel & CI, History). */}
           {!scope && invoiceCount > 1 && <InvoiceCountChip n={invoiceCount} className="" />}
         </div>

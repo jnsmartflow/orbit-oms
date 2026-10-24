@@ -272,6 +272,8 @@ async function plainRows(orderIds: number[]): Promise<Map<number, FloorHoldRow>>
       orderId: o.id,
       obdNumber: o.obdNumber,
       isHand: o.handAt !== null,
+      // SAMPLE pill (2026-10-24) — the shared Hold table draws it; a scalar the `include` loads.
+      isSample: o.sampleAt !== null,
       // FloorHoldRow shape (2026-10-07) — an `include`, so the scalar is loaded.
       isChallanOrder: o.isChallanOrder,
       // OBD pill (2026-10-16) — the shared Hold table shows it here too.
