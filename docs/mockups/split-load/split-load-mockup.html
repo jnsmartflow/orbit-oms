@@ -1,0 +1,328 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Split Load Mockup</title>
+<style>
+:root{
+  --brand:#5b4bdb; --brand-tint:#efedff; --ink:#1d1b2e; --ink-2:#55536b; --ink-3:#9a98ad;
+  --line:#e4e2ee; --bg:#f6f5fb; --card:#fff;
+  --ok:#14804a; --ok-tint:#e6f5ec; --warn:#b26a00; --warn-tint:#fff4e0; --danger:#c62828; --danger-tint:#fdeaea;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+.wrap{max-width:1080px;margin:0 auto;padding:20px 16px 80px}
+h1{font-size:20px;margin:0 0 4px}
+.sub{color:var(--ink-2);margin:0 0 16px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:16px}
+.card h2{font-size:15px;margin:0 0 10px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.hint{color:var(--ink-3);font-size:12px}
+.note{color:var(--ink-2);font-size:13px;margin:0 0 10px}
+.scroll{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;font-weight:600;color:var(--ink-2);font-size:12px;padding:8px;border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:8px;border-bottom:1px solid var(--line);vertical-align:middle}
+.r{text-align:right;font-variant-numeric:tabular-nums}
+.mono{font-family:ui-monospace,Consolas,monospace;font-size:12.5px}
+.chip{display:inline-block;padding:1px 8px;border-radius:999px;font-size:11.5px;font-weight:600;white-space:nowrap}
+.c-part{background:var(--brand-tint);color:var(--brand)}
+.c-sent{background:var(--ok-tint);color:var(--ok)}
+.c-plan{background:#e8f0fe;color:#1a56c4}
+.c-wait{background:var(--bg);color:var(--ink-2);border:1px solid var(--line)}
+.c-hold{background:var(--warn-tint);color:var(--warn)}
+.btn{border:1px solid var(--line);background:#fff;border-radius:8px;padding:6px 11px;font:inherit;font-size:13px;cursor:pointer;color:var(--ink);white-space:nowrap}
+.btn:hover:not(:disabled){border-color:var(--brand)}
+.btn:disabled{opacity:.35;cursor:not-allowed}
+.btn.primary{background:var(--brand);border-color:var(--brand);color:#fff}
+.btn.ghost{border-style:dashed;color:var(--brand)}
+.btn.sm{padding:3px 8px;font-size:12px}
+.acts{display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end}
+select{padding:4px 6px;border:1px solid var(--line);border-radius:6px;font:inherit;font-size:12px;background:#fff}
+tr.sel td{background:#faf9ff}
+tr.sel td:first-child{box-shadow:inset 3px 0 0 var(--brand)}
+tr.done td{color:var(--ink-3)}
+.daybar{display:flex;gap:8px;align-items:center}
+.day{font-weight:600}
+.status{font-size:13px;color:var(--ink-2)}
+.grey{color:var(--ink-3)}
+.other{display:flex;flex-wrap:wrap;gap:4px 12px}
+.other span{color:var(--ink-3);white-space:nowrap}
+.other b{font-weight:600;color:var(--ink-3)}
+tfoot td{font-weight:600;border-bottom:none;background:#fafafe}
+.overlay{position:fixed;inset:0;background:rgba(20,18,40,.35);display:flex;align-items:center;justify-content:center;padding:16px;z-index:20}
+.dialog{background:#fff;border-radius:12px;max-width:760px;width:100%;max-height:90vh;display:flex;flex-direction:column;overflow:hidden}
+.dlg-head{padding:14px 16px;border-bottom:1px solid var(--line)}
+.dlg-body{padding:10px 16px;overflow:auto}
+.dlg-foot{padding:12px 16px;border-top:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;background:#fafafe}
+input.q{width:62px;padding:5px 6px;border:1px solid var(--line);border-radius:6px;font:inherit;text-align:right}
+input.q:focus{outline:2px solid var(--brand);border-color:var(--brand)}
+.auto{display:inline-block;min-width:62px;padding:5px 6px;text-align:right;background:var(--bg);border-radius:6px;color:var(--ink-2)}
+.auto.bad{background:var(--danger-tint);color:var(--danger);font-weight:600}
+.trk-h{display:flex;align-items:center;justify-content:flex-end;gap:4px}
+.x{border:none;background:none;color:var(--ink-3);cursor:pointer;font-size:13px}
+.x:hover{color:var(--danger)}
+.tot{display:block;font-size:11.5px;font-weight:500;color:var(--ink-2)}
+.err{color:var(--danger);font-size:12.5px}
+.log{margin:0;padding-left:18px;font-size:13px;color:var(--ink-2)}
+.log li{margin:2px 0}
+.hidden{display:none}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Split load — one invoice, many trucks</h1>
+  <p class="sub">Mockup. Try the full story: Split → add part 1 to a trip → Dispatch → Hold part 2 → Next day → Release → Split again → …</p>
+
+  <!-- BOARD -->
+  <div class="card">
+    <h2>
+      <span>Trip desk · bills</span>
+      <span class="daybar"><span class="day" id="dayLbl"></span><button class="btn sm" id="nextDay">Next day →</button><button class="btn sm" id="reset">Reset</button></span>
+    </h2>
+    <p class="status" id="billStatus"></p>
+    <div class="scroll"><table>
+      <thead><tr><th>Invoice</th><th class="r">Tins</th><th class="r">Litres</th><th class="r">Kg</th><th>State</th><th>Trip</th><th class="r">Actions</th></tr></thead>
+      <tbody id="board"></tbody>
+    </table></div>
+    <p class="hint" style="margin-top:8px">Click a row to see its detail below. Customer for all rows: Shree Ganesh Paints, Adajan · OBD 9108123456.</p>
+  </div>
+
+  <!-- DETAIL -->
+  <div class="card">
+    <h2><span id="detTitle">Detail</span><span id="detChip"></span></h2>
+    <div class="scroll"><table>
+      <thead><tr><th>Product</th><th class="r">This part</th><th>Other parts</th></tr></thead>
+      <tbody id="detBody"></tbody>
+      <tfoot><tr><td id="detFootL"></td><td class="r" id="detFootR"></td><td class="grey" id="detFootO"></td></tr></tfoot>
+    </table></div>
+  </div>
+
+  <!-- LOG -->
+  <div class="card">
+    <h2><span>What happened</span></h2>
+    <ul class="log" id="log"></ul>
+  </div>
+
+  <div class="card">
+    <h2><span>Rules</span></h2>
+    <ul class="log">
+      <li>Two trucks to start; <b>+ Add truck</b> for more. The last truck always gets the rest.</li>
+      <li>Whole tins only. Every truck needs at least 1 tin.</li>
+      <li>Only a part that is <b>not dispatched</b> can be split, held, or moved.</li>
+      <li>Splitting a held part → all new pieces come out held.</li>
+      <li>Splitting a part that is on a trip → the first piece stays on that trip, the rest wait.</li>
+      <li>A held part cannot be added to a trip.</li>
+      <li>Two parts of one invoice cannot sit on the same trip.</li>
+      <li>Bill is <b>done</b> when every part is dispatched.</li>
+      <li>Kg per part = SAP line kg ÷ line tins × tins. Exact.</li>
+    </ul>
+  </div>
+</div>
+
+<!-- SPLIT DIALOG -->
+<div class="overlay hidden" id="ov">
+  <div class="dialog">
+    <div class="dlg-head"><b>Split load</b> · <span class="mono">I536230716</span> · <span id="dlgPart"></span><div class="hint">Same invoice number on every piece</div></div>
+    <div class="dlg-body"><table id="splitTable"></table></div>
+    <div class="dlg-foot">
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn ghost" id="addTruck">+ Add truck</button>
+        <button class="btn" id="evenBtn">Split evenly</button>
+      </div>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <span class="err" id="errMsg"></span>
+        <button class="btn" id="cancelBtn">Cancel</button>
+        <button class="btn primary" id="saveBtn">Save split</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const LINES = [
+  { name:"Weathercoat Smooth 20L", pack:20, tins:150, kg:4500 },
+  { name:"Promise Interior 10L",   pack:10, tins:40,  kg:520  },
+  { name:"Primer 4L",              pack:4,  tins:24,  kg:162  }
+];
+const fmt = n => Math.round(n).toLocaleString("en-IN");
+const MONTHS=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+
+let day, parts, selId, nextId, logs, tripsUsed;
+function init(){
+  day = new Date(2026,9,24);
+  nextId = 2;
+  parts = [{ id:1, qty:LINES.map(l=>l.tins), state:"waiting", held:false, trip:null, sentOn:null }];
+  selId = 1; logs = []; tripsUsed = {};
+  log("Bill imported: I536230716, 214 tins, one piece.");
+  render();
+}
+function dayCode(d){ return String(d.getFullYear()).slice(2)+String(d.getMonth()+1).padStart(2,"0")+String(d.getDate()).padStart(2,"0"); }
+function dayText(d){ return d.getDate()+" "+MONTHS[d.getMonth()]; }
+function todaysTrips(){ const c=dayCode(day); return [3,4,5].map(n=>`L-${c}-${String(n).padStart(2,"0")}`); }
+function log(t){ logs.push(dayText(day)+" — "+t); }
+
+const totals = q => { let t=0,L=0,K=0; q.forEach((n,i)=>{ t+=n; L+=n*LINES[i].pack; K+=n*LINES[i].kg/LINES[i].tins; }); return {t,L,K}; };
+const label = p => `part ${parts.indexOf(p)+1} of ${parts.length}`;
+const short = p => `part ${parts.indexOf(p)+1}`;
+function stateChip(p){
+  if(p.state==="sent") return `<span class="chip c-sent">Sent</span>`;
+  if(p.held) return `<span class="chip c-hold">On hold</span>`;
+  if(p.state==="planned") return `<span class="chip c-plan">On trip</span>`;
+  return `<span class="chip c-wait">Waiting</span>`;
+}
+function otherNote(p){
+  if(p.held) return "on hold";
+  if(p.trip) return p.trip;
+  return "waiting";
+}
+
+function render(){
+  document.getElementById("dayLbl").textContent = "Today: "+dayText(day);
+  const sent = parts.filter(p=>p.state==="sent").length;
+  const done = sent===parts.length;
+  document.getElementById("billStatus").innerHTML = parts.length===1 && !done
+    ? "Not split."
+    : done ? `<span class="chip c-sent">Bill done</span> — all ${parts.length} parts dispatched.`
+           : `${sent} of ${parts.length} parts sent.`;
+
+  const b = document.getElementById("board"); let h="";
+  const opts = todaysTrips();
+  parts.forEach(p=>{
+    const s = totals(p.qty);
+    const isSent = p.state==="sent";
+    const single = parts.length===1;
+    let tripCell;
+    if(isSent) tripCell = `<span class="mono">${p.trip}</span>`;
+    else if(p.held) tripCell = `<span class="hint">—</span>`;
+    else tripCell = `<select data-trip="${p.id}"><option value="">Not on a trip</option>${(p.trip && !opts.includes(p.trip) ? [p.trip, ...opts] : opts).map(t=>{
+        const clash = parts.some(o=>o!==p && o.trip===t);
+        return `<option value="${t}" ${p.trip===t?"selected":""} ${clash?"disabled":""}>${t}${clash?" (has another part)":""}</option>`;}).join("")}</select>`;
+    h += `<tr data-row="${p.id}" class="${p.id===selId?"sel":""} ${isSent?"done":""}">
+      <td><span class="mono">I536230716</span>${single?'':` <span class="chip c-part">${label(p)}</span>`}</td>
+      <td class="r">${s.t}</td><td class="r">${fmt(s.L)}</td><td class="r">${fmt(s.K)}</td>
+      <td>${stateChip(p)}</td><td>${tripCell}</td>
+      <td class="r"><div class="acts">
+        <button class="btn sm" data-act="split" data-id="${p.id}" ${isSent||s.t<2?"disabled":""}>Split load</button>
+        <button class="btn sm" data-act="disp" data-id="${p.id}" ${p.state!=="planned"?"disabled":""}>Dispatch</button>
+        <button class="btn sm" data-act="hold" data-id="${p.id}" ${isSent?"disabled":""}>${p.held?"Release":"Hold"}</button>
+      </div></td></tr>`;
+  });
+  b.innerHTML = h;
+
+  b.querySelectorAll("tr[data-row]").forEach(tr=>tr.addEventListener("click",e=>{
+    if(e.target.closest("button,select")) return;
+    selId=+tr.dataset.row; render();
+  }));
+  b.querySelectorAll("select[data-trip]").forEach(s=>s.addEventListener("change",e=>{
+    const p = parts.find(x=>x.id===+e.target.dataset.trip);
+    p.trip = e.target.value || null; p.state = p.trip ? "planned":"waiting";
+    log(p.trip ? `${label(p)} added to ${p.trip}.` : `${label(p)} taken off its trip.`);
+    selId=p.id; render();
+  }));
+  b.querySelectorAll("button[data-act]").forEach(btn=>btn.addEventListener("click",()=>{
+    const p = parts.find(x=>x.id===+btn.dataset.id); selId=p.id;
+    if(btn.dataset.act==="split") openSplit(p);
+    if(btn.dataset.act==="disp"){ p.state="sent"; p.sentOn=dayText(day); log(`${label(p)} dispatched on ${p.trip}.`); render(); }
+    if(btn.dataset.act==="hold"){
+      if(p.held){ p.held=false; log(`${label(p)} released.`); }
+      else { if(p.trip) log(`${label(p)} taken off ${p.trip}.`); p.held=true; p.trip=null; p.state="waiting"; log(`${label(p)} put on hold.`); }
+      render();
+    }
+  }));
+  renderDetail(); renderLog();
+}
+
+function renderDetail(){
+  const p = parts.find(x=>x.id===selId) || parts[0];
+  const single = parts.length===1;
+  document.getElementById("detTitle").innerHTML = `<span class="mono">I536230716</span>${single?"":" · "+label(p)}`;
+  document.getElementById("detChip").innerHTML = stateChip(p) + (p.trip?` <span class="mono">${p.trip}</span>`:"");
+  const others = parts.filter(o=>o!==p);
+  let h="";
+  LINES.forEach((l,i)=>{
+    const oth = others.filter(o=>o.qty[i]>0).map(o=>`<span><b>${o.qty[i]} tins</b> · ${short(o)} · ${otherNote(o)}</span>`).join("");
+    h += `<tr><td class="${p.qty[i]===0?"grey":""}">${l.name}</td>
+      <td class="r ${p.qty[i]===0?"grey":""}">${p.qty[i]} tins</td>
+      <td><div class="other">${oth || '<span class="hint">—</span>'}</div></td></tr>`;
+  });
+  document.getElementById("detBody").innerHTML = h;
+  const s=totals(p.qty);
+  document.getElementById("detFootL").textContent = single ? "Bill" : "This part";
+  document.getElementById("detFootR").innerHTML = `${s.t} tins<span class="tot">${fmt(s.L)} L · ${fmt(s.K)} kg</span>`;
+  document.getElementById("detFootO").textContent = `Bill total: ${LINES.reduce((a,l)=>a+l.tins,0)} tins`;
+}
+function renderLog(){ document.getElementById("log").innerHTML = logs.slice().reverse().map(t=>`<li>${t}</li>`).join(""); }
+
+/* ---------- SPLIT DIALOG ---------- */
+let src, trucks, q;
+function openSplit(p){
+  src=p; trucks=2;
+  q = p.qty.map(n=>[Math.ceil(n/2)]);   // first truck typed; last = rest
+  document.getElementById("dlgPart").textContent = parts.length===1 ? "whole bill" : label(p)+(p.held?" (held)":"");
+  document.getElementById("ov").classList.remove("hidden");
+  drawSplit();
+}
+const rest = i => src.qty[i] - q[i].reduce((a,b)=>a+(b||0),0);
+const onTruck = (i,t) => t===trucks-1 ? rest(i) : (q[i][t]||0);
+const truckSum = t => totals(src.qty.map((_,i)=>onTruck(i,t)));
+const L = t => "Truck "+String.fromCharCode(65+t);
+
+function drawSplit(){
+  const tbl=document.getElementById("splitTable");
+  let h="<thead><tr><th>Product</th><th class='r'>Tins here</th>";
+  for(let t=0;t<trucks;t++) h+=`<th class='r'><div class='trk-h'>${L(t)}${t===trucks-1?" <span class='hint'>(rest)</span>":""}${t>=2?`<button class='x' data-rm='${t}' title='Remove'>✕</button>`:""}</div></th>`;
+  h+="</tr></thead><tbody>";
+  LINES.forEach((l,i)=>{
+    if(src.qty[i]===0){
+      h+=`<tr><td class="grey">${l.name}</td><td class="r grey">0</td>${"<td></td>".repeat(trucks)}</tr>`; return;
+    }
+    h+=`<tr><td>${l.name}<span class='tot'>${(l.kg/l.tins).toLocaleString("en-IN",{maximumFractionDigits:2})} kg per tin</span></td><td class='r'>${src.qty[i]}</td>`;
+    for(let t=0;t<trucks;t++){
+      if(t===trucks-1){ const r=rest(i); h+=`<td class='r'><span class='auto ${r<0?"bad":""}'>${r}</span></td>`; }
+      else h+=`<td class='r'><input class='q' inputmode='numeric' data-i='${i}' data-t='${t}' value='${q[i][t]??0}'></td>`;
+    }
+    h+="</tr>";
+  });
+  h+="</tbody><tfoot><tr><td>Each truck carries</td><td></td>";
+  for(let t=0;t<trucks;t++){ const s=truckSum(t); h+=`<td class='r'>${s.t} tins<span class='tot'>${fmt(s.L)} L · ${fmt(s.K)} kg</span></td>`; }
+  h+="</tr></tfoot>";
+  tbl.innerHTML=h;
+  tbl.querySelectorAll("input.q").forEach(inp=>inp.addEventListener("input",e=>{
+    const i=+e.target.dataset.i,t=+e.target.dataset.t, raw=e.target.value.trim();
+    q[i][t]= raw===""?0:Number(raw);
+    const pos=e.target.selectionStart; drawSplit();
+    const a=tbl.querySelector(`input[data-i='${i}'][data-t='${t}']`); if(a){a.focus();try{a.setSelectionRange(pos,pos)}catch(_){}}
+  }));
+  tbl.querySelectorAll("[data-rm]").forEach(b=>b.addEventListener("click",()=>{ const t=+b.dataset.rm; q.forEach(r=>r.splice(t,1)); trucks--; drawSplit(); }));
+  validate();
+}
+function validate(){
+  let m="";
+  for(const r of q) for(const v of r) if(!Number.isInteger(v)||v<0){ m="Whole tins only, no negatives."; break; }
+  if(!m && src.qty.some((_,i)=>rest(i)<0)) m="More tins typed than this part has.";
+  if(!m) for(let t=0;t<trucks;t++) if(truckSum(t).t<1){ m=`${L(t)} has no tins.`; break; }
+  document.getElementById("errMsg").textContent=m;
+  document.getElementById("saveBtn").disabled=!!m;
+}
+document.getElementById("addTruck").onclick=()=>{ q.forEach(r=>r.push(0)); trucks++; drawSplit(); };
+document.getElementById("evenBtn").onclick=()=>{ q=src.qty.map(n=>Array(trucks-1).fill(Math.floor(n/trucks))); drawSplit(); };
+document.getElementById("cancelBtn").onclick=()=>document.getElementById("ov").classList.add("hidden");
+document.getElementById("saveBtn").onclick=()=>{
+  const pieces=[]; for(let t=0;t<trucks;t++) pieces.push(src.qty.map((_,i)=>onTruck(i,t)));
+  const before = parts.length===1 ? "the bill" : label(src);
+  const at = parts.indexOf(src);
+  src.qty = pieces[0];                       // first piece keeps trip / hold
+  const news = pieces.slice(1).map(qty=>({ id:nextId++, qty, state:"waiting", held:src.held, trip:null, sentOn:null }));
+  parts.splice(at+1,0,...news);
+  log(`Split ${before} into ${trucks} → now ${parts.length} parts${src.held?" (all held)":""}${src.trip?`; ${label(src)} stays on ${src.trip}`:""}.`);
+  document.getElementById("ov").classList.add("hidden");
+  selId=src.id; render();
+};
+
+document.getElementById("nextDay").onclick=()=>{ day=new Date(day.getTime()+86400000); log("— new day —"); render(); };
+document.getElementById("reset").onclick=init;
+init();
+</script>
+</body>
+</html>
