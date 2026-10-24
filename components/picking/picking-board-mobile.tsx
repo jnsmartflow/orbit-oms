@@ -3715,10 +3715,10 @@ export function PickingBoardMobile(): React.JSX.Element {
                 </div>
               </div>
             </div>
-            {/* The route chips — "All" first, then one per route, scrolling
-                sideways. The round TypeFilterPills look at a bigger size
-                (~40px tall, 15px), using the room the Route | Bay switch left. */}
-            <div className="flex items-center gap-2 overflow-x-auto mt-2.5 -mx-4 px-4 [scrollbar-width:none]">
+            {/* The route chips — "All" first, then one per route, WRAPPING onto
+                as many rows as they need (no sideways scroll). The round
+                TypeFilterPills look at 36px / 14px, 8px apart both ways. */}
+            <div className="flex flex-wrap items-center gap-2 mt-2.5">
               {[{ key: null, label: "All", count: groupStats[openGroup].bills }, ...chipOptions].map((c) => (
                 <button
                   key={c.key ?? "__all__"}
@@ -3728,7 +3728,7 @@ export function PickingBoardMobile(): React.JSX.Element {
                     setSelected(new Set());
                   }}
                   className={
-                    "shrink-0 h-10 text-[15px] font-medium px-4 rounded-full border whitespace-nowrap " +
+                    "shrink-0 h-9 text-[14px] font-medium px-3.5 rounded-full border whitespace-nowrap " +
                     (activeChip === c.key
                       ? "bg-gray-900 border-gray-900 text-white font-semibold"
                       : "bg-white border-gray-200 text-gray-700")
