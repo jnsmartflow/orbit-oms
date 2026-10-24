@@ -252,7 +252,7 @@ Ajay Vansiya (#29), Dhanraj Shah (#30), Priya Chaudhari (#31) — view + edit. T
 `docs/prompts/drafts/code-update-2026-10-10-floor-add-invoices-grant.sql` (OR-merge, never revoke).
 
 **Where it opens.** The Floor bar's ··· More with exactly one OBD ticked (every invoice of it ticked, on a
-split OBD), or the detail panel's Invoices section. UI → `CLAUDE_FLOOR.md`. Approved mockup:
+split OBD), or the scoped detail panel's ··· menu ("Add invoices" / "Edit invoices"). UI → `CLAUDE_FLOOR.md`. Approved mockup:
 `docs/mockups/add-invoices/add-invoices-flow.html`.
 
 **Paper by paper** (`components/floor/add-invoices-dialog.tsx`, arithmetic in `entry.ts`):
@@ -405,8 +405,8 @@ I536230714 (row 36799), seq 4 I536230715 (row 36800).
 `app/api/floor/trips/[id]/bills` · `…/cancel` · `…/dispatch` · `…/redeliveries` · `app/api/floor/actions`
 (hold / unhold with `invoiceRowIds`) · `app/api/floor/ci` · `app/api/billing/print/trip/[id]/copy`.
 
-**UI:** `components/floor/add-invoices-dialog.tsx`, `components/floor/detail-invoices.tsx` — owned by
-`CLAUDE_FLOOR.md`.
+**UI:** `components/floor/add-invoices-dialog.tsx` — owned by `CLAUDE_FLOOR.md`. (`components/floor/detail-invoices.tsx`
+is kept on disk, NOT mounted since Phase 4, 2026-10-13.)
 
 ## 10. SQL files run (all by the owner in the Supabase SQL Editor)
 
