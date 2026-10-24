@@ -479,10 +479,35 @@
       <div class="end"><span class="bp">+ New trip · 22 Oct</span><span class="bdiv"></span><span class="bs">···</span></div>
     </div>
   </div>
-  <div class="cap">··· menu on the trip header — the same three items as today</div>
+  <div class="cap">··· menu on this trip — Take back from floor (trip is shown) and Cancel trip. “Take back from billing” only appears once the trip is sent.</div>
   <div style="width:230px;border:1px solid #e5e7eb;border-radius:8px;background:#fff;box-shadow:0 10px 20px -8px rgba(0,0,0,.2);overflow:hidden">
     <div style="padding:8px 12px;font-size:12.5px;color:#374151">Take back from floor</div>
     <div style="padding:8px 12px;font-size:12.5px;color:#b91c1c">Cancel trip</div>
+  </div>
+
+  <div class="cap">Also on a past day, drawn as today: Move (tick bills on the open trip → every other open trip card shows the pink “+”) and Change vehicle (the ✎ on the vehicle line)</div>
+  <div class="row2">
+    <div style="width:276px">
+      <div style="position:relative">
+        <div class="card" style="border:1.5px solid #db2777;background:#fce7f3;padding:10.5px 11.5px 11.5px">
+          <div class="l1" style="padding-right:30px"><span class="tchip">L-261022-02</span><span class="slot">12:30</span><span class="badge b-ready">Ready</span></div>
+          <div class="route">Vesu <span class="plus">+1</span></div>
+          <div class="figs num">5 stops · 6 bills · 940 L</div>
+          <div class="drv">Kiran Solanki</div>
+          <div class="tbar"><span class="s-done" style="flex-grow:6"></span></div>
+        </div>
+        <span title="Move 2 bills to L-261022-02" style="position:absolute;right:10px;top:9px;width:24px;height:24px;border-radius:50%;background:#db2777;color:#fff;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700">+</span>
+      </div>
+      <div style="font-size:11.5px;color:var(--ink-500);margin-top:2px">Hover shows “Move 2 bills to L-261022-02”. A dispatched card stays grey and can't be picked.</div>
+    </div>
+    <div>
+      <div class="th-meta" style="margin-top:0;background:#fff;border:1px solid var(--ink-100);border-radius:8px;padding:10px 14px">
+        <span class="plate">GJ05-BX-4471</span><span class="dot">·</span><span style="color:#96969f">Tata 407</span><span class="dot">·</span><span>Nagadhiraj <span class="num" style="color:#96969f">#118</span></span>
+        <span style="margin-left:16px">Ramesh Patel</span>
+        <span class="ib on" title="Edit vehicle, transporter, slot and note">✎</span>
+      </div>
+      <div style="font-size:11.5px;color:var(--ink-500);margin-top:6px">✎ = “Edit vehicle, transporter, slot and note” — the same drawer as today.</div>
+    </div>
   </div>
 </section>
 
@@ -491,9 +516,9 @@
      ════════════════════════════════════════════════════════════════════ -->
 <section class="screen" id="s2">
   <div class="note">
-    <b>D1.</b> If you press <b>+ Add bills</b> on a 22 Oct trip, the pink band opens under that trip, the same as today. The list under it is <b>today's pool</b> (24 Oct), because a forgotten bill is usually there now.
-    <span class="new">NEW</span> <b>Find bill by number</b> covers a bill that is not in any list, for example one already <b>Dispatched</b> with no trip.
-    A bill that is already on another trip is refused, with the server's own words.
+    <b>D1.</b> If you press <b>+ Add bills</b> on a 22 Oct trip, the pink band opens under that trip, the same as today. Right under it is <b>To plan · today</b>, the same pool the desk shows today (24 Oct).
+    Below that, smaller: <span class="new">NEW</span> <b>Not in the list? Find by number</b>, for a bill no list shows, for example one already <b>Dispatched</b> with no trip.
+    <b>Found on another trip → Move, the same as moving between trips today:</b> the same confirm, the same result line with Undo, the same refusals.
   </div>
 
   <div class="frame">
@@ -516,30 +541,8 @@
         <span class="done">Done</span>
       </div>
 
-      <div class="finder">
-        <div class="lbl">Find bill by number <span style="font-weight:400;color:var(--ink-400)">— any day, any stage</span></div>
-        <div class="inrow"><div class="inp">9109112045</div></div>
-        <div class="hint">Type the full OBD, SO or invoice number.</div>
-
-        <div class="hit">
-          <input type="checkbox" checked>
-          <div>
-            <div><span class="mono" style="font-weight:600">9109112045</span> · <span class="who">Jalaram Paints</span> <span class="pill p-disp" style="margin-left:6px">🚚 Dispatched</span> <span class="tag skip" style="margin-left:4px">No trip</span></div>
-            <div class="sub num">SO 2203318011 · Adajan · 95 L · 124 kg · checked 22 Oct 14:02</div>
-          </div>
-          <span class="go" style="font-size:12px;color:var(--brand-700);font-weight:600">Will join stop 5 · Jalaram Paints</span>
-        </div>
-
-        <div class="hit bad">
-          <input type="checkbox" disabled>
-          <div>
-            <div><span class="mono" style="font-weight:600">9109111873</span> · <span class="who">Krishna Traders</span> <span class="pill p-done" style="margin-left:6px">Done</span> <span class="ttag">L-261024-02</span></div>
-            <div class="why">Already on L-261024-02 — remove it from that trip first.</div>
-          </div>
-        </div>
-      </div>
-
-      <div class="poolhead"><span class="t">Today's pool</span><span class="s num">Sat 24 Oct · 41 bills · 6,180 L</span></div>
+      <!-- 1. the pool FIRST -->
+      <div class="poolhead"><span class="t">To plan · today</span><span class="s num">Sat 24 Oct · 41 bills · 6,180 L</span></div>
       <table class="ft">
         <colgroup><col style="width:3%"><col style="width:14%"><col style="width:10%"><col style="width:7%"><col style="width:9%"><col style="width:12%"><col style="width:7%"><col style="width:12%"><col style="width:6%"><col style="width:20%"></colgroup>
         <thead><tr><th class="n"><input type="checkbox"></th><th>OBD</th><th>Ship to</th><th>SO</th><th>Route</th><th>Due</th><th class="r">Vol / KG</th><th>Article tag</th><th class="r">Article</th><th>Status</th></tr></thead>
@@ -551,16 +554,101 @@
         </tbody>
       </table>
 
+      <!-- 2. the finder BELOW, smaller -->
+      <div class="finder" style="margin-top:18px;padding:10px 12px;max-width:760px">
+        <div class="lbl" style="font-size:11.5px">Not in the list? Find by number</div>
+        <div class="inrow"><div class="inp" style="height:32px;font-size:12.5px">9109112045</div></div>
+        <div class="hint">Full OBD, SO or invoice number · any day, any stage.</div>
+
+        <div class="hit">
+          <input type="checkbox" checked>
+          <div>
+            <div><span class="mono" style="font-weight:600">9109112045</span> · <span class="who">Jalaram Paints</span> <span class="pill p-disp" style="margin-left:6px">🚚 Dispatched</span> <span class="tag skip" style="margin-left:4px">No trip</span></div>
+            <div class="sub num">SO 2203318011 · Adajan · 95 L · 124 kg · checked 22 Oct 14:02</div>
+          </div>
+          <span class="go" style="font-size:12px;color:var(--brand-700);font-weight:600">Will join Jalaram Paints</span>
+        </div>
+
+        <div class="hit">
+          <input type="checkbox" checked>
+          <div>
+            <div><span class="mono" style="font-weight:600">9109111873</span> · <span class="who">Krishna Traders</span> <span class="pill p-done" style="margin-left:6px">Done</span> <span class="ttag">L-261024-02</span></div>
+            <div class="sub num">On another trip · SO 2203317990 · Adajan · 85 L · 110 kg</div>
+          </div>
+          <span class="go" style="font-size:12px;color:var(--brand-700);font-weight:600">Add → asks to Move</span>
+        </div>
+      </div>
+
       <div class="bbar">
         <div>
-          <div style="display:flex;align-items:center;gap:10px"><span class="ct num">2 selected</span><span class="clr">✕ Clear</span></div>
-          <div class="figs num"><span><b>155</b> L</span><span><b>202</b> kg</span><span><b>8</b> articles</span><span class="ctx">Adajan</span></div>
+          <div style="display:flex;align-items:center;gap:10px"><span class="ct num">3 selected</span><span class="clr">✕ Clear</span></div>
+          <div class="figs num"><span><b>240</b> L</span><span><b>312</b> kg</span><span><b>14</b> articles</span><span class="ctx">Adajan</span></div>
         </div>
-        <div class="end"><span class="bp">Add 2 bills to L-261022-03</span></div>
+        <div class="end"><span class="bp">Add 3 bills to L-261022-03</span></div>
       </div>
     </div>
   </div>
-  <div class="note" style="margin-top:14px">
+
+  <div class="row2" style="margin-top:6px">
+    <div>
+      <div class="cap">The bill on another trip → today's Move confirm (trip-rail.tsx AddToTripConfirm, move variant)</div>
+      <div style="background:rgba(0,0,0,.4);padding:28px;border-radius:10px;width:500px">
+        <div style="width:440px;background:#fff;border-radius:12px;box-shadow:0 20px 40px -10px rgba(0,0,0,.3);overflow:hidden">
+          <div style="padding:20px 24px">
+            <div style="font-size:18px;font-weight:700;color:var(--ink-900)">Move 1 bill from L-261024-02 to L-261022-03?</div>
+            <div style="margin-top:16px;border:1px solid var(--ink-100);border-radius:10px;overflow:hidden;font-size:13px">
+              <div style="border-bottom:1px solid var(--ink-50);padding:10px 12px">
+                <div style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-500)">From</div>
+                <div style="margin-top:2px;font-weight:600;color:var(--ink-900)"><span class="mono">L-261024-02</span> · Adajan</div>
+                <div class="num" style="margin-top:2px;color:var(--ink-600)">After: 3 stops · 4 bills · 520 L</div>
+              </div>
+              <div style="border-bottom:1px solid var(--ink-50);padding:10px 12px">
+                <div style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-500)">To</div>
+                <div style="margin-top:2px;font-weight:600;color:var(--ink-900)"><span class="mono">L-261022-03</span> · Adajan +1</div>
+                <div class="num" style="margin-top:2px;color:var(--ink-600)">Now: 5 stops · 8 bills · 1,240 L</div>
+              </div>
+              <div style="padding:10px 12px">
+                <div style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-500)">Moving</div>
+                <div class="num" style="margin-top:2px;color:var(--ink-900)">1 bill <span style="color:var(--ink-600)">· 85 L · 110 kg</span></div>
+              </div>
+            </div>
+          </div>
+          <div style="display:flex;justify-content:flex-end;gap:10px;border-top:1px solid var(--ink-100);background:var(--ink-25);padding:14px 24px">
+            <span class="bs" style="font-size:14px">Cancel</span>
+            <span class="bp">Move to L-261022-03</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div style="flex:1">
+      <div class="cap">After Move — today's result line, then the bill is on this trip</div>
+      <div style="display:inline-flex;align-items:center;gap:12px;background:#fff;border:1px solid var(--ink-100);border-radius:10px;box-shadow:0 8px 20px -10px rgba(0,0,0,.25);padding:11px 14px;font-size:13px;color:var(--ink-900)">
+        <span style="color:var(--ok)">✓</span><span class="num">1 bill moved to L-261022-03 · L-261022-03 now 9 bills · 1,325 L</span>
+        <span style="border:1px solid var(--ink-200);border-radius:6px;padding:2px 9px;font-size:12px;font-weight:600">Undo</span>
+      </div>
+      <div style="font-size:12px;color:var(--ink-500);margin:6px 0 12px">If the old trip has no bills left, the line ends “· L-261024-02 is now empty”. Krishna Traders' stop on L-261024-02 closes if it is empty, and that trip's stops renumber.</div>
+      <div class="frame" style="width:620px"><div class="stops" style="padding-top:12px">
+        <div class="stop"><div class="stop-h"><span class="seq">6</span><span class="nm">Krishna Traders</span><span class="meta num">Adajan · 1 bill · 85 L</span><span class="tag new">Moved here</span></div>
+          <table class="ft"><colgroup><col style="width:3%"><col style="width:16%"><col style="width:22%"><col style="width:13%"><col style="width:13%"><col style="width:13%"><col style="width:20%"></colgroup>
+            <tbody><tr><td class="n"><input type="checkbox"></td><td><span class="obd">9109111873</span></td><td><span class="nm">Krishna Traders</span></td><td class="num">2203317990</td><td>Adajan</td><td class="r num">85 L · 110</td><td><span class="pill p-done">Done</span></td></tr></tbody></table>
+        </div>
+      </div></div>
+
+      <div class="cap">Move refusals — exactly the ones the move action returns today (red result line, the code's words)</div>
+      <div style="display:flex;flex-direction:column;gap:6px;max-width:640px">
+        <div class="err" style="margin-top:0">Could not move — Cannot move bills off a dispatched trip (L-261024-02).</div>
+        <div class="err" style="margin-top:0">Could not move — Cannot change the bills on a cancelled trip.</div>
+        <div class="err" style="margin-top:0">9109110455 is billed against a challan order — its goods already went out on the challan. It never goes on a trip.</div>
+        <div class="err" style="margin-top:0">The dealer collects this bill (Hand) — put it on a Hand trip, not a truck.</div>
+        <div class="err" style="margin-top:0">This is a Hand trip (dealer collects) — only Hand bills can join it.</div>
+        <div class="err" style="margin-top:0">Already attached to a different stop on L-261022-03.</div>
+        <div class="err" style="margin-top:0">2610054290 is not on L-261024-02</div>
+        <div class="err" style="margin-top:0">Not on L-261024-02</div>
+      </div>
+    </div>
+  </div>
+<div class="note" style="margin-top:14px">
     <b>D6, no change.</b> If a late bill is <b>not done</b> (for example, Waiting), the 22 Oct trip comes back onto <b>today's</b> desk with an amber number chip, as carried trips do now.
   </div>
 </section>
@@ -585,7 +673,7 @@
         <div class="dp-l1">
           <span class="dp-inv">2610054311</span><span class="dp-date num">22 Oct 2026 · 13:48</span>
           <span style="margin-left:auto;display:flex;align-items:center;gap:8px">
-            <span class="slotchip" title="Past day — the slot changes the bill now">🕒 22-10 · 15:00 <span style="border-left:1px solid #e5e7eb;padding-left:6px">✎</span></span>
+            <span class="slotchip" title="Past day — the slot changes the bill now">🕒 22-10 · 15:00 <span style="border-left:1px solid #e5e7eb;padding-left:6px">🔒</span></span>
             <span style="color:#9ca3af">✕</span>
           </span>
         </div>
@@ -618,9 +706,10 @@
      ════════════════════════════════════════════════════════════════════ -->
 <section class="screen" id="s4">
   <div class="note">
-    <b>D3.</b> <span class="new">NEW</span> <b>↻ Refresh stops (N)</b> on the trip header, shown only when N &gt; 0. N = stops whose shop, name, area or route no longer match master.
-    One press fixes every stop on the trip. A stop that would become the <b>same shop as another stop</b> is skipped and named. It is never merged.
-    Each out-of-date stop also gets a small amber <b>Out of date</b> tag.
+    <b>D3.</b> <span class="new">NEW</span> <b>↻ Refresh stops (N)</b> on the trip header, shown only when N &gt; 0. N counts <b>only the stops a press can fix</b>: the shop, name, area or route no longer match master.
+    One press fixes them all, and then the button is gone (N = 0).
+    A stop that would become the <b>same shop as another stop</b> is not counted. It is never merged. It keeps an amber note: <b>Same shop as stop 4 — move the bill by hand.</b>
+    Each stop the press can fix gets a small amber <b>Out of date</b> tag.
   </div>
 
   <div class="row2">
@@ -630,7 +719,7 @@
         <div class="th">
           <div class="th-r1">
             <span class="th-num">L-261022-02</span>
-            <span class="th-btns"><span class="btn refresh">↻ Refresh stops <span class="ct">3</span></span><span class="btn">Trip sheet</span><span class="btn sq">···</span></span>
+            <span class="th-btns"><span class="btn refresh">↻ Refresh stops <span class="ct">2</span></span><span class="btn">Trip sheet</span><span class="btn sq">···</span></span>
           </div>
           <div class="th-route">Vesu <span class="plus">+1</span></div>
           <div class="th-meta"><span class="plate">GJ05-AV-2208</span><span class="dot">·</span><span style="color:#96969f">Eicher Pro</span><span style="margin-left:16px">Kiran Solanki</span></div>
@@ -641,7 +730,7 @@
           <div class="stop"><div class="stop-h"><span class="seq">2</span><span class="nm">(Unmatched)</span><span class="meta num">1 bill · 140 L</span><span class="tag stale">Out of date</span></div></div>
           <div class="stop"><div class="stop-h"><span class="seq">3</span><span class="nm">Mahavir Hardware</span><span class="meta num">Rander · 1 bill · 180 L</span><span class="tag stale">Out of date</span></div></div>
           <div class="stop"><div class="stop-h"><span class="seq">4</span><span class="nm">Shah Paints Centre</span><span class="meta num">Pal · 1 bill · 160 L</span></div></div>
-          <div class="stop"><div class="stop-h"><span class="seq">5</span><span class="nm">SHAH PAINTS CENTRE</span><span class="meta num">1 bill · 130 L</span><span class="tag stale">Out of date</span></div></div>
+          <div class="stop"><div class="stop-h"><span class="seq">5</span><span class="nm">SHAH PAINTS CENTRE</span><span class="meta num">1 bill · 130 L</span><span class="tag stale">Same shop as stop 4 — move the bill by hand.</span></div></div>
         </div>
       </div>
       <div style="width:620px;font-size:12px;color:var(--ink-500);margin-top:8px">
@@ -655,11 +744,11 @@
         <div class="th">
           <div class="th-r1">
             <span class="th-num">L-261022-02</span>
-            <span class="th-btns"><span class="btn refresh">↻ Refresh stops <span class="ct">1</span></span><span class="btn">Trip sheet</span><span class="btn sq">···</span></span>
+            <span class="th-btns"><span class="btn">Trip sheet</span><span class="btn sq">···</span></span>
           </div>
           <div class="th-route">Vesu <span class="plus">+1</span></div>
           <div class="th-meta"><span class="plate">GJ05-AV-2208</span><span class="dot">·</span><span style="color:#96969f">Eicher Pro</span><span style="margin-left:16px">Kiran Solanki</span></div>
-          <div class="result mix"><span class="x">✕</span><b>2 fixed · 1 skipped:</b> Shah Paints Centre — another stop already has this shop.</div>
+          <div class="result ok"><span class="x">✕</span><b>2 stops fixed.</b> Shah Paints Centre (stop 5) is the same shop as stop 4 — move the bill by hand.</div>
           <div class="stopsbar" style="margin-top:12px"><span class="sum num">5 stops <span class="sep">·</span> 6 bills <span class="sep">·</span> 940 L</span></div>
         </div>
         <div class="stops">
@@ -667,18 +756,18 @@
           <div class="stop"><div class="stop-h"><span class="seq">2</span><span class="nm">Bhagwati Colours</span><span class="meta num">Vesu · 1 bill · 140 L</span><span class="tag fixed">✓ Fixed</span></div></div>
           <div class="stop"><div class="stop-h"><span class="seq">3</span><span class="nm">Mahavir Hardware</span><span class="meta num">Adajan · 1 bill · 180 L</span><span class="tag fixed">✓ Fixed</span></div></div>
           <div class="stop"><div class="stop-h"><span class="seq">4</span><span class="nm">Shah Paints Centre</span><span class="meta num">Pal · 1 bill · 160 L</span></div></div>
-          <div class="stop"><div class="stop-h"><span class="seq">5</span><span class="nm">SHAH PAINTS CENTRE</span><span class="meta num">1 bill · 130 L</span><span class="tag skip">Skipped · same shop as stop 4</span></div></div>
+          <div class="stop"><div class="stop-h"><span class="seq">5</span><span class="nm">SHAH PAINTS CENTRE</span><span class="meta num">1 bill · 130 L</span><span class="tag stale">Same shop as stop 4 — move the bill by hand.</span></div></div>
         </div>
       </div>
       <div style="width:620px;font-size:12px;color:var(--ink-500);margin-top:8px">
-        To join stops 4 and 5, move the bill by hand: remove it, then add it again (it joins stop 4). Refresh never merges stops.
+        The button is hidden now: nothing left that a press can fix. To join stops 4 and 5, remove the bill and add it again (it joins stop 4). Refresh never merges stops.
       </div>
     </div>
   </div>
 
   <div class="cap">Second skip reason — bills on one stop now point to different shops</div>
   <div class="frame" style="width:620px;padding:0 18px 14px">
-    <div class="result mix" style="margin-top:14px"><span class="x">✕</span><b>0 fixed · 1 skipped:</b> Krishna Traders — bills on this stop now go to different shops.</div>
+    <div class="result mix" style="margin-top:14px"><span class="x">✕</span><b>1 stop fixed.</b> Krishna Traders is not counted: bills on this stop now go to different shops.</div>
   </div>
 
   <div class="row2" style="margin-top:6px">
@@ -736,8 +825,8 @@
           </div>
           <div class="preview">
             <span class="ic">⇄</span>
-            <div><div>On trip <b class="mono">L-261022-03</b>: will move to <b>stop 3 · Patel Hardware &amp; Paints</b>.</div>
-            <div class="sub">Stop 2 (Shree Ganesh Paints) will have no bills left. It closes and the stops renumber.</div></div>
+            <div><div>On trip <b class="mono">L-261022-03</b>: will join <b>Patel Hardware &amp; Paints</b>.</div>
+            <div class="sub">Shree Ganesh Paints will have no bills left. Its stop closes and the stops renumber.</div></div>
           </div>
           <div class="scope">Applies to <b>this bill only</b>.</div>
         </div>
@@ -755,8 +844,8 @@
           <div class="hits"><div class="h sel"><div><div class="nm">Jay Ambe Traders</div><span class="cd">600655</span></div><div class="ar">Adajan<br>Local</div></div></div>
           <div class="preview">
             <span class="ic">＋</span>
-            <div><div>On trip <b class="mono">L-261022-03</b>: will make <b>new stop 6 · Jay Ambe Traders</b>.</div>
-            <div class="sub">Stop 1 keeps its other bill.</div></div>
+            <div><div>On trip <b class="mono">L-261022-03</b>: will make <b>a new stop · Jay Ambe Traders</b>.</div>
+            <div class="sub">Om Sai Colour House keeps its other bill.</div></div>
           </div>
         </div>
         <div class="m-f"><span class="mb">Cancel</span><span class="mb conf">Save ship-to</span></div>
@@ -861,9 +950,9 @@
           <li><span class="spine"></span><span class="d" style="background:#2563eb"></span><div><div><span class="sm">Added 7 bills</span><span class="tm num">22 Oct, 9:40 am</span></div><div class="who">Priya Desai</div><div class="obds num"><span>9109108742</span><span>9109108750</span><span>9109108811</span><span>9109108833</span><span>+3</span></div></div></li>
           <li><span class="spine"></span><span class="d" style="background:#b45309"></span><div><div><span class="sm">Vehicle GJ05-BX-4471 · Nagadhiraj</span><span class="tm num">22 Oct, 11:05 am</span></div><div class="who">Priya Desai</div></div></li>
           <li><span class="spine"></span><span class="d" style="background:#2563eb"></span><div><div><span class="sm">Added 1 bill</span><span class="flag">past-day edit</span><span class="tm num">24 Oct, 10:41 am</span></div><div class="who">Priya Desai</div><div class="obds num"><span>9109112045</span></div></div></li>
-          <li><span class="spine"></span><span class="d" style="background:#7C3AED"></span><div><div><span class="sm">Ship-to changed: 9109108811 → Patel Hardware &amp; Paints · stop 2 → stop 3</span><span class="flag">past-day edit</span><span class="tm num">24 Oct, 10:47 am</span></div><div class="who">Priya Desai</div><div style="font-size:11px;color:#6b7280">Stop 2 (Shree Ganesh Paints) closed · stops renumbered</div></div></li>
-          <li><span class="spine"></span><span class="d" style="background:#0d9488"></span><div><div><span class="sm">Stops refreshed: 2 fixed · 1 skipped (Shah Paints Centre)</span><span class="tm num">24 Oct, 10:52 am</span></div><div class="who">Priya Desai · Refresh stops button</div></div></li>
-          <li><span class="spine"></span><span class="d" style="background:#0d9488"></span><div><div><span class="sm">Stop refreshed from master: (Unmatched) → Bhagwati Colours · Vesu</span><span class="tm num">24 Oct, 11:30 am</span></div><div class="who"><span class="sys">SYSTEM</span>Auto-Import · customer backfill</div></div></li>
+          <li><span class="spine"></span><span class="d" style="background:#7C3AED"></span><div><div><span class="sm">Ship-to changed: 9109108811 → Patel Hardware &amp; Paints (was Shree Ganesh Paints)</span><span class="flag">past-day edit</span><span class="tm num">24 Oct, 10:47 am</span></div><div class="who">Priya Desai</div><div style="font-size:11px;color:#6b7280">Shree Ganesh Paints' stop closed · stops renumbered</div></div></li>
+          <li><span class="spine"></span><span class="d" style="background:var(--ok)"></span><div><div><span class="sm">Stops refreshed: 2 fixed · 1 skipped (Shah Paints Centre)</span><span class="tm num">24 Oct, 10:52 am</span></div><div class="who">Priya Desai · Refresh stops button</div></div></li>
+          <li><span class="spine"></span><span class="d" style="background:var(--ok)"></span><div><div><span class="sm">Stop refreshed from master: (Unmatched) → Bhagwati Colours · Vesu</span><span class="tm num">24 Oct, 11:30 am</span></div><div class="who"><span class="sys">SYSTEM</span>Auto-Import · customer backfill</div></div></li>
         </ol>
       </div>
     </div>
@@ -877,7 +966,7 @@
   <div class="note">
     <b>D7.</b> NTS Trips lists a trip by its <b>trip date</b>, not the day it was entered.
     <span class="mono">L-261022-05</span> was made on 24 Oct for 22 Oct, so it now shows under <b>22-10-2026</b>.
-    Dispatch Time stays the time it was entered, and Remarks says when that was. This is the .xlsx sheet (17 columns; the first 10 and Remarks are shown).
+    Dispatch Date = the trip date. Dispatch Time = the trip's dispatch slot time (blank when the trip has no slot), not the time it was entered. Remarks says when it was entered. This is the .xlsx sheet (17 columns; the first 10 and Remarks are shown).
   </div>
   <div class="rep-bar"><span style="font-weight:700">NTS Trips</span><span class="fld">From 22-10-2026</span><span class="fld">To 22-10-2026</span><span class="fld">All delivery types</span><span class="mb conf" style="height:32px;font-size:13px">Download .xlsx</span></div>
   <table class="xl num">
@@ -886,7 +975,8 @@
       <tr><td class="rn">2</td><td>L-261022-01</td><td>Oct-26</td><td class="r">6</td><td>22-10-2026</td><td>09:48</td><td>Varachha, Sarthana, Kapodra</td><td class="r">1,880</td><td class="r">2,444</td><td>GJ05-CT-9034</td><td>Mahesh Rathod</td><td>…</td><td></td></tr>
       <tr><td class="rn">3</td><td>L-261022-02</td><td>Oct-26</td><td class="r">5</td><td>22-10-2026</td><td>10:15</td><td>Vesu, Pal</td><td class="r">940</td><td class="r">1,222</td><td>GJ05-AV-2208</td><td>Kiran Solanki</td><td>…</td><td></td></tr>
       <tr><td class="rn">4</td><td>L-261022-03</td><td>Oct-26</td><td class="r">5</td><td>22-10-2026</td><td>09:12</td><td>Adajan, Rander, Pal</td><td class="r">1,240</td><td class="r">1,612</td><td>GJ05-BX-4471</td><td>Ramesh Patel</td><td>…</td><td></td></tr>
-      <tr class="hl"><td class="rn">5</td><td>L-261022-05</td><td>Oct-26</td><td class="r">2</td><td>22-10-2026</td><td>10:12</td><td>Katargam</td><td class="r">315</td><td class="r">410</td><td>GJ05-BZ-1187</td><td>Dinesh Chauhan</td><td>…</td><td>Entered 24-10-2026 10:12</td></tr>
+      <tr class="hl"><td class="rn">5</td><td>L-261022-05</td><td>Oct-26</td><td class="r">2</td><td>22-10-2026</td><td>16:00</td><td>Katargam</td><td class="r">315</td><td class="r">410</td><td>GJ05-BZ-1187</td><td>Dinesh Chauhan</td><td>…</td><td>Entered 24-10-2026 10:12</td></tr>
+      <tr class="hl"><td class="rn">6</td><td>L-261022-06</td><td>Oct-26</td><td class="r">1</td><td>22-10-2026</td><td></td><td>Rander</td><td class="r">120</td><td class="r">156</td><td>GJ05-BZ-1187</td><td>Dinesh Chauhan</td><td>…</td><td>Entered 24-10-2026 10:30 · no slot</td></tr>
     </tbody>
   </table>
   <div class="cap" style="margin-top:22px">Before D7, the same trip appeared under the day it was entered</div>
