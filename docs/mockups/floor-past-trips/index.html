@@ -1,0 +1,912 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Floor Past-Day Trips</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600;700&display=swap">
+<!--
+  MOCKUP ONLY — Floor past-day trip edits, Refresh stops, ship-to on a trip bill.
+  Owner decisions D1–D8 (2026-10-24). Look copied from the live components:
+  trip-desk.tsx, trip-detail-header.tsx, trip-rail.tsx, floor-table.tsx,
+  floor-bottom-bar.tsx / floor-action-bar.tsx, trip-add-band.tsx, detail-panel.tsx,
+  components/shared/ship-to-modal.tsx + modal-shell.tsx, trip-history.tsx, trip-bar.tsx.
+  Tokens from tailwind.config.ts (brand / ink / tint / ok / warn / danger).
+  Anything marked NEW in the notes does not exist in the code yet.
+-->
+<style>
+  :root {
+    /* Orbit tokens — tailwind.config.ts */
+    --brand-50: #F5F3FF; --brand-100: #EDE9FE; --brand-200: #DDD6FE; --brand-300: #C4B5FD;
+    --brand-500: #8B5CF6; --brand-600: #7C3AED; --brand-700: #6D28D9; --brand-800: #5B21B6;
+    --ink-0: #FFFFFF; --ink-25: #FAFAFC; --ink-50: #F4F3F8; --ink-100: #E9E7F0; --ink-200: #D6D3E0;
+    --ink-400: #9C99AC; --ink-500: #74718A; --ink-600: #514E63; --ink-700: #3A3748; --ink-900: #1B1826;
+    --tint-bg: #F0F9FF; --tint-bd: #BAE6FD; --tint-600: #0284C7; --tint-700: #0369A1;
+    --ok: #059669; --ok-bg: #ECFDF5; --ok-text: #047857;
+    --warn: #D97706; --warn-bg: #FFFBEB; --warn-text: #B45309;
+    --danger: #E11D48; --danger-bg: #FFF1F2; --danger-text: #BE123C; --danger-bd: #FECDD3;
+    /* the trip desk's own literal greys (trip-detail-header.tsx / trip-rail.tsx) */
+    --t-ink: #1a1a22; --t-ink2: #61616d; --t-ink3: #96969f; --t-line: #e7e7ee; --t-chip: #f1f1f6;
+    --amber-text: #8a5d0c;
+    --sans: "Plus Jakarta Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body { background: #eceaf2; color: var(--ink-900); font-family: var(--sans); font-size: 14px; line-height: 1.45; -webkit-font-smoothing: antialiased; min-width: 1320px; }
+  .mono { font-family: var(--mono); }
+  .num { font-variant-numeric: tabular-nums; }
+  button { font-family: inherit; }
+
+  /* ── Mockup chrome (not the app) ─────────────────────────────────────── */
+  .doc-head { background: var(--ink-900); color: #fff; padding: 18px 28px 0; }
+  .doc-head h1 { margin: 0; font-size: 20px; font-weight: 700; letter-spacing: -0.01em; }
+  .doc-head p { margin: 4px 0 14px; color: #c9c6d6; font-size: 13px; }
+  .doc-tabs { display: flex; gap: 2px; flex-wrap: wrap; }
+  .doc-tabs button { border: 0; background: transparent; color: #c9c6d6; padding: 9px 14px; font-size: 13px; font-weight: 600; border-radius: 8px 8px 0 0; cursor: pointer; }
+  .doc-tabs button.on { background: #eceaf2; color: var(--ink-900); }
+  .doc-tabs button .n { font-family: var(--mono); font-size: 11px; opacity: .7; margin-right: 6px; }
+  .screen { display: none; padding: 22px 28px 60px; }
+  .screen.on { display: block; }
+  .note { max-width: 1260px; background: #fff; border: 1px solid var(--ink-100); border-left: 3px solid var(--brand-600); border-radius: 8px; padding: 10px 14px; margin-bottom: 14px; font-size: 13px; color: var(--ink-700); }
+  .note b { color: var(--ink-900); }
+  .note .new { display: inline-block; background: var(--brand-600); color: #fff; font-size: 10px; font-weight: 700; letter-spacing: .05em; padding: 1px 6px; border-radius: 4px; margin-right: 4px; vertical-align: 1px; }
+  .cap { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-500); margin: 20px 0 8px; }
+  .frame { width: 1260px; background: #fff; border: 1px solid var(--ink-200); border-radius: 10px; overflow: hidden; box-shadow: 0 6px 24px -12px rgba(27,24,38,.25); position: relative; }
+  .row2 { display: flex; gap: 20px; align-items: flex-start; }
+
+  /* ── Floor page header rows (floor-page.tsx) ─────────────────────────── */
+  .ph1 { height: 44px; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid #f0f0f0; padding: 0 16px; }
+  .gate { font-size: 11.5px; font-weight: 600; color: var(--ink-600); border: 1px solid var(--ink-100); border-radius: 6px; padding: 4px 9px; background: #fff; }
+  .gate i { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--ok); margin-right: 6px; }
+  .clock { margin-left: auto; font-size: 11px; color: #9ca3af; }
+  .ph2 { height: 46px; display: flex; align-items: center; gap: 12px; border-bottom: 1px solid #e5e7eb; background: #fcfcfd; padding: 0 16px; }
+  .seg { display: inline-flex; gap: 2px; border-radius: 7px; background: #f3f4f6; padding: 2px; }
+  .seg span { border-radius: 5px; padding: 5px 12px; font-size: 11px; color: #6b7280; }
+  .seg span.on { background: #fff; font-weight: 600; color: #111827; box-shadow: 0 1px 2px rgba(0,0,0,.06); }
+  .search { margin-left: auto; width: 260px; height: 30px; border: 1px solid #e5e7eb; border-radius: 7px; background: #fff; font-size: 12px; color: #9ca3af; display: flex; align-items: center; padding: 0 10px; }
+
+  /* ── Desk grid (trip-desk.tsx: 298px 1fr) ────────────────────────────── */
+  .desk { display: grid; grid-template-columns: 298px 1fr; min-height: 640px; }
+  .rail { border-right: 1px solid var(--t-line); background: #fafafc; padding: 12px 11px 16px; }
+  .rail-count { margin: 0 4px 9px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--t-ink3); }
+  .pool { width: 100%; border: 1px solid var(--t-line); background: #fff; border-radius: 9px; padding: 10px 12px; margin-bottom: 14px; }
+  .pool .t { font-size: 14.5px; font-weight: 600; color: var(--t-ink); }
+  .pool .s { font-size: 12.5px; color: var(--t-ink2); margin-top: 1px; }
+  .card { display: flex; flex-direction: column; gap: 6px; border: 1px solid var(--t-line); background: #fff; border-radius: 9px; padding: 11px 12px 12px; margin-bottom: 8px; }
+  .card.sel { border-color: var(--brand-600); box-shadow: 0 0 0 3px #f2edfe; }
+  .card .l1 { display: flex; align-items: center; gap: 7px; }
+  .tchip { border: 1px solid var(--t-line); background: var(--t-chip); color: var(--t-ink2); border-radius: 5px; padding: 1px 6px; font-family: var(--mono); font-size: 11.5px; font-weight: 600; }
+  .slot { font-family: var(--mono); font-size: 11px; color: var(--t-ink3); }
+  .badge { margin-left: auto; border-radius: 20px; padding: 2px 8px; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; }
+  .b-disp { background: #f1f0f5; color: #6f6d7d; } .b-pick { background: #e4ecfd; color: #1d4ed8; }
+  .b-ready { background: #e2f6e9; color: #15773a; } .b-held { background: #fdf2d9; color: #8a5d0c; }
+  .card .route { font-size: 16.5px; font-weight: 600; letter-spacing: -0.012em; color: var(--t-ink); line-height: 1.22; }
+  .plus { font-weight: 500; color: var(--t-ink3); }
+  .card .figs { font-size: 12.5px; color: var(--t-ink2); }
+  .card .drv { font-size: 13px; font-weight: 500; color: var(--t-ink2); }
+  .tbar { display: flex; height: 7px; gap: 1.5px; overflow: hidden; border-radius: 4px; background: var(--t-chip); }
+  .tbar span { height: 100%; flex-basis: 0; }
+  .s-done { background: #2eb862; } .s-chk { background: #fbbf24; } .s-pick { background: #5b8ded; } .s-wait { background: #d3d3dd; } .s-held { background: #b91c1c; }
+
+  /* ── Table column ────────────────────────────────────────────────────── */
+  .col { position: relative; display: flex; flex-direction: column; min-width: 0; }
+  .tabrow { display: flex; align-items: center; gap: 18px; border-bottom: 1px solid #e5e7eb; background: #fff; padding: 0 14px; }
+  .tab { display: flex; align-items: center; gap: 6px; border-bottom: 2px solid transparent; padding: 12px 0; font-size: 12px; color: #9ca3af; }
+  .tab.on { border-color: #111827; font-weight: 700; color: #111827; }
+  .tab .c { border-radius: 4px; padding: 1px 6px; font-size: 10px; font-weight: 700; background: #f3f4f6; color: #6b7280; }
+  .tab.on .c { background: #111827; color: #fff; }
+  .waiting { font-size: 11px; color: #9ca3af; } .waiting b { color: #374151; }
+  .right { margin-left: auto; display: flex; align-items: center; gap: 12px; font-size: 11.5px; }
+  .nav { width: 24px; height: 24px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid #e5e7eb; border-radius: 5px; background: #fff; color: #6b7280; }
+  .nav.dis { opacity: .4; }
+  .hdate { font-weight: 600; color: #111827; }
+  .live-link { font-size: 11px; font-weight: 600; color: var(--brand-600); }
+  .pastchip { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--brand-200); background: var(--brand-50); color: var(--brand-700); border-radius: 999px; padding: 3px 10px; font-size: 11.5px; font-weight: 600; white-space: nowrap; }
+  .pastchip i { width: 6px; height: 6px; border-radius: 50%; background: var(--brand-600); display: inline-block; }
+  .pivot { display: inline-flex; gap: 2px; border-radius: 7px; background: #f3f4f6; padding: 2px; }
+  .pivot span { border-radius: 5px; padding: 3px 12px; font-size: 11px; color: #6b7280; }
+  .pivot span.on { background: #fff; font-weight: 600; color: #111827; box-shadow: 0 1px 2px rgba(0,0,0,.06); }
+  .body { flex: 1; padding-bottom: 92px; }
+
+  /* ── Trip detail header (trip-detail-header.tsx) ─────────────────────── */
+  .th { padding: 16px 18px 0; }
+  .th-r1 { display: flex; align-items: center; gap: 9px; min-height: 32px; flex-wrap: wrap; }
+  .th-num { border: 1px solid #e7e7ee; background: #f1f1f6; border-radius: 6px; padding: 3px 9px; font-family: var(--mono); font-size: 14px; font-weight: 600; color: var(--t-ink); }
+  .th-btns { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+  .btn { display: inline-flex; align-items: center; gap: 5px; height: 32px; border-radius: 7px; border: 1px solid #c6c6d4; background: #fff; padding: 0 14px; font-size: 13px; font-weight: 500; color: var(--t-ink); white-space: nowrap; cursor: default; }
+  .btn.amber { border-color: #ddb156; background: #fff9ec; font-weight: 600; color: #8a5d0c; }
+  .btn.dis { border-color: #e2e2ea; color: #adadb9; }
+  .btn.sq { width: 32px; padding: 0; justify-content: center; font-size: 16px; letter-spacing: 1px; }
+  .btn.refresh { border-color: var(--brand-300); background: var(--brand-50); color: var(--brand-700); font-weight: 600; }
+  .btn.refresh .ct { background: var(--brand-600); color: #fff; border-radius: 10px; padding: 0 7px; font-size: 11.5px; font-weight: 700; line-height: 18px; }
+  .pressed { display: inline-flex; align-items: center; height: 32px; border-radius: 7px; border: 1px solid #e7e7ee; background: #fafafc; padding: 0 14px; font-size: 13px; font-weight: 500; color: #61616d; white-space: nowrap; }
+  .th-route { margin-top: 11px; font-size: 23px; font-weight: 700; letter-spacing: -0.02em; color: var(--t-ink); line-height: 1.2; }
+  .th-meta { margin-top: 6px; display: flex; flex-wrap: wrap; align-items: center; gap: 3px 7px; font-size: 13px; color: var(--t-ink2); }
+  .th-meta .plate { font-family: var(--mono); font-weight: 600; color: var(--t-ink); }
+  .dot { color: #ccccd6; }
+  .ib { display: inline-flex; align-items: center; justify-content: center; height: 26px; min-width: 26px; border-radius: 6px; padding: 0 6px; color: #96969f; font-size: 13px; }
+  .ib.on { border: 1px solid #dcdce6; background: #f1f1f7; color: var(--t-ink); }
+  .th-note { margin-top: 6px; font-size: 12.5px; font-style: italic; color: var(--t-ink2); }
+  .th-bar { margin-top: 14px; display: flex; flex-direction: column; gap: 7px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 4px 15px; font-size: 12.5px; color: var(--t-ink2); }
+  .legend i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 6px; }
+  .legend b { color: var(--t-ink); font-weight: 600; margin-right: 3px; }
+  .stopsbar { margin-top: 20px; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid #e7e7ee; padding-bottom: 8px; min-height: 41px; }
+  .stopsbar .sum { font-size: 13.5px; font-weight: 600; color: var(--t-ink); }
+  .stopsbar .sum .sep { color: #c9c9d4; font-weight: 400; }
+  .stopsbar .acts { margin-left: auto; display: flex; gap: 8px; }
+  .result { margin-top: 10px; border-radius: 8px; padding: 8px 12px; font-size: 12.5px; }
+  .result.ok { background: var(--ok-bg); color: var(--ok-text); border: 1px solid #b6e6c8; }
+  .result.mix { background: var(--warn-bg); color: var(--warn-text); border: 1px solid #f5d9a8; }
+  .result b { font-weight: 700; }
+  .result .x { float: right; color: var(--ink-400); }
+
+  /* ── Stops (trip-desk.tsx renderTripPanel) ───────────────────────────── */
+  .stops { padding-bottom: 22px; }
+  .stop { margin-top: 20px; } .stop:first-child { margin-top: 6px; }
+  .stop-h { display: flex; flex-wrap: wrap; align-items: baseline; gap: 9px; border-bottom: 1px solid #e7e7ee; padding: 0 18px 7px; }
+  .stop-h .seq { min-width: 15px; font-family: var(--mono); font-size: 11px; font-weight: 600; color: #96969f; }
+  .stop-h .nm { font-size: 14.5px; font-weight: 600; color: var(--t-ink); }
+  .stop-h .meta { font-size: 12.5px; color: #96969f; }
+  .stop-h .was { font-size: 11px; color: var(--ink-400); }
+  .tag { display: inline-block; border-radius: 4px; padding: 1px 6px; font-size: 10.5px; font-weight: 700; }
+  .tag.stale { background: var(--warn-bg); color: var(--warn-text); border: 1px solid #f5d9a8; }
+  .tag.fixed { background: var(--ok-bg); color: var(--ok-text); border: 1px solid #b6e6c8; }
+  .tag.skip { background: #f4f4f6; color: #55556a; border: 1px solid var(--ink-100); }
+  .tag.new { background: var(--brand-50); color: var(--brand-700); border: 1px solid var(--brand-200); }
+  .tag.gone { background: var(--danger-bg); color: var(--danger-text); border: 1px solid var(--danger-bd); }
+  .struck { text-decoration: line-through; color: var(--ink-400) !important; }
+
+  /* ── FloorTable (floor-table.tsx) ────────────────────────────────────── */
+  table.ft { width: 100%; table-layout: fixed; border-collapse: collapse; }
+  .ft th { height: 31px; border-bottom: 1px solid #ebebeb; padding: 0 14px; text-align: left; font-size: 10px; font-weight: 500; text-transform: uppercase; letter-spacing: .05em; color: #9ca3af; }
+  .ft th.n, .ft td.n { padding: 0 4px; text-align: center; }
+  .ft th.r, .ft td.r { text-align: right; }
+  .ft td { padding: 8px 14px; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border-bottom: 1px solid #f0f0f0; color: #4b5563; }
+  .ft td.n { padding: 8px 4px; }
+  .ft td .obd { font-family: var(--mono); font-size: 11.5px; font-weight: 500; color: #111827; }
+  .ft td .nm { font-size: 11.5px; font-weight: 500; color: #111827; }
+  .ft tr.sel td { background: var(--brand-50); }
+  .ft tr.sel td:first-child { box-shadow: inset 3px 0 0 var(--brand-600); }
+  .ft tr.dim td { color: #c0c0c8; } .ft tr.dim td .obd, .ft tr.dim td .nm { color: #b3b3bd; }
+  input[type=checkbox] { width: 13px; height: 13px; accent-color: var(--brand-600); margin: 0; vertical-align: middle; }
+  .pill { display: inline-flex; align-items: center; border-radius: 4px; padding: 2px 8px; font-size: 10px; font-weight: 600; }
+  .p-wait { background: #f3f4f6; color: #6b7280; } .p-pick { background: var(--tint-bg); color: var(--tint-700); }
+  .p-chk { background: #fef3c7; color: #b45309; } .p-done { background: #dcfce7; color: #15803d; }
+  .p-disp { background: #e2e8f0; color: #334155; } .p-held { background: #fef2f2; color: #b91c1c; }
+  .ttag { display: inline-block; margin-left: 6px; border: 1px solid var(--t-line); background: var(--t-chip); color: var(--t-ink2); border-radius: 4px; padding: 0 5px; font-family: var(--mono); font-size: 10px; font-weight: 600; }
+
+  /* ── Bottom bar (floor-action-bar.tsx) ───────────────────────────────── */
+  .bbar { position: absolute; left: 0; right: 0; bottom: 0; z-index: 5; display: flex; align-items: center; gap: 16px; min-height: 76px; border-top: 1px solid #e5e7eb; background: #fff; padding: 10px 18px; box-shadow: 0 -6px 18px -12px rgba(0,0,0,.25); }
+  .bbar.static { position: static; }
+  .bbar .ct { font-size: 18px; font-weight: 700; color: var(--ink-900); white-space: nowrap; }
+  .bbar .clr { border: 1px solid var(--ink-100); background: var(--ink-50); border-radius: 6px; padding: 3px 8px; font-size: 12px; font-weight: 600; color: var(--ink-600); }
+  .bbar .figs { display: flex; gap: 2px 16px; flex-wrap: wrap; font-size: 13px; color: var(--ink-500); margin-top: 4px; }
+  .bbar .figs b { font-size: 15px; font-weight: 600; color: var(--ink-900); }
+  .bbar .ctx { color: var(--ink-500); }
+  .bbar .ctx.brand { color: var(--brand-700); font-weight: 600; }
+  .bbar .end { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+  .bp { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 44px; min-width: 112px; border-radius: 8px; border: 1px solid var(--brand-600); background: var(--brand-600); color: #fff; padding: 0 18px; font-size: 14px; font-weight: 600; white-space: nowrap; }
+  .bs { display: inline-flex; align-items: center; justify-content: center; height: 44px; min-width: 112px; border-radius: 8px; border: 1px solid var(--ink-200); background: #fff; color: var(--ink-900); padding: 0 18px; font-size: 18px; font-weight: 600; }
+  .bdiv { width: 1px; height: 36px; background: var(--ink-100); }
+
+  /* ── Add band (trip-add-band.tsx) ────────────────────────────────────── */
+  .band { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; border-top: 1px solid #f9a8d4; border-bottom: 1px solid #f9a8d4; background: #fce7f3; padding: 10px 16px; }
+  .band .a { font-size: 13px; font-weight: 700; color: #be185d; }
+  .band .n { border: 1px solid #f9a8d4; background: #fff; border-radius: 5px; padding: 1px 6px; font-family: var(--mono); font-size: 11.5px; font-weight: 600; color: #be185d; }
+  .band .f { font-size: 12.5px; color: #9d174d; }
+  .band .done { margin-left: auto; border: 1px solid #f9a8d4; background: #fff; border-radius: 6px; padding: 3px 10px; font-size: 12px; font-weight: 600; color: #be185d; }
+  .finder { margin: 14px 16px 6px; border: 1px solid var(--ink-100); border-radius: 10px; background: var(--ink-25); padding: 12px 14px; }
+  .finder .lbl { font-size: 12px; font-weight: 600; color: var(--ink-600); margin-bottom: 6px; }
+  .finder .inrow { display: flex; gap: 8px; }
+  .finder .inp { flex: 1; height: 36px; border: 1px solid var(--brand-500); box-shadow: 0 0 0 2px rgba(139,92,246,.1); border-radius: 8px; background: #fff; display: flex; align-items: center; padding: 0 12px; font-family: var(--mono); font-size: 13px; color: var(--ink-900); }
+  .finder .hint { font-size: 11px; color: var(--ink-400); margin-top: 5px; }
+  .hit { display: flex; align-items: center; gap: 12px; margin-top: 10px; border: 1px solid var(--ink-100); background: #fff; border-radius: 8px; padding: 9px 12px; font-size: 12.5px; }
+  .hit .who { font-weight: 600; color: var(--ink-900); }
+  .hit .sub { font-size: 11.5px; color: var(--ink-500); }
+  .hit .go { margin-left: auto; }
+  .hit.bad { border-color: var(--danger-bd); background: var(--danger-bg); }
+  .hit.bad .why { color: var(--danger-text); font-weight: 600; font-size: 12px; }
+  .poolhead { margin: 16px 16px 4px; display: flex; align-items: baseline; gap: 8px; }
+  .poolhead .t { font-size: 13.5px; font-weight: 700; color: var(--t-ink); }
+  .poolhead .s { font-size: 12px; color: var(--ink-500); }
+
+  /* ── Detail panel (detail-panel.tsx, 472px) ──────────────────────────── */
+  .scrim { position: absolute; inset: 0; background: rgba(17,24,39,.08); z-index: 8; }
+  .panel { position: absolute; right: 0; top: 0; bottom: 0; width: 472px; background: #fff; z-index: 9; box-shadow: -14px 0 40px rgba(17,24,39,.10); display: flex; flex-direction: column; }
+  .dp-h { padding: 14px 20px 12px; }
+  .dp-l1 { display: flex; align-items: baseline; gap: 10px; }
+  .dp-inv { font-family: var(--mono); font-size: 19px; font-weight: 700; letter-spacing: -0.02em; color: #111827; }
+  .dp-date { font-size: 11px; color: #9ca3af; }
+  .slotchip { display: inline-flex; align-items: center; gap: 6px; height: 26px; border: 1px solid #e5e7eb; border-radius: 6px; padding: 0 8px; font-size: 11.5px; color: #c0c0c8; background: #fafafa; }
+  .dp-l2 { margin-top: 6px; display: flex; gap: 10px; align-items: baseline; }
+  .dp-l2 .o { font-family: var(--mono); font-size: 12.5px; font-weight: 600; color: #374151; }
+  .dp-name { margin-top: 8px; font-size: 16px; font-weight: 700; color: #111827; }
+  .dp-name .code { font-family: var(--mono); font-size: 11.5px; color: #9ca3af; font-weight: 500; margin-left: 8px; }
+  .dp-pills { margin: 12px 0 0; display: flex; gap: 6px; flex-wrap: wrap; }
+  .dp-act { display: flex; align-items: center; gap: 8px; border-top: 1px solid #e5e7eb; border-bottom: 1px solid #e5e7eb; background: #f9fafb; padding: 10px 16px; }
+  .ab { display: inline-flex; align-items: center; gap: 6px; height: 34px; border-radius: 6px; padding: 0 14px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+  .ab.pri { border: 1px solid var(--brand-600); background: var(--brand-600); color: #fff; }
+  .ab.off { border: 1px solid #e5e7eb; background: #f3f4f6; color: #9ca3af; }
+  .dp-why { padding: 8px 16px; background: #f9fafb; border-bottom: 1px solid #e5e7eb; font-size: 11.5px; color: var(--ink-500); }
+  .dp-tabs { display: flex; gap: 18px; padding: 0 20px; border-bottom: 1px solid #e5e7eb; }
+  .dp-tabs span { padding: 10px 0; font-size: 12px; color: #9ca3af; border-bottom: 2px solid transparent; }
+  .dp-tabs span.on { color: #111827; font-weight: 700; border-color: #111827; }
+  .kv { padding: 14px 20px; display: grid; grid-template-columns: 120px 1fr; gap: 8px 12px; font-size: 12px; }
+  .kv dt { color: #9ca3af; } .kv dd { margin: 0; color: #111827; }
+
+  /* ── Ship-to modal (modal-shell.tsx size lg = 720px) ─────────────────── */
+  .modal { width: 720px; background: #fff; border-radius: 16px; box-shadow: 0 20px 50px -12px rgba(0,0,0,.35); overflow: hidden; display: flex; flex-direction: column; }
+  .m-h { display: flex; align-items: center; gap: 10px; border-bottom: 1px solid var(--ink-100); padding: 16px 24px; }
+  .m-h .t { font-size: 17px; font-weight: 700; color: var(--ink-900); }
+  .m-h .r { font-family: var(--mono); font-size: 12px; color: var(--ink-600); }
+  .m-h .x { margin-left: auto; color: var(--ink-400); font-size: 16px; }
+  .m-b { padding: 20px 24px; }
+  .m-f { display: flex; justify-content: flex-end; gap: 10px; border-top: 1px solid var(--ink-100); background: var(--ink-25); padding: 14px 24px; }
+  .mb { display: inline-flex; align-items: center; height: 38px; border-radius: 10px; padding: 0 18px; font-size: 14px; font-weight: 600; border: 1px solid var(--ink-100); background: #fff; color: var(--ink-700); }
+  .mb.conf { border-color: #111827; background: #111827; color: #fff; }
+  .mb.dis { border-color: #e5e7eb; background: #f3f4f6; color: #9ca3af; }
+  .cur { display: flex; align-items: center; gap: 12px; border: 1px solid var(--ink-100); background: var(--ink-25); border-radius: 12px; padding: 14px 16px; }
+  .cur .k { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--ink-400); }
+  .cur .v { font-size: 15px; font-weight: 700; color: var(--ink-900); display: flex; align-items: center; gap: 8px; }
+  .cur .v i { width: 8px; height: 8px; border-radius: 50%; background: #2563EB; display: inline-block; }
+  .cur .s { margin-top: 3px; font-size: 12px; color: var(--ink-600); display: flex; gap: 6px; align-items: center; }
+  .codebx { border: 1px solid var(--ink-100); background: var(--ink-50); border-radius: 4px; padding: 0 6px; font-family: var(--mono); font-size: 11px; }
+  .cur .reset { margin-left: auto; border: 1px solid var(--ink-100); background: #fff; border-radius: 8px; padding: 7px 12px; font-size: 12px; font-weight: 600; color: var(--ink-600); }
+  .mtabs { margin-top: 18px; display: flex; gap: 4px; border-radius: 10px; background: var(--ink-50); padding: 4px; }
+  .mtabs span { flex: 1; text-align: center; border-radius: 8px; padding: 9px 0; font-size: 14px; font-weight: 600; color: var(--ink-600); }
+  .mtabs span.on { background: #fff; color: var(--ink-900); box-shadow: 0 1px 2px rgba(0,0,0,.06); }
+  .minp { margin-top: 14px; border: 1px solid var(--brand-500); box-shadow: 0 0 0 2px rgba(139,92,246,.1); border-radius: 10px; padding: 11px 12px; font-size: 14px; color: var(--ink-900); }
+  .hits { margin-top: 8px; border: 1px solid var(--ink-100); border-radius: 10px; overflow: hidden; }
+  .hits .h { display: flex; align-items: center; gap: 12px; border-bottom: 1px solid var(--ink-50); padding: 11px 14px; }
+  .hits .h:last-child { border-bottom: 0; }
+  .hits .h.sel { background: var(--brand-50); box-shadow: inset 3px 0 0 var(--brand-600); }
+  .hits .nm { font-size: 13px; font-weight: 600; color: var(--ink-900); }
+  .hits .cd { font-family: var(--mono); font-size: 11px; color: var(--ink-600); }
+  .hits .ar { margin-left: auto; text-align: right; font-size: 12px; color: var(--ink-600); line-height: 1.35; }
+  .preview { margin-top: 18px; border: 1px solid var(--brand-200); background: #fff; border-radius: 10px; padding: 11px 14px; font-size: 13px; color: var(--ink-700); display: flex; gap: 10px; align-items: flex-start; }
+  .preview .ic { flex: none; width: 26px; height: 26px; border-radius: 7px; background: var(--brand-50); color: var(--brand-700); display: flex; align-items: center; justify-content: center; font-size: 14px; }
+  .preview b { color: var(--ink-900); }
+  .preview .sub { font-size: 12px; color: var(--ink-500); margin-top: 2px; }
+  .scope { margin-top: 12px; border-radius: 10px; background: var(--brand-50); padding: 10px 12px; font-size: 13px; color: var(--brand-700); }
+  .err { margin-top: 12px; border: 1px solid var(--danger-bd); background: var(--danger-bg); border-radius: 10px; padding: 10px 12px; font-size: 13px; font-weight: 500; color: var(--danger-text); }
+  .err .sub { margin-top: 3px; font-weight: 400; color: var(--ink-700); font-size: 12.5px; }
+
+  /* ── Trip history (trip-history.tsx) ─────────────────────────────────── */
+  .hist { list-style: none; margin: 0; padding: 0; }
+  .hist li { position: relative; display: flex; gap: 10px; padding-bottom: 12px; }
+  .hist li:last-child { padding-bottom: 0; }
+  .hist li .spine { position: absolute; left: 4px; top: 14px; bottom: 0; width: 1px; background: #e8e8ec; }
+  .hist li:last-child .spine { display: none; }
+  .hist .d { margin-top: 6px; width: 9px; height: 9px; border-radius: 50%; flex: none; }
+  .hist .sm { font-size: 12px; font-weight: 600; color: #111827; }
+  .hist .tm { font-size: 11px; color: #9ca3af; margin-left: 8px; }
+  .hist .who { font-size: 11px; color: #6b7280; }
+  .hist .obds { margin-top: 4px; display: flex; flex-wrap: wrap; gap: 4px; }
+  .hist .obds span { border-radius: 4px; background: #f4f4f6; padding: 1px 6px; font-size: 10.5px; color: #4b5563; }
+  .hist .flag { display: inline-block; margin-left: 6px; border-radius: 4px; background: var(--brand-50); color: var(--brand-700); border: 1px solid var(--brand-200); padding: 0 5px; font-size: 10px; font-weight: 700; vertical-align: 1px; }
+  .sys { display: inline-block; border-radius: 4px; background: var(--ink-50); border: 1px solid var(--ink-100); color: var(--ink-600); padding: 0 5px; font-size: 10px; font-weight: 700; margin-right: 4px; }
+
+  /* ── NTS sheet ───────────────────────────────────────────────────────── */
+  .xl { border-collapse: collapse; font-size: 12px; background: #fff; }
+  .xl th, .xl td { border: 1px solid #d4d4d8; padding: 5px 8px; white-space: nowrap; text-align: left; }
+  .xl th { background: #f4f4f5; font-weight: 700; color: #27272a; font-size: 11.5px; }
+  .xl td.r { text-align: right; }
+  .xl tr.hl td { background: #fefce8; }
+  .xl .rn { background: #f4f4f5; color: #71717a; text-align: center; font-size: 11px; }
+  .rep-bar { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; font-size: 13px; }
+  .fld { border: 1px solid var(--ink-200); border-radius: 8px; padding: 6px 10px; background: #fff; font-size: 13px; }
+</style>
+</head>
+<body>
+
+<div class="doc-head">
+  <h1>Floor · Past-day trip edits · Refresh stops · Ship-to on a trip bill</h1>
+  <p>Mockup for owner decisions D1–D8 (24 Oct 2026). Today is <b>Sat 24 Oct</b>; the past day is <b>Thu 22 Oct</b>. Static HTML, no data.</p>
+  <div class="doc-tabs" id="tabs">
+    <button class="on" data-s="s1"><span class="n">1</span>Past-day desk</button>
+    <button data-s="s2"><span class="n">2</span>Add band · find bill</button>
+    <button data-s="s3"><span class="n">3</span>Bill detail on a past day</button>
+    <button data-s="s4"><span class="n">4</span>Refresh stops</button>
+    <button data-s="s5"><span class="n">5</span>Ship-to on a trip bill</button>
+    <button data-s="s6"><span class="n">6</span>Refusals</button>
+    <button data-s="s7"><span class="n">7</span>Trip history</button>
+    <button data-s="s8"><span class="n">8</span>NTS Trips report</button>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════════
+     1 · PAST-DAY DESK
+     ════════════════════════════════════════════════════════════════════ -->
+<section class="screen on" id="s1">
+  <div class="note">
+    <b>D1.</b> History on 22 Oct now works like today. The trip header has its buttons again, bills can be ticked, the bottom bar shows, and Move works.
+    <span class="new">NEW</span> the violet chip <b>Past day · 22 Oct · trip edits allowed</b> sits next to the date stepper.
+    A new trip made here gets the number and date of <b>22 Oct</b> (<span class="mono">L-261022-05</span>).
+  </div>
+
+  <div class="frame">
+    <div class="ph1"><span class="gate"><i></i>Desk control on</span><span class="clock num">Sat, 24 Oct 2026 · 11:05</span></div>
+    <div class="ph2">
+      <div class="seg"><span class="on">All</span><span>Local</span><span>Upcountry</span><span>IGT</span><span>Cross</span></div>
+      <div class="search">Search OBD, SO, invoice, dealer…</div>
+    </div>
+    <div class="desk">
+      <!-- rail -->
+      <div class="rail">
+        <div class="rail-count num">5 trips · 30 bills</div>
+        <div class="pool"><div class="t">To plan <span style="font-weight:500;color:var(--t-ink3);font-size:12px">· today</span></div><div class="s num">41 bills · 6,180 L</div></div>
+
+        <div class="card">
+          <div class="l1"><span class="tchip">L-261022-01</span><span class="slot">10:00</span><span class="badge b-disp">Dispatched</span></div>
+          <div class="route">Varachha</div>
+          <div class="figs num">6 stops · 9 bills · 1,880 L</div>
+          <div class="drv">Mahesh Rathod</div>
+          <div class="tbar"><span class="s-done" style="flex-grow:9"></span></div>
+        </div>
+        <div class="card">
+          <div class="l1"><span class="tchip">L-261022-02</span><span class="slot">12:30</span><span class="badge b-ready">Ready</span></div>
+          <div class="route">Vesu <span class="plus">+1</span></div>
+          <div class="figs num">5 stops · 6 bills · 940 L</div>
+          <div class="drv">Kiran Solanki</div>
+          <div class="tbar"><span class="s-done" style="flex-grow:6"></span></div>
+        </div>
+        <div class="card sel">
+          <div class="l1"><span class="tchip">L-261022-03</span><span class="slot">15:00</span><span class="badge b-pick">Picking</span></div>
+          <div class="route">Adajan <span class="plus">+1</span></div>
+          <div class="figs num">5 stops · 8 bills · 1,240 L</div>
+          <div class="drv">Ramesh Patel</div>
+          <div class="tbar"><span class="s-done" style="flex-grow:5"></span><span class="s-chk" style="flex-grow:1"></span><span class="s-pick" style="flex-grow:1"></span><span class="s-wait" style="flex-grow:1"></span></div>
+        </div>
+        <div class="card">
+          <div class="l1"><span class="tchip">L-261022-04</span><span class="badge b-held">Held</span></div>
+          <div class="route">Katargam</div>
+          <div class="figs num">2 stops · 2 bills · 210 L</div>
+          <div class="drv"><span style="font-weight:600;color:var(--amber-text)">No driver yet</span></div>
+          <div class="tbar"><span class="s-done" style="flex-grow:1"></span><span class="s-held" style="flex-grow:1"></span></div>
+        </div>
+        <div class="card">
+          <div class="l1"><span class="tchip">U-261022-01</span><span class="slot">09:00</span><span class="badge b-disp">Dispatched</span></div>
+          <div class="route">Navsari <span class="plus">+2</span></div>
+          <div class="figs num">4 stops · 5 bills · 760 L</div>
+          <div class="drv">Suresh Vasava</div>
+          <div class="tbar"><span class="s-done" style="flex-grow:1"></span></div>
+        </div>
+      </div>
+
+      <!-- table column -->
+      <div class="col">
+        <div class="tabrow">
+          <span style="display:flex;align-items:center;gap:8px"><span class="tab on">Floor <span class="c">31</span></span><span class="waiting"><b>3</b> waiting</span></span>
+          <span class="tab">Tinting <span class="c">2</span></span>
+          <span class="tab">On hold <span class="c">4</span></span>
+          <span class="tab">Cancel &amp; CI <span class="c">1</span></span>
+          <span class="right">
+            <span class="pastchip"><i></i>Past day · 22 Oct · trip edits allowed</span>
+            <span style="display:flex;align-items:center;gap:8px"><span class="nav">‹</span><span class="hdate">Thu 22 Oct</span><span class="nav">›</span></span>
+            <span class="pivot"><span class="on">Flat</span><span>By route</span></span>
+            <span class="live-link">‹ Back to Live</span>
+          </span>
+        </div>
+
+        <div class="body">
+          <div class="th">
+            <div class="th-r1">
+              <span class="th-num">L-261022-03</span>
+              <span class="th-btns">
+                <span class="btn">Trip sheet</span>
+                <span class="btn">Send to billing</span>
+                <span class="pressed num">Shown to floor · 13:20</span>
+                <span class="btn sq">···</span>
+              </span>
+            </div>
+            <div class="th-route">Adajan <span class="plus">+1</span></div>
+            <div class="th-meta">
+              <span class="plate">GJ05-BX-4471</span><span class="dot">·</span><span style="color:#96969f">Tata 407</span><span class="dot">·</span><span>Nagadhiraj <span class="num" style="color:#96969f">#118</span></span>
+              <span style="margin-left:16px">Ramesh Patel</span><span class="dot">·</span><span class="num" style="color:#96969f">98250 41327</span>
+              <span><span class="ib">✎</span><span class="ib">🕒<span class="num" style="font-size:10.5px;font-weight:600;margin-left:3px">7</span></span></span>
+            </div>
+            <div class="th-bar">
+              <div class="tbar"><span class="s-done" style="flex-grow:5"></span><span class="s-chk" style="flex-grow:1"></span><span class="s-pick" style="flex-grow:1"></span><span class="s-wait" style="flex-grow:1"></span></div>
+              <div class="legend num"><span><i class="s-done"></i><b>5</b>Checked</span><span><i class="s-chk"></i><b>1</b>Needs check</span><span><i class="s-pick"></i><b>1</b>Picking</span><span><i class="s-wait"></i><b>1</b>Waiting</span></div>
+            </div>
+            <div class="stopsbar">
+              <span class="sum num">5 stops <span class="sep">·</span> 8 bills <span class="sep">·</span> 1,240 L <span class="sep">·</span> 1,612 kg</span>
+              <span class="acts"><span class="btn" style="font-weight:600;padding:0 12px 0 10px">＋ Add bills</span><span class="btn" style="font-weight:600;padding:0 12px 0 10px">↺ Re-delivery</span></span>
+            </div>
+          </div>
+
+          <div class="stops">
+            <div class="stop">
+              <div class="stop-h"><span class="seq">1</span><span class="nm">Om Sai Colour House</span><span class="meta num">Rander · 2 bills · 410 L</span></div>
+              <table class="ft">
+                <colgroup><col style="width:3%"><col style="width:14%"><col style="width:10%"><col style="width:7%"><col style="width:9%"><col style="width:12%"><col style="width:7%"><col style="width:12%"><col style="width:6%"><col style="width:20%"></colgroup>
+                <thead><tr><th class="n"><input type="checkbox"></th><th>OBD</th><th>Ship to</th><th>SO</th><th>Area</th><th>Due</th><th class="r">Vol / KG</th><th>Article tag</th><th class="r">Article</th><th>Status</th></tr></thead>
+                <tbody>
+                  <tr><td class="n"><input type="checkbox"></td><td><span class="obd">9109108742</span></td><td><span class="nm">Om Sai Colour House</span></td><td class="num">2203317702</td><td>Rander</td><td>Thu 22 Oct</td><td class="r num">220 L · 286</td><td>Weathercoat</td><td class="r num">14</td><td><span class="pill p-done">Done</span></td></tr>
+                  <tr><td class="n"><input type="checkbox"></td><td><span class="obd">9109108750</span></td><td><span class="nm">Om Sai Colour House</span></td><td class="num">2203317702</td><td>Rander</td><td>Thu 22 Oct</td><td class="r num">190 L · 247</td><td>Velvet Touch</td><td class="r num">11</td><td><span class="pill p-done">Done</span></td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="stop">
+              <div class="stop-h"><span class="seq">2</span><span class="nm">Shree Ganesh Paints</span><span class="meta num">Pal · 1 bill · 120 L</span></div>
+              <table class="ft">
+                <colgroup><col style="width:3%"><col style="width:14%"><col style="width:10%"><col style="width:7%"><col style="width:9%"><col style="width:12%"><col style="width:7%"><col style="width:12%"><col style="width:6%"><col style="width:20%"></colgroup>
+                <tbody>
+                  <tr class="sel"><td class="n"><input type="checkbox" checked></td><td><span class="obd">9109108811</span></td><td><span class="nm">Shree Ganesh Paints</span></td><td class="num">2203317745</td><td>Pal</td><td>Thu 22 Oct</td><td class="r num">120 L · 156</td><td>Promise</td><td class="r num">6</td><td><span class="pill p-chk">Needs check</span></td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="stop">
+              <div class="stop-h"><span class="seq">3</span><span class="nm">Patel Hardware &amp; Paints</span><span class="meta num">Adajan · 2 bills · 300 L</span></div>
+              <table class="ft">
+                <colgroup><col style="width:3%"><col style="width:14%"><col style="width:10%"><col style="width:7%"><col style="width:9%"><col style="width:12%"><col style="width:7%"><col style="width:12%"><col style="width:6%"><col style="width:20%"></colgroup>
+                <tbody>
+                  <tr class="sel"><td class="n"><input type="checkbox" checked></td><td><span class="obd">9109108833</span></td><td><span class="nm">Patel Hardware &amp; Paints</span></td><td class="num">2203317760</td><td>Adajan</td><td>Thu 22 Oct</td><td class="r num">160 L · 208</td><td>Aquatech</td><td class="r num">9</td><td><span class="pill p-pick">With picker</span></td></tr>
+                  <tr><td class="n"><input type="checkbox"></td><td><span class="obd">9109108840</span></td><td><span class="nm">Patel Hardware &amp; Paints</span></td><td class="num">2203317760</td><td>Adajan</td><td>Thu 22 Oct</td><td class="r num">140 L · 182</td><td>Weathercoat</td><td class="r num">7</td><td><span class="pill p-wait">Waiting</span></td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="stop">
+              <div class="stop-h"><span class="seq">4</span><span class="nm">Shah Paints Centre</span><span class="meta num">Adajan · 2 bills · 260 L</span></div>
+            </div>
+            <div class="stop">
+              <div class="stop-h"><span class="seq">5</span><span class="nm">Jalaram Paints</span><span class="meta num">Adajan · 1 bill · 150 L</span></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- bottom bar: inside a trip -->
+        <div class="bbar">
+          <div>
+            <div style="display:flex;align-items:center;gap:10px"><span class="ct num">2 selected</span><span class="clr">✕ Clear</span></div>
+            <div class="figs num"><span><b>280</b> L</span><span><b>364</b> kg</span><span><b>15</b> articles</span><span class="ctx">Adajan, Pal</span></div>
+          </div>
+          <div class="end"><span class="bp">Remove from trip</span><span class="bdiv"></span><span class="bs">···</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="cap">The same bar with bills ticked in the pool: “+ New trip” says the date it will get</div>
+  <div class="frame" style="width:960px">
+    <div class="bbar static">
+      <div>
+        <div style="display:flex;align-items:center;gap:10px"><span class="ct num">3 selected</span><span class="clr">✕ Clear</span></div>
+        <div class="figs num"><span><b>415</b> L</span><span><b>540</b> kg</span><span><b>21</b> articles</span><span class="ctx brand">New trip will be dated 22 Oct</span></div>
+      </div>
+      <div class="end"><span class="bp">+ New trip · 22 Oct</span><span class="bdiv"></span><span class="bs">···</span></div>
+    </div>
+  </div>
+  <div class="cap">··· menu on the trip header — the same three items as today</div>
+  <div style="width:230px;border:1px solid #e5e7eb;border-radius:8px;background:#fff;box-shadow:0 10px 20px -8px rgba(0,0,0,.2);overflow:hidden">
+    <div style="padding:8px 12px;font-size:12.5px;color:#374151">Take back from floor</div>
+    <div style="padding:8px 12px;font-size:12.5px;color:#b91c1c">Cancel trip</div>
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════════
+     2 · ADD BAND ON A PAST DAY
+     ════════════════════════════════════════════════════════════════════ -->
+<section class="screen" id="s2">
+  <div class="note">
+    <b>D1.</b> If you press <b>+ Add bills</b> on a 22 Oct trip, the pink band opens under that trip, the same as today. The list under it is <b>today's pool</b> (24 Oct), because a forgotten bill is usually there now.
+    <span class="new">NEW</span> <b>Find bill by number</b> covers a bill that is not in any list, for example one already <b>Dispatched</b> with no trip.
+    A bill that is already on another trip is refused, with the server's own words.
+  </div>
+
+  <div class="frame">
+    <div class="tabrow">
+      <span style="display:flex;align-items:center;gap:8px"><span class="tab on">Floor <span class="c">31</span></span><span class="waiting"><b>3</b> waiting</span></span>
+      <span class="tab">Tinting <span class="c">2</span></span><span class="tab">On hold <span class="c">4</span></span><span class="tab">Cancel &amp; CI <span class="c">1</span></span>
+      <span class="right"><span class="pastchip"><i></i>Past day · 22 Oct · trip edits allowed</span><span style="display:flex;align-items:center;gap:8px"><span class="nav">‹</span><span class="hdate">Thu 22 Oct</span><span class="nav">›</span></span><span class="live-link">‹ Back to Live</span></span>
+    </div>
+    <div style="position:relative;padding-bottom:92px">
+      <div class="th" style="padding-bottom:12px">
+        <div class="th-r1"><span class="th-num">L-261022-03</span></div>
+        <div class="th-route">Adajan <span class="plus">+1</span></div>
+        <div class="stopsbar" style="margin-top:12px"><span class="sum num">5 stops <span class="sep">·</span> 8 bills <span class="sep">·</span> 1,240 L <span class="sep">·</span> 1,612 kg</span></div>
+        <div style="padding:10px 0 0;font-size:12px;color:var(--ink-400)">… stops 1–5 as on tab 1 …</div>
+      </div>
+
+      <div class="band">
+        <span class="a">Adding bills to</span><span class="n">L-261022-03</span><span class="f num">Adajan +1 · 8 bills · 1,240 L</span>
+        <span style="font-size:12px;font-weight:600;color:#15773a">· 1 added <span style="border:1px solid #b6e6c8;background:#fff;border-radius:6px;padding:1px 8px;font-size:11.5px;color:#12622f;margin-left:4px">Undo</span></span>
+        <span class="done">Done</span>
+      </div>
+
+      <div class="finder">
+        <div class="lbl">Find bill by number <span style="font-weight:400;color:var(--ink-400)">— any day, any stage</span></div>
+        <div class="inrow"><div class="inp">9109112045</div></div>
+        <div class="hint">Type the full OBD, SO or invoice number.</div>
+
+        <div class="hit">
+          <input type="checkbox" checked>
+          <div>
+            <div><span class="mono" style="font-weight:600">9109112045</span> · <span class="who">Jalaram Paints</span> <span class="pill p-disp" style="margin-left:6px">🚚 Dispatched</span> <span class="tag skip" style="margin-left:4px">No trip</span></div>
+            <div class="sub num">SO 2203318011 · Adajan · 95 L · 124 kg · checked 22 Oct 14:02</div>
+          </div>
+          <span class="go" style="font-size:12px;color:var(--brand-700);font-weight:600">Will join stop 5 · Jalaram Paints</span>
+        </div>
+
+        <div class="hit bad">
+          <input type="checkbox" disabled>
+          <div>
+            <div><span class="mono" style="font-weight:600">9109111873</span> · <span class="who">Krishna Traders</span> <span class="pill p-done" style="margin-left:6px">Done</span> <span class="ttag">L-261024-02</span></div>
+            <div class="why">Already on L-261024-02 — remove it from that trip first.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="poolhead"><span class="t">Today's pool</span><span class="s num">Sat 24 Oct · 41 bills · 6,180 L</span></div>
+      <table class="ft">
+        <colgroup><col style="width:3%"><col style="width:14%"><col style="width:10%"><col style="width:7%"><col style="width:9%"><col style="width:12%"><col style="width:7%"><col style="width:12%"><col style="width:6%"><col style="width:20%"></colgroup>
+        <thead><tr><th class="n"><input type="checkbox"></th><th>OBD</th><th>Ship to</th><th>SO</th><th>Route</th><th>Due</th><th class="r">Vol / KG</th><th>Article tag</th><th class="r">Article</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr class="sel"><td class="n"><input type="checkbox" checked></td><td><span class="obd">9109111902</span></td><td><span class="nm">Shah Paints Centre</span></td><td class="num">2203317788</td><td>Adajan</td><td>Wed 21 Oct</td><td class="r num">60 L · 78</td><td>Promise</td><td class="r num">4</td><td><span class="pill p-done">Done</span></td></tr>
+          <tr><td class="n"><input type="checkbox"></td><td><span class="obd">9109112010</span></td><td><span class="nm">Bhagwati Colours</span></td><td class="num">2203318002</td><td>Vesu</td><td>Sat 24 Oct</td><td class="r num">180 L · 234</td><td>Weathercoat</td><td class="r num">10</td><td><span class="pill p-pick">With picker</span></td></tr>
+          <tr><td class="n"><input type="checkbox"></td><td><span class="obd">9109112033</span></td><td><span class="nm">Maruti Hardware</span></td><td class="num">2203318019</td><td>Varachha</td><td>Sat 24 Oct</td><td class="r num">75 L · 98</td><td>Velvet Touch</td><td class="r num">5</td><td><span class="pill p-wait">Waiting</span></td></tr>
+          <tr><td class="n"><input type="checkbox"></td><td><span class="obd">9109112038</span></td><td><span class="nm">Ambica Paint House</span></td><td class="num">2203318020</td><td>Katargam</td><td>Sat 24 Oct</td><td class="r num">240 L · 312</td><td>Aquatech</td><td class="r num">12</td><td><span class="pill p-done">Done</span></td></tr>
+        </tbody>
+      </table>
+
+      <div class="bbar">
+        <div>
+          <div style="display:flex;align-items:center;gap:10px"><span class="ct num">2 selected</span><span class="clr">✕ Clear</span></div>
+          <div class="figs num"><span><b>155</b> L</span><span><b>202</b> kg</span><span><b>8</b> articles</span><span class="ctx">Adajan</span></div>
+        </div>
+        <div class="end"><span class="bp">Add 2 bills to L-261022-03</span></div>
+      </div>
+    </div>
+  </div>
+  <div class="note" style="margin-top:14px">
+    <b>D6, no change.</b> If a late bill is <b>not done</b> (for example, Waiting), the 22 Oct trip comes back onto <b>today's</b> desk with an amber number chip, as carried trips do now.
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════════
+     3 · BILL DETAIL ON A PAST DAY
+     ════════════════════════════════════════════════════════════════════ -->
+<section class="screen" id="s3">
+  <div class="note">
+    <b>D1.</b> If you open a bill from a 22 Oct trip, the panel shows its action row again. <b>Ship-to</b> works. <b>Hold, Cancel, Release and Slot</b> stay grey, with one short reason line, because they change the bill <i>now</i>, not the old plan.
+    Today, History hides the whole action row (<span class="mono">detail-panel.tsx</span> <span class="mono">readOnly</span>).
+  </div>
+  <div class="frame" style="height:620px">
+    <div class="tabrow">
+      <span class="tab on">Floor <span class="c">31</span></span><span class="tab">Tinting <span class="c">2</span></span><span class="tab">On hold <span class="c">4</span></span>
+      <span class="right"><span class="pastchip"><i></i>Past day · 22 Oct · trip edits allowed</span><span class="hdate">Thu 22 Oct</span></span>
+    </div>
+    <div style="padding:16px 18px;color:#c0c0c8;font-size:22px;font-weight:700">Adajan +1</div>
+    <div class="scrim"></div>
+    <aside class="panel">
+      <div class="dp-h">
+        <div class="dp-l1">
+          <span class="dp-inv">2610054311</span><span class="dp-date num">22 Oct 2026 · 13:48</span>
+          <span style="margin-left:auto;display:flex;align-items:center;gap:8px">
+            <span class="slotchip" title="Past day — the slot changes the bill now">🕒 22-10 · 15:00 <span style="border-left:1px solid #e5e7eb;padding-left:6px">✎</span></span>
+            <span style="color:#9ca3af">✕</span>
+          </span>
+        </div>
+        <div class="dp-l2"><span class="o">9109108811</span><span class="dp-date num">21 Oct 2026 · 16:12</span></div>
+        <div class="dp-name">Shree Ganesh Paints <span class="code">600412</span></div>
+        <div class="dp-pills"><span class="pill p-chk" style="padding:4px 10px;font-size:10.5px">Needs check</span><span class="ttag" style="margin-left:0;font-size:10.5px;padding:2px 6px">L-261022-03 · stop 2</span></div>
+      </div>
+      <div class="dp-act">
+        <span class="ab pri">📍 Ship-to</span>
+        <span class="ab off" title="Past day — Hold changes the bill now">Hold</span>
+        <span class="ab off" title="Past day — Cancel changes the bill now">Cancel / Raise CI…</span>
+        <span class="ab off" title="Past day — Release changes the bill now">Release</span>
+      </div>
+      <div class="dp-why">Past day: Hold, Cancel, Release and Slot change this bill today. Use <b style="color:var(--brand-700)">Back to Live</b> for them.</div>
+      <div class="dp-tabs"><span class="on">Details</span><span>Items</span><span>Activity</span></div>
+      <dl class="kv num">
+        <dt>Ship to</dt><dd>Shree Ganesh Paints · Pal</dd>
+        <dt>Billed to</dt><dd>Shree Ganesh Paints</dd>
+        <dt>SO</dt><dd>2203317745</dd>
+        <dt>Slot</dt><dd>22 Oct · 15:00</dd>
+        <dt>Volume</dt><dd>120 L · 156 kg · 6 articles</dd>
+        <dt>Trip</dt><dd>L-261022-03 · Adajan +1 · stop 2</dd>
+      </dl>
+    </aside>
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════════
+     4 · REFRESH STOPS
+     ════════════════════════════════════════════════════════════════════ -->
+<section class="screen" id="s4">
+  <div class="note">
+    <b>D3.</b> <span class="new">NEW</span> <b>↻ Refresh stops (N)</b> on the trip header, shown only when N &gt; 0. N = stops whose shop, name, area or route no longer match master.
+    One press fixes every stop on the trip. A stop that would become the <b>same shop as another stop</b> is skipped and named. It is never merged.
+    Each out-of-date stop also gets a small amber <b>Out of date</b> tag.
+  </div>
+
+  <div class="row2">
+    <div>
+      <div class="cap">Before the press</div>
+      <div class="frame" style="width:620px">
+        <div class="th">
+          <div class="th-r1">
+            <span class="th-num">L-261022-02</span>
+            <span class="th-btns"><span class="btn refresh">↻ Refresh stops <span class="ct">3</span></span><span class="btn">Trip sheet</span><span class="btn sq">···</span></span>
+          </div>
+          <div class="th-route">Vesu <span class="plus">+1</span></div>
+          <div class="th-meta"><span class="plate">GJ05-AV-2208</span><span class="dot">·</span><span style="color:#96969f">Eicher Pro</span><span style="margin-left:16px">Kiran Solanki</span></div>
+          <div class="stopsbar"><span class="sum num">5 stops <span class="sep">·</span> 6 bills <span class="sep">·</span> 940 L</span></div>
+        </div>
+        <div class="stops">
+          <div class="stop"><div class="stop-h"><span class="seq">1</span><span class="nm">Rajhans Paint Mart</span><span class="meta num">Vesu · 2 bills · 330 L</span></div></div>
+          <div class="stop"><div class="stop-h"><span class="seq">2</span><span class="nm">(Unmatched)</span><span class="meta num">1 bill · 140 L</span><span class="tag stale">Out of date</span></div></div>
+          <div class="stop"><div class="stop-h"><span class="seq">3</span><span class="nm">Mahavir Hardware</span><span class="meta num">Rander · 1 bill · 180 L</span><span class="tag stale">Out of date</span></div></div>
+          <div class="stop"><div class="stop-h"><span class="seq">4</span><span class="nm">Shah Paints Centre</span><span class="meta num">Pal · 1 bill · 160 L</span></div></div>
+          <div class="stop"><div class="stop-h"><span class="seq">5</span><span class="nm">SHAH PAINTS CENTRE</span><span class="meta num">1 bill · 130 L</span><span class="tag stale">Out of date</span></div></div>
+        </div>
+      </div>
+      <div style="width:620px;font-size:12px;color:var(--ink-500);margin-top:8px">
+        Stop 2: added to master later as <b>Bhagwati Colours · Vesu</b>. Stop 3: master area changed <b>Rander → Adajan</b>. Stop 5: the SAP code now matches <b>Shah Paints Centre</b>, which is stop 4.
+      </div>
+    </div>
+
+    <div>
+      <div class="cap">After the press</div>
+      <div class="frame" style="width:620px">
+        <div class="th">
+          <div class="th-r1">
+            <span class="th-num">L-261022-02</span>
+            <span class="th-btns"><span class="btn refresh">↻ Refresh stops <span class="ct">1</span></span><span class="btn">Trip sheet</span><span class="btn sq">···</span></span>
+          </div>
+          <div class="th-route">Vesu <span class="plus">+1</span></div>
+          <div class="th-meta"><span class="plate">GJ05-AV-2208</span><span class="dot">·</span><span style="color:#96969f">Eicher Pro</span><span style="margin-left:16px">Kiran Solanki</span></div>
+          <div class="result mix"><span class="x">✕</span><b>2 fixed · 1 skipped:</b> Shah Paints Centre — another stop already has this shop.</div>
+          <div class="stopsbar" style="margin-top:12px"><span class="sum num">5 stops <span class="sep">·</span> 6 bills <span class="sep">·</span> 940 L</span></div>
+        </div>
+        <div class="stops">
+          <div class="stop"><div class="stop-h"><span class="seq">1</span><span class="nm">Rajhans Paint Mart</span><span class="meta num">Vesu · 2 bills · 330 L</span></div></div>
+          <div class="stop"><div class="stop-h"><span class="seq">2</span><span class="nm">Bhagwati Colours</span><span class="meta num">Vesu · 1 bill · 140 L</span><span class="tag fixed">✓ Fixed</span></div></div>
+          <div class="stop"><div class="stop-h"><span class="seq">3</span><span class="nm">Mahavir Hardware</span><span class="meta num">Adajan · 1 bill · 180 L</span><span class="tag fixed">✓ Fixed</span></div></div>
+          <div class="stop"><div class="stop-h"><span class="seq">4</span><span class="nm">Shah Paints Centre</span><span class="meta num">Pal · 1 bill · 160 L</span></div></div>
+          <div class="stop"><div class="stop-h"><span class="seq">5</span><span class="nm">SHAH PAINTS CENTRE</span><span class="meta num">1 bill · 130 L</span><span class="tag skip">Skipped · same shop as stop 4</span></div></div>
+        </div>
+      </div>
+      <div style="width:620px;font-size:12px;color:var(--ink-500);margin-top:8px">
+        To join stops 4 and 5, move the bill by hand: remove it, then add it again (it joins stop 4). Refresh never merges stops.
+      </div>
+    </div>
+  </div>
+
+  <div class="cap">Second skip reason — bills on one stop now point to different shops</div>
+  <div class="frame" style="width:620px;padding:0 18px 14px">
+    <div class="result mix" style="margin-top:14px"><span class="x">✕</span><b>0 fixed · 1 skipped:</b> Krishna Traders — bills on this stop now go to different shops.</div>
+  </div>
+
+  <div class="row2" style="margin-top:6px">
+    <div>
+      <div class="cap">N = 0 — the button is hidden</div>
+      <div class="frame" style="width:620px">
+        <div class="th" style="padding-bottom:14px">
+          <div class="th-r1"><span class="th-num">L-261022-03</span><span class="th-btns"><span class="btn">Trip sheet</span><span class="btn">Send to billing</span><span class="pressed num">Shown to floor · 13:20</span><span class="btn sq">···</span></span></div>
+          <div class="th-route">Adajan <span class="plus">+1</span></div>
+        </div>
+      </div>
+    </div>
+    <div>
+      <div class="cap">Dispatched trip — Refresh still offered (D3)</div>
+      <div class="frame" style="width:620px">
+        <div class="th" style="padding-bottom:14px">
+          <div class="th-r1"><span class="th-num">L-261022-01</span><span class="th-btns"><span class="btn refresh">↻ Refresh stops <span class="ct">1</span></span><span class="btn">Trip sheet</span></span></div>
+          <div class="th-route">Varachha</div>
+          <div class="th-meta"><span class="plate">GJ05-CT-9034</span><span class="dot">·</span><span style="color:#96969f">Tata Ace</span><span style="margin-left:16px">Mahesh Rathod</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════════
+     5 · SHIP-TO ON A TRIP BILL
+     ════════════════════════════════════════════════════════════════════ -->
+<section class="screen" id="s5">
+  <div class="note">
+    <b>D2.</b> Ship-to on a bill that is on a trip is no longer refused, on today's desk or a past day. The modal is the same.
+    <span class="new">NEW</span> a preview line says where the bill will go <b>on the same trip</b>: an existing stop, or a new one at the end. If the old stop is left empty, it closes and the stops renumber.
+  </div>
+
+  <div class="row2">
+    <div>
+      <div class="cap">A · joins an existing stop</div>
+      <div class="modal">
+        <div class="m-h"><span class="t">Change ship-to</span><span class="r">OBD 9109108811</span><span class="x">✕</span></div>
+        <div class="m-b">
+          <div class="cur">
+            <div style="min-width:0;flex:1">
+              <div class="k">Current ship-to</div>
+              <div class="v"><i></i>Shree Ganesh Paints</div>
+              <div class="s"><span class="codebx">600412</span> Pal · Local</div>
+            </div>
+            <span class="reset">Reset</span>
+          </div>
+          <div class="mtabs"><span class="on">Search dealer</span><span>Type name</span></div>
+          <div class="minp">patel</div>
+          <div class="hits">
+            <div class="h sel"><div><div class="nm">Patel Hardware &amp; Paints</div><span class="cd">600388</span></div><div class="ar">Adajan<br>Local</div></div>
+            <div class="h"><div><div class="nm">Patel Colour Centre</div><span class="cd">600917</span></div><div class="ar">Varachha<br>Local</div></div>
+            <div class="h"><div><div class="nm">Patel Brothers Paints</div><span class="cd">ORB-0142</span></div><div class="ar">Navsari<br>Upcountry</div></div>
+          </div>
+          <div class="preview">
+            <span class="ic">⇄</span>
+            <div><div>On trip <b class="mono">L-261022-03</b>: will move to <b>stop 3 · Patel Hardware &amp; Paints</b>.</div>
+            <div class="sub">Stop 2 (Shree Ganesh Paints) will have no bills left. It closes and the stops renumber.</div></div>
+          </div>
+          <div class="scope">Applies to <b>this bill only</b>.</div>
+        </div>
+        <div class="m-f"><span class="mb">Cancel</span><span class="mb conf">Save ship-to</span></div>
+      </div>
+    </div>
+
+    <div>
+      <div class="cap">B · makes a new stop</div>
+      <div class="modal" style="width:520px">
+        <div class="m-h"><span class="t">Change ship-to</span><span class="r">OBD 9109108742</span><span class="x">✕</span></div>
+        <div class="m-b">
+          <div class="cur"><div style="flex:1"><div class="k">Current ship-to</div><div class="v"><i></i>Om Sai Colour House</div><div class="s"><span class="codebx">600230</span> Rander · Local</div></div></div>
+          <div class="minp">jay ambe</div>
+          <div class="hits"><div class="h sel"><div><div class="nm">Jay Ambe Traders</div><span class="cd">600655</span></div><div class="ar">Adajan<br>Local</div></div></div>
+          <div class="preview">
+            <span class="ic">＋</span>
+            <div><div>On trip <b class="mono">L-261022-03</b>: will make <b>new stop 6 · Jay Ambe Traders</b>.</div>
+            <div class="sub">Stop 1 keeps its other bill.</div></div>
+          </div>
+        </div>
+        <div class="m-f"><span class="mb">Cancel</span><span class="mb conf">Save ship-to</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row2" style="margin-top:8px">
+    <div>
+      <div class="cap">Trip stops before save (A)</div>
+      <div class="frame" style="width:620px"><div class="stops" style="padding-top:12px">
+        <div class="stop"><div class="stop-h"><span class="seq">1</span><span class="nm">Om Sai Colour House</span><span class="meta num">Rander · 2 bills · 410 L</span></div></div>
+        <div class="stop"><div class="stop-h"><span class="seq">2</span><span class="nm">Shree Ganesh Paints</span><span class="meta num">Pal · 1 bill · 120 L</span><span class="tag gone">Will close</span></div></div>
+        <div class="stop"><div class="stop-h"><span class="seq">3</span><span class="nm">Patel Hardware &amp; Paints</span><span class="meta num">Adajan · 2 bills · 300 L</span></div></div>
+        <div class="stop"><div class="stop-h"><span class="seq">4</span><span class="nm">Shah Paints Centre</span><span class="meta num">Adajan · 2 bills · 260 L</span></div></div>
+        <div class="stop"><div class="stop-h"><span class="seq">5</span><span class="nm">Jalaram Paints</span><span class="meta num">Adajan · 1 bill · 150 L</span></div></div>
+      </div></div>
+    </div>
+    <div>
+      <div class="cap">Trip stops after save (A) — stop 2 gone, renumbered</div>
+      <div class="frame" style="width:620px"><div class="stops" style="padding-top:12px">
+        <div class="stop"><div class="stop-h"><span class="seq">1</span><span class="nm">Om Sai Colour House</span><span class="meta num">Rander · 2 bills · 410 L</span></div></div>
+        <div class="stop"><div class="stop-h"><span class="seq">2</span><span class="nm">Patel Hardware &amp; Paints</span><span class="meta num">Adajan · 3 bills · 420 L</span><span class="was">was 3</span><span class="tag new">+1 bill</span></div>
+          <table class="ft"><colgroup><col style="width:3%"><col style="width:16%"><col style="width:22%"><col style="width:13%"><col style="width:13%"><col style="width:13%"><col style="width:20%"></colgroup>
+            <tbody>
+              <tr><td class="n"><input type="checkbox"></td><td><span class="obd">9109108811</span></td><td><span class="nm">Patel Hardware &amp; Paints</span></td><td class="num">2203317745</td><td>Adajan</td><td class="r num">120 L · 156</td><td><span class="pill p-chk">Needs check</span></td></tr>
+            </tbody></table>
+        </div>
+        <div class="stop"><div class="stop-h"><span class="seq">3</span><span class="nm">Shah Paints Centre</span><span class="meta num">Adajan · 2 bills · 260 L</span><span class="was">was 4</span></div></div>
+        <div class="stop"><div class="stop-h"><span class="seq">4</span><span class="nm">Jalaram Paints</span><span class="meta num">Adajan · 1 bill · 150 L</span><span class="was">was 5</span></div></div>
+      </div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════════
+     6 · REFUSALS
+     ════════════════════════════════════════════════════════════════════ -->
+<section class="screen" id="s6">
+  <div class="note">
+    These refusals keep the look the app uses now: the red box inside the modal for ship-to, and a red line per bill for adds.
+    <b>D8</b> is <span class="new">NEW</span>. The other two refusals already exist in the add path, and their wording is copied from the code.
+  </div>
+
+  <div class="row2">
+    <div>
+      <div class="cap">D8 · ship-to on a bill split across two trips</div>
+      <div class="modal" style="width:600px">
+        <div class="m-h"><span class="t">Change ship-to</span><span class="r">OBD 9109107702</span><span class="x">✕</span></div>
+        <div class="m-b">
+          <div class="cur"><div style="flex:1"><div class="k">Current ship-to</div><div class="v"><i></i>Ambica Paint House</div><div class="s"><span class="codebx">600501</span> Katargam · Local</div></div></div>
+          <div class="err">
+            This bill is on two trips: <span class="mono">L-261022-03</span> (invoice 2610054290) and <span class="mono">L-261023-01</span> (invoice 2610054291).
+            <div class="sub">Ship-to cannot change while a bill is split across trips. Take one invoice off its trip first.</div>
+          </div>
+        </div>
+        <div class="m-f"><span class="mb">Close</span><span class="mb dis">Save ship-to</span></div>
+      </div>
+    </div>
+
+    <div>
+      <div class="cap">Add to trip · challan-linked bill (existing rule)</div>
+      <div class="frame" style="width:600px;padding-bottom:4px">
+        <div class="band"><span class="a">Adding bills to</span><span class="n">L-261022-03</span><span class="f num">Adajan +1 · 8 bills · 1,240 L</span><span class="done">Done</span></div>
+        <div class="finder">
+          <div class="lbl">Find bill by number</div>
+          <div class="inrow"><div class="inp">9109110455</div></div>
+          <div class="hit bad"><input type="checkbox" disabled><div>
+            <div><span class="mono" style="font-weight:600">9109110455</span> · <span class="who">Sai Krupa Enterprise</span> <span class="tag" style="background:#faf5ff;color:#7e22ce;margin-left:6px">CHALLAN</span></div>
+            <div class="why">9109110455 is billed against a challan order — its goods already went out on the challan. It never goes on a trip.</div>
+          </div></div>
+        </div>
+      </div>
+
+      <div class="cap">Add to trip · held invoice of a split bill (existing rule)</div>
+      <div class="frame" style="width:600px;padding:12px 16px">
+        <div style="font-size:13px;font-weight:600;color:var(--ink-900)">Added 1 of 2 invoices to <span class="mono">L-261022-03</span></div>
+        <div class="err" style="margin-top:8px">2610054402 is on hold — release it first
+          <div class="sub">OBD 9109109120 · invoice 2 of 2. The other invoice (2610054401) is on the trip.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════════
+     7 · TRIP HISTORY
+     ════════════════════════════════════════════════════════════════════ -->
+<section class="screen" id="s7">
+  <div class="note">
+    The clock on the trip header opens this list in place, the same as today. <span class="new">NEW</span> rows:
+    a <b>past-day edit</b> flag on adds and removes made on a past day; <b>Ship-to changed</b>; and <b>Stops refreshed</b>, both from the button and from master (written by <b>System</b> when Auto-Import or a customer save backfills the shop).
+  </div>
+  <div class="frame" style="width:640px">
+    <div class="th">
+      <div class="th-r1"><span class="th-num">L-261022-03</span><span class="th-btns"><span class="btn">Trip sheet</span><span class="btn sq">···</span></span></div>
+      <div class="th-route">Adajan <span class="plus">+1</span></div>
+      <div class="th-meta"><span class="plate">GJ05-BX-4471</span><span class="dot">·</span><span style="color:#96969f">Tata 407</span><span style="margin-left:16px">Ramesh Patel</span><span><span class="ib">✎</span><span class="ib on">🕒<span class="num" style="font-size:10.5px;font-weight:600;margin-left:3px">7</span></span></span></div>
+      <div style="margin-top:14px;border-top:1px solid #f0f0f0;padding:12px 0 18px">
+        <ol class="hist">
+          <li><span class="spine"></span><span class="d" style="background:#94a3b8"></span><div><div><span class="sm">Trip created</span><span class="tm num">22 Oct, 9:12 am</span></div><div class="who">Priya Desai</div></div></li>
+          <li><span class="spine"></span><span class="d" style="background:#2563eb"></span><div><div><span class="sm">Added 7 bills</span><span class="tm num">22 Oct, 9:40 am</span></div><div class="who">Priya Desai</div><div class="obds num"><span>9109108742</span><span>9109108750</span><span>9109108811</span><span>9109108833</span><span>+3</span></div></div></li>
+          <li><span class="spine"></span><span class="d" style="background:#b45309"></span><div><div><span class="sm">Vehicle GJ05-BX-4471 · Nagadhiraj</span><span class="tm num">22 Oct, 11:05 am</span></div><div class="who">Priya Desai</div></div></li>
+          <li><span class="spine"></span><span class="d" style="background:#2563eb"></span><div><div><span class="sm">Added 1 bill</span><span class="flag">past-day edit</span><span class="tm num">24 Oct, 10:41 am</span></div><div class="who">Priya Desai</div><div class="obds num"><span>9109112045</span></div></div></li>
+          <li><span class="spine"></span><span class="d" style="background:#7C3AED"></span><div><div><span class="sm">Ship-to changed: 9109108811 → Patel Hardware &amp; Paints · stop 2 → stop 3</span><span class="flag">past-day edit</span><span class="tm num">24 Oct, 10:47 am</span></div><div class="who">Priya Desai</div><div style="font-size:11px;color:#6b7280">Stop 2 (Shree Ganesh Paints) closed · stops renumbered</div></div></li>
+          <li><span class="spine"></span><span class="d" style="background:#0d9488"></span><div><div><span class="sm">Stops refreshed: 2 fixed · 1 skipped (Shah Paints Centre)</span><span class="tm num">24 Oct, 10:52 am</span></div><div class="who">Priya Desai · Refresh stops button</div></div></li>
+          <li><span class="spine"></span><span class="d" style="background:#0d9488"></span><div><div><span class="sm">Stop refreshed from master: (Unmatched) → Bhagwati Colours · Vesu</span><span class="tm num">24 Oct, 11:30 am</span></div><div class="who"><span class="sys">SYSTEM</span>Auto-Import · customer backfill</div></div></li>
+        </ol>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════════
+     8 · NTS TRIPS REPORT
+     ════════════════════════════════════════════════════════════════════ -->
+<section class="screen" id="s8">
+  <div class="note">
+    <b>D7.</b> NTS Trips lists a trip by its <b>trip date</b>, not the day it was entered.
+    <span class="mono">L-261022-05</span> was made on 24 Oct for 22 Oct, so it now shows under <b>22-10-2026</b>.
+    Dispatch Time stays the time it was entered, and Remarks says when that was. This is the .xlsx sheet (17 columns; the first 10 and Remarks are shown).
+  </div>
+  <div class="rep-bar"><span style="font-weight:700">NTS Trips</span><span class="fld">From 22-10-2026</span><span class="fld">To 22-10-2026</span><span class="fld">All delivery types</span><span class="mb conf" style="height:32px;font-size:13px">Download .xlsx</span></div>
+  <table class="xl num">
+    <thead><tr><th class="rn"></th><th>Trip No</th><th>Month</th><th>Total Dealer</th><th>Dispatch Date</th><th>Dispatch Time</th><th>Place</th><th>Ltr</th><th>Total KG</th><th>Vehicle No.</th><th>Driver Name</th><th>…</th><th>Remarks</th></tr></thead>
+    <tbody>
+      <tr><td class="rn">2</td><td>L-261022-01</td><td>Oct-26</td><td class="r">6</td><td>22-10-2026</td><td>09:48</td><td>Varachha, Sarthana, Kapodra</td><td class="r">1,880</td><td class="r">2,444</td><td>GJ05-CT-9034</td><td>Mahesh Rathod</td><td>…</td><td></td></tr>
+      <tr><td class="rn">3</td><td>L-261022-02</td><td>Oct-26</td><td class="r">5</td><td>22-10-2026</td><td>10:15</td><td>Vesu, Pal</td><td class="r">940</td><td class="r">1,222</td><td>GJ05-AV-2208</td><td>Kiran Solanki</td><td>…</td><td></td></tr>
+      <tr><td class="rn">4</td><td>L-261022-03</td><td>Oct-26</td><td class="r">5</td><td>22-10-2026</td><td>09:12</td><td>Adajan, Rander, Pal</td><td class="r">1,240</td><td class="r">1,612</td><td>GJ05-BX-4471</td><td>Ramesh Patel</td><td>…</td><td></td></tr>
+      <tr class="hl"><td class="rn">5</td><td>L-261022-05</td><td>Oct-26</td><td class="r">2</td><td>22-10-2026</td><td>10:12</td><td>Katargam</td><td class="r">315</td><td class="r">410</td><td>GJ05-BZ-1187</td><td>Dinesh Chauhan</td><td>…</td><td>Entered 24-10-2026 10:12</td></tr>
+    </tbody>
+  </table>
+  <div class="cap" style="margin-top:22px">Before D7, the same trip appeared under the day it was entered</div>
+  <table class="xl num">
+    <thead><tr><th class="rn"></th><th>Trip No</th><th>Dispatch Date</th><th>Dispatch Time</th><th>Place</th></tr></thead>
+    <tbody><tr><td class="rn">7</td><td>L-261022-05</td><td style="color:#be123c;font-weight:700">24-10-2026</td><td>10:12</td><td>Katargam</td></tr></tbody>
+  </table>
+</section>
+
+<script>
+  (function () {
+    var tabs = document.querySelectorAll('#tabs button');
+    tabs.forEach(function (b) {
+      b.addEventListener('click', function () {
+        tabs.forEach(function (x) { x.classList.toggle('on', x === b); });
+        document.querySelectorAll('.screen').forEach(function (s) { s.classList.toggle('on', s.id === b.dataset.s); });
+        window.scrollTo(0, 0);
+      });
+    });
+  })();
+</script>
+</body>
+</html>
