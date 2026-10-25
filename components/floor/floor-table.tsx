@@ -769,7 +769,9 @@ export function FloorTable({
   //   8  Vol / KG
   //   9  Article tag  (SAP's plan — header was "Article" until 2026-10-06)
   //  10  Article      (2026-10-06 — the supervisor's article no.)
-  //  11  DC       only when `dcCol` (= `hasExtra`) — 2026-10-09
+  //  11  DC       only when `dcCol` — 2026-10-09; `showDc` when the caller
+  //               passes it, else `hasExtra` or any row with a DC / copy
+  //               (2026-10-20). Every width arm tests it (2026-10-25).
   //  12  Status
   //
   // A `{cond && <td>}` that is false renders NOTHING — it does not leave a
@@ -840,17 +842,30 @@ export function FloorTable({
   //   interactive, no extra  [3,14,10,7,9,12,7,12,6,20]   → [3,14,10,7,9,12,7,10,6,3,19]
   //   read-only, no extra    [15,11,8,10,13,8,12,6,17]    → [15,11,8,10,12,8,10,6,3,17]
   // Not on Hold / Cancelled (their own tables; owner → ROADMAP).
+  //
+  // ── 2026-10-25 — EVERY ARM TESTS `dcCol` (fix) ───────────────────────────
+  // `showDc` (step 7A) can turn DC OFF on an arm that has the third slot — the
+  // trip panel's stops pass `showDc={tripShowDc}` and keep Invoice. Those arms'
+  // widths used to carry the DC entry unconditionally, so the row drew one cell
+  // fewer than the colgroup: Status fell into DC's 3% and clipped, and Status's
+  // own slot stood empty at the right edge. With DC off, its 3% goes to Status.
   const dcCol = showDc ?? (hasExtra || rowsHaveDc(rows) || rowsHaveDc(upcoming));
   const widths = shipToBlock
-    ? [16, 14, 7, 8, 12, 10, 8, 6, 3, 16] //   OBD INV SO Area Due V/KG Tag Art DC Status = 100
+    ? dcCol
+      ? [16, 14, 7, 8, 12, 10, 8, 6, 3, 16] //   OBD INV SO Area Due V/KG Tag Art DC Status = 100
+      : [16, 14, 7, 8, 12, 10, 8, 6, 19] //      OBD INV SO Area Due V/KG Tag Art Status    = 100
     : interactive
     ? hasExtra
-      ? [3, 12, 9, 7, 6, 9, 10, 7, 10, 6, 3, 18] // ☐ OBD INV Ship SO Rt Due V/KG Tag Art DC Status = 100
+      ? dcCol
+        ? [3, 12, 9, 7, 6, 9, 10, 7, 10, 6, 3, 18] // ☐ OBD INV Ship SO Rt Due V/KG Tag Art DC Status = 100
+        : [3, 12, 9, 7, 6, 9, 10, 7, 10, 6, 21] //    ☐ OBD INV Ship SO Rt Due V/KG Tag Art Status    = 100
       : dcCol
         ? [3, 14, 10, 7, 9, 12, 7, 10, 6, 3, 19] // ☐ OBD Ship SO Rt Due V/KG Tag Art DC Status = 100
         : [3, 14, 10, 7, 9, 12, 7, 12, 6, 20] //   ☐ OBD Ship SO Rt Due V/KG Tag Art Status = 100
     : hasExtra
-      ? [13, 10, 8, 7, 9, 10, 7, 10, 6, 3, 17] //  OBD INV Ship SO Rt Due V/KG Tag Art DC Status = 100
+      ? dcCol
+        ? [13, 10, 8, 7, 9, 10, 7, 10, 6, 3, 17] // OBD INV Ship SO Rt Due V/KG Tag Art DC Status = 100
+        : [13, 10, 8, 7, 9, 10, 7, 10, 6, 20] //    OBD INV Ship SO Rt Due V/KG Tag Art Status    = 100
       : dcCol
         ? [15, 11, 8, 10, 12, 8, 10, 6, 3, 17] //  OBD Ship SO Rt Due V/KG Tag Art DC Status = 100
         : [15, 11, 8, 10, 13, 8, 12, 6, 17]; //    OBD Ship SO Rt Due V/KG Tag Art Status   = 100
