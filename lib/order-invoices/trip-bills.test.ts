@@ -7,7 +7,7 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { foreignRowIds, invoiceLabel, planAddRows, planRemoveRows, type TripBillRow } from "./trip-bills";
+import { foreignRowIds, invoiceLabel, moveRefusals, planAddRows, planRemoveRows, type TripBillRow } from "./trip-bills";
 
 const OBD = "9109951956";
 const KEY = "C:1";
@@ -167,5 +167,29 @@ test("split load: rows WITHOUT loadRootId keep every wording byte for byte (null
     assert.deepEqual(planAddRows(unsplit(OFF).map((r) => ({ ...r, ...extra })), "all", 668, KEY, OBD), { attach: [500], here: [], refused: [] });
     const split = r18648([OFF, ON_605, OFF, OFF]).map((r) => ({ ...r, ...extra }));
     assert.deepEqual(planAddRows(split, "all", 668, KEY, OBD).attach, [17010, 36799, 36800]);
+  }
+});
+
+// ── Split load, Phase 4 batch 1 (2026-10-25): a MOVE is a join too ──────────
+
+test("move: a part moved onto the trip holding another part of the invoice is refused — that part only", () => {
+  // I536233980-shaped: part 1 on 605, part 2 on 668; move part 1 from 605 to 668.
+  const rows = loadRows([ON_605, ON_668, OFF]);
+  const detach = planRemoveRows(rows, [17010], 605, OBD).detach;
+  assert.deepEqual(detach, [17010]);
+  assert.deepEqual(moveRefusals(rows, detach, 668, OBD), {
+    move: [],
+    refused: [{ rowId: 17010, invoiceNo: "I536230716", error: "I536230716 part 1 of 3 — part 2 of the same invoice is already on this trip" }],
+  });
+  // Onto a trip with no other part → it moves.
+  assert.deepEqual(moveRefusals(loadRows([ON_605, OFF, OFF]), [17010], 668, OBD), { move: [17010], refused: [] });
+});
+
+test("move: unsplit and Add-invoices rows always move, as before", () => {
+  for (const extra of [{}, { loadRootId: null }]) {
+    const u = unsplit(ON_605).map((r) => ({ ...r, ...extra }));
+    assert.deepEqual(moveRefusals(u, [500], 668, OBD), { move: [500], refused: [] });
+    const split = r18648([ON_605, ON_668, ON_605, OFF]).map((r) => ({ ...r, ...extra }));
+    assert.deepEqual(moveRefusals(split, [17010, 36799], 668, OBD), { move: [17010, 36799], refused: [] });
   }
 });

@@ -20,7 +20,7 @@
 // An OBD absent from the map is not split: callers use the OBD's own totals.
 
 import { prisma } from "../prisma";
-import { buildInvoiceRows, type FloorInvoiceRow } from "../floor/invoice-rows";
+import { buildInvoiceRows, hasLoadGroup, loadRowArticles, type FloorInvoiceRow } from "../floor/invoice-rows";
 import { learnedKgPerUnit } from "./kg-per-unit";
 
 /**
@@ -98,4 +98,42 @@ export async function loadSplitInvoiceRows(
     if (built.length > 0) map.set(id, built);
   }
   return map;
+}
+
+/**
+ * SPLIT LOAD (Phase 4 batch 1, 2026-10-25) — orderId → (row id → that row's
+ * share of SAP's articles), for the OBDs among `orders` whose rows (from
+ * loadSplitInvoiceRows) carry a LOAD GROUP. The rule is the pure
+ * loadRowArticles (lib/floor/invoice-rows.ts). No load group among them → no
+ * read at all, and an empty map: every other bill keeps its own count.
+ * `totalArticleByOrder` = each OBD's querySnapshot.totalArticle.
+ */
+export async function loadPartArticles(
+  orders: ReadonlyArray<{ id: number; obdNumber: string }>,
+  splitRows: ReadonlyMap<number, FloorInvoiceRow[]>,
+  totalArticleByOrder: ReadonlyMap<number, number | null>,
+): Promise<Map<number, Map<number, number>>> {
+  const out = new Map<number, Map<number, number>>();
+  const load = Array.from(new Map(orders.map((o) => [o.id, o])).values()).filter((o) => hasLoadGroup(splitRows.get(o.id)));
+  if (load.length === 0) return out;
+  const rows = await prisma.order_invoices.findMany({
+    where: { orderId: { in: load.map((o) => o.id) } },
+    select: { id: true, orderId: true, seq: true, lines: { select: { rawLineItemId: true, qty: true } } },
+  });
+  // ACTIVE lines only, as loadSplitInvoiceRows reads them.
+  const lines = await prisma.import_raw_line_items.findMany({
+    where: { obdNumber: { in: load.map((o) => o.obdNumber) }, lineStatus: "active" },
+    select: { id: true, obdNumber: true, unitQty: true, article: true },
+  });
+  for (const o of load) {
+    const shares = loadRowArticles({
+      rows: rows.filter((r) => r.orderId === o.id),
+      activeLines: lines
+        .filter((l) => l.obdNumber === o.obdNumber)
+        .map((l) => ({ rawLineItemId: l.id, unitQty: l.unitQty, article: l.article })),
+      totalArticle: totalArticleByOrder.get(o.id) ?? null,
+    });
+    if (shares.size > 0) out.set(o.id, shares);
+  }
+  return out;
 }

@@ -42,6 +42,8 @@
 
 import { prisma } from "@/lib/prisma";
 import { onStopsWhere, placeOnTrips, stopRowsSelect } from "@/lib/order-invoices/trip-read";
+import { loadSplitInvoiceRows } from "@/lib/order-invoices/invoice-load";
+import { hasLoadGroup, placeLoad } from "@/lib/floor/invoice-rows";
 import { isGiftBill, loadKg, loadLitres } from "@/lib/orders/gift";
 import { effectiveCustomerId } from "@/lib/trips/drop-key";
 import { TRIP_CANCELLED } from "@/lib/trips/live-trips";
@@ -213,6 +215,14 @@ export async function getNtsTripsRows(params: NtsTripsParams): Promise<NtsTripRo
     ),
   );
   const billToAreaByCode = await loadBillToAreas(billToByObd);
+  // Split load (Phase 4 batch 1, 2026-10-25): a bill whose truck PARTS ride
+  // different trips adds only the part on THIS trip (placeLoad). Every other
+  // bill — Add invoices included — keeps its whole litres / kg. Index-only and
+  // empty when no bill here is split.
+  const splitRows = await loadSplitInvoiceRows(
+    orders,
+    new Map(orders.map((o) => [o.id, snapByOrder.get(o.id)?.totalWeight ?? null] as const)),
+  );
 
   // ── 4. Typed ship-to names for free-text redirects ───────────────────────
   const freeTextSos = Array.from(
@@ -265,7 +275,10 @@ export async function getNtsTripsRows(params: NtsTripsParams): Promise<NtsTripRo
     acc.stops.add(o.tripDropId);
 
     const gift = isGiftBill(o.materialType);
-    const { kg, litres } = billQuantities(snapByOrder.get(o.id), o);
+    const whole = billQuantities(snapByOrder.get(o.id), o);
+    const loadRows = splitRows.get(o.id);
+    const part = loadRows && hasLoadGroup(loadRows) ? placeLoad(loadRows, (d) => d !== null && tripIdByDrop.get(d) === tripId) : null;
+    const { kg, litres } = part ? { kg: part.kg, litres: part.litres } : whole;
     acc.litres += loadLitres(litres, gift);
     acc.kg += loadKg(kg, gift) ?? 0;
 

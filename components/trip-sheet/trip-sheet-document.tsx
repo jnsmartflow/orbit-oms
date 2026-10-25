@@ -2,6 +2,7 @@ import type { CSSProperties } from "react";
 import { smartTitleCase } from "@/lib/mail-orders/utils";
 import { ORBIT_SHEET_LOGO_DATA_URI } from "@/lib/trip-sheet/logo-data-uri";
 import type { TripSheet, TripSheetBill } from "@/lib/trip-sheet/types";
+import { articleShareText } from "@/lib/floor/invoice-rows";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // OrbitTripSheetDocument — the A4 ORBIT trip sheet (2026-10-09). PURE and
@@ -191,7 +192,7 @@ function BillRow({ bill, stopNo, stopName, area, first }: {
         </div>
       </td>
       <td style={{ ...tdStyle, ...stopRule, textAlign: "right", color: "#475569", fontVariantNumeric: "tabular-nums" }}>
-        {fmt(bill.articles)}
+        {bill.articleSource === "part" ? articleShareText(bill.articles) : fmt(bill.articles)}
       </td>
       <td style={{ ...tdStyle, ...stopRule, textAlign: "right", color: qtyColour, fontVariantNumeric: "tabular-nums" }}>
         {fmt(bill.litres)}
@@ -324,7 +325,7 @@ export function OrbitTripSheetDocument({ sheet, printAreaId, compact = false }: 
                   Total &middot; {totals.stops} {totals.stops === 1 ? "stop" : "stops"} &middot; {totals.bills}{" "}
                   {totals.bills === 1 ? "bill" : "bills"}
                 </td>
-                <td style={{ ...tfStyle, color: "#475569" }}>{fmt(totals.articles)}</td>
+                <td style={{ ...tfStyle, color: "#475569" }}>{Number.isInteger(totals.articles) ? fmt(totals.articles) : articleShareText(totals.articles)}</td>
                 <td style={tfStyle}>{fmt(totals.litres)}</td>
                 <td style={{ ...tfStyle, paddingRight: 24 }}>
                   {fmt(totals.kg)}

@@ -49,5 +49,8 @@ export function summariseStops(stops: TripSheetStop[]): SheetSummary {
       }
     }
   });
+  // A split-load part's share is one decimal (lib/floor/invoice-rows.ts
+  // loadRowArticles) — keep the sum to one decimal too. Whole counts are unchanged.
+  totals.articles = Math.round(totals.articles * 10) / 10;
   return { stops, totals, captionAreas, soNames };
 }

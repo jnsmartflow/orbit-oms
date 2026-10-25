@@ -2,7 +2,9 @@
 //
 // The rows behind the FREIGHT REPORT (2026-10-04, Smart Flow) — the MIS sheet
 // in the NTS "Trip Detail Report" layout. ONE row per bill (OBD), never
-// repeated. Read by app/api/reports/freight-report/route.ts and nothing else.
+// repeated — except a SPLIT LOAD (one invoice on several trucks, v27.76): one
+// FLOOR row per truck it rides (step 7, 2026-10-25).
+// Read by app/api/reports/freight-report/route.ts and nothing else.
 //
 // 🔴 READ-ONLY. SELECTs only, sequential awaits, never prisma.$transaction
 // (CORE §3). Every read is batched — no per-bill query loop.
@@ -46,6 +48,8 @@ import { CANCEL_REASON_LABELS } from "@/lib/picking/cancel-reasons";
 import type { PickDeleteKind } from "@/lib/billing/pick-delete-types";
 import { parseReportDate } from "@/lib/reports/trip-detail-data";
 import { obdStopIds, onStopsWhere } from "@/lib/order-invoices/trip-read";
+import { loadPartArticles, loadSplitInvoiceRows } from "@/lib/order-invoices/invoice-load";
+import { hasLoadGroup, loadPlaceArticles, loadTripsOf, placeLoad } from "@/lib/floor/invoice-rows";
 import { hhmmss } from "@/lib/reports/trip-detail-old-workbook";
 import {
   billQuantities,
@@ -334,6 +338,23 @@ export async function getFreightReportRows(params: FreightReportParams): Promise
   );
   const billToAreaByCode = await loadBillToAreas(billToByObd);
 
+  // ── 7. SPLIT LOAD (Phase 4 batch 1, 2026-10-25) ──────────────────────────
+  // One invoice whose truck PARTS ride different trucks is ONE ROW PER TRUCK:
+  // each part on its own trip, with that trip's vehicle and that part's
+  // litres / kg (placeLoad) and share of SAP's articles (loadPartArticles).
+  // Each truck reports on its OWN dispatch day (owner, 2026-10-25). Every other
+  // bill — unsplit and Add invoices alike — stays one row at obdStopIds. The
+  // first read is index-only and finds nothing when no Floor bill is split.
+  const splitRows = await loadSplitInvoiceRows(
+    floorOrders,
+    new Map(floorOrders.map((o) => [o.id, snapByOrder.get(o.id)?.totalWeight ?? null] as const)),
+  );
+  const partArticles = await loadPartArticles(
+    floorOrders,
+    splitRows,
+    new Map(floorOrders.map((o) => [o.id, snapByOrder.get(o.id)?.totalArticle ?? null] as const)),
+  );
+
   // ── Assemble ─────────────────────────────────────────────────────────────
   type Built = FreightReportRow & {
     /** Whole-trip totals key — "F:<id>" / "T:<id>"; null for a word row. */
@@ -348,172 +369,190 @@ export async function getFreightReportRows(params: FreightReportParams): Promise
   const built: Built[] = [];
 
   for (const o of orders) {
-    let kind: FreightRowKind;
-    let tripNo = "0";
-    let dispatch: { day: Date; time: string | null };
-    let vehicleNo: string | null = null;
-    let mobile: string | null = null;
-    let driverName: string | null = null;
-    let transporter: string | null = null;
-    let vehicleModel: string | null = null;
-    let diesel: number | null = null;
-    let entryBy: string | null = null;
-    let entryAt: Date | null = null;
-    let tripKey: string | null = null;
-    let stopKey: string | null = null;
-    let tripRoute: string | null = null;
-    let tripType: { id: number; name: string } | null = null;
+    // The FLOOR stops this bill gives a row for: its obdStopIds stop, or — a
+    // load-split bill — each period trip its parts ride (rowIds = that part).
+    const loadRows = splitRows.get(o.id);
+    const floorStops: Array<{ stop: number | null; rowIds: number[] | null }> =
+      o.workflowStage !== STAGE_CANCELLED && !freightTripIdByOrder.has(o.id) && loadRows && hasLoadGroup(loadRows)
+        ? loadTripsOf(loadRows, (d) => dropById.get(d)?.tripId).map((p) => ({ stop: p.dropId, rowIds: p.rowIds }))
+        : [{ stop: stopByOrder.get(o.id) ?? null, rowIds: null }];
+    for (const place of floorStops) {
+      let kind: FreightRowKind;
+      let tripNo = "0";
+      let dispatch: { day: Date; time: string | null };
+      let vehicleNo: string | null = null;
+      let mobile: string | null = null;
+      let driverName: string | null = null;
+      let transporter: string | null = null;
+      let vehicleModel: string | null = null;
+      let diesel: number | null = null;
+      let entryBy: string | null = null;
+      let entryAt: Date | null = null;
+      let tripKey: string | null = null;
+      let stopKey: string | null = null;
+      let tripRoute: string | null = null;
+      let tripType: { id: number; name: string } | null = null;
 
-    if (o.workflowStage === STAGE_CANCELLED) {
-      // ── Kinds 1–3: a word row, dated by its own event ─────────────────────
-      const ci = cisByOrder.get(o.id)?.[0];
-      const del = deleteByOrder.get(o.id);
-      const log = latestCancelLog.get(o.id);
-      let at: Date | null = null;
-      if (ci) {
-        kind = "ci";
-        at = ci.submittedAt ?? ci.createdAt;
-        entryBy = blank(ci.supervisor.name);
-      } else if (del) {
-        kind = "pick_deleted";
-        at = del.decidedAt;
-        entryBy = blank(del.decidedBy.name);
-      } else if (log && parseCancelNote(log.note).reason === CANCEL_REASON_LABELS.pick_delete) {
-        kind = "pick_deleted";
-        at = log.createdAt;
-        entryBy = blank(log.changedBy.name);
-      } else if (log) {
-        kind = "cancel";
-        at = log.createdAt;
-        entryBy = blank(log.changedBy.name);
-      } else {
-        continue; // cancelled with no record of when — no date, not reportable
-      }
-      dispatch = istDayTime(at);
-      entryAt = at;
-      const word = kind === "ci" ? "CI" : kind === "pick_deleted" ? "PICK DELETED" : "CANCEL";
-      vehicleNo = word;
-      driverName = word;
-      transporter = word;
-      vehicleModel = word;
-    } else if (freightTripIdByOrder.has(o.id)) {
-      // ── Kind 4: FREIGHT ───────────────────────────────────────────────────
-      const t = freightTripById.get(freightTripIdByOrder.get(o.id)!)!;
-      kind = "freight";
-      tripNo = t.tripNumber;
-      dispatch = t.manualDispatchAt ? istDayTime(t.manualDispatchAt) : { day: t.tripDate, time: null };
-      vehicleNo = blank(t.vehicle?.vehicleNo) ?? blank(t.adhocVehicleNo);
-      mobile = blank(t.driverPhone);
-      driverName = blank(t.driverName);
-      transporter = blank(t.transporter?.name);
-      vehicleModel = blank(t.vehicle?.category);
-      entryBy = blank(t.createdBy.name);
-      entryAt = t.createdAt;
-      tripKey = `F:${t.id}`;
-      stopKey = computeDropKey(o);
-    } else {
-      // ── Kind 5: FLOOR ─────────────────────────────────────────────────────
-      const stop = stopByOrder.get(o.id) ?? null;
-      const drop = stop !== null ? dropById.get(stop) : undefined;
-      const t = drop ? floorTripById.get(drop.tripId) : undefined;
-      if (!drop || !t || onActiveFreight.has(o.id)) continue;
-      kind = "floor";
-      tripNo = t.tripNumber;
-      dispatch = t.manualDispatchAt
-        ? istDayTime(t.manualDispatchAt)
-        : { day: t.tripDate, time: hhmmss(blank(t.dispatchWindow?.windowTime)) };
-      if (t.isHand) {
-        vehicleNo = "HAND";
-        driverName = "HAND";
-        transporter = "HAND";
-        vehicleModel = "HAND";
-      } else {
+      if (o.workflowStage === STAGE_CANCELLED) {
+        // ── Kinds 1–3: a word row, dated by its own event ─────────────────────
+        const ci = cisByOrder.get(o.id)?.[0];
+        const del = deleteByOrder.get(o.id);
+        const log = latestCancelLog.get(o.id);
+        let at: Date | null = null;
+        if (ci) {
+          kind = "ci";
+          at = ci.submittedAt ?? ci.createdAt;
+          entryBy = blank(ci.supervisor.name);
+        } else if (del) {
+          kind = "pick_deleted";
+          at = del.decidedAt;
+          entryBy = blank(del.decidedBy.name);
+        } else if (log && parseCancelNote(log.note).reason === CANCEL_REASON_LABELS.pick_delete) {
+          kind = "pick_deleted";
+          at = log.createdAt;
+          entryBy = blank(log.changedBy.name);
+        } else if (log) {
+          kind = "cancel";
+          at = log.createdAt;
+          entryBy = blank(log.changedBy.name);
+        } else {
+          continue; // cancelled with no record of when — no date, not reportable
+        }
+        dispatch = istDayTime(at);
+        entryAt = at;
+        const word = kind === "ci" ? "CI" : kind === "pick_deleted" ? "PICK DELETED" : "CANCEL";
+        vehicleNo = word;
+        driverName = word;
+        transporter = word;
+        vehicleModel = word;
+      } else if (freightTripIdByOrder.has(o.id)) {
+        // ── Kind 4: FREIGHT ───────────────────────────────────────────────────
+        const t = freightTripById.get(freightTripIdByOrder.get(o.id)!)!;
+        kind = "freight";
+        tripNo = t.tripNumber;
+        dispatch = t.manualDispatchAt ? istDayTime(t.manualDispatchAt) : { day: t.tripDate, time: null };
         vehicleNo = blank(t.vehicle?.vehicleNo) ?? blank(t.adhocVehicleNo);
         mobile = blank(t.driverPhone);
         driverName = blank(t.driverName);
         transporter = blank(t.transporter?.name);
         vehicleModel = blank(t.vehicle?.category);
+        entryBy = blank(t.createdBy.name);
+        entryAt = t.createdAt;
+        tripKey = `F:${t.id}`;
+        stopKey = computeDropKey(o);
+      } else {
+        // ── Kind 5: FLOOR ─────────────────────────────────────────────────────
+        const stop = place.stop;
+        const drop = stop !== null ? dropById.get(stop) : undefined;
+        const t = drop ? floorTripById.get(drop.tripId) : undefined;
+        if (!drop || !t || onActiveFreight.has(o.id)) continue;
+        kind = "floor";
+        tripNo = t.tripNumber;
+        dispatch = t.manualDispatchAt
+          ? istDayTime(t.manualDispatchAt)
+          : { day: t.tripDate, time: hhmmss(blank(t.dispatchWindow?.windowTime)) };
+        if (t.isHand) {
+          vehicleNo = "HAND";
+          driverName = "HAND";
+          transporter = "HAND";
+          vehicleModel = "HAND";
+        } else {
+          vehicleNo = blank(t.vehicle?.vehicleNo) ?? blank(t.adhocVehicleNo);
+          mobile = blank(t.driverPhone);
+          driverName = blank(t.driverName);
+          transporter = blank(t.transporter?.name);
+          vehicleModel = blank(t.vehicle?.category);
+        }
+        diesel = t.dieselAmount === null ? null : t.dieselAmount.toNumber();
+        entryBy = blank(t.createdBy.name);
+        entryAt = t.createdAt;
+        tripKey = `T:${t.id}`;
+        stopKey = `d:${drop.id}`;
+        tripRoute = blank(drop.routeName);
+        tripType = t.deliveryType;
       }
-      diesel = t.dieselAmount === null ? null : t.dieselAmount.toNumber();
-      entryBy = blank(t.createdBy.name);
-      entryAt = t.createdAt;
-      tripKey = `T:${t.id}`;
-      stopKey = `d:${drop.id}`;
-      tripRoute = blank(drop.routeName);
-      tripType = t.deliveryType;
+
+      // The period — on the row's own dispatch day.
+      if (!inPeriod(dispatch.day)) continue;
+
+      const eid = effectiveCustomerId(o);
+      const cust = eid !== null ? custById.get(eid) : undefined;
+      const billTo = billToByObd.get(o.obdNumber);
+      const whole = billQuantities(snapByOrder.get(o.id), o);
+      // A truck part: its own load and article share (null → the OBD's own).
+      const partTripId = place.rowIds !== null && place.stop !== null ? dropById.get(place.stop)?.tripId : undefined;
+      const partLoad =
+        loadRows && partTripId !== undefined ? placeLoad(loadRows, (d) => d !== null && dropById.get(d)?.tripId === partTripId) : null;
+      const shares = partArticles.get(o.id);
+      const partArts = shares && place.rowIds !== null ? loadPlaceArticles(shares, place.rowIds) : null;
+      const kg = partLoad ? partLoad.kg : whole.kg;
+      const litres = partLoad ? partLoad.litres : whole.litres;
+      const articles = partArts ?? whole.articles;
+      const sapShipTo = o.customerId !== null ? custById.get(o.customerId) : undefined;
+      const isSite = isSiteDelivery({
+        billToCode: billTo?.code ?? null,
+        sapShipToCode: o.shipToCustomerId,
+        shipToType: sapShipTo?.customerType?.name ?? sapShipTo?.premisesType?.name ?? null,
+        smu: o.smu,
+      });
+      // C — where the floor sent it; an override equal to SAP's own point is no redirect.
+      const redirect =
+        o.shipToOverrideCustomerId !== null && o.shipToOverrideCustomerId !== o.customerId
+          ? custById.get(o.shipToOverrideCustomerId)
+          : undefined;
+      const billToCode = blank(billTo?.code);
+      const billToArea = billToCode !== null ? (billToAreaByCode.get(billToCode) ?? null) : null;
+      const siteArea = isSite ? blank(sapShipTo?.area.name) : null;
+      const redirectArea = blank(redirect?.area.name);
+      // The bill's OWN type; a Floor bill with no matched point falls back to its trip's.
+      const billType = cust?.area.deliveryType ?? tripType;
+      const remark = (cisByOrder.get(o.id) ?? [])
+        .map((c) => c.ciNumber)
+        .filter((n): n is string => n !== null)
+        .join(" / ");
+      const headerFile = o.batch?.headerFile ?? "";
+
+      built.push({
+        kind,
+        tripNo,
+        dispatchDay: dispatch.day,
+        dispatchTime: dispatch.time,
+        vehicleNo,
+        mobile,
+        driverName,
+        transporter,
+        vehicleModel,
+        route: blank(cust?.primaryRoute?.name) ?? tripRoute,
+        obdNo: o.obdNumber,
+        billToCode,
+        billToName: blank(billTo?.name),
+        siteName: isSite ? (blank(sapShipTo?.customerName) ?? blank(o.shipToCustomerName)) : null,
+        deliveryType: billType?.name ?? null,
+        billToArea,
+        siteArea,
+        redirectArea,
+        articles,
+        litres,
+        kg,
+        tripTotalLitres: 0,
+        tripTotalKg: 0,
+        tripDealerCount: 0,
+        invType: invTypeFor(o.materialType),
+        remark: remark === "" ? null : remark,
+        diesel,
+        entryBy,
+        entryAt,
+        entryType: MANUAL_BATCH_PREFIXES.some((p) => headerFile.startsWith(p)) ? "Manual" : "SAP",
+        invoiceNo: blank(o.invoiceNo),
+        tripKey,
+        stopKey,
+        isGift: isGiftBill(o.materialType),
+        deliveryTypeId: billType?.id ?? null,
+        sortStamp: `${dispatch.day.toISOString().slice(0, 10)} ${dispatch.time ?? "00:00:00"}`,
+        // NTS's delivery-area rule: Other Delivery Area → Site Area → Customer Area.
+        deliveryArea: redirectArea ?? siteArea ?? billToArea,
+      });
     }
-
-    // The period — on the row's own dispatch day.
-    if (!inPeriod(dispatch.day)) continue;
-
-    const eid = effectiveCustomerId(o);
-    const cust = eid !== null ? custById.get(eid) : undefined;
-    const billTo = billToByObd.get(o.obdNumber);
-    const { kg, litres, articles } = billQuantities(snapByOrder.get(o.id), o);
-    const sapShipTo = o.customerId !== null ? custById.get(o.customerId) : undefined;
-    const isSite = isSiteDelivery({
-      billToCode: billTo?.code ?? null,
-      sapShipToCode: o.shipToCustomerId,
-      shipToType: sapShipTo?.customerType?.name ?? sapShipTo?.premisesType?.name ?? null,
-      smu: o.smu,
-    });
-    // C — where the floor sent it; an override equal to SAP's own point is no redirect.
-    const redirect =
-      o.shipToOverrideCustomerId !== null && o.shipToOverrideCustomerId !== o.customerId
-        ? custById.get(o.shipToOverrideCustomerId)
-        : undefined;
-    const billToCode = blank(billTo?.code);
-    const billToArea = billToCode !== null ? (billToAreaByCode.get(billToCode) ?? null) : null;
-    const siteArea = isSite ? blank(sapShipTo?.area.name) : null;
-    const redirectArea = blank(redirect?.area.name);
-    // The bill's OWN type; a Floor bill with no matched point falls back to its trip's.
-    const billType = cust?.area.deliveryType ?? tripType;
-    const remark = (cisByOrder.get(o.id) ?? [])
-      .map((c) => c.ciNumber)
-      .filter((n): n is string => n !== null)
-      .join(" / ");
-    const headerFile = o.batch?.headerFile ?? "";
-
-    built.push({
-      kind,
-      tripNo,
-      dispatchDay: dispatch.day,
-      dispatchTime: dispatch.time,
-      vehicleNo,
-      mobile,
-      driverName,
-      transporter,
-      vehicleModel,
-      route: blank(cust?.primaryRoute?.name) ?? tripRoute,
-      obdNo: o.obdNumber,
-      billToCode,
-      billToName: blank(billTo?.name),
-      siteName: isSite ? (blank(sapShipTo?.customerName) ?? blank(o.shipToCustomerName)) : null,
-      deliveryType: billType?.name ?? null,
-      billToArea,
-      siteArea,
-      redirectArea,
-      articles,
-      litres,
-      kg,
-      tripTotalLitres: 0,
-      tripTotalKg: 0,
-      tripDealerCount: 0,
-      invType: invTypeFor(o.materialType),
-      remark: remark === "" ? null : remark,
-      diesel,
-      entryBy,
-      entryAt,
-      entryType: MANUAL_BATCH_PREFIXES.some((p) => headerFile.startsWith(p)) ? "Manual" : "SAP",
-      invoiceNo: blank(o.invoiceNo),
-      tripKey,
-      stopKey,
-      isGift: isGiftBill(o.materialType),
-      deliveryTypeId: billType?.id ?? null,
-      sortStamp: `${dispatch.day.toISOString().slice(0, 10)} ${dispatch.time ?? "00:00:00"}`,
-      // NTS's delivery-area rule: Other Delivery Area → Site Area → Customer Area.
-      deliveryArea: redirectArea ?? siteArea ?? billToArea,
-    });
   }
 
   // ── Totals — WHOLE trip, before the delivery-type filter ─────────────────

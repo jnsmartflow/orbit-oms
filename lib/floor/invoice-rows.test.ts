@@ -6,7 +6,7 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { addedInvoiceNosOf, awayChipOf, buildInvoiceRows, drawRows, drawRowsOf, goneChipOf, narrowToInvoiceIds, narrowToPlace, paperCountOf, placeLoad, type FloorInvoiceRow, type InvoiceLineFacts, type InvoiceRowSource } from "./invoice-rows";
+import { addedInvoiceNosOf, articleShareText, awayChipOf, buildInvoiceRows, drawRows, drawRowsOf, goneChipOf, hasLoadGroup, loadPlaceArticles, loadRowArticles, loadTripsOf, narrowToInvoiceIds, narrowToPlace, paperCountOf, placeLoad, type FloorInvoiceRow, type InvoiceLineFacts, type InvoiceRowSource } from "./invoice-rows";
 
 const LINES: InvoiceLineFacts[] = [
   { rawLineItemId: 62850, lineId: 1, skuCodeRaw: "5880380", unitQty: 13, volumeLine: 260, totalWeight: null },
@@ -290,4 +290,90 @@ test("awayChipOf: a pure split load says 'parts' in its title; Add invoices keep
     text: "1 on L-20",
     title: "1 of 2 parts on L-261007-20 — not shown here",
   });
+});
+
+// ── Split load, Phase 4 batch 1 (2026-10-25): SAP's articles per truck part ──
+//
+// Live case I536233980 (order 22179, OBD 9110345576): one line, raw line 74260,
+// 70 tins, SAP article 70 ("70 Drum"), totalArticle 70; part 1 (row 40777) and
+// part 2 (row 41213) carry 35 tins each.
+
+const I233980_LINES = [{ rawLineItemId: 74260, unitQty: 70, article: 70 }];
+const I233980_ROWS = [
+  { id: 40777, seq: 1, lines: [{ rawLineItemId: 74260, qty: 35 }] },
+  { id: 41213, seq: 2, lines: [{ rawLineItemId: 74260, qty: 35 }] },
+];
+
+test("loadRowArticles: I536233980 — 35 / 35, whole, adds up to the bill's 70", () => {
+  const a = loadRowArticles({ rows: I233980_ROWS, activeLines: I233980_LINES, totalArticle: 70 });
+  assert.deepEqual(Array.from(a.entries()), [[40777, 35], [41213, 35]]);
+  assert.equal(loadPlaceArticles(a, [40777]), 35);
+  assert.equal(loadPlaceArticles(a, [41213]), 35);
+  assert.equal(articleShareText(loadPlaceArticles(a, [40777])), "35");
+});
+
+test("loadRowArticles: cartons — articles are packages, not tins (line by line)", () => {
+  // 1 L tins, 6 to a carton: 60 tins = 10 cartons; a second line, 4 drums.
+  const lines = [{ rawLineItemId: 1, unitQty: 60, article: 10 }, { rawLineItemId: 2, unitQty: 4, article: 4 }];
+  const rows = [
+    { id: 10, seq: 1, lines: [{ rawLineItemId: 1, qty: 30 }, { rawLineItemId: 2, qty: 4 }] },
+    { id: 11, seq: 2, lines: [{ rawLineItemId: 1, qty: 30 }] },
+  ];
+  const a = loadRowArticles({ rows, activeLines: lines, totalArticle: 14 });
+  assert.deepEqual(Array.from(a.entries()), [[10, 9], [11, 5]]); // 5 cartons + 4 drums · 5 cartons — never 34 / 30 tins
+});
+
+test("loadRowArticles: not whole → one decimal, '~' when shown; the remainder goes to the LAST part", () => {
+  // 7 cartons (42 tins at 6) over 3 trucks of 14 tins → 2.333… each.
+  const lines = [{ rawLineItemId: 1, unitQty: 42, article: 7 }];
+  const rows = [3, 1, 2].map((seq) => ({ id: 100 + seq, seq, lines: [{ rawLineItemId: 1, qty: 14 }] }));
+  const a = loadRowArticles({ rows, activeLines: lines, totalArticle: 7 });
+  assert.deepEqual(Array.from(a.entries()), [[101, 2.3], [102, 2.3], [103, 2.4]]); // seq order; seq 3 takes the remainder
+  assert.equal(articleShareText(a.get(101)!), "~2");
+  assert.equal(articleShareText(a.get(103)!), "~2");
+  assert.equal(articleShareText(null), "—");
+});
+
+test("loadRowArticles: the parts ALWAYS add up to the bill's totalArticle", () => {
+  for (const [total, tins] of [[70, [35, 35]], [7, [14, 14, 14]], [10, [1, 2, 3, 4]], [13, [5, 7]], [1, [1, 1, 1]], [0, [3, 4]]] as const) {
+    const qty = tins.reduce((s, t) => s + t, 0);
+    const rows = tins.map((t, i) => ({ id: i + 1, seq: i + 1, lines: [{ rawLineItemId: 9, qty: t }] }));
+    const a = loadRowArticles({ rows, activeLines: [{ rawLineItemId: 9, unitQty: qty, article: total }], totalArticle: total });
+    assert.equal(loadPlaceArticles(a, rows.map((r) => r.id)), total, `total ${total} over ${tins.join("/")}`);
+  }
+});
+
+test("loadRowArticles: SAP's total wins over Σ line articles (duplicate-SKU cartons); by tins when a line has none", () => {
+  // Two lines of one SKU, 1 + 5 tins at 6 a carton: lines say 1 + 5, SAP's total says 1 carton.
+  const dup = [{ rawLineItemId: 1, unitQty: 1, article: 1 }, { rawLineItemId: 2, unitQty: 5, article: 5 }];
+  const rows = [
+    { id: 1, seq: 1, lines: [{ rawLineItemId: 1, qty: 1 }, { rawLineItemId: 2, qty: 2 }] },
+    { id: 2, seq: 2, lines: [{ rawLineItemId: 2, qty: 3 }] },
+  ];
+  assert.deepEqual(Array.from(loadRowArticles({ rows, activeLines: dup, totalArticle: 1 }).entries()), [[1, 0.5], [2, 0.5]]);
+  // A line with no article → the share follows tins.
+  const none = [{ rawLineItemId: 1, unitQty: 1, article: null }, { rawLineItemId: 2, unitQty: 5, article: 5 }];
+  assert.deepEqual(Array.from(loadRowArticles({ rows, activeLines: none, totalArticle: 4 }).entries()), [[1, 2], [2, 2]]);
+  // No SAP total → nothing to share (the bill's own blank stays).
+  assert.equal(loadRowArticles({ rows, activeLines: dup, totalArticle: null }).size, 0);
+  assert.equal(loadPlaceArticles(new Map(), [1]), null);
+});
+
+test("hasLoadGroup / loadTripsOf: false for unsplit and 18648; I536233980 → one entry per trip", () => {
+  assert.equal(hasLoadGroup(undefined), false);
+  assert.equal(hasLoadGroup(buildInvoiceRows({ rows: ROWS, activeLines: LINES, obdKg: 1357 })), false);
+  assert.equal(hasLoadGroup(buildInvoiceRows({ rows: LOAD, activeLines: LINES, obdKg: 1357 })), true);
+  const rows = [
+    { id: 41213, seq: 2, tripDropId: 5816 },
+    { id: 40777, seq: 1, tripDropId: 5815 },
+  ];
+  const trip = new Map([[5815, 1295], [5816, 1296]]);
+  assert.deepEqual(loadTripsOf(rows, (d) => trip.get(d)), [
+    { tripId: 1295, dropId: 5815, rowIds: [40777] },
+    { tripId: 1296, dropId: 5816, rowIds: [41213] },
+  ]);
+  // A part on a trip outside the report (or on no trip) gives no entry.
+  assert.deepEqual(loadTripsOf([...rows, { id: 5, seq: 3, tripDropId: null }], (d) => (d === 5815 ? 1295 : undefined)), [
+    { tripId: 1295, dropId: 5815, rowIds: [40777] },
+  ]);
 });

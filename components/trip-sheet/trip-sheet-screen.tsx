@@ -19,6 +19,7 @@ import type { NavItemConfig } from "@/lib/permissions";
 import { smartTitleCase } from "@/lib/mail-orders/utils";
 import type { TripSheet, TripSheetBill } from "@/lib/trip-sheet/types";
 import { CallButton, CardShell, CardShelf, fmtNum } from "./card-bits";
+import { articleShareText } from "@/lib/floor/invoice-rows";
 
 /** WhatsApp's own green — the share target's colour, not a brand or status token. */
 const WHATSAPP_GREEN = "#25D366";
@@ -210,7 +211,7 @@ function BillCard({ bill }: { bill: TripSheetBill }) {
       </div>
       <CardShelf
         pills={[
-          `${fmtNum(bill.articles)} Art`,
+          `${bill.articleSource === "part" ? articleShareText(bill.articles) : fmtNum(bill.articles)} Art`,
           `${fmtNum(bill.litres)} L`,
           `${bill.kg === null ? "—" : fmtNum(bill.kg)} kg`,
         ]}

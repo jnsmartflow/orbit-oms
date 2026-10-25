@@ -38,9 +38,9 @@ import { salesOfficerByOrder } from "@/lib/floor/queries";
 import { billQuantities, isSiteDelivery, loadBillToByObd, loadSnapshots } from "@/lib/reports/bill-facts";
 import { isGiftBill } from "@/lib/orders/gift";
 import { onStopsWhere, placeOnTrips, stopRowsSelect } from "@/lib/order-invoices/trip-read";
-import { loadSplitInvoiceRows } from "@/lib/order-invoices/invoice-load";
+import { loadPartArticles, loadSplitInvoiceRows } from "@/lib/order-invoices/invoice-load";
 import { RECORD_OBD_SELECT, recordObdOf } from "@/lib/order-invoices/links";
-import { invoicesLoad, placeLoad } from "@/lib/floor/invoice-rows";
+import { invoicesLoad, loadPlaceArticles, placeLoad } from "@/lib/floor/invoice-rows";
 import { groupRedeliveries } from "@/lib/order-invoices/redelivery-plan";
 import { summariseStops } from "./totals";
 import {
@@ -232,6 +232,13 @@ async function loadSheetCore(trips: CoreTrip[]): Promise<Map<number, SheetCore>>
     uniqueOrders,
     new Map(uniqueOrders.map((o) => [o.id, snapByOrder.get(o.id)?.totalWeight ?? null] as const)),
   );
+  // Split load (Phase 4 batch 1): a truck part carries its SHARE of SAP's
+  // articles — no read unless a bill here has a load group.
+  const partArticles = await loadPartArticles(
+    uniqueOrders,
+    splitRows,
+    new Map(uniqueOrders.map((o) => [o.id, snapByOrder.get(o.id)?.totalArticle ?? null] as const)),
+  );
   const billToByObd = await loadBillToByObd(uniqueOrders.map((o) => o.obdNumber));
 
   // 7. The effective delivery points: code (shipToChanged) and type (isSite).
@@ -314,6 +321,10 @@ async function loadSheetCore(trips: CoreTrip[]): Promise<Map<number, SheetCore>>
     const shownNo = hereNos.length > 0 ? hereNos.join(", ") : blank(o.invoiceNo);
     const a = assignmentByOrder.get(o.id);
     const typed = a?.articleCount ?? null;
+    // Split load: the part's share of SAP's articles — never the typed count,
+    // which is the whole bill's (owner, 2026-10-25). null on every other bill.
+    const shares = partArticles.get(o.id);
+    const partArts = shares && rows ? loadPlaceArticles(shares, rows.filter(inPlace).map((r) => r.id)) : null;
     const billTo = billToByObd.get(o.obdNumber);
     const billToCode = blank(billTo?.code);
     const eid = effectiveCustomerId(o);
@@ -329,8 +340,8 @@ async function loadSheetCore(trips: CoreTrip[]): Promise<Map<number, SheetCore>>
       invoiceNo: shownNo,
       gift: isGiftBill(o.materialType),
       redel: p.redel,
-      articles: typed ?? q.articles,
-      articleSource: typed !== null ? "typed" : "sap",
+      articles: partArts ?? typed ?? q.articles,
+      articleSource: partArts !== null ? "part" : typed !== null ? "typed" : "sap",
       litres: q.litres,
       kg: q.kg,
       // Codes differ, OR a typed ship-to (v27.73, step 7B, owner 2026-10-20):

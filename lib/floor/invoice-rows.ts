@@ -265,6 +265,111 @@ function loadWhere<R extends PlaceRow>(invoiceRows: readonly R[], keep: (r: R) =
   };
 }
 
+// ── SPLIT LOAD: SAP'S ARTICLES PER TRUCK PART (Phase 4 batch 1, 2026-10-25) ──
+//
+// Owner, 2026-10-25: an article is a PACKAGE (a drum, a carton, a loose tin),
+// not a tin, so a truck part carries its SHARE of SAP's article count
+// (import_obd_query_summary."totalArticle" — what an unsplit bill prints),
+// worked LINE BY LINE:
+//   weight(row) = Σ over its lines of line.article × qty ÷ line.unitQty
+// (import_raw_line_items.article, the per-line count the import writes; read
+// 2026-10-25: present on every active line of 97.7% of OBDs). When any active
+// line has no article, the weight is the row's tins. Each row's share is
+// totalArticle × weight ÷ Σ weights, kept to ONE decimal; the LAST row (highest
+// seq) takes the remainder, so the parts always add up to the bill. Shared over
+// totalArticle, not Σ line articles: the import groups duplicate-SKU lines
+// before cartons are counted (lib/article-tag.ts rollupArticleTagsBySku), so on
+// ~3% of OBDs the line counts do not add up to SAP's own total.
+// The picker's typed count is for the WHOLE bill and is never shared (owner
+// answer 2). Shown with "~" when not whole (articleShareText). Only callers that
+// found a load group ask for these — every other bill keeps its own count.
+
+/** One active raw line's article facts (import_raw_line_items). */
+export interface ArticleLine {
+  rawLineItemId: number;
+  unitQty: number;
+  /** SAP's per-line article count; null = the import could not tell. */
+  article: number | null;
+}
+
+const round1 = (x: number): number => Math.round(x * 10) / 10;
+
+/**
+ * Each row's share of the bill's `totalArticle` (row id → articles, one
+ * decimal, Σ = totalArticle). Empty when there is no total or nothing to share by.
+ */
+export function loadRowArticles(input: {
+  rows: ReadonlyArray<{ id: number; seq: number; lines: ReadonlyArray<{ rawLineItemId: number; qty: number }> }>;
+  activeLines: readonly ArticleLine[];
+  totalArticle: number | null;
+}): Map<number, number> {
+  const out = new Map<number, number>();
+  const total = input.totalArticle;
+  if (total === null) return out;
+  const rows = input.rows.slice().sort((a, b) => a.seq - b.seq);
+  const byId = new Map(input.activeLines.map((l) => [l.rawLineItemId, l]));
+  const perLine = input.activeLines.length > 0 && input.activeLines.every((l) => l.article !== null && l.unitQty > 0);
+  const tinsOf = (r: (typeof rows)[number]) => r.lines.reduce((s, l) => s + l.qty, 0);
+  let weights = rows.map((r) =>
+    perLine
+      ? r.lines.reduce((s, l) => {
+          const line = byId.get(l.rawLineItemId);
+          return s + (line ? ((line.article as number) * l.qty) / line.unitQty : 0);
+        }, 0)
+      : tinsOf(r),
+  );
+  if (weights.reduce((s, w) => s + w, 0) <= 0) weights = rows.map(tinsOf);
+  const sum = weights.reduce((s, w) => s + w, 0);
+  if (sum <= 0) return out;
+  let given = 0;
+  rows.forEach((r, i) => {
+    const share = i === rows.length - 1 ? round1(total - given) : round1((total * weights[i]) / sum);
+    given += share;
+    out.set(r.id, share);
+  });
+  return out;
+}
+
+/** The articles of the named rows (one decimal) — null when the bill has no shares. */
+export function loadPlaceArticles(rowArticles: ReadonlyMap<number, number>, rowIds: readonly number[]): number | null {
+  if (rowArticles.size === 0) return null;
+  return round1(rowIds.reduce((s, id) => s + (rowArticles.get(id) ?? 0), 0));
+}
+
+/** THE way a part's article share is shown: whole → "35"; not whole → "~18". */
+export function articleShareText(n: number | null): string {
+  if (n === null || !Number.isFinite(n)) return "—";
+  const r = Math.round(n);
+  return `${Math.abs(n - r) < 1e-9 ? "" : "~"}${r.toLocaleString("en-IN")}`;
+}
+
+/**
+ * The TRIPS a load-split bill's rows ride, in seq order of their first row:
+ * one entry per trip, with that trip's stop and the rows on it. `tripOfDrop`
+ * names a stop's trip (null / undefined = not a trip the caller reports).
+ * An OBD's rows on one trip share one stop (trip-bills.ts), so dropId is it.
+ */
+export function loadTripsOf(
+  rows: ReadonlyArray<Pick<FloorInvoiceRow, "id" | "seq" | "tripDropId">>,
+  tripOfDrop: (dropId: number) => number | null | undefined,
+): Array<{ tripId: number; dropId: number; rowIds: number[] }> {
+  const out: Array<{ tripId: number; dropId: number; rowIds: number[] }> = [];
+  for (const r of rows.slice().sort((a, b) => a.seq - b.seq)) {
+    if (r.tripDropId === null) continue;
+    const tripId = tripOfDrop(r.tripDropId);
+    if (tripId === null || tripId === undefined) continue;
+    const e = out.find((x) => x.tripId === tripId);
+    if (e) e.rowIds.push(r.id);
+    else out.push({ tripId, dropId: r.tripDropId, rowIds: [r.id] });
+  }
+  return out;
+}
+
+/** The OBD's rows carry a load group (only those carry loadRootId). */
+export function hasLoadGroup(rows: ReadonlyArray<Pick<FloorInvoiceRow, "loadRootId">> | undefined): boolean {
+  return rows !== undefined && rows.some((r) => r.loadRootId !== undefined);
+}
+
 /**
  * A board row NARROWED to one place: only the invoices in it, and the row's
  * litres / kg replaced by theirs (placeLoad). The same row object when the OBD

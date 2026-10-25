@@ -7,7 +7,7 @@ import { deleteTripDropIfEmpty, findOrCreateTripDrop } from "@/lib/trips/drop";
 import { logTripBills } from "@/lib/trips/activity";
 import { CHALLAN_LINKED } from "@/lib/workflow-stages";
 import { needsDerivedRepair, setRowsTrip } from "@/lib/order-invoices/trip-link";
-import { foreignRowIds, invoiceLabel, planAddRows, planRemoveRows, type TripBillRow } from "@/lib/order-invoices/trip-bills";
+import { foreignRowIds, invoiceLabel, moveRefusals, planAddRows, planRemoveRows, type TripBillRow } from "@/lib/order-invoices/trip-bills";
 import { getTripSummariesByIds } from "@/lib/trips/queries";
 
 export const dynamic = "force-dynamic";
@@ -336,11 +336,18 @@ export async function POST(
           continue;
         }
 
+        // Split load (Phase 4 batch 1, 2026-10-25): a move JOINS the target, so
+        // two parts of one invoice never ride it together — the add branch's
+        // rule and words, that part only (lib/order-invoices/trip-bills.ts).
+        const moving = moveRefusals(rows, plan.detach, tripId, order.obdNumber);
+        refuseRows(moving.refused);
+        if (moving.move.length === 0) continue;
+
         // The target stop, then ONE setRowsTrip: the rows go straight from the
         // source stop to the target stop (onlyFromTripId re-checks they are
         // still on the source) and orders gets its ONE update.
         const drop = await findOrCreateTripDrop(tripId, order);
-        await setRowsTrip(orderId, plan.detach, drop.id, { onlyFromTripId: source.id });
+        await setRowsTrip(orderId, moving.move, drop.id, { onlyFromTripId: source.id });
         changed.push(orderId);
         changedObds.push(order.obdNumber);
         // Source stops left with nothing go, and the source closes up 1..N —

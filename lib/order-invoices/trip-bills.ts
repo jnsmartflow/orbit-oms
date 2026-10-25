@@ -27,6 +27,8 @@
 // press, is refused for that row only: "I536230716 part 2 of 2 — part 1 of the
 // same invoice is already on this trip". Only rows of a load group carry
 // loadRootId, so every other row — and every wording above — is unchanged.
+// A MOVE onto a trip is a join too (moveRefusals, Phase 4 batch 1, 2026-10-25):
+// the same test, the same words.
 
 import { loadGroupsOf, loadPartText } from "./load-plan";
 
@@ -181,6 +183,37 @@ export function planRemoveRows(
     } else if (chosen !== "all") {
       plan.refused.push({ rowId: r.id, invoiceNo: r.invoiceNo, error: `${invoiceLabel(r, obdNumber)} is not on this trip` });
     }
+  }
+  return plan;
+}
+
+export interface MoveRowsPlan {
+  /** Rows leaving the source that may land on the target. */
+  move: number[];
+  /** Rows that would put two parts of one invoice on the target. */
+  refused: RowRefusal[];
+}
+
+/**
+ * MOVE (split load): of the rows leaving the source (`detach`, planRemoveRows),
+ * which may land on `tripId`. A row whose load group already has another row on
+ * that trip — or a second row of the group in this press — is refused for that
+ * row only, with the add branch's words. A row without loadRootId always moves,
+ * so every unsplit and Add-invoices move is what it was.
+ */
+export function moveRefusals(
+  rows: readonly TripBillRow[],
+  detach: readonly number[],
+  tripId: number,
+  obdNumber: string,
+): MoveRowsPlan {
+  const plan: MoveRowsPlan = { move: [], refused: [] };
+  for (const id of detach) {
+    const r = rows.find((x) => x.id === id);
+    if (!r) continue;
+    const twin = sameInvoiceOnTrip(rows, r, tripId, plan.move, obdNumber);
+    if (twin !== null) plan.refused.push({ rowId: r.id, invoiceNo: r.invoiceNo, error: twin });
+    else plan.move.push(r.id);
   }
   return plan;
 }

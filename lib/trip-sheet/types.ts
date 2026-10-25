@@ -16,7 +16,10 @@ export type ArticleSource =
   /** pick_assignments.articleCount — the supervisor's typed count. */
   | "typed"
   /** import_obd_query_summary.totalArticle — SAP's count (or none at all). */
-  | "sap";
+  | "sap"
+  /** Split load: a truck part's SHARE of SAP's count, one decimal — may be
+   *  approximate; shown through articleShareText ("~18" when not whole). */
+  | "part";
 
 export type TripSheetPending = null | "picking" | "vehicle" | "both";
 
