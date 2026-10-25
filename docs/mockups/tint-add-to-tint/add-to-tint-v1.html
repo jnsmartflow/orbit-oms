@@ -1,0 +1,535 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Add to Tint v1</title>
+<!--
+  docs/mockups/tint-add-to-tint/add-to-tint-v1.html — the "+ Add to Tint" popup,
+  step 7 of the Add to Tint rebuild (2026-10-25). Frozen design, implementation
+  pending: the server is lib/tint/manual-pull.ts (453a4a9b); the live modal is
+  still components/tint/manual-tint-entry-modal.tsx.
+
+  Static, no app code. Colours are the Orbit tokens (tailwind.config.ts,
+  CLAUDE_UI.md §2.1); type, inputs and buttons follow §4 / §9 / §10 / §13.
+  Width = today's modal, 520px; one state is repeated at 380px (phone).
+-->
+<style>
+:root{
+  /* Orbit tokens (tailwind.config.ts) */
+  --brand-50:#F5F3FF; --brand-500:#8B5CF6; --brand-600:#7C3AED; --brand-700:#6D28D9;
+  --ink-25:#FAFAFC; --ink-50:#F4F3F8; --ink-100:#E9E7F0; --ink-400:#9C99AC; --ink-900:#1B1826;
+  --tint-bg:#F0F9FF; --tint-bd:#BAE6FD; --tint-700:#0369A1;
+  --ok:#059669; --ok-bg:#ECFDF5; --ok-text:#047857;
+  --warn:#D97706; --warn-bg:#FFFBEB; --warn-text:#B45309; --warn-bd:#FDE68A;
+  --sample:#115E59;
+  /* Tailwind gray / red the live modal already uses (§3 Core / Semantic) */
+  --gray-50:#F9FAFB; --gray-100:#F3F4F6; --gray-200:#E5E7EB; --gray-300:#D1D5DB; --gray-400:#9CA3AF;
+  --gray-500:#6B7280; --gray-600:#4B5563; --gray-800:#1F2937; --gray-900:#111827;
+  --red-50:#FEF2F2; --red-200:#FECACA; --red-700:#B91C1C;
+  --blue-600:#2563EB;
+}
+*{box-sizing:border-box}
+body{margin:0;background:#f9fafb;color:var(--gray-900);font:13px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+.mono{font-family:ui-monospace,Consolas,monospace}
+.page{max-width:1140px;margin:0 auto;padding:24px 16px 80px}
+.page h1{font-size:14px;font-weight:600;margin:0 0 4px}
+.page .sub{font-size:11px;color:var(--gray-500);margin:0 0 20px;max-width:760px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(540px,1fr));gap:28px 20px;align-items:start}
+@media (max-width:600px){.grid{grid-template-columns:1fr}}
+.state{min-width:0}
+.state-label{font-size:10px;font-weight:600;color:var(--gray-500);text-transform:uppercase;letter-spacing:.06em;margin:0 0 6px}
+.state-label b{color:var(--brand-700);margin-right:6px}
+.state-note{font-size:11px;color:var(--gray-400);margin:6px 0 0}
+.stage{background:rgba(0,0,0,.40);border-radius:10px;padding:14px;display:flex;justify-content:center}
+
+/* Modal (§13; width as today) */
+.modal{background:#fff;border-radius:8px;box-shadow:0 20px 25px -5px rgba(0,0,0,.15),0 8px 10px -6px rgba(0,0,0,.1);width:520px;max-width:100%;display:flex;flex-direction:column}
+.modal.phone{width:380px}
+.m-head{padding:12px 16px;border-bottom:1px solid var(--gray-100);display:flex;align-items:center;justify-content:space-between}
+.m-head h2{font-size:13px;font-weight:600;margin:0}
+.x{color:var(--gray-400);font-size:16px;line-height:1;border:0;background:none;cursor:pointer}
+.m-body{padding:12px 16px}
+.m-foot{padding:12px 16px;border-top:1px solid var(--gray-100);background:rgba(249,250,251,.3);border-radius:0 0 8px 8px;display:flex;align-items:center;justify-content:space-between;gap:8px}
+.m-foot .hint{font-size:10.5px;color:var(--gray-400)}
+.m-foot .btns{display:flex;gap:8px;margin-left:auto}
+
+label.f{display:block;font-size:11px;font-weight:500;color:var(--gray-500);margin:0 0 4px}
+.input,.select,.textarea{width:100%;height:38px;padding:0 12px;font:inherit;font-size:13px;border:1px solid var(--gray-200);border-radius:8px;background:#fff;color:var(--gray-900)}
+.input.focus{border-color:var(--brand-500);box-shadow:0 0 0 2px rgba(139,92,246,.10)}
+.select{appearance:none;background:#fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%239CA3AF' fill='none' stroke-width='1.5'/%3E%3C/svg%3E") no-repeat right 12px center;padding-right:30px}
+.select.off{background-color:var(--gray-50);color:var(--gray-400)}
+.textarea{height:auto;padding:8px 12px;resize:none}
+.row{display:flex;gap:8px;align-items:center}
+.row .input{flex:1}
+.mt2{margin-top:8px}.mt3{margin-top:12px}.mb3{margin-bottom:12px}
+.small{font-size:10.5px;color:var(--gray-400)}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.phone .two{grid-template-columns:1fr}
+
+/* Buttons (§10) */
+.btn{height:34px;padding:0 16px;font:inherit;font-size:12px;font-weight:500;border-radius:8px;border:1px solid transparent;cursor:pointer;white-space:nowrap;display:inline-flex;align-items:center;gap:6px}
+.btn.fetch{height:38px;font-size:13px}
+.btn.dark{background:var(--gray-900);color:#fff}
+.btn.amber{background:#D97706;color:#fff}
+.btn.ghost{background:none;color:var(--gray-600);padding:0 12px}
+.btn.off{background:var(--gray-100);border-color:var(--gray-200);color:var(--gray-400);cursor:not-allowed}
+.link{font-size:11px;color:var(--gray-500);text-decoration:underline;background:none;border:0;cursor:pointer;padding:0}
+
+/* Bill card */
+.bill{background:var(--gray-50);border:1px solid var(--gray-200);border-radius:8px;padding:10px 12px;margin-bottom:12px}
+.bill .top{display:flex;align-items:flex-start;gap:8px}
+.bill .name{font-size:13.5px;font-weight:700;color:var(--gray-900);flex:1;min-width:0}
+.bill .meta{display:flex;flex-wrap:wrap;gap:4px 12px;margin-top:4px;font-size:11px;color:var(--gray-600)}
+.bill .meta .k{color:var(--gray-400);margin-right:3px}
+.bill .meta .mono{color:var(--gray-800)}
+.dot{display:inline-block;width:5px;height:5px;border-radius:50%;background:var(--blue-600);margin-right:5px;vertical-align:middle}
+.pill{display:inline-block;border-radius:999px;padding:2px 8px;font-size:10.5px;font-weight:600;white-space:nowrap;border:1px solid}
+.p-stage{background:#fff;border-color:var(--gray-200);color:var(--gray-600)}
+.p-pick{background:var(--warn-bg);border-color:var(--warn-bd);color:var(--warn-text)}
+.p-sample{background:rgba(17,94,89,.10);border-color:rgba(17,94,89,.30);color:var(--sample);font-size:11px;font-weight:700;letter-spacing:.04em}
+.p-ok{background:var(--ok-bg);border-color:#A7F3D0;color:var(--ok-text)}
+.p-no{background:var(--red-50);border-color:var(--red-200);color:var(--red-700)}
+
+/* Lines */
+.lines-h{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px}
+.lines-h .t{font-size:11px;font-weight:500;color:var(--gray-500);text-transform:uppercase;letter-spacing:.05em}
+.lines{border:1px solid var(--gray-200);border-radius:8px;margin-bottom:12px}
+.line{display:flex;gap:10px;align-items:flex-start;padding:8px 12px;border-top:1px solid var(--gray-100)}
+.line:first-child{border-top:0}
+.tick{width:16px;height:16px;border-radius:4px;border:1.5px solid var(--gray-300);flex:none;margin-top:1px;display:flex;align-items:center;justify-content:center}
+.tick.on{background:var(--brand-600);border-color:var(--brand-600)}
+.tick.on::after{content:"";width:8px;height:4px;border:2px solid #fff;border-top:0;border-right:0;transform:rotate(-45deg) translate(1px,-1px)}
+.line .d{flex:1;min-width:0}
+.line .d1{font-size:12px;font-weight:500;color:var(--gray-900);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.line .d2{font-size:11px;color:var(--gray-500);margin-top:1px}
+.line .q{font-size:11px;color:var(--gray-600);text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+.line .q b{color:var(--gray-900);font-weight:600}
+
+/* Sample toggle (IosToggle §11) */
+.toggle-row{display:flex;align-items:center;justify-content:space-between;gap:10px;border:1px solid var(--gray-200);border-radius:8px;padding:8px 12px}
+.toggle-row .tl{font-size:12px;font-weight:500;color:var(--gray-900)}
+.toggle-row .ts{font-size:10.5px;color:var(--gray-400)}
+.ios{width:36px;height:20px;border-radius:999px;background:var(--gray-200);position:relative;flex:none}
+.ios::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.2)}
+.ios.on{background:var(--brand-600)}
+.ios.on::after{left:18px}
+
+/* Banners */
+.ban{border:1px solid;border-radius:6px;padding:8px 12px;font-size:12px;margin-bottom:12px;display:flex;gap:8px;align-items:flex-start}
+.ban .ic{flex:none;font-weight:700}
+.b-info{background:var(--tint-bg);border-color:var(--tint-bd);color:var(--tint-700)}
+.b-warn{background:var(--warn-bg);border-color:var(--warn-bd);color:var(--warn-text)}
+.b-warn.strong{border-left:3px solid var(--warn);font-weight:600}
+.b-err{background:var(--red-50);border-color:var(--red-200);color:var(--red-700)}
+.b-plain{background:var(--gray-50);border-color:var(--gray-200);color:var(--gray-600)}
+
+/* Chooser */
+.choose{border:1px solid var(--gray-200);border-radius:8px;margin-bottom:12px}
+.ch{display:flex;align-items:center;gap:10px;padding:10px 12px;border-top:1px solid var(--gray-100)}
+.ch:first-child{border-top:0}
+.ch.pick{cursor:pointer}
+.ch.sel{background:var(--brand-50);box-shadow:inset 3px 0 0 var(--brand-600)}
+.ch.dead{color:var(--gray-400)}
+.radio{width:16px;height:16px;border-radius:50%;border:1.5px solid var(--gray-300);flex:none}
+.radio.on{border:5px solid var(--brand-600)}
+.radio.dis{background:var(--gray-100)}
+.ch .c{flex:1;min-width:0}
+.ch .c1{font-size:12px;font-weight:600;color:var(--gray-900)}
+.ch.dead .c1{color:var(--gray-400)}
+.ch .c2{font-size:11px;color:var(--gray-500);margin-top:1px}
+.ch .c3{font-size:11px;color:var(--red-700);margin-top:2px}
+.ch .c3.n{color:var(--tint-700)}
+
+/* Toasts */
+.toast-wrap{display:flex;flex-direction:column;gap:10px;padding:14px;background:var(--ink-50);border-radius:10px}
+.toast{background:#fff;border:1px solid var(--gray-200);border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,.08);padding:10px 12px;display:flex;gap:10px;align-items:flex-start;max-width:440px}
+.toast .ti{width:18px;height:18px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;margin-top:1px}
+.toast.ok .ti{background:var(--ok)}
+.toast.warn{border-left:3px solid var(--warn)}
+.toast.warn .ti{background:var(--warn)}
+.toast .tx{font-size:12px;color:var(--gray-900);flex:1}
+.toast .tx .s{display:block;font-size:11px;color:var(--gray-500);margin-top:2px}
+.toast .tx .mono{color:var(--gray-800)}
+
+.spec{margin-top:36px;background:#fff;border:1px solid var(--gray-200);border-radius:8px;padding:14px 16px}
+.spec h2{font-size:13px;font-weight:600;margin:0 0 8px}
+.spec ul{margin:0;padding-left:18px;font-size:12px;color:var(--gray-600)}
+.spec li{margin:3px 0}
+.spec code{font-family:ui-monospace,Consolas,monospace;font-size:11px;background:var(--gray-50);border:1px solid var(--gray-200);border-radius:4px;padding:0 4px}
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>Add to Tint — popup v1</h1>
+  <p class="sub">Tint Manager › <b>+ Add to Tint</b> (or <b>M</b>). Eleven states, one panel each, drawn at today's modal width (520px). State 3 is repeated at phone width (380px). Static mockup — the server it reads is <span class="mono">lib/tint/manual-pull.ts</span>.</p>
+
+  <div class="grid">
+
+  <!-- ═════════ 1. EMPTY ═════════ -->
+  <section class="state">
+    <p class="state-label"><b>1</b>Empty</p>
+    <div class="stage"><div class="modal">
+      <div class="m-head"><h2>Add to Tint</h2><button class="x">✕</button></div>
+      <div class="m-body">
+        <label class="f">OBD or invoice number</label>
+        <div class="row">
+          <input class="input focus mono" placeholder="e.g. 9106674240 or I536229654">
+          <button class="btn dark fetch">Fetch</button>
+        </div>
+        <p class="small mt2">Press Enter to fetch</p>
+      </div>
+      <div class="m-foot"><div class="btns"><button class="btn ghost">Cancel</button></div></div>
+    </div></div>
+    <p class="state-note">Fetch is live from the first character — the server judges the term (an OBD, I + 9 digits, or the 9-digit / misread "1…" invoice forms).</p>
+  </section>
+
+  <!-- ═════════ 2. ONE MATCH, CLEAN ═════════ -->
+  <section class="state">
+    <p class="state-label"><b>2</b>One match, clean</p>
+    <div class="stage"><div class="modal">
+      <div class="m-head"><h2>Add to Tint</h2><button class="x">✕</button></div>
+      <div class="m-body">
+        <div class="row mb3" style="justify-content:space-between">
+          <span class="small">Searched <span class="mono" style="color:var(--gray-800)">9110382611</span></span>
+          <button class="link">Change</button>
+        </div>
+        <div class="bill">
+          <div class="top">
+            <div class="name">Shree Ganesh Paints, Adajan</div>
+            <span class="pill p-stage">Pending picking</span>
+          </div>
+          <div class="meta">
+            <span><span class="k">OBD</span><span class="mono">9110382611</span></span>
+            <span><span class="k">Invoice</span><span class="mono">I536229654</span></span>
+            <span><span class="dot"></span>Retail Offtake</span>
+            <span class="k" style="margin:0">24 Oct · 11:42</span>
+          </div>
+        </div>
+
+        <div class="lines-h"><span class="t">Lines that need tinting</span><span class="small">3 of 4 ticked</span></div>
+        <div class="lines">
+          <div class="line"><span class="tick on"></span><div class="d"><div class="d1">Velvet Touch Pearl Glo BW 3.6L</div><div class="d2 mono">5410323</div></div><div class="q"><b>4</b> tins · 14.4 L</div></div>
+          <div class="line"><span class="tick on"></span><div class="d"><div class="d1">Velvet Touch Pearl Glo BW 0.9L</div><div class="d2 mono">5410321</div></div><div class="q"><b>6</b> tins · 5.4 L</div></div>
+          <div class="line"><span class="tick on"></span><div class="d"><div class="d1">Weathershield Max BW 9L</div><div class="d2 mono">5422110</div></div><div class="q"><b>2</b> tins · 18 L</div></div>
+          <div class="line"><span class="tick"></span><div class="d"><div class="d1">Primer Interior WB 20L</div><div class="d2 mono">5300114</div></div><div class="q"><b>1</b> tin · 20 L</div></div>
+        </div>
+
+        <div class="two">
+          <div>
+            <label class="f">Reason</label>
+            <div class="select">Sample</div>
+          </div>
+          <div>
+            <label class="f">Tint operator <span style="color:var(--gray-400);font-weight:400">(optional)</span></label>
+            <div class="select">Assign later</div>
+          </div>
+        </div>
+        <div class="toggle-row mt3">
+          <div><div class="tl">Mark as <span class="pill p-sample">SAMPLE</span></div><div class="ts">On because the reason is Sample — you can turn it off</div></div>
+          <span class="ios on"></span>
+        </div>
+        <label class="f mt3">Notes (optional)</label>
+        <textarea class="textarea" rows="2" placeholder="Add context (optional)"></textarea>
+      </div>
+      <div class="m-foot">
+        <span class="hint">Audit log will record this pull.</span>
+        <div class="btns"><button class="btn ghost">Cancel</button><button class="btn dark">Pull to tint</button></div>
+      </div>
+    </div></div>
+    <p class="state-note">Reason list unchanged: Sample · Custom Shade · Late Addition · Auto-classification Miss · Other (Other needs notes). Changing the reason away from Sample turns the toggle off once; after the user touches the toggle it stays where they put it.</p>
+  </section>
+
+  <!-- ═════════ 3. PICKER HOLDING THE BILL ═════════ -->
+  <section class="state">
+    <p class="state-label"><b>3</b>Picker holding the bill</p>
+    <div class="stage"><div class="modal">
+      <div class="m-head"><h2>Add to Tint</h2><button class="x">✕</button></div>
+      <div class="m-body">
+        <div class="bill">
+          <div class="top">
+            <div class="name">Krishna Hardware, Varachha</div>
+            <span class="pill p-pick">Picking · Ravi</span>
+          </div>
+          <div class="meta">
+            <span><span class="k">OBD</span><span class="mono">9110382644</span></span>
+            <span><span class="k">Invoice</span><span class="mono">—</span></span>
+            <span><span class="dot"></span>Decorative Projects</span>
+          </div>
+        </div>
+        <div class="ban b-warn"><span class="ic">!</span><span>Ravi is picking this bill. Pulling it will cancel his pick and notify him and the supervisors.</span></div>
+        <div class="lines-h"><span class="t">Lines that need tinting</span><span class="small">2 of 2 ticked</span></div>
+        <div class="lines">
+          <div class="line"><span class="tick on"></span><div class="d"><div class="d1">Promise Interior Emulsion BW 10L</div><div class="d2 mono">5400918</div></div><div class="q"><b>3</b> tins · 30 L</div></div>
+          <div class="line"><span class="tick on"></span><div class="d"><div class="d1">Promise Interior Emulsion BW 4L</div><div class="d2 mono">5400916</div></div><div class="q"><b>5</b> tins · 20 L</div></div>
+        </div>
+        <div class="two">
+          <div><label class="f">Reason</label><div class="select">Custom Shade</div></div>
+          <div><label class="f">Tint operator <span style="color:var(--gray-400);font-weight:400">(optional)</span></label><div class="select">Assign later</div></div>
+        </div>
+        <div class="toggle-row mt3">
+          <div><div class="tl">Mark as <span class="pill p-sample">SAMPLE</span></div><div class="ts">Off — reason is not Sample</div></div>
+          <span class="ios"></span>
+        </div>
+      </div>
+      <div class="m-foot">
+        <span class="hint">Audit log will record this pull.</span>
+        <div class="btns"><button class="btn ghost">Cancel</button><button class="btn amber">Pull anyway</button></div>
+      </div>
+    </div></div>
+    <p class="state-note">Same banner for pick_done / pick_checked ("Ravi has picked this bill…" / "…checked"). With no picker named: "This bill is in picking. Pulling it will cancel the pick." The banner is built in the popup from <code>pickerName</code> + stage (the server's <code>reason</code> for a confirm is shorter: "Being picked (Ravi) — the pick will be cancelled"). "Pull anyway" sends <code>confirmCancelPick: true</code>; a 409 PICK_CONFIRM_REQUIRED on the plain button (bill taken while the popup was open) lands here.</p>
+  </section>
+
+  <!-- ═════════ 3b. PHONE ═════════ -->
+  <section class="state">
+    <p class="state-label"><b>3</b>Picker holding the bill — phone, 380px</p>
+    <div class="stage"><div class="modal phone">
+      <div class="m-head"><h2>Add to Tint</h2><button class="x">✕</button></div>
+      <div class="m-body">
+        <div class="bill">
+          <div class="top">
+            <div class="name">Krishna Hardware, Varachha</div>
+          </div>
+          <div class="meta">
+            <span class="pill p-pick">Picking · Ravi</span>
+            <span><span class="k">OBD</span><span class="mono">9110382644</span></span>
+            <span><span class="dot"></span>Decorative Projects</span>
+          </div>
+        </div>
+        <div class="ban b-warn"><span class="ic">!</span><span>Ravi is picking this bill. Pulling it will cancel his pick and notify him and the supervisors.</span></div>
+        <div class="lines-h"><span class="t">Lines</span><span class="small">2 of 2</span></div>
+        <div class="lines">
+          <div class="line"><span class="tick on"></span><div class="d"><div class="d1">Promise Interior Emulsion BW 10L</div><div class="d2"><span class="mono">5400918</span> · <b style="color:var(--gray-900)">3</b> tins · 30 L</div></div></div>
+          <div class="line"><span class="tick on"></span><div class="d"><div class="d1">Promise Interior Emulsion BW 4L</div><div class="d2"><span class="mono">5400916</span> · <b style="color:var(--gray-900)">5</b> tins · 20 L</div></div></div>
+        </div>
+        <div class="two">
+          <div><label class="f">Reason</label><div class="select">Custom Shade</div></div>
+          <div><label class="f">Tint operator</label><div class="select">Assign later</div></div>
+        </div>
+        <div class="toggle-row mt3">
+          <div><div class="tl">Mark as <span class="pill p-sample">SAMPLE</span></div></div>
+          <span class="ios"></span>
+        </div>
+      </div>
+      <div class="m-foot">
+        <div class="btns" style="width:100%"><button class="btn ghost">Cancel</button><button class="btn amber" style="flex:1;justify-content:center;height:40px;font-size:13px">Pull anyway</button></div>
+      </div>
+    </div></div>
+    <p class="state-note">At phone width: the stage pill drops under the name, quantities fold into the line's second row, Reason and Operator stack, the footer hint goes, and the main button fills the row. Inputs at 16px on a real phone (§9 mobile rule).</p>
+  </section>
+
+  <!-- ═════════ 4. ON A TRIP ═════════ -->
+  <section class="state">
+    <p class="state-label"><b>4</b>On a trip · and the sent-to-billing variant</p>
+    <div class="stage"><div class="modal">
+      <div class="m-head"><h2>Add to Tint</h2><button class="x">✕</button></div>
+      <div class="m-body">
+        <div class="bill">
+          <div class="top"><div class="name">Om Sai Traders, Katargam</div><span class="pill p-stage">Pending picking</span></div>
+          <div class="meta">
+            <span><span class="k">OBD</span><span class="mono">9110382702</span></span>
+            <span><span class="k">Trip</span><span class="mono">L-251025-02</span></span>
+            <span><span class="dot"></span>Retail Offtake</span>
+          </div>
+        </div>
+        <div class="ban b-info"><span class="ic">i</span><span>On trip <span class="mono">L-251025-02</span> — it will come off the trip.</span></div>
+        <p class="small" style="margin:-4px 0 8px">Variant — the trip was already sent to billing:</p>
+        <div class="ban b-warn strong"><span class="ic">!</span><span>On trip <span class="mono">L-251025-02</span>, already sent to billing — billing papers will need redoing. It will come off the trip.</span></div>
+        <div class="lines-h"><span class="t">Lines that need tinting</span><span class="small">1 of 1 ticked</span></div>
+        <div class="lines">
+          <div class="line"><span class="tick on"></span><div class="d"><div class="d1">Weathershield Max BW 20L</div><div class="d2 mono">5422112</div></div><div class="q"><b>2</b> tins · 40 L</div></div>
+        </div>
+        <div class="two">
+          <div><label class="f">Reason</label><div class="select">Late Addition</div></div>
+          <div><label class="f">Tint operator <span style="color:var(--gray-400);font-weight:400">(optional)</span></label><div class="select">Assign later</div></div>
+        </div>
+      </div>
+      <div class="m-foot">
+        <span class="hint">Audit log will record this pull.</span>
+        <div class="btns"><button class="btn ghost">Cancel</button><button class="btn dark">Pull to tint</button></div>
+      </div>
+    </div></div>
+    <p class="state-note">Two trips (split load) list both numbers in one line. The trip lines stack under a picker warning when both apply; the main button is "Pull anyway" whenever a picker warning shows.</p>
+  </section>
+
+  <!-- ═════════ 5. INVOICED, NOT DISPATCHED ═════════ -->
+  <section class="state">
+    <p class="state-label"><b>5</b>Already invoiced, not dispatched</p>
+    <div class="stage"><div class="modal">
+      <div class="m-head"><h2>Add to Tint</h2><button class="x">✕</button></div>
+      <div class="m-body">
+        <div class="bill">
+          <div class="top"><div class="name">Patel Colour House, Udhna</div><span class="pill p-pick">Checked · Suresh</span></div>
+          <div class="meta">
+            <span><span class="k">OBD</span><span class="mono">9110382733</span></span>
+            <span><span class="k">Invoice</span><span class="mono">I536229701</span></span>
+            <span><span class="dot"></span>Retail Offtake</span>
+          </div>
+        </div>
+        <div class="ban b-warn"><span class="ic">!</span><span>Suresh has checked this bill. Pulling it will cancel his pick and notify him and the supervisors.</span></div>
+        <div class="ban b-warn"><span class="ic">!</span><span>Already invoiced — the invoice stays as is.</span></div>
+        <div class="lines-h"><span class="t">Lines that need tinting</span><span class="small">1 of 1 ticked</span></div>
+        <div class="lines">
+          <div class="line"><span class="tick on"></span><div class="d"><div class="d1">Super Cover Exterior BW 10L</div><div class="d2 mono">5433010</div></div><div class="q"><b>2</b> tins · 20 L</div></div>
+        </div>
+        <div class="two">
+          <div><label class="f">Reason</label><div class="select">Sample</div></div>
+          <div><label class="f">Tint operator <span style="color:var(--gray-400);font-weight:400">(optional)</span></label><div class="select">Assign later</div></div>
+        </div>
+      </div>
+      <div class="m-foot">
+        <span class="hint">Audit log will record this pull.</span>
+        <div class="btns"><button class="btn ghost">Cancel</button><button class="btn amber">Pull anyway</button></div>
+      </div>
+    </div></div>
+    <p class="state-note">⚠ Needs a field the lookup does not return yet (an "invoiced" flag per match). Owner decision 1 from the server build still open: if invoiced bills become refused, this state moves to 7.</p>
+  </section>
+
+  <!-- ═════════ 6. INVOICE COVERS 2 OBDS ═════════ -->
+  <section class="state">
+    <p class="state-label"><b>6</b>Invoice covers 2 OBDs — chooser</p>
+    <div class="stage"><div class="modal">
+      <div class="m-head"><h2>Add to Tint</h2><button class="x">✕</button></div>
+      <div class="m-body">
+        <div class="row mb3" style="justify-content:space-between">
+          <span style="font-size:12px;font-weight:600">Invoice <span class="mono">I536229654</span> covers 2 OBDs — pick one</span>
+          <button class="link">Change</button>
+        </div>
+        <div class="choose">
+          <div class="ch pick sel">
+            <span class="radio on"></span>
+            <div class="c">
+              <div class="c1">Shree Ganesh Paints, Adajan</div>
+              <div class="c2"><span class="mono">9110382611</span> · Pending picking · 4 lines</div>
+              <div class="c3 n">Invoice 2 of 3 on this OBD — the whole OBD moves to tint</div>
+            </div>
+            <span class="pill p-ok">Can pull</span>
+          </div>
+          <div class="ch dead">
+            <span class="radio dis"></span>
+            <div class="c">
+              <div class="c1">Shree Ganesh Paints, Adajan</div>
+              <div class="c2"><span class="mono">9110382612</span> · Dispatched</div>
+              <div class="c3">Already dispatched — cannot pull</div>
+            </div>
+            <span class="pill p-no">Refused</span>
+          </div>
+        </div>
+        <p class="small">Picking a row opens it as state 2 (or 3 / 4 / 5), with a "Back to the 2 OBDs" link in place of Change.</p>
+      </div>
+      <div class="m-foot">
+        <div class="btns"><button class="btn ghost">Cancel</button><button class="btn dark">Continue</button></div>
+      </div>
+    </div></div>
+    <p class="state-note">A picker-held row shows an amber "Picker: Ravi" pill instead of "Can pull". When only ONE row is pullable it is pre-selected (as here). When none is, Continue is grey. The "k of N" note also shows on the bill card in state 2 when an invoice found one OBD.</p>
+  </section>
+
+  <!-- ═════════ 7. REFUSED ═════════ -->
+  <section class="state">
+    <p class="state-label"><b>7</b>Refused</p>
+    <div class="stage"><div class="modal">
+      <div class="m-head"><h2>Add to Tint</h2><button class="x">✕</button></div>
+      <div class="m-body">
+        <label class="f">OBD or invoice number</label>
+        <div class="row">
+          <input class="input mono" value="9110382612" style="border-color:#FCA5A5">
+          <button class="btn dark fetch">Fetch</button>
+        </div>
+        <div class="bill mt3" style="opacity:.75">
+          <div class="top"><div class="name">Shree Ganesh Paints, Adajan</div><span class="pill p-stage">Dispatched</span></div>
+          <div class="meta"><span><span class="k">OBD</span><span class="mono">9110382612</span></span><span><span class="k">Invoice</span><span class="mono">I536229654</span></span></div>
+        </div>
+        <div class="ban b-err"><span class="ic">✕</span><span>Already dispatched — cannot pull</span></div>
+        <p class="small" style="margin:0 0 4px">Other refusals, same red line:</p>
+        <div class="ban b-err" style="margin-bottom:6px"><span class="ic">✕</span><span>Already in tint workflow</span></div>
+        <div class="ban b-err" style="margin-bottom:6px"><span class="ic">✕</span><span>Removed bill</span></div>
+        <div class="ban b-err" style="margin-bottom:6px"><span class="ic">✕</span><span>Challan orders stay non-tint — this bill cannot be pulled</span></div>
+        <div class="ban b-err" style="margin-bottom:6px"><span class="ic">✕</span><span>This bill has CI-2026-00112 — it cannot be pulled into tinting here.</span></div>
+        <div class="ban b-err" style="margin-bottom:0"><span class="ic">✕</span><span>No bill found for 9110399999</span></div>
+      </div>
+      <div class="m-foot"><div class="btns"><button class="btn ghost">Close</button></div></div>
+    </div></div>
+    <p class="state-note">The red line is the match's own <code>reason</code> from the server — the popup keeps no message table of its own. ⚠ The sentences drawn here are the target wording; today's server strings differ (e.g. "I536229654 has been dispatched — this bill cannot be pulled into tinting", "This OBD is already in the tint workflow", "This bill has been removed") and get aligned in step 7. The input stays editable so a new number can be fetched.</p>
+  </section>
+
+  <!-- ═════════ 8. ZERO LINES ═════════ -->
+  <section class="state">
+    <p class="state-label"><b>8</b>Zero lines</p>
+    <div class="stage"><div class="modal">
+      <div class="m-head"><h2>Add to Tint</h2><button class="x">✕</button></div>
+      <div class="m-body">
+        <div class="bill">
+          <div class="top"><div class="name">Jay Ambe Enterprise, Pandesara</div><span class="pill p-stage">Pending support</span></div>
+          <div class="meta"><span><span class="k">OBD</span><span class="mono">9110382790</span></span><span><span class="dot"></span>Retail Offtake</span></div>
+        </div>
+        <div class="ban b-plain"><span class="ic">–</span><span>No active lines on this OBD (2 removed, 1 errored)</span></div>
+        <div class="two" style="opacity:.6">
+          <div><label class="f">Reason</label><div class="select off">Sample</div></div>
+          <div><label class="f">Tint operator</label><div class="select off">Assign later</div></div>
+        </div>
+      </div>
+      <div class="m-foot">
+        <span class="hint">Nothing to pull.</span>
+        <div class="btns"><button class="btn ghost">Cancel</button><button class="btn off">Pull to tint</button></div>
+      </div>
+    </div></div>
+    <p class="state-note">Disabled = grey, never a faded primary (§10). The same grey button shows when every line is unticked, or Other has no notes.</p>
+  </section>
+
+  <!-- ═════════ 9. ERRORS ═════════ -->
+  <section class="state">
+    <p class="state-label"><b>9</b>Errors — session and permission</p>
+    <div class="stage"><div class="modal">
+      <div class="m-head"><h2>Add to Tint</h2><button class="x">✕</button></div>
+      <div class="m-body">
+        <div class="ban b-err"><span class="ic">✕</span><span>Your session has expired — please log in again <a href="#" style="color:inherit;font-weight:600;margin-left:4px">Log in</a></span></div>
+        <div class="ban b-err"><span class="ic">✕</span><span>You don't have permission to add bills to tint</span></div>
+        <label class="f">OBD or invoice number</label>
+        <div class="row">
+          <input class="input mono" value="9110382611">
+          <button class="btn dark fetch">Fetch</button>
+        </div>
+      </div>
+      <div class="m-foot"><div class="btns"><button class="btn ghost">Close</button></div></div>
+    </div></div>
+    <p class="state-note">401 UNAUTHORIZED → session line; 403 FORBIDDEN → permission line. Either can come from Fetch or from Pull. Only one shows at a time (both drawn here). Network failure: "Could not reach the server — check the connection and try again."</p>
+  </section>
+
+  <!-- ═════════ 10 + 11. TOASTS ═════════ -->
+  <section class="state">
+    <p class="state-label"><b>10 · 11</b>After the pull — toasts</p>
+    <div class="toast-wrap">
+      <p class="small" style="margin:0">10 · Pulled without operator</p>
+      <div class="toast warn">
+        <span class="ti">!</span>
+        <div class="tx">Pulled to tint. Operator not assigned — fix customer details first, then assign.<span class="s"><span class="mono">9110382644</span> · waiting in Pending assignment</span></div>
+      </div>
+      <p class="small" style="margin:6px 0 0">11 · Normal</p>
+      <div class="toast ok">
+        <span class="ti">✓</span>
+        <div class="tx"><span class="mono">9110382611</span> pulled to tint · assigned to Deepak · <span class="pill p-sample" style="font-size:10px;padding:1px 6px">SAMPLE</span></div>
+      </div>
+      <div class="toast ok">
+        <span class="ti">✓</span>
+        <div class="tx"><span class="mono">9110382644</span> pulled to tint · Ravi's pick cancelled · off trip <span class="mono">L-251025-02</span></div>
+      </div>
+    </div>
+    <p class="state-note">The popup closes; the toast sits at the board's usual toast spot. Parts that did not happen are left out ("· assigned to …" only with an operator, "· SAMPLE" only when marked). ⚠ Toast 10 needs a server change: today a customerMissing bill with an operator chosen is refused outright (OPERATOR_REFUSED, nothing written). The popup should instead disable the operator select on a customerMissing match ("Add the customer first") — then 10 is the result.</p>
+  </section>
+
+  </div>
+
+  <div class="spec">
+    <h2>What the popup reads (lookup → <span class="mono">matches[]</span>)</h2>
+    <ul>
+      <li>One match → open it. Several → chooser (state 6). Each match carries <code>verdict</code> ok / confirm / refused, <code>reason</code>, <code>invoiceNote</code>, <code>pickerName</code>, <code>trips[]</code> with <code>sentToBilling</code>, <code>isSample</code>, <code>customerMissing</code>, <code>lineCounts</code>, <code>lines</code>.</li>
+      <li><code>verdict: confirm</code> → amber banner + "Pull anyway" (state 3). <code>refused</code> → red line, no form (state 7). <code>NO_LINES</code> is drawn as state 8, not as a red refusal.</li>
+      <li><code>isSample</code> true → the toggle shows ON and locked, "Already a sample" (the pull never clears the mark).</li>
+      <li><code>customerMissing</code> true → operator select disabled, "Add the customer first, then assign".</li>
+      <li>POST body: <code>orderId, lineIds, reasonCode, reasonNotes?, confirmCancelPick?, operatorId?, markSample?</code>.</li>
+      <li>Line quantity: <code>unitQty</code> tins · <code>volumeLine</code> L.</li>
+    </ul>
+  </div>
+</div>
+</body>
+</html>
