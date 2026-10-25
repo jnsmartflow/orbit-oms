@@ -18,6 +18,7 @@ import {
   pullLookupWhere,
   pullPushRecipients,
   pullStatusNote,
+  pullWarnings,
   type PullFacts,
 } from "./manual-pull-rules";
 
@@ -50,12 +51,9 @@ test("the lookup WHERE carries no removed / hide / challan filter (a found bill 
 });
 
 test("invoice k of n note only for one invoice of a multi-invoice OBD", () => {
-  assert.equal(
-    invoiceOfObdNote(2, 3, "9105123456"),
-    "Invoice 2 of 3 on OBD 9105123456; the whole OBD moves to tint",
-  );
-  assert.equal(invoiceOfObdNote(1, 1, "9105123456"), null);
-  assert.equal(invoiceOfObdNote(null, 3, "9105123456"), null);
+  assert.equal(invoiceOfObdNote(2, 3), "Invoice 2 of 3 on this OBD — the whole OBD moves to tint");
+  assert.equal(invoiceOfObdNote(1, 1), null);
+  assert.equal(invoiceOfObdNote(null, 3), null);
 });
 
 // ── Stage verdicts ───────────────────────────────────────────────────────────
@@ -102,8 +100,60 @@ test("judgePull: an untouched non-tint bill of ANY division is pullable (no SMU 
 test("judgePull: a picker's bill needs the confirm and names the picker", () => {
   const v = judgePull({ ...BASE, workflowStage: "pick_assigned", pickerName: "Ravi" });
   assert.equal(v.verdict, "confirm");
-  assert.match(v.reason ?? "", /Ravi/);
-  assert.equal(judgePull({ ...BASE, workflowStage: "pick_checked" }).verdict, "confirm");
+  assert.equal(
+    v.reason,
+    "Ravi is picking this bill. Pulling it will cancel the pick and notify Ravi and the supervisors.",
+  );
+  const checked = judgePull({ ...BASE, workflowStage: "pick_checked" });
+  assert.equal(checked.verdict, "confirm");
+  // No picker on record (a Direct Loading): no promise of a notification.
+  assert.equal(checked.reason, "This bill is in picking. Pulling it will cancel the pick.");
+});
+
+test("refusal sentences are the popup's wording (mockup add-to-tint-v1 state 7)", () => {
+  const reason = (f: Partial<PullFacts>) => judgePull({ ...BASE, ...f }).reason;
+  assert.equal(reason({ isRemoved: true }), "Removed bill");
+  assert.equal(reason({ orderType: "tint" }), "Already in tint workflow");
+  assert.equal(reason({ workflowStage: "dispatched" }), "Already dispatched — cannot pull");
+  assert.equal(
+    reason({ workflowStage: "pick_done", dispatchedInvoice: "I536229654" }),
+    "Already dispatched (I536229654) — cannot pull",
+  );
+  assert.equal(reason({ isChallanOrder: true }), "Challan orders stay non-tint — this bill cannot be pulled");
+});
+
+// ── The warnings ─────────────────────────────────────────────────────────────
+
+test("warnings stack: pick, trip, invoiced, k-of-N — and none on a refused bill", () => {
+  const w = pullWarnings({
+    verdict: "confirm",
+    reason: "Ravi is picking this bill. Pulling it will cancel the pick and notify Ravi and the supervisors.",
+    trips: [{ tripNumber: "L-251025-02", sentToBilling: false }],
+    invoiced: true,
+    invoiceNote: "Invoice 2 of 3 on this OBD — the whole OBD moves to tint",
+  });
+  assert.deepEqual(
+    w.map((x) => x.tone),
+    ["warn", "info", "warn", "info"],
+  );
+  assert.equal(w[1].text, "On trip L-251025-02 — it will come off the trip.");
+  assert.equal(w[2].text, "Already invoiced — the invoice stays as is.");
+  assert.deepEqual(
+    pullWarnings({ verdict: "refused", reason: "Removed bill", trips: [], invoiced: true, invoiceNote: null }),
+    [],
+  );
+});
+
+test("a trip already sent to billing gets the strong warning", () => {
+  const [w] = pullWarnings({
+    verdict: "ok",
+    reason: null,
+    trips: [{ tripNumber: "L-251025-02", sentToBilling: true }],
+    invoiced: false,
+    invoiceNote: null,
+  });
+  assert.equal(w.strong, true);
+  assert.match(w.text, /already sent to billing — billing papers will need redoing/);
 });
 
 test("judgePull: refusals, first reason wins", () => {

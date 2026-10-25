@@ -18,11 +18,10 @@ export const dynamic = "force-dynamic";
  * when nothing could be looked up: BAD_REQUEST, NOT_FOUND, UNAUTHORIZED,
  * FORBIDDEN.
  *
- * ⚠ TRANSITIONAL — `order`. The modal still reads the old single-bill shape
- * until its rebuild (step 7): when the term found exactly ONE bill and it is
- * pullable, that bill is ALSO returned as `order`, and a single refused bill
- * also answers in the old error shape, so today's modal keeps working. Step 7
- * reads `matches` and removes both.
+ * The old single-bill `order` field and the old error shape for one refused
+ * bill were transitional shims for the previous modal; both were removed with
+ * the modal rebuild (2026-10-25) — components/tint/manual-tint-entry-modal.tsx
+ * reads `matches` only.
  */
 export async function GET(req: NextRequest): Promise<NextResponse> {
   const session = await auth();
@@ -53,30 +52,5 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   if (!result.ok) {
     return NextResponse.json(result, { status: result.errorCode === "NOT_FOUND" ? 404 : 400 });
   }
-
-  // TRANSITIONAL (see the header) — removed with the modal rebuild.
-  const only = result.matches.length === 1 ? result.matches[0] : null;
-  if (only !== null && only.verdict === "refused") {
-    return NextResponse.json(
-      { ...result, ok: false, errorCode: only.refusalCode, message: only.reason },
-      { status: 400 },
-    );
-  }
-  return NextResponse.json({
-    ...result,
-    ...(only !== null
-      ? {
-          order: {
-            id: only.orderId,
-            obdNumber: only.obdNumber,
-            customerName: only.customerName,
-            smu: only.smu,
-            orderDateTime: only.orderDateTime,
-            workflowStage: only.workflowStage,
-            orderType: only.orderType,
-            lines: only.lines,
-          },
-        }
-      : {}),
-  });
+  return NextResponse.json(result);
 }

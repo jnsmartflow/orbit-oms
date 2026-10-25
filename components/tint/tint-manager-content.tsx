@@ -2381,6 +2381,7 @@ export function TintManagerContent() {
         open={pullModalOpen}
         onClose={() => setPullModalOpen(false)}
         onSuccess={() => { void fetchBoard(); }}
+        operators={operators}
       />
 
       <ManualTintRevertModal

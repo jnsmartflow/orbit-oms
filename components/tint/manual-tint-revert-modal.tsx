@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { X, Loader2 } from "lucide-react";
+import { toast } from "sonner";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -99,7 +100,12 @@ export function ManualTintRevertModal({
         }),
       });
       const json = (await res.json()) as
-        | { ok: true;  order: { id: number; obdNumber: string; workflowStage: string } }
+        | {
+            ok: true;
+            order: { id: number; obdNumber: string; workflowStage: string };
+            /** Who lost the pick when the bill was pulled in (2026-10-24) — not restored. */
+            cancelledPickerName?: string | null;
+          }
         | { ok: false; errorCode: string; message?: string };
 
       if (!json.ok) {
@@ -107,11 +113,17 @@ export function ManualTintRevertModal({
         return;
       }
 
+      // The pull cancelled a pick; the revert does not give it back.
+      if (json.cancelledPickerName) {
+        toast.warning(`${json.order.obdNumber} removed from tint`, {
+          description: `${json.cancelledPickerName}'s pick is not restored — reassign from Picking.`,
+        });
+      }
       onSuccess?.(json.order.obdNumber);
       onClose();
     } catch (e) {
       console.error("[manual-tint-revert] submit failed", e);
-      setSubmitError("Network error. Please try again.");
+      setSubmitError("Could not reach the server — check the connection and try again");
     } finally {
       setSubmitLoading(false);
     }
@@ -157,7 +169,7 @@ export function ManualTintRevertModal({
 
           <p className="text-[12.5px] text-gray-700 mb-3">
             Remove OBD <span className="font-mono text-gray-900">{obdNumber}</span> from tint?
-            This sends it back to the support queue.
+            This sends it back to the picking queue (or the support desk, when held).
           </p>
 
           <label

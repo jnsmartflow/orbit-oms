@@ -72,6 +72,7 @@ const PULL_ORDER_SELECT = {
   workflowStage: true,
   orderType: true,
   smu: true,
+  invoiceNo: true,
   orderDateTime: true,
   dispatchSlotSource: true,
   customerMissing: true,
@@ -202,6 +203,16 @@ export interface PullMatch {
   invoiceNote: string | null;
   /** The invoice the term named, when it was an invoice. */
   matchedInvoice: string | null;
+  /** The OBD's invoice numbers, seq order (split-load parts not repeated). */
+  invoiceNos: string[];
+  /**
+   * The bill carries a SAP invoice: orders.invoiceNo is set, or any invoice
+   * row has a number. Only meaningful on a pullable bill — a dispatched row
+   * is already refused (DISPATCHED), so here it means invoiced, not
+   * dispatched. The modal warns "the invoice stays as is" (owner, 2026-10-25:
+   * allowed, with the warning).
+   */
+  invoiced: boolean;
   /** Who holds the pick — the push goes to them. */
   pickerName: string | null;
   trips: { tripNumber: string; sentToBilling: boolean }[];
@@ -264,6 +275,14 @@ export async function lookupManualPull(raw: string): Promise<PullLookupResult> {
         ? invoiceRows.findIndex((r) => r.invoiceNo === matchedInvoice) + 1 || null
         : null;
 
+    const invoiceNos = Array.from(
+      new Set(
+        [order.invoiceNo, ...order.invoices.map((r) => r.invoiceNo)].filter(
+          (n): n is string => n !== null && n.trim() !== "",
+        ),
+      ),
+    );
+
     const lines =
       verdict.verdict === "refused"
         ? []
@@ -292,8 +311,10 @@ export async function lookupManualPull(raw: string): Promise<PullLookupResult> {
       verdict: verdict.verdict,
       refusalCode: verdict.verdict === "refused" ? verdict.code : null,
       reason: verdict.reason,
-      invoiceNote: invoiceOfObdNote(position, invoiceRows.length, order.obdNumber),
+      invoiceNote: invoiceOfObdNote(position, invoiceRows.length),
       matchedInvoice,
+      invoiceNos,
+      invoiced: invoiceNos.length > 0,
       pickerName: order.pickAssignment?.picker.name ?? null,
       trips: tripsOf(order).map((t) => ({ tripNumber: t.tripNumber, sentToBilling: t.sentToBilling })),
       challanEligible: order.smu !== null && CHALLAN_ELIGIBLE_SMU.includes(order.smu),

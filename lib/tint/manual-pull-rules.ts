@@ -2,8 +2,8 @@
 //
 // "+ Add to Tint" — THE RULES, pure (2026-10-24, Add to Tint server build; design
 // of the same day). No Prisma, no clock, no I/O, so the lookup, the pull and the
-// coming modal (step 7) all read ONE verdict, and the tests run without a
-// database. The server half — the reads and the writes — is ./manual-pull.ts.
+// popup (components/tint/manual-tint-entry-modal.tsx, 2026-10-25) all read ONE
+// verdict and ONE set of sentences, and the tests run without a database. The server half — the reads and the writes — is ./manual-pull.ts.
 //
 // WHAT CHANGED FROM THE OLD manual-entry ROUTES (both re-checked here):
 //   - NO SMU GATE and NO 7-DAY WINDOW. Any division's bill can be pulled; the
@@ -48,7 +48,8 @@ export function pullLookupWhere(term: PullLookupTerm, invoiceOrderIds: readonly 
 
 // ── The verdict ──────────────────────────────────────────────────────────────
 
-/** Why a bill may not be pulled — the modal maps each to its sentence. */
+/** Why a bill may not be pulled. The SENTENCE is `reason`, written here and
+ *  nowhere else — the modal prints it as it comes (mockup add-to-tint-v1 state 7). */
 export type PullRefusalCode =
   | "REMOVED"
   | "CHALLAN_ORDER"
@@ -94,26 +95,26 @@ export interface PullFacts {
 /** Refusals in priority order — the FIRST that applies is the one reported. */
 export function judgePull(f: PullFacts): PullVerdict {
   if (f.isRemoved) {
-    return { verdict: "refused", code: "REMOVED", reason: "This bill has been removed" };
+    return { verdict: "refused", code: "REMOVED", reason: "Removed bill" };
   }
   // Challan orders are non-tint in Phase 1 (2026-10-06, Challan orders slice 2,
   // design D5) — checked before the tint-type test so the real reason is told.
   if (f.isChallanOrder) {
-    return { verdict: "refused", code: "CHALLAN_ORDER", reason: "Challan orders are non-tint in Phase 1" };
+    return { verdict: "refused", code: "CHALLAN_ORDER", reason: "Challan orders stay non-tint — this bill cannot be pulled" };
   }
   if (f.workflowStage === CHALLAN_LINKED) {
     return {
       verdict: "refused",
       code: "CHALLAN_ORDER",
-      reason: "This bill is linked to a challan order and cannot be pulled into tinting",
+      reason: "Linked to a challan order — cannot pull",
     };
   }
   // Already tint — refused, never pulled a second time (owner, 2026-10-24).
   if (f.orderType !== "non_tint") {
-    return { verdict: "refused", code: "ALREADY_TINT", reason: "This OBD is already in the tint workflow" };
+    return { verdict: "refused", code: "ALREADY_TINT", reason: "Already in tint workflow" };
   }
   if (!f.isActive) {
-    return { verdict: "refused", code: "INACTIVE_ORDER", reason: "This order is inactive and cannot be modified" };
+    return { verdict: "refused", code: "INACTIVE_ORDER", reason: "Inactive order — cannot pull" };
   }
   const stage = manualTintStageVerdict(f.workflowStage);
   if (stage === "refused") {
@@ -123,7 +124,7 @@ export function judgePull(f: PullFacts): PullVerdict {
     return {
       verdict: "refused",
       code: "DISPATCHED",
-      reason: `${f.dispatchedInvoice} has been dispatched — this bill cannot be pulled into tinting`,
+      reason: `Already dispatched (${f.dispatchedInvoice}) — cannot pull`,
     };
   }
   if (f.liveCiRefusal !== null) {
@@ -142,23 +143,29 @@ export function judgePull(f: PullFacts): PullVerdict {
 export function stageRefusal(stage: string): string {
   switch (stage) {
     case "dispatched":
-      return "This bill has already been dispatched";
+      return "Already dispatched — cannot pull";
     case "cancelled":
-      return "This bill is cancelled";
+      return "Cancelled bill — cannot pull";
     case "closed":
-      return "This bill is closed (an old completed bill)";
+      return "Closed bill (an old completed one) — cannot pull";
     default:
-      return `This bill is at "${stage}" and cannot be pulled into tinting`;
+      return `At stage "${stage}" — cannot pull`;
   }
 }
 
-/** What the confirm step says about the pick it will cancel. */
+/**
+ * The confirm step's warning — the modal's amber banner, printed as it comes
+ * (mockup state 3). Names nobody's pronoun: "the pick", "notify Ravi". The
+ * push goes only when a picker is on record (pushPickCancelled), so the
+ * no-picker sentence promises no notification.
+ */
 export function pickCancelReason(stage: string, pickerName: string | null): string {
   // No picker on record: a Direct Loading (no picker ever), or a row lost.
-  const who = pickerName ?? "no picker on record";
-  if (stage === PICK_ASSIGNED) return `Being picked (${who}) — the pick will be cancelled`;
-  if (stage === "pick_done") return `Picked (${who}), waiting for the check — the pick will be cancelled`;
-  return `Picked and checked (${who}) — the pick will be cancelled`;
+  if (pickerName === null) return "This bill is in picking. Pulling it will cancel the pick.";
+  const tail = `Pulling it will cancel the pick and notify ${pickerName} and the supervisors.`;
+  if (stage === PICK_ASSIGNED) return `${pickerName} is picking this bill. ${tail}`;
+  if (stage === "pick_done") return `${pickerName} has picked this bill. ${tail}`;
+  return `${pickerName}'s pick of this bill has been checked. ${tail}`;
 }
 
 /** "No active lines on this OBD (3 removed, 1 errored)". */
@@ -170,14 +177,58 @@ export function noLinesReason(removed: number, errored: number): string {
 }
 
 /**
- * "Invoice 2 of 3 on OBD 9105…; the whole OBD moves to tint" — when the term
+ * "Invoice 2 of 3 on this OBD — the whole OBD moves to tint" — when the term
  * named ONE invoice of a multi-invoice OBD. null otherwise (an OBD term, or an
  * OBD with one invoice). `position`/`total` count the OBD's invoices, not its
  * split-load parts.
  */
-export function invoiceOfObdNote(position: number | null, total: number, obdNumber: string): string | null {
+export function invoiceOfObdNote(position: number | null, total: number): string | null {
   if (position === null || total <= 1) return null;
-  return `Invoice ${position} of ${total} on OBD ${obdNumber}; the whole OBD moves to tint`;
+  return `Invoice ${position} of ${total} on this OBD — the whole OBD moves to tint`;
+}
+
+// ── The warnings ─────────────────────────────────────────────────────────────
+
+/** One banner over a pullable bill. `strong` = the heavier amber. */
+export interface PullWarning {
+  tone: "info" | "warn";
+  strong?: boolean;
+  text: string;
+}
+
+/**
+ * The banners over a pullable bill, in the order the modal stacks them
+ * (mockup states 3–6): the pick it will cancel, the trip(s) it comes off, the
+ * invoice that stays, the k-of-N note. Pure, so the sentences live here with
+ * the refusals and are tested. A refused bill shows only its `reason`.
+ */
+export function pullWarnings(m: {
+  verdict: "ok" | "confirm" | "refused";
+  reason: string | null;
+  trips: readonly { tripNumber: string; sentToBilling: boolean }[];
+  invoiced: boolean;
+  invoiceNote: string | null;
+}): PullWarning[] {
+  if (m.verdict === "refused") return [];
+  const out: PullWarning[] = [];
+  if (m.verdict === "confirm" && m.reason !== null) out.push({ tone: "warn", text: m.reason });
+  if (m.trips.length > 0) {
+    const sent = m.trips.filter((t) => t.sentToBilling).map((t) => t.tripNumber);
+    const all = m.trips.map((t) => t.tripNumber).join(", ");
+    const one = m.trips.length === 1;
+    out.push(
+      sent.length > 0
+        ? {
+            tone: "warn",
+            strong: true,
+            text: `On trip ${all}, already sent to billing — billing papers will need redoing. It will come off the ${one ? "trip" : "trips"}.`,
+          }
+        : { tone: "info", text: `On trip ${all} — it will come off the ${one ? "trip" : "trips"}.` },
+    );
+  }
+  if (m.invoiced) out.push({ tone: "warn", text: "Already invoiced — the invoice stays as is." });
+  if (m.invoiceNote !== null) out.push({ tone: "info", text: m.invoiceNote });
+  return out;
 }
 
 // ── The bill write ───────────────────────────────────────────────────────────
