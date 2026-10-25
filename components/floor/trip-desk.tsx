@@ -241,7 +241,8 @@ export function TripDesk({
   onToggleInvoice: (invoiceRowId: number) => void;
   onToggleAll: (rows: FloorBoardRow[]) => void;
   onMarkUrgent: (id: number) => void;
-  onOpenDetail: (id: number, invoiceSeq?: number) => void;
+  /** `tripId` — set by a trip stop's table only (the panel walks that trip). */
+  onOpenDetail: (id: number, invoiceSeq?: number, tripId?: number) => void;
   tripBusyId: number | null;
   /** The page's delivery-type scope. The rail filters trips by it (slice 6). */
   scope: FloorScope;
@@ -1165,6 +1166,10 @@ export function TripDesk({
                     // desk, which wires no selection at all).
                     onToggleRedelivery={tripsEditable ? onToggleRedelivery : undefined}
                     onOpenRedelivery={onOpenRedelivery}
+                    // The trip HINT (2026-10-25): Prev/Next in the panel walks
+                    // this trip, stop by stop (floor-page.tsx detailList). The
+                    // source is still the desk's — "history" stays read-only.
+                    onOpenDetail={(id, invoiceSeq) => onOpenDetail(id, invoiceSeq, trip.id)}
                   />
                 )}
                 {rdMissing.map((r) => (

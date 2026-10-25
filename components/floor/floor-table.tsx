@@ -1627,9 +1627,11 @@ export function FloorTable({
             tickColumn ? (merged ? dupShadow : null) : blockSelected && !pair && !split ? null : dupShadow,
           )}
         >
-          {shipToBlock ? (
-            // The DETAIL PANEL opens from the number on the block table (the
-            // row click selects). Same handlers as the ⋯ button; never toggles.
+          {(rd ? onOpenRedelivery : onOpenDetail) ? (
+            // The DETAIL PANEL opens from the number on EVERY table that wired
+            // it (2026-10-25 — was the ship-to block table only, so a trip
+            // stop's OBD did nothing). Same handlers as the ⋯ button; never
+            // toggles (a block row's click selects — stopPropagation).
             <button
               type="button"
               title={rd ? "Re-delivery details" : "Open details"}
