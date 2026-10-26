@@ -30,7 +30,7 @@
 // A MOVE onto a trip is a join too (moveRefusals, Phase 4 batch 1, 2026-10-25):
 // the same test, the same words.
 
-import { loadGroupsOf, loadPartText } from "./load-plan";
+import { loadGroupsOf, loadPartsOf, loadPartText, withLoadPart, type LoadPart } from "./load-plan";
 
 /** One invoice row of the OBD, with where it sits now. */
 export interface TripBillRow {
@@ -58,9 +58,25 @@ export interface RowRefusal {
   error: string;
 }
 
-/** How a split OBD's invoice is named in a refusal: its number, else its place. */
-export function invoiceLabel(row: Pick<TripBillRow, "seq" | "invoiceNo">, obdNumber: string): string {
-  return row.invoiceNo ?? `Invoice ${row.seq} of ${obdNumber}`;
+/**
+ * How a split OBD's invoice is named in a refusal: its number, else its place.
+ * With `part` (a load group's row — rowLabelOf fills it) the part follows:
+ * "I536233980 part 2 of 2". Absent → today's words, byte for byte.
+ */
+export function invoiceLabel(row: Pick<TripBillRow, "seq" | "invoiceNo"> & { part?: LoadPart }, obdNumber: string): string {
+  return withLoadPart(row.invoiceNo ?? `Invoice ${row.part?.rootSeq ?? row.seq} of ${obdNumber}`, row.part);
+}
+
+/** Each row's load part, from its loadRootId (loadPartsOf) — none for a row outside a group. */
+function partsOf(rows: readonly TripBillRow[]): Map<number, LoadPart> {
+  return loadPartsOf(
+    rows.map((x) => ({ id: x.id, seq: x.seq, loadParentId: x.loadRootId === undefined || x.loadRootId === null || x.loadRootId === x.id ? null : x.loadRootId })),
+  );
+}
+
+/** invoiceLabel with the row's load part (F11) — the label every refusal here prints. */
+export function rowLabelOf(rows: readonly TripBillRow[], row: Pick<TripBillRow, "id" | "seq" | "invoiceNo">, obdNumber: string): string {
+  return invoiceLabel({ ...row, part: partsOf(rows).get(row.id) }, obdNumber);
 }
 
 /**
@@ -128,12 +144,12 @@ export function planAddRows(
     // the rest still attach. An unsplit bill keeps today's rule (a held bill
     // may sit on a trip).
     if (split && r.tripDropId === null && r.isHeld === true) {
-      plan.refused.push({ rowId: r.id, invoiceNo: r.invoiceNo, error: `${invoiceLabel(r, obdNumber)} is on hold — release it first` });
+      plan.refused.push({ rowId: r.id, invoiceNo: r.invoiceNo, error: `${rowLabelOf(rows, r, obdNumber)} is on hold — release it first` });
     } else if (split && r.tripDropId === null && r.ciNumber !== undefined && r.ciNumber !== null) {
       plan.refused.push({
         rowId: r.id,
         invoiceNo: r.invoiceNo,
-        error: `${invoiceLabel(r, obdNumber)} is returned on ${r.ciNumber === "" ? "a CI" : r.ciNumber} — it does not go out`,
+        error: `${rowLabelOf(rows, r, obdNumber)} is returned on ${r.ciNumber === "" ? "a CI" : r.ciNumber} — it does not go out`,
       });
     } else if (r.tripDropId === null) {
       // Split load: one part of an invoice per trip (null on every other row).
@@ -151,7 +167,7 @@ export function planAddRows(
         rowId: r.id,
         invoiceNo: r.invoiceNo,
         error: split
-          ? `${invoiceLabel(r, obdNumber)} is already on ${r.tripNumber} — remove it from that trip first`
+          ? `${rowLabelOf(rows, r, obdNumber)} is already on ${r.tripNumber} — remove it from that trip first`
           : `Already on ${r.tripNumber} — remove it from that trip first.`,
       });
     }
@@ -181,7 +197,7 @@ export function planRemoveRows(
       plan.detach.push(r.id);
       if (!plan.dropIds.includes(r.tripDropId)) plan.dropIds.push(r.tripDropId);
     } else if (chosen !== "all") {
-      plan.refused.push({ rowId: r.id, invoiceNo: r.invoiceNo, error: `${invoiceLabel(r, obdNumber)} is not on this trip` });
+      plan.refused.push({ rowId: r.id, invoiceNo: r.invoiceNo, error: `${rowLabelOf(rows, r, obdNumber)} is not on this trip` });
     }
   }
   return plan;

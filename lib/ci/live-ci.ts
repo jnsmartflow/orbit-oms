@@ -7,6 +7,8 @@
 //   • Floor unhold         — app/api/floor/actions/route.ts ("unhold")
 //   • Picking cancel       — app/api/picking/cancel/route.ts
 //   • Manual tint pull     — lib/tint/manual-pull.ts (lookup + pull, 2026-10-24)
+//   • Dispatch (unsplit)   — lib/floor/dispatch.ts (Fix B, 2026-10-26; a split
+//                            OBD's rows are judged in lib/order-invoices/dispatch.ts)
 //   (Floor Restore has refused a live CI since 2026-09-22 with its own read —
 //   app/api/floor/actions/route.ts "restore" — and keeps its own wording.)
 //

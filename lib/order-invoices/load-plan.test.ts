@@ -411,3 +411,47 @@ test("repair: an unsplit bill with its hold mirror out of step → mirror; nothi
   assert.deepEqual(planLoadRepair(UNSPLIT({ isHeld: false }), LINES, true), { ok: true, plan: { deleteIds: [], fill: null, mirrorHeld: true, changed: true } });
   assert.deepEqual(planLoadRepair(UNSPLIT(), LINES, false), { ok: true, plan: { deleteIds: [], fill: null, mirrorHeld: null, changed: false } });
 });
+
+// ── Fix A (owner decision 2026-10-26, second): a whole-bill CI never strands a
+// split bill. Merge: only a CI ON a chosen row blocks. Split: a CI on the row,
+// or a FULL whole-bill one; a PARTIAL whole-bill CI does not. ──────────────────
+
+const WHOLE = (returnType: string, status = "submitted") => ({ id: 20, ciNumber: status === "draft" ? null : "CI-2026-00900", status, isVoided: false, orderInvoiceId: null, returnType });
+
+test("Fix A merge: a whole-bill CI — PARTIAL, FULL or a draft — does not block", () => {
+  for (const ci of [WHOLE("part"), WHOLE("full"), WHOLE("full", "draft"), WHOLE("part", "draft")]) {
+    assert.equal(loadMergeRefusal(BILL, SPLIT_ONCE(), [17010, 40001], { ...FACTS, cis: [ci] }), null, JSON.stringify(ci));
+  }
+});
+
+test("Fix A merge: a CI linked to a chosen row still blocks (PARTIAL or FULL, draft included)", () => {
+  for (const returnType of ["part", "full"]) {
+    const own = { id: 21, ciNumber: "CI-2026-00901", status: "submitted", isVoided: false, orderInvoiceId: 40001, returnType };
+    assert.equal(
+      loadMergeRefusal(BILL, SPLIT_ONCE(), [17010, 40001], { ...FACTS, cis: [own] }),
+      "I536230716 part 2 of 2 has CI-2026-00901 — it cannot be merged.",
+    );
+  }
+  const draft = { id: 22, ciNumber: null, status: "draft", isVoided: false, orderInvoiceId: 17010, returnType: "part" };
+  assert.equal(loadMergeRefusal(BILL, SPLIT_ONCE(), [17010, 40001], { ...FACTS, cis: [draft] }), "I536230716 part 1 of 2 has a CI draft — it cannot be merged.");
+});
+
+test("Fix A split: a PARTIAL whole-bill CI is allowed; a FULL one (or a FULL draft) blocks", () => {
+  const rows = UNSPLIT();
+  assert.equal(loadSplitRefusal(BILL, rows, rows[0], { ...FACTS, cis: [WHOLE("part")] }), null);
+  assert.equal(loadSplitRefusal(BILL, rows, rows[0], { ...FACTS, cis: [WHOLE("full")] }), "I536230716 has CI-2026-00900 — it cannot be split.");
+  assert.equal(loadSplitRefusal(BILL, rows, rows[0], { ...FACTS, cis: [WHOLE("full", "draft")] }), "I536230716 has a CI draft — it cannot be split.");
+  // A part of an already-split bill, same rule.
+  const split = SPLIT_ONCE();
+  assert.equal(loadSplitRefusal(BILL, split, split[1], { ...FACTS, cis: [WHOLE("part")] }), null);
+  assert.equal(loadSplitRefusal(BILL, split, split[1], { ...FACTS, cis: [WHOLE("full")] }), "I536230716 has CI-2026-00900 — it cannot be split.");
+});
+
+test("Fix A split: a CI linked to the row blocks whatever its type; another row's CI does not", () => {
+  const split = SPLIT_ONCE();
+  const onPart = { id: 23, ciNumber: "CI-2026-00902", status: "submitted", isVoided: false, orderInvoiceId: 40001, returnType: "part" };
+  assert.equal(loadSplitRefusal(BILL, split, split[1], { ...FACTS, cis: [onPart] }), "I536230716 has CI-2026-00902 — it cannot be split.");
+  assert.equal(loadSplitRefusal(BILL, split, split[0], { ...FACTS, cis: [onPart] }), null);
+  // A void one never counts.
+  assert.equal(loadSplitRefusal(BILL, split, split[1], { ...FACTS, cis: [{ ...onPart, isVoided: true }] }), null);
+});

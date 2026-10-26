@@ -9,6 +9,7 @@
 // ⚠ NO KEY LISTENER — floor-page.tsx is the single Esc owner (CLAUDE_FLOOR §4.6).
 
 import type { TripRedeliveryRow } from "@/lib/trips/queries";
+import { withLoadPart } from "@/lib/order-invoices/load-plan";
 import { EarlierTrips } from "./trip-redelivery-dialog";
 import { BAR_SECONDARY } from "./floor-action-bar";
 
@@ -67,7 +68,8 @@ export function TripRedeliveryInfo({
             <dt className="text-ink-500">OBD</dt>
             <dd className="font-mono text-ink-900">{r.obdNumber}</dd>
             <dt className="text-ink-500">Invoice</dt>
-            <dd className="font-mono text-ink-900">{r.invoiceNo ?? "—"}</dd>
+            {/* F11 — a truck part reads "I536233980 part 2 of 2". */}
+            <dd className="font-mono text-ink-900">{withLoadPart(r.invoiceNo ?? "—", r.part)}</dd>
             {stage && (
               <>
                 <dt className="text-ink-500">Stage</dt>

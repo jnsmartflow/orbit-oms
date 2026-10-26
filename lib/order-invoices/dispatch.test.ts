@@ -112,3 +112,52 @@ test("not stale: planRowsDispatch is byte-identical with or without the new argu
   }
   assert.deepEqual(planRowsDispatch(LOAD_ROWS, [40777], LOAD_OBD, []).rowIdsToUpdate, [40777]);
 });
+
+// ── Fix B (owner decision 2026-10-26, second): a row a FULL CI returned never
+// ships. The cis handed in are FULL, live ones (loadObd reads only those). ────
+
+test("Fix B: a FULL CI on the row (its own) → refused, NOTHING moves, the OBD stays", () => {
+  const ci = { orderInvoiceId: 41213, id: 700, ciNumber: "CI-2026-00700" };
+  const p = planRowsDispatch(LOAD_ROWS, [41213], LOAD_OBD, [ci]);
+  assert.deepEqual(p.rowIdsToUpdate, []);
+  assert.equal(p.obdToDispatched, false);
+  assert.deepEqual(p.returned, [
+    { rowId: 41213, invoiceNo: "I536233980", error: "I536233980 part 2 of 2 — fully returned by CI-2026-00700; remove it from the trip." },
+  ]);
+});
+
+test("Fix B: a FULL whole-bill CI covers every row — refused for each chosen one", () => {
+  const p = planRowsDispatch(LOAD_ROWS, [40777], LOAD_OBD, [{ orderInvoiceId: null, id: 701, ciNumber: "CI-2026-00701" }]);
+  assert.deepEqual(p.returned.map((x) => x.error), ["I536233980 part 1 of 2 — fully returned by CI-2026-00701; remove it from the trip."]);
+  assert.deepEqual(p.rowIdsToUpdate, []);
+  // Add invoices (18648): 713 returned on its own CI → the whole press waits, in its own words.
+  const q = planRowsDispatch(rows([false, false, false, false]), [36798, 36800], { ...CHECKED, obdNumber: "9109951956" }, [{ orderInvoiceId: 36798, id: 702, ciNumber: "CI-2026-00702" }]);
+  assert.deepEqual(q.returned.map((x) => x.error), ["I536230713 — fully returned by CI-2026-00702; remove it from the trip."]);
+  assert.deepEqual(q.rowIdsToUpdate, []);
+});
+
+test("Fix B: no CI on a chosen row → exactly today's plan (another row's CI, an already-dispatched row)", () => {
+  const other = [{ orderInvoiceId: 36799 }];
+  const p = planRowsDispatch(rows([false, false, false, false]), [36798, 36800], CHECKED, other);
+  assert.deepEqual(p.rowIdsToUpdate, [36798, 36800]);
+  assert.deepEqual(p.returned, []);
+  const gone = planRowsDispatch(rows([true, true, false, true]), [36798], CHECKED, [{ orderInvoiceId: 36798, ciNumber: "CI-1" }]);
+  assert.deepEqual(gone.returned, []); // dispatched already — never judged again
+});
+
+test("Fix B: a PARTIAL CI is never handed in (loadObd reads returnType 'full' only) — so it never refuses", () => {
+  // planRowsDispatch only ever sees FULL CIs; a part CI's bill ships as before.
+  const p = planRowsDispatch(LOAD_ROWS, [40777], LOAD_OBD, []);
+  assert.deepEqual(p.rowIdsToUpdate, [40777]);
+  assert.deepEqual(p.returned, []);
+});
+
+test("F11: a held load part is named 'part k of n'; an Add-invoices row keeps its words", () => {
+  const held = LOAD_ROWS.map((r) => (r.id === 41213 ? { ...r, isHeld: true } : r));
+  assert.deepEqual(planRowsDispatch(held, [41213], LOAD_OBD, []).refused.map((x) => x.error), ["I536233980 part 2 of 2 is on hold — it does not go"]);
+  const noNo = held.map((r) => ({ ...r, invoiceNo: null }));
+  assert.deepEqual(planRowsDispatch(noNo, [41213], LOAD_OBD, []).refused.map((x) => x.error), ["Invoice 1 part 2 of 2 is on hold — it does not go"]);
+  const p = planRowsDispatch(rows([false, false, false, false], [false, true, false, false]), [36798], CHECKED, []);
+  assert.deepEqual(p.refused.map((x) => x.error), ["I536230713 is on hold — it does not go"]);
+  assert.deepEqual(planRowsDispatch(rows([false, false, false, false], [false, true, false, false]).map((r) => ({ ...r, invoiceNo: null })), [36798], CHECKED, []).refused[0].error, "Invoice 2 is on hold — it does not go");
+});

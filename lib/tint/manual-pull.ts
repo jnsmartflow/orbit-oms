@@ -35,6 +35,7 @@ import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { CHALLAN_ELIGIBLE_SMU } from "@/lib/import-upsert/types";
 import { INVOICE_SOURCE } from "@/lib/order-invoices/source";
+import { loadPartsOf, withLoadPart } from "@/lib/order-invoices/load-plan";
 import { setRowsTrip } from "@/lib/order-invoices/trip-link";
 import { findLiveCi, liveCiRefusal } from "@/lib/ci/live-ci";
 import { takeBillOffPicker } from "@/lib/picking/unassign";
@@ -94,6 +95,8 @@ const PULL_ORDER_SELECT = {
       isDispatched: true,
       tripDropId: true,
       tripDrop: { select: { id: true, tripId: true, trip: { select: { tripNumber: true, sentToBillingAt: true } } } },
+      // F11 — a dispatched load part is named "I… part k of n".
+      loadParentId: true,
     },
   },
 } satisfies Prisma.ordersSelect;
@@ -156,6 +159,7 @@ async function lineCountsByObd(obdNumbers: string[]): Promise<Map<string, LineCo
 /** The facts judgePull reads, for one loaded bill. Reads the live CI. */
 async function factsOf(order: PullOrder, lines: LineCounts): Promise<PullFacts> {
   const dispatched = order.invoices.find((r) => r.isDispatched) ?? null;
+  const part = dispatched === null ? undefined : loadPartsOf(order.invoices).get(dispatched.id);
   const ci = await findLiveCi(order.id);
   return {
     obdNumber: order.obdNumber,
@@ -165,7 +169,7 @@ async function factsOf(order: PullOrder, lines: LineCounts): Promise<PullFacts> 
     workflowStage: order.workflowStage,
     orderType: order.orderType,
     pickerName: order.pickAssignment?.picker.name ?? null,
-    dispatchedInvoice: dispatched === null ? null : (dispatched.invoiceNo ?? `Invoice ${dispatched.seq}`),
+    dispatchedInvoice: dispatched === null ? null : withLoadPart(dispatched.invoiceNo ?? `Invoice ${part?.rootSeq ?? dispatched.seq}`, part),
     liveCiRefusal: ci === null ? null : liveCiRefusal(ci, "pulled into tinting"),
     activeLines: lines.active,
     removedLines: lines.removed,

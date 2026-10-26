@@ -35,6 +35,7 @@ import { formatIstDayTime, formatIstTime, formatRupees, istDateAndTime } from ".
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { redeliveryReasonLabel } from "@/lib/trips/redelivery-reasons";
+import { loadPartText, withLoadPart } from "@/lib/order-invoices/load-plan";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // THE VOCABULARY
@@ -580,7 +581,7 @@ export async function logTripCancelled(opts: {
    * `orderIds` because those bills were never detached (they were never this
    * trip's bills).
    */
-  redeliveries?: Array<{ orderId: number; obd: string; invoiceNo?: string | null }>;
+  redeliveries?: Array<{ orderId: number; obd: string; invoiceNo?: string | null; orderInvoiceId?: number; part?: { k: number; n: number } }>;
 }): Promise<void> {
   const carried =
     opts.orderIds.length === 0
@@ -609,6 +610,13 @@ export async function logTripCancelled(opts: {
             // P5-5 — parallel, only when a split bill's invoice is among them.
             ...(redel.some((r) => r.invoiceNo !== undefined)
               ? { redeliveryInvoiceNos: redel.map((r) => r.invoiceNo ?? null) }
+              : {}),
+            // F11 — parallel, only when a load PART is among them (set on parts only).
+            ...(redel.some((r) => r.part !== undefined)
+              ? {
+                  redeliveryInvoiceRowIds: redel.map((r) => r.orderInvoiceId ?? null),
+                  redeliveryParts: redel.map((r) => r.part ?? null),
+                }
               : {}),
           }
         : {}),
@@ -875,6 +883,31 @@ export interface RedeliveryLogItem {
   /** P5-5 — the invoice of a SPLIT bill this row re-delivers. Absent on an
    *  unsplit bill (its row IS the bill), so their text and detail are unchanged. */
   invoiceNo?: string | null;
+  /** F11 (Split load phase 4 batch 5) — a truck PART of a load group: its
+   *  invoice row and its place. Set ONLY on a load part, so an unsplit or
+   *  Add-invoices item's text and detail are unchanged. */
+  orderInvoiceId?: number;
+  part?: { k: number; n: number };
+}
+
+/** "9110345576 · I536233980 part 2 of 2 (attempt 2, Site closed)" — one item of
+ *  a re-delivery log line. PURE (lib/order-invoices/part-labels.test.ts). */
+export function redeliveryItemText(i: RedeliveryLogItem): string {
+  const inv = i.invoiceNo ? ` · ${withLoadPart(i.invoiceNo, i.part)}` : i.part ? ` · ${loadPartText(i.part.k, i.part.n)}` : "";
+  return `${i.obd}${inv} (attempt ${i.attemptNo}, ${redeliveryReasonLabel(i.reason)})`;
+}
+
+/** One item of a re-delivery log's detail — the added keys only when present. PURE. */
+export function redeliveryItemDetail(i: RedeliveryLogItem): Prisma.InputJsonObject {
+  return {
+    orderId: i.orderId,
+    obd: i.obd,
+    attemptNo: i.attemptNo,
+    reason: i.reason,
+    ...(i.invoiceNo !== undefined ? { invoiceNo: i.invoiceNo } : {}),
+    ...(i.orderInvoiceId !== undefined ? { orderInvoiceId: i.orderInvoiceId } : {}),
+    ...(i.part !== undefined ? { part: i.part } : {}),
+  };
 }
 
 /**
@@ -895,16 +928,10 @@ export async function logTripRedeliveryAdded(opts: {
     action: TRIP_REDELIVERY_ADDED,
     actorId: opts.actorId,
     summary: `${n} re-deliver${n === 1 ? "y" : "ies"} added — ${opts.items
-      .map((i) => `${i.obd}${i.invoiceNo ? ` · ${i.invoiceNo}` : ""} (attempt ${i.attemptNo}, ${redeliveryReasonLabel(i.reason)})`)
+      .map(redeliveryItemText)
       .join(", ")}${opts.confirmedReturn ? " · truck came back confirmed" : ""}`,
     detail: {
-      items: opts.items.map((i) => ({
-        orderId: i.orderId,
-        obd: i.obd,
-        attemptNo: i.attemptNo,
-        reason: i.reason,
-        ...(i.invoiceNo !== undefined ? { invoiceNo: i.invoiceNo } : {}),
-      })),
+      items: opts.items.map(redeliveryItemDetail),
       orderIds: opts.items.map((i) => i.orderId),
       obdNumbers: opts.items.map((i) => i.obd),
       note: opts.note ?? null,
@@ -929,16 +956,10 @@ export async function logTripRedeliveryRemoved(opts: {
     action: TRIP_REDELIVERY_REMOVED,
     actorId: opts.actorId,
     summary: `${n} re-deliver${n === 1 ? "y" : "ies"} removed — ${opts.items
-      .map((i) => `${i.obd}${i.invoiceNo ? ` · ${i.invoiceNo}` : ""} (attempt ${i.attemptNo}, ${redeliveryReasonLabel(i.reason)})`)
+      .map(redeliveryItemText)
       .join(", ")}`,
     detail: {
-      items: opts.items.map((i) => ({
-        orderId: i.orderId,
-        obd: i.obd,
-        attemptNo: i.attemptNo,
-        reason: i.reason,
-        ...(i.invoiceNo !== undefined ? { invoiceNo: i.invoiceNo } : {}),
-      })),
+      items: opts.items.map(redeliveryItemDetail),
       orderIds: opts.items.map((i) => i.orderId),
       obdNumbers: opts.items.map((i) => i.obd),
     },

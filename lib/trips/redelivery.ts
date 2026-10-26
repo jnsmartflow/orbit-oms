@@ -40,6 +40,8 @@ import { invoiceRowLinks, RECORD_OBD_SELECT, recordObdOf, recordsOfObds } from "
 import { obdStopIds } from "@/lib/order-invoices/trip-read";
 import { invoiceRowMatches } from "@/lib/trips/find-bill";
 import { loadSplitInvoiceRows } from "@/lib/order-invoices/invoice-load";
+import { loadPartsOf } from "@/lib/order-invoices/load-plan";
+import { rowPartsOf } from "@/lib/floor/invoice-rows";
 import { dedupeObdAttempts, invoiceRefusal, redeliveryTargetsOf } from "@/lib/order-invoices/redelivery-plan";
 
 // ── Vocabulary — lives in lib/trips/redelivery-reasons.ts (pure, client-safe) ──
@@ -359,6 +361,8 @@ export interface RedeliveryCandidate {
   orderInvoiceId: number | null;
   /** "2/4" — the invoice's place among the OBD's invoices; null when unsplit. */
   invoiceKN: { k: number; n: number } | null;
+  /** F11 — a truck PART of a load group: "part k of n" (loadPartsOf). Absent otherwise. */
+  part?: { k: number; n: number };
   obdNumber: string;
   invoiceNo: string | null;
   /** The effective ship-to name (override, then customer, then SAP's). */
@@ -471,10 +475,12 @@ export async function searchForRedelivery(tripId: number, raw: string): Promise<
           history,
         );
         const own = j.verdict === "refused" ? null : invoiceRefusal({ isHeld: r.isHeld === true, isDispatched: r.isDispatched === true }, history);
+        const part = rowPartsOf(all).get(r.id);
         return {
           orderId: b.id,
           orderInvoiceId: r.id,
           invoiceKN: { k: all.findIndex((x) => x.id === r.id) + 1, n: all.length },
+          ...(part ? { part: { k: part.k, n: part.n } } : {}),
           obdNumber: b.obdNumber,
           invoiceNo: r.invoiceNo,
           customerName,
@@ -696,7 +702,7 @@ export async function addRedeliveries(
     try {
       const row = await prisma.order_invoices.findUnique({
         where: { id: rowId },
-        select: { id: true, orderId: true, seq: true, invoiceNo: true, isHeld: true, isDispatched: true, tripDrop: { select: { tripId: true } } },
+        select: { id: true, orderId: true, seq: true, invoiceNo: true, isHeld: true, isDispatched: true, loadParentId: true, tripDrop: { select: { tripId: true } } },
       });
       if (!row) {
         failed.push({ orderId: 0, orderInvoiceId: rowId, error: "Invoice not found" });
@@ -747,6 +753,16 @@ export async function addRedeliveries(
         continue;
       }
 
+      // F11 — a truck PART is named "I… part k of n" in the log: its group's
+      // rows only. Read BEFORE the write, so a failed read never reports a
+      // created re-delivery as failed.
+      const rootId = row.loadParentId ?? row.id;
+      const group = await prisma.order_invoices.findMany({
+        where: { orderId, OR: [{ id: rootId }, { loadParentId: rootId }] },
+        select: { id: true, seq: true, loadParentId: true },
+      });
+      const part = loadPartsOf(group).get(rowId);
+
       // The OBD's stop on this trip — two invoices of one bill share it.
       const drop = await findOrCreateTripDrop(tripId, order);
       let created: { id: number };
@@ -779,7 +795,14 @@ export async function addRedeliveries(
       }
 
       added.push({ id: created.id, orderId, obdNumber: order.obdNumber, attemptNo: j.attemptNo, orderInvoiceId: rowId, invoiceNo: row.invoiceNo });
-      logItems.push({ orderId, obd: order.obdNumber, attemptNo: j.attemptNo, reason: input.reason, invoiceNo: row.invoiceNo });
+      logItems.push({
+        orderId,
+        obd: order.obdNumber,
+        attemptNo: j.attemptNo,
+        reason: input.reason,
+        invoiceNo: row.invoiceNo,
+        ...(part ? { orderInvoiceId: rowId, part: { k: part.k, n: part.n } } : {}),
+      });
     } catch (err) {
       failed.push({ orderId, orderInvoiceId: rowId, error: err instanceof Error ? err.message : "Unexpected error" });
     }
@@ -843,7 +866,8 @@ export async function removeRedeliveries(
           reason: true,
           // P5-5 — a split bill's invoice is named in the log; seq 1 of an
           // unsplit bill is the bill itself and is not.
-          orderInvoice: { select: { seq: true, invoiceNo: true, order: { select: { _count: { select: { invoices: true } } } } } },
+          // F11 — the OBD's rows (id / seq / loadParentId) name a truck part.
+          orderInvoice: { select: { id: true, seq: true, invoiceNo: true, order: { select: { invoices: { select: { id: true, seq: true, loadParentId: true } } } } } },
         },
       });
       if (!row || row.tripId !== tripId) {
@@ -852,13 +876,15 @@ export async function removeRedeliveries(
       }
       await prisma.trip_redeliveries.delete({ where: { id: row.id } });
       removed.push(row.id);
-      const splitInvoice = row.orderInvoice.order._count.invoices > 1;
+      const splitInvoice = row.orderInvoice.order.invoices.length > 1;
+      const part = loadPartsOf(row.orderInvoice.order.invoices).get(row.orderInvoice.id);
       logItems.push({
         orderId: row.orderId,
         obd: row.obdNumber,
         attemptNo: row.attemptNo,
         reason: row.reason,
         ...(splitInvoice ? { invoiceNo: row.orderInvoice.invoiceNo } : {}),
+        ...(part ? { orderInvoiceId: row.orderInvoice.id, part: { k: part.k, n: part.n } } : {}),
       });
       // The removal stands even if tidying the stop fails — an empty stop is
       // visible and harmless; reporting the bill as failed would be untrue.

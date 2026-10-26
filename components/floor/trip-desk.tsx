@@ -56,6 +56,7 @@ import {
 import { rdKey, type FloorDeskSelection } from "@/lib/floor/selection";
 import type { FloorBoardResult, FloorBoardRow, FloorRouteClub, FloorScope } from "@/lib/floor/types";
 import { inPool, narrowToPlace, narrowToPool } from "@/lib/floor/invoice-rows";
+import { withLoadPart } from "@/lib/order-invoices/load-plan";
 import type { TripSummary, TripDetail } from "@/lib/trips/queries";
 
 const WD = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -1195,7 +1196,8 @@ export function TripDesk({
                     >
                       RE-DEL
                     </button>
-                    {r.invoiceNo && <span className="font-mono text-gray-600">{r.invoiceNo}</span>}
+                    {/* F11 — a truck part reads "I… part k of n". */}
+                    {r.invoiceNo && <span className="font-mono text-gray-600">{withLoadPart(r.invoiceNo, r.part)}</span>}
                     <span className="text-gray-400">· attempt {r.attemptNo} · not shown on the board (admin Hide rule)</span>
                   </div>
                 ))}

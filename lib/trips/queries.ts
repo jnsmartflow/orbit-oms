@@ -46,6 +46,7 @@ import { isTypedShipTo } from "@/lib/ship-to/effective";
 import { isGiftBill, loadKg, loadLitres } from "@/lib/orders/gift";
 import { onStopsWhere, placeOnTrips, stopRowsSelect } from "@/lib/order-invoices/trip-read";
 import { loadSplitInvoiceRows } from "@/lib/order-invoices/invoice-load";
+import { loadPartsOf } from "@/lib/order-invoices/load-plan";
 import { RECORD_OBD_SELECT, recordObdOf } from "@/lib/order-invoices/links";
 import { invoicesLoad, narrowToInvoiceIds, placeLoad } from "@/lib/floor/invoice-rows";
 import { groupRedeliveries, redeliveryCountsByTrip, type RedeliveryRecord } from "@/lib/order-invoices/redelivery-plan";
@@ -144,6 +145,9 @@ export interface TripRedeliveryRow {
   orderInvoiceId: number;
   /** P5-5 — on a SPLIT bill, this re-delivery is ONE invoice: "2/4". null = unsplit (the whole bill). */
   invoiceKN: { k: number; n: number } | null;
+  /** F11 — a truck PART of a load group: "part k of n" (loadPartsOf). Absent
+   *  on every other row, so their JSON is unchanged. */
+  part?: { k: number; n: number };
   obdNumber: string;
   /** LIVE invoice number — orders.invoiceNo on an unsplit bill, the invoice
    *  row's own on a split one (the row's snapshot only when neither can be read). */
@@ -1204,7 +1208,7 @@ async function loadTripRedeliveries(
     ? await prisma.order_invoices.findMany({
         where: { orderId: { in: Array.from(splitOrderIds) } },
         orderBy: [{ orderId: "asc" }, { seq: "asc" }],
-        select: { id: true, orderId: true, invoiceNo: true },
+        select: { id: true, orderId: true, invoiceNo: true, seq: true, loadParentId: true },
       })
     : [];
   const splitRecordRowIds = rows.filter((r) => splitOrderIds.has(r.orderId)).map((r) => r.orderInvoiceId);
@@ -1214,6 +1218,7 @@ async function loadTripRedeliveries(
     const split = splitOrderIds.has(r.orderId);
     const all = split ? splitAll.filter((x) => x.orderId === r.orderId) : [];
     const inv = split ? all.find((x) => x.id === r.orderInvoiceId) : undefined;
+    const part = inv ? loadPartsOf(all).get(inv.id) : undefined;
     const board = boardRowByOrderId.get(r.orderId) ?? null;
     const invoiceNo = inv
       ? inv.invoiceNo
@@ -1227,6 +1232,7 @@ async function loadTripRedeliveries(
         orderId: r.orderId,
         orderInvoiceId: r.orderInvoiceId,
         invoiceKN: inv ? { k: all.indexOf(inv) + 1, n: all.length } : null,
+        ...(part ? { part: { k: part.k, n: part.n } } : {}),
         obdNumber: r.obdNumber,
         invoiceNo,
         attemptNo: r.attemptNo,

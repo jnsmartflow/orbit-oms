@@ -147,8 +147,8 @@ test("split load: two parts of one invoice in ONE press — the first attaches, 
   const plan = planAddRows(loadRows([ON_605, OFF, OFF]), "all", 668, KEY, OBD);
   assert.deepEqual(plan.attach, [40001]);
   assert.deepEqual(plan.refused.map((x) => x.error), [
-    // Every OTHER label still prints the bare number — phase 4 (design §F ⚠).
-    "I536230716 is already on L-261006-05 — remove it from that trip first",
+    // Phase 4 batch 5 (F11): every label of a load part names it (was the bare number).
+    "I536230716 part 1 of 3 is already on L-261006-05 — remove it from that trip first",
     "I536230716 part 3 of 3 — part 2 of the same invoice is already on this trip",
   ]);
 });

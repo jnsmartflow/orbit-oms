@@ -47,6 +47,7 @@ import { prisma } from "../prisma";
 import { FLOOR_CLEAR_HOLD_STAGES } from "../floor/release-stages";
 import { findLiveCi, liveCiRefusal } from "../ci/live-ci";
 import { INVOICE_HOLD_NOTE, INVOICE_CLEAR_HOLD_NOTE } from "../floor/hold-log";
+import { loadPartsOf, withLoadPart, type LoadPart } from "./load-plan";
 
 /** One invoice row, as the hold rule needs it. */
 export interface HoldRow {
@@ -58,6 +59,8 @@ export interface HoldRow {
   tripDropId: number | null;
   /** The trip of the row's stop — the refusal's words. */
   tripNumber: string | null;
+  /** F11 — the row's place in its load group (loadPartsOf). Omitted = not in one. */
+  part?: LoadPart;
 }
 
 /** The OBD facts the derived status needs. */
@@ -83,9 +86,10 @@ export interface RowsHoldPlan {
   allHeld: boolean;
 }
 
-/** "I536230716" — the invoice number, or "Invoice 2" when SAP has not stamped one. */
-export function invoiceLabel(r: Pick<HoldRow, "seq" | "invoiceNo">): string {
-  return r.invoiceNo ?? `Invoice ${r.seq}`;
+/** "I536230716" — the invoice number, or "Invoice 2" when SAP has not stamped one;
+ *  with `part`, "I536233980 part 2 of 2" (F11). Absent → today's words. */
+export function invoiceLabel(r: Pick<HoldRow, "seq" | "invoiceNo" | "part">): string {
+  return withLoadPart(r.invoiceNo ?? `Invoice ${r.part?.rootSeq ?? r.seq}`, r.part);
 }
 
 /** The on-trip / dispatched refusal for holding ONE row, else null. */
@@ -148,6 +152,7 @@ const ROW_SELECT = {
   isDispatched: true,
   tripDropId: true,
   tripDrop: { select: { trip: { select: { tripNumber: true } } } },
+  loadParentId: true,
 } satisfies Prisma.order_invoicesSelect;
 
 async function setRowsHeld(orderId: number, rowIds: readonly number[], hold: boolean, actorId: number): Promise<RowsHoldResult> {
@@ -161,6 +166,7 @@ async function setRowsHeld(orderId: number, rowIds: readonly number[], hold: boo
     return { kind: "failed", error: hold ? "Cannot hold a cancelled bill" : "Bill is cancelled", refused: [] };
   }
   const found = await prisma.order_invoices.findMany({ where: { orderId }, orderBy: { seq: "asc" }, select: ROW_SELECT });
+  const parts = loadPartsOf(found);
   const rows: HoldRow[] = found.map((r) => ({
     id: r.id,
     seq: r.seq,
@@ -169,6 +175,7 @@ async function setRowsHeld(orderId: number, rowIds: readonly number[], hold: boo
     isDispatched: r.isDispatched,
     tripDropId: r.tripDropId,
     tripNumber: r.tripDrop?.trip.tripNumber ?? null,
+    ...(parts.has(r.id) ? { part: parts.get(r.id) } : {}),
   }));
   if (rows.length < 2) return { kind: "failed", error: "Not a split OBD — hold the whole bill", refused: [] };
   const own = new Set(rows.map((r) => r.id));

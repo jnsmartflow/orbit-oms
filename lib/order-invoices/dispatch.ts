@@ -17,6 +17,13 @@
 // every invoice came back on a CI shipped nothing — it is left at its stage
 // (the CIs are on the Cancel & CI tab), never called dispatched.
 //
+// 🔴 FIX B (owner decision 2026-10-26, second): a chosen row a FULL CI covers
+// (its own, or a whole-bill one) is NEVER marked dispatched — the goods came
+// back. The OBD's press writes nothing and reports FAILED ("I… — fully
+// returned by CI-…; remove it from the trip."), so the trip stays open. Split
+// load AND Add-invoices bills (both come here); the unsplit path is
+// lib/floor/dispatch.ts.
+//
 // 🔴 WRITE ORDER, PER OBD — rows first, the OBD second, the log last:
 //   1. read the OBD (stage, status), ALL its rows and its live FULL CIs
 //   2. ONE order_invoices.updateMany — the target rows not yet dispatched:
@@ -38,7 +45,7 @@ import { prisma } from "../prisma";
 import { DISPATCHED, PICK_CHECKED } from "../workflow-stages";
 import { ciCoversRow } from "./ci-plan";
 import { detectStale } from "./rules";
-import { isHalfWritten, partLabel } from "./load-plan";
+import { isHalfWritten, loadPartsOf, partLabel, withLoadPart, type LoadPart } from "./load-plan";
 import { INVOICE_SOURCE } from "./source";
 
 /** One invoice row, as the done rule needs it. */
@@ -56,6 +63,9 @@ export interface DoneRow {
 /** A live FULL CI of the OBD (submitted / closed — never a draft, never voided). */
 export interface FullCi {
   orderInvoiceId: number | null;
+  /** For the fully-returned refusal's words (Fix B). Omitted in pure fixtures. */
+  id?: number;
+  ciNumber?: string | null;
 }
 
 /** Is this invoice row finished — dispatched, or returned on a full CI? */
@@ -76,6 +86,9 @@ export interface RowsDispatchPlan {
   rowIdsToUpdate: number[];
   /** Target rows that may not ship (held), one by one. */
   refused: Array<{ rowId: number; invoiceNo: string | null; error: string }>;
+  /** Fix B — target rows a FULL CI returned. Any → the OBD writes NOTHING
+   *  (markRowsDispatched reports it failed; the trip stays open). */
+  returned: Array<{ rowId: number; invoiceNo: string | null; error: string }>;
   /** true = write orders 'dispatched' (the rule holds after the press and it is not there yet). */
   obdToDispatched: boolean;
 }
@@ -86,6 +99,22 @@ export interface RowsDispatchPlan {
  */
 export function staleLoadRefusal(label: string): string {
   return `${label} — SAP changed this bill after it was split. Take the parts off their trips, merge them back, split again.`;
+}
+
+/**
+ * FIX B (owner decision 2026-10-26, second): a row a FULL CI covers (its own
+ * or a whole-bill one) came back — it never ships. "I536233980 part 2 of 2 —
+ * fully returned by CI-2026-00700; remove it from the trip."
+ */
+export function fullyReturnedRefusal(label: string, ci: Pick<FullCi, "id" | "ciNumber">): string {
+  return `${label} — fully returned by ${ci.ciNumber ?? `CI #${ci.id ?? "?"}`}; remove it from the trip.`;
+}
+
+/** A row's name in a dispatch refusal / log: "I…", "Invoice 2", or with its
+ *  load part "I… part 2 of 2" (F11, loadPartsOf — absent → today's words). */
+function rowLabel(r: Pick<DoneRow, "id" | "seq" | "invoiceNo">, parts: ReadonlyMap<number, LoadPart>): string {
+  const part = parts.get(r.id);
+  return withLoadPart(r.invoiceNo ?? `Invoice ${part?.rootSeq ?? r.seq}`, part);
 }
 
 /**
@@ -106,28 +135,37 @@ export function planRowsDispatch(
 ): RowsDispatchPlan {
   const chosen = new Set(rowIds);
   const refused: RowsDispatchPlan["refused"] = [];
+  const returned: RowsDispatchPlan["returned"] = [];
   const move = new Set<number>();
+  const asLoad = rows.map((x) => ({ ...x, loadParentId: x.loadParentId ?? null }));
+  const parts = loadPartsOf(asLoad);
   for (const r of rows) {
     if (!chosen.has(r.id) || r.isDispatched) continue;
     if (stale) {
-      const label = partLabel(
-        rows.map((x) => ({ ...x, loadParentId: x.loadParentId ?? null })),
-        { ...r, loadParentId: r.loadParentId ?? null },
-        obd.obdNumber ?? "",
-      );
+      const label = partLabel(asLoad, { ...r, loadParentId: r.loadParentId ?? null }, obd.obdNumber ?? "");
       refused.push({ rowId: r.id, invoiceNo: r.invoiceNo, error: staleLoadRefusal(label) });
       continue;
     }
     if (r.isHeld) {
-      refused.push({ rowId: r.id, invoiceNo: r.invoiceNo, error: `${r.invoiceNo ?? `Invoice ${r.seq}`} is on hold — it does not go` });
+      refused.push({ rowId: r.id, invoiceNo: r.invoiceNo, error: `${rowLabel(r, parts)} is on hold — it does not go` });
+      continue;
+    }
+    // Fix B — a FULL CI returned this row: it does not go, and neither does
+    // the rest of this OBD's press (nothing written; the trip stays open).
+    const ci = cis.find((c) => ciCoversRow(c, r.id));
+    if (ci) {
+      const label = partLabel(asLoad, { ...r, loadParentId: r.loadParentId ?? null }, obd.obdNumber ?? "");
+      returned.push({ rowId: r.id, invoiceNo: r.invoiceNo, error: fullyReturnedRefusal(label, ci) });
       continue;
     }
     move.add(r.id);
   }
+  if (returned.length > 0) return { rowIdsToUpdate: [], refused, returned, obdToDispatched: false };
   const after = rows.map((r) => ({ id: r.id, isDispatched: r.isDispatched || move.has(r.id) }));
   return {
     rowIdsToUpdate: rows.filter((r) => move.has(r.id)).map((r) => r.id),
     refused,
+    returned,
     obdToDispatched: !stale && obd.workflowStage !== DISPATCHED && obdDone(after, cis),
   };
 }
@@ -140,6 +178,9 @@ export type RowsDispatchResult =
   /** Split load: SAP changed the bill after the split — nothing written; the
    *  caller reports it as failed (never held), so the trip stays open. */
   | { kind: "stale"; error: string }
+  /** Fix B: a chosen row came back on a FULL CI — nothing written; FAILED,
+   *  so the trip stays open until it is taken off. */
+  | { kind: "returned"; error: string }
   | { kind: "failed"; error: string };
 
 async function loadObd(orderId: number) {
@@ -163,7 +204,8 @@ async function loadObd(orderId: number) {
   }));
   const cis = await prisma.ci_returns.findMany({
     where: { orderId, isVoided: false, status: { not: "draft" }, returnType: "full" },
-    select: { orderInvoiceId: true },
+    orderBy: { id: "asc" },
+    select: { orderInvoiceId: true, id: true, ciNumber: true },
   });
   // SPLIT LOAD ONLY (owner answer 5): stale = the saved parts no longer match
   // SAP's active lines (rules.ts detectStale, unchanged) or a press died
@@ -213,6 +255,7 @@ export async function markRowsDispatched(opts: {
   }
   const plan = planRowsDispatch(rows, rowIds, order, cis, stale);
   if (stale && plan.refused.length > 0) return { kind: "stale", error: plan.refused.map((r) => r.error).join("; ") };
+  if (plan.returned.length > 0) return { kind: "returned", error: plan.returned.map((r) => r.error).join("; ") };
   if (plan.rowIdsToUpdate.length === 0 && !plan.obdToDispatched) {
     return plan.refused.length > 0 && rowIds.every((id) => plan.refused.some((r) => r.rowId === id))
       ? { kind: "held" }
@@ -231,13 +274,14 @@ export async function markRowsDispatched(opts: {
   }
   // 4.
   const changed = rows.filter((r) => plan.rowIdsToUpdate.includes(r.id));
+  const parts = loadPartsOf(rows.map((r) => ({ ...r, loadParentId: r.loadParentId ?? null })));
   await prisma.order_status_logs.create({
     data: {
       orderId,
       fromStage: order.workflowStage,
       toStage: plan.obdToDispatched ? DISPATCHED : order.workflowStage,
       changedById: actorId,
-      note: `${noteLabel}${changed.length > 0 ? ` · ${changed.map((r) => r.invoiceNo ?? `Invoice ${r.seq}`).join(", ")}` : ""}`,
+      note: `${noteLabel}${changed.length > 0 ? ` · ${changed.map((r) => rowLabel(r, parts)).join(", ")}` : ""}`,
       orderInvoiceIds: changed.map((r) => r.id),
     },
   });

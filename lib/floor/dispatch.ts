@@ -77,7 +77,9 @@
 
 import { prisma } from "@/lib/prisma";
 import { DISPATCHED, PICK_CHECKED } from "@/lib/workflow-stages";
-import { markRowsDispatched, mirrorObdDispatchedSafe } from "@/lib/order-invoices/dispatch";
+import { fullyReturnedRefusal, markRowsDispatched, mirrorObdDispatchedSafe } from "@/lib/order-invoices/dispatch";
+import { paperLabel } from "@/lib/order-invoices/load-plan";
+import { findLiveCi } from "@/lib/ci/live-ci";
 
 export interface DispatchFailure {
   orderId: number;
@@ -171,6 +173,9 @@ export async function markBillsDispatched(opts: {
         // Split load (Phase 4 batch 2): SAP changed the bill after the split —
         // FAILED with the refusal, never held; the trip stays open.
         else if (r.kind === "stale") failed.push({ orderId, error: r.error });
+        // Fix B (2026-10-26): a chosen invoice came back on a FULL CI — FAILED
+        // with the refusal; nothing written, the trip stays open.
+        else if (r.kind === "returned") failed.push({ orderId, error: r.error });
         else failed.push({ orderId, error: r.error });
       } catch (err) {
         failed.push({ orderId, error: err instanceof Error ? err.message : "Unexpected error" });
@@ -180,7 +185,7 @@ export async function markBillsDispatched(opts: {
     try {
       const order = await prisma.orders.findUnique({
         where: { id: orderId },
-        select: { id: true, workflowStage: true, dispatchStatus: true, isRemoved: true },
+        select: { id: true, workflowStage: true, dispatchStatus: true, isRemoved: true, obdNumber: true, invoiceNo: true },
       });
       if (!order || order.isRemoved) {
         failed.push({ orderId, error: "Order not found" });
@@ -204,6 +209,17 @@ export async function markBillsDispatched(opts: {
       // The rule. Anything short of checked is still in the building.
       if (order.workflowStage !== PICK_CHECKED) {
         notChecked.push({ orderId, workflowStage: order.workflowStage });
+        continue;
+      }
+
+      // Fix B (owner decision 2026-10-26, second). A live FULL CI says the
+      // goods came back — a /ci "Full bill" return writes no orders column, so
+      // the bill can still sit at pick_checked on its trip. It never ships:
+      // FAILED with the refusal, nothing written, the trip stays open. Checked
+      // LAST, so every bill without one lands exactly where it did before.
+      const ci = await findLiveCi(orderId);
+      if (ci !== null) {
+        failed.push({ orderId, error: fullyReturnedRefusal(paperLabel({ seq: 1, invoiceNo: order.invoiceNo }, order.obdNumber), ci) });
         continue;
       }
 

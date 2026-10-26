@@ -34,6 +34,7 @@ import type { AttemptHistoryEntry, RedeliveryCandidate } from "@/lib/trips/redel
 import { DISPATCHED, PICK_CHECKED } from "@/lib/workflow-stages";
 import { formatLitres } from "./status-pill";
 import { BAR_PRIMARY, BAR_SECONDARY } from "./floor-action-bar";
+import { withLoadPart } from "@/lib/order-invoices/load-plan";
 
 const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
@@ -149,8 +150,11 @@ function keyOf(b: { orderId: number; orderInvoiceId?: number | null }): string {
   return b.orderInvoiceId != null ? `inv:${b.orderInvoiceId}` : String(b.orderId);
 }
 
-/** "I536230713 · 2/4" on a split bill's invoice; the bill's own number otherwise. */
+/** "I536230713 · 2/4" on a split bill's invoice; the bill's own number
+ *  otherwise; "I536233980 part 2 of 2" on a truck part (F11 — one paper, so
+ *  no invoice k/n). */
 function invoiceLabel(b: RedeliveryCandidate): string | null {
+  if (b.part !== undefined) return withLoadPart(b.invoiceNo ?? "—", b.part);
   if (b.invoiceKN === null) return b.invoiceNo;
   return `${b.invoiceNo ?? "—"} · ${b.invoiceKN.k}/${b.invoiceKN.n}`;
 }

@@ -7,7 +7,7 @@ import { deleteTripDropIfEmpty, findOrCreateTripDrop } from "@/lib/trips/drop";
 import { logTripBills } from "@/lib/trips/activity";
 import { CHALLAN_LINKED } from "@/lib/workflow-stages";
 import { needsDerivedRepair, setRowsTrip } from "@/lib/order-invoices/trip-link";
-import { foreignRowIds, invoiceLabel, moveRefusals, planAddRows, planRemoveRows, type TripBillRow } from "@/lib/order-invoices/trip-bills";
+import { foreignRowIds, moveRefusals, planAddRows, planRemoveRows, rowLabelOf, type TripBillRow } from "@/lib/order-invoices/trip-bills";
 import { getTripSummariesByIds } from "@/lib/trips/queries";
 
 export const dynamic = "force-dynamic";
@@ -294,7 +294,7 @@ export async function POST(
         for (const x of plan.refused) {
           failed.push({
             orderId,
-            error: `${invoiceLabel({ seq: rows.find((r) => r.id === x.rowId)?.seq ?? 0, invoiceNo: x.invoiceNo }, order.obdNumber)} is not on ${source.tripNumber}`,
+            error: `${rowLabelOf(rows, { id: x.rowId, seq: rows.find((r) => r.id === x.rowId)?.seq ?? 0, invoiceNo: x.invoiceNo }, order.obdNumber)} is not on ${source.tripNumber}`,
             invoiceRowId: x.rowId,
             invoiceNo: x.invoiceNo,
           });

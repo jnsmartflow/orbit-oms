@@ -8,6 +8,7 @@ import { DISPATCHED } from "@/lib/workflow-stages";
 import { setRowsTrip } from "@/lib/order-invoices/trip-link";
 import { onStopsWhere } from "@/lib/order-invoices/trip-read";
 import { RECORD_OBD_SELECT, recordObdOf } from "@/lib/order-invoices/links";
+import { loadPartsOf } from "@/lib/order-invoices/load-plan";
 
 export const dynamic = "force-dynamic";
 
@@ -214,7 +215,8 @@ export async function POST(
     select: {
       ...RECORD_OBD_SELECT,
       obdNumber: true,
-      orderInvoice: { select: { orderId: true, invoiceNo: true, order: { select: { _count: { select: { invoices: true } } } } } },
+      // F11 — the OBD's rows (id / seq / loadParentId) name a truck part.
+      orderInvoice: { select: { id: true, orderId: true, invoiceNo: true, order: { select: { invoices: { select: { id: true, seq: true, loadParentId: true } } } } } },
     },
     orderBy: { id: "asc" },
   });
@@ -226,11 +228,15 @@ export async function POST(
     renamedTo,
     orderIds: orders.map((o) => o.id),
     obdNumbers: orders.map((o) => o.obdNumber),
-    redeliveries: redeliveries.map((r) => ({
-      orderId: recordObdOf(r),
-      obd: r.obdNumber,
-      ...(r.orderInvoice.order._count.invoices > 1 ? { invoiceNo: r.orderInvoice.invoiceNo } : {}),
-    })),
+    redeliveries: redeliveries.map((r) => {
+      const part = loadPartsOf(r.orderInvoice.order.invoices).get(r.orderInvoice.id);
+      return {
+        orderId: recordObdOf(r),
+        obd: r.obdNumber,
+        ...(r.orderInvoice.order.invoices.length > 1 ? { invoiceNo: r.orderInvoice.invoiceNo } : {}),
+        ...(part ? { orderInvoiceId: r.orderInvoice.id, part: { k: part.k, n: part.n } } : {}),
+      };
+    }),
     // ⚠ NO REASON IS PASSED, because this route does not take one — it reads
     // `_req` and never parses a body. `logTripCancelled` accepts one so a later
     // slice can add the field without touching the writer; inventing a body

@@ -27,7 +27,7 @@
 
 import { kgShare, lineLitres } from "@/lib/order-invoices/entry";
 import { detectStale } from "@/lib/order-invoices/rules";
-import { loadGroupsOf, loadPartText } from "@/lib/order-invoices/load-plan";
+import { loadGroupsOf, loadPartsOf, loadPartText, type LoadPart } from "@/lib/order-invoices/load-plan";
 import { parseArticleTag } from "@/lib/article-tag-parse";
 import { ARTICLE_WORD_ABBR } from "@/lib/floor/format";
 
@@ -566,6 +566,12 @@ function isLoadPart(r: Pick<FloorInvoiceRow, "id" | "loadRootId">): boolean {
 /** The loadGroupsOf input for a board row. */
 function groupRow(r: GroupKey): { id: number; seq: number; loadParentId: number | null } {
   return { id: r.id, seq: r.seq, loadParentId: isLoadPart(r) ? (r.loadRootId as number) : null };
+}
+
+/** id → its load part (loadPartsOf) for a board row's invoice rows; a row in
+ *  no load group is absent (F11). */
+export function rowPartsOf(rows: readonly GroupKey[]): Map<number, LoadPart> {
+  return loadPartsOf(rows.map(groupRow));
 }
 
 /** Every row is one load group (a pure split load of one paper). */

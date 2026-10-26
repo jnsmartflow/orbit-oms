@@ -31,6 +31,7 @@ import { computeDropKey } from "@/lib/trips/drop-key";
 import { deleteTripDropIfEmpty, findOrCreateTripDrop } from "@/lib/trips/drop";
 import { setRowsTrip } from "@/lib/order-invoices/trip-link";
 import { invoiceLabel } from "@/lib/order-invoices/trip-bills";
+import { loadPartsOf } from "@/lib/order-invoices/load-plan";
 import { logTripShipToChanged } from "@/lib/trips/activity";
 import { dealerDisplayName } from "@/lib/orders/dealer-name";
 import { isAsPerChallanText } from "@/lib/ship-to/copy";
@@ -139,15 +140,18 @@ export async function planTripShipTo(
       tripDropId: true,
       isHeld: true,
       tripDrop: { select: { tripId: true, trip: { select: { tripNumber: true } } } },
+      // F11 — a load part is named "I… part k of n" (loadPartsOf).
+      loadParentId: true,
     },
   });
+  const parts = loadPartsOf(rows);
   const onTrip = rows.filter((r) => r.tripDropId !== null && r.tripDrop !== null);
 
   // D8 — invoices on DIFFERENT trips: refused, naming both. A ship-to is one
   // fact per bill; moving one trip's stop would leave the other's stale.
   const tripNumbers = Array.from(new Set(onTrip.map((r) => r.tripDrop?.trip.tripNumber ?? "(unknown)")));
   if (tripNumbers.length > 1) {
-    const where = onTrip.map((r) => `${invoiceLabel(r, bill.obdNumber)} on ${r.tripDrop?.trip.tripNumber ?? "(unknown)"}`).join(", ");
+    const where = onTrip.map((r) => `${invoiceLabel({ ...r, part: parts.get(r.id) }, bill.obdNumber)} on ${r.tripDrop?.trip.tripNumber ?? "(unknown)"}`).join(", ");
     return {
       ok: false,
       status: 409,
@@ -165,7 +169,7 @@ export async function planTripShipTo(
   // this press would put it on a new one.
   if (rows.length >= 2) {
     const held = here.find((r) => r.isHeld);
-    if (held) return { ok: false, status: 409, error: `${invoiceLabel(held, bill.obdNumber)} is on hold — release it first` };
+    if (held) return { ok: false, status: 409, error: `${invoiceLabel({ ...held, part: parts.get(held.id) }, bill.obdNumber)} is on hold — release it first` };
   }
 
   const fromDropIds = Array.from(new Set(here.map((r) => r.tripDropId as number)));

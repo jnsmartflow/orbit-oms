@@ -22,7 +22,6 @@
 
 import { addInvoicesRefusal, detectStale, MAX_INVOICES, type ActiveLine } from "./rules";
 import { INVOICE_SOURCE } from "./source";
-import { ciCoversRow } from "./ci-plan";
 import { coveringCopy, splitAtOf } from "./copy-plan";
 
 export interface LoadLine {
@@ -98,6 +97,33 @@ export function loadPartText(k: number, n?: number): string {
 /** The same formatter for several parts: "part 2" (one) or "parts 2, 3". */
 export function loadPartsText(ks: readonly number[]): string {
   return ks.length === 1 ? loadPartText(ks[0]) : `parts ${ks.join(", ")}`;
+}
+
+/** A row's place in its load group, as a refusal / log label needs it. */
+export interface LoadPart {
+  k: number;
+  n: number;
+  /** The group root's seq — the paper's place before SAP stamps a number. */
+  rootSeq: number;
+}
+
+/**
+ * id → LoadPart for every row of a load group of 2+ (loadGroupsOf); a row in
+ * no group (unsplit, Add invoices) is ABSENT, so its label stays what it was
+ * (Split load phase 4 batch 5, F11).
+ */
+export function loadPartsOf(rows: ReadonlyArray<Pick<LoadRow, "id" | "seq" | "loadParentId">>): Map<number, LoadPart> {
+  const out = new Map<number, LoadPart>();
+  const seqById = new Map(rows.map((r) => [r.id, r.seq]));
+  Array.from(loadGroupsOf(rows).entries()).forEach(([id, g]) => {
+    if (g.n > 1) out.set(id, { k: g.k, n: g.n, rootSeq: seqById.get(g.rootId) ?? seqById.get(id)! });
+  });
+  return out;
+}
+
+/** "I536233980 part 2 of 2" — a label with its part appended; `part` absent → `base`, byte for byte. */
+export function withLoadPart(base: string, part?: Pick<LoadPart, "k" | "n">): string {
+  return part === undefined ? base : `${base} ${loadPartText(part.k, part.n)}`;
 }
 
 /** No CI on a single truck part (owner decision 2026-10-26 — raise a whole-bill
@@ -516,6 +542,33 @@ export interface LoadCi {
   status: string;
   isVoided: boolean;
   orderInvoiceId: number | null;
+  /** 'full' | 'part' (Fix A, owner 2026-10-26 second). Omitted = treated as
+   *  'full' — the rule before Fix A, so a reader that does not say keeps it. */
+  returnType?: string;
+}
+
+/**
+ * THE SPLIT CI GUARD (owner decision 2026-10-26, second — Fix A). Blocks only:
+ * a CI linked to THIS row (draft included), or a FULL whole-bill CI
+ * ("orderInvoiceId" NULL — the bill is fully returned, nothing to split; a
+ * FULL draft too, it is on its way). A PARTIAL whole-bill CI does not block:
+ * its lines are on SAP's raw lines, which a split never changes. Void never
+ * counts.
+ */
+export function splitBlockingCi(cis: readonly LoadCi[], rowId: number): LoadCi | undefined {
+  return cis.find(
+    (c) => !c.isVoided && (c.orderInvoiceId === rowId || (c.orderInvoiceId === null && (c.returnType ?? "full") === "full")),
+  );
+}
+
+/**
+ * THE MERGE CI GUARD (Fix A). Only a CI linked to the row (draft included)
+ * blocks — it holds that row's tins as picks. A whole-bill CI (NULL) never
+ * does: a merge never changes the bill's tins, so the CI stays true. This is
+ * what un-sticks a split bill that went stale after a CI-page return.
+ */
+export function mergeBlockingCi(cis: readonly LoadCi[], rowId: number): LoadCi | undefined {
+  return cis.find((c) => !c.isVoided && c.orderInvoiceId === rowId);
 }
 
 /** One trip_bill_copies row of the OBD, newest first. */
@@ -563,8 +616,9 @@ export function loadSplitRefusal(bill: LoadBill, rows: readonly LoadRow[], row: 
   if (row.source === INVOICE_SOURCE.LOAD && row.tripDropId !== null) {
     return `${partLabel(rows, row, bill.obdNumber)} is on ${row.tripNumber ?? "a trip"} — only a part on no trip can be split again`;
   }
-  // E.5 — a non-voided CI covering the row (its own, or a whole-OBD one), draft included.
-  const ci = facts.cis.find((c) => !c.isVoided && ciCoversRow(c, row.id));
+  // E.5 — a non-voided CI on the row (draft included), or a FULL whole-bill one
+  // (Fix A, owner 2026-10-26 second — a PARTIAL whole-bill CI no longer blocks).
+  const ci = splitBlockingCi(facts.cis, row.id);
   if (ci) return `${paperLabel(rootOf(rows, row), bill.obdNumber)} has ${ci.ciNumber ?? "a CI draft"} — it cannot be split.`;
   // E.6 — an unsplit bill's hold truth is orders; its seq-1 mirror must agree.
   if (isUnsplit(rows) && rows[0].isHeld !== (bill.dispatchStatus === "hold")) return LOAD_HOLD_OUT_OF_STEP;
@@ -591,11 +645,12 @@ export function loadMergeRefusal(bill: LoadBill, rows: readonly LoadRow[], rowId
   const bills = loadBillRefusal(bill);
   if (bills !== null) return bills;
   if (isHalfWritten(rows)) return LOAD_HALF_WRITTEN;
-  // A live CI covering a chosen row holds that row's tins as picks: changing its
-  // lines would leave the CI on tins the row no longer carries.
+  // A CI ON a chosen row holds that row's tins as picks: changing its lines
+  // would leave the CI on tins the row no longer carries. A whole-bill CI does
+  // not block (Fix A, owner 2026-10-26 second — mergeBlockingCi).
   for (const id of rowIds) {
     const row = rows.find((r) => r.id === id);
-    const ci = facts.cis.find((c) => !c.isVoided && ciCoversRow(c, id));
+    const ci = mergeBlockingCi(facts.cis, id);
     if (row && ci) return `${partLabel(rows, row, bill.obdNumber)} has ${ci.ciNumber ?? "a CI draft"} — it cannot be merged.`;
   }
   return null;

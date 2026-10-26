@@ -189,7 +189,7 @@ async function loadState(orderId: number): Promise<LoadState | null> {
   const cis = await prisma.ci_returns.findMany({
     where: { orderId },
     orderBy: { id: "asc" },
-    select: { id: true, ciNumber: true, status: true, isVoided: true, orderInvoiceId: true },
+    select: { id: true, ciNumber: true, status: true, isVoided: true, orderInvoiceId: true, returnType: true },
   });
   // Newest first — coveringCopy's contract.
   const copies = await prisma.trip_bill_copies.findMany({
