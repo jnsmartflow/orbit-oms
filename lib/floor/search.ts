@@ -23,6 +23,7 @@
 // rows (FloorBoardRow / FloorHoldRow / FloorCancelledRow) for this file alone.
 
 import { isOrbNumber } from "@/lib/challan-orders/orb-number";
+import type { FloorSearchHit, FloorSearchPart, FloorSearchTarget } from "@/lib/floor/types";
 
 export interface ParsedSearch {
   mode: "none" | "text" | "numbers";
@@ -226,4 +227,67 @@ export function lookupTermOf(raw: string): string | null {
   // server's parseBillLookupTerm (lib/trips/find-bill.ts) accepts the same shape.
   if (isOrbNumber(q)) return q;
   return /^\d{9,12}$/.test(q) || /^I\d{9}$/.test(q) ? q : null;
+}
+
+// ── SPLIT LOAD: a search that names every truck part (Phase 4 batch 4) ──────
+//
+// One SAP invoice split across trucks is ONE number on two or more rows of the
+// OBD (lib/order-invoices/load-plan.ts). GET /api/floor/search then sends the
+// hit with `parts` (lib/floor/search-hits.ts) — absent on every other hit. The
+// page lights EVERY part wherever it is drawn, and when the parts are in
+// different places it offers the short list, one button per part (owner
+// answer 11, 2026-10-25): "I536233980 part 2 of 2 · L-261024-23".
+
+/**
+ * Where ONE part of a bill is, by the hit's own precedence (cancel_ci > hold >
+ * tinting > trip > floor): a cancelled / wholly held OBD keeps its tab for
+ * every part; else a held part is On hold, a part on a live trip is on that
+ * trip, the rest are in the OBD's Tinting / Floor place.
+ */
+export function partTargetOf(
+  obdTarget: FloorSearchTarget,
+  part: { isHeld: boolean; onLiveTrip: boolean },
+): FloorSearchTarget {
+  if (obdTarget === "cancel_ci" || obdTarget === "hold") return obdTarget;
+  if (part.isHeld) return "hold";
+  if (part.onLiveTrip) return "trip";
+  return obdTarget === "tinting" ? "tinting" : "floor";
+}
+
+/**
+ * The choices a hit offers the search strip: [hit] as it is, unless its parts
+ * sit in DIFFERENT places (target + trip) — then one hit per part, each
+ * standing for that part alone (its own target / trip / seq, `part` set,
+ * `parts` dropped). Parts all in one place stay one hit (both lit there).
+ */
+export function partHitsOf(hit: FloorSearchHit): FloorSearchHit[] {
+  const parts = hit.parts ?? [];
+  if (parts.length < 2) return [hit];
+  const placeOf = (p: FloorSearchPart) => `${p.target}:${p.trip?.id ?? "-"}`;
+  if (new Set(parts.map(placeOf)).size < 2) return [hit];
+  return parts.map((p) => {
+    const { parts: _drop, ...rest } = hit;
+    void _drop;
+    return { ...rest, target: p.target, trip: p.trip, matchedInvoiceSeq: p.seq, part: p };
+  });
+}
+
+/** The invoice seqs a hit lights: every part, else the one invoice it named, else null (the whole bill). */
+export function litSeqsOf(hit: Pick<FloorSearchHit, "parts" | "matchedInvoiceSeq">): number[] | null {
+  if (hit.parts && hit.parts.length > 0) return hit.parts.map((p) => p.seq);
+  return hit.matchedInvoiceSeq === null ? null : [hit.matchedInvoiceSeq];
+}
+
+/**
+ * The DOM rows a search hit marks / scrolls to. A split OBD draws one row per
+ * invoice (floor-table.tsx, each with data-invoice-seq), so a hit that named
+ * invoices (`seqs`) lands on those rows only; every other row of the bill —
+ * unsplit, Hold, Cancel & CI, a layout that does not expand — has no
+ * data-invoice-seq and is matched as before. Moved from floor-page.tsx
+ * (batch 4); one seq gives the exact selector it gave.
+ */
+export function searchRowSelector(orderId: number, seqs: readonly number[] | null): string {
+  const id = `[data-order-id="${orderId}"]`;
+  if (seqs === null || seqs.length === 0) return id;
+  return `${seqs.map((s) => `${id}[data-invoice-seq="${s}"]`).join(", ")}, ${id}:not([data-invoice-seq])`;
 }

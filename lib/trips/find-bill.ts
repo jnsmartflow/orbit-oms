@@ -25,8 +25,11 @@
 // are looked up in order_invoices FIRST (order_invoices_invoiceNo_idx), and the
 // matching order ids join the match as `id IN (…)` — never an
 // `invoices: { some }` term, which would sit a semi-join inside the OR and
-// cost the index plan the three equality arms share. The match per OBD (the
-// lowest seq that matched) is what a caller hands on as "open invoice k".
+// cost the index plan the three equality arms share. The matches per OBD come
+// in seq order; the first (the lowest seq) is what a caller hands on as "open
+// invoice k". A SPLIT LOAD's truck parts share their invoice number, so that
+// number matches every part (Split load phase 4 batch 4): the Floor search and
+// the re-delivery search use them all.
 //
 // SELECT-only. Sequential awaits, never prisma.$transaction (CORE §3).
 
@@ -65,30 +68,52 @@ export function parseBillLookupTerm(raw: string): BillLookupTerm | null {
   return { q, invoiceTerms };
 }
 
-/** Which invoice of an OBD a term named — the lowest seq that matched. */
+/** One invoice row of an OBD that a term named. */
 export interface InvoiceRowMatch {
+  /** order_invoices.id */
+  id: number;
   seq: number;
   invoiceNo: string;
+  /** Split load — set on a truck part (its group root). */
+  loadParentId: number | null;
 }
 
 /**
- * orderId → the invoice row the term's invoice forms name (any seq). ONE read
- * on order_invoices_invoiceNo_idx; none when the term has no invoice form (an
- * OBD / SO / ORB number). Seq 1 mirrors orders.invoiceNo, so a SAP number
- * answers seq 1 here as well.
+ * orderId → EVERY row a set of matched order_invoices rows names, seq order
+ * (PURE — tested). A number is unique within an OBD for Add invoices and an
+ * unsplit bill (validateSplit), so their list has length 1 and `[0]` is the
+ * row the lookup named before Split load phase 4 batch 4. Only a SPLIT LOAD
+ * (its parts copy the root's number) gives two or more.
  */
-export async function invoiceRowMatches(term: BillLookupTerm): Promise<Map<number, InvoiceRowMatch>> {
-  const map = new Map<number, InvoiceRowMatch>();
-  if (term.invoiceTerms.length === 0) return map;
+export function groupInvoiceMatches(
+  rows: ReadonlyArray<{ orderId: number; id: number; seq: number; invoiceNo: string | null; loadParentId: number | null }>,
+): Map<number, InvoiceRowMatch[]> {
+  const map = new Map<number, InvoiceRowMatch[]>();
+  const sorted = rows.slice().sort((a, b) => a.orderId - b.orderId || a.seq - b.seq);
+  for (const r of sorted) {
+    if (r.invoiceNo === null) continue;
+    const list = map.get(r.orderId) ?? [];
+    list.push({ id: r.id, seq: r.seq, invoiceNo: r.invoiceNo, loadParentId: r.loadParentId });
+    map.set(r.orderId, list);
+  }
+  return map;
+}
+
+/**
+ * orderId → the invoice rows the term's invoice forms name (any seq, seq
+ * order — groupInvoiceMatches). ONE read on order_invoices_invoiceNo_idx; none
+ * when the term has no invoice form (an OBD / SO / ORB number). Seq 1 mirrors
+ * orders.invoiceNo, so a SAP number answers seq 1 here as well. Callers that
+ * want "the invoice the number named" take `[0]` — the lowest seq, as before.
+ */
+export async function invoiceRowMatches(term: BillLookupTerm): Promise<Map<number, InvoiceRowMatch[]>> {
+  if (term.invoiceTerms.length === 0) return new Map();
   const rows = await prisma.order_invoices.findMany({
     where: { invoiceNo: { in: term.invoiceTerms } },
     orderBy: [{ orderId: "asc" }, { seq: "asc" }],
-    select: { orderId: true, seq: true, invoiceNo: true },
+    select: { orderId: true, id: true, seq: true, invoiceNo: true, loadParentId: true },
   });
-  for (const r of rows) {
-    if (r.invoiceNo !== null && !map.has(r.orderId)) map.set(r.orderId, { seq: r.seq, invoiceNo: r.invoiceNo });
-  }
-  return map;
+  return groupInvoiceMatches(rows);
 }
 
 /**
@@ -102,7 +127,7 @@ export async function invoiceRowMatches(term: BillLookupTerm): Promise<Map<numbe
  */
 export async function billLookupWhere(
   term: BillLookupTerm,
-  opts: { onTripOnly?: boolean; invoiceMatches?: Map<number, InvoiceRowMatch> } = {},
+  opts: { onTripOnly?: boolean; invoiceMatches?: Map<number, InvoiceRowMatch[]> } = {},
 ): Promise<Prisma.ordersWhereInput> {
   const hide = await getHideExclusion();
   const matched = Array.from((opts.invoiceMatches ?? (await invoiceRowMatches(term))).keys());
@@ -139,7 +164,7 @@ export const BILL_LOOKUP_MAX = 50;
 export async function findBillsByNumber<S extends Prisma.ordersSelect>(
   term: BillLookupTerm,
   select: S,
-  opts: { onTripOnly?: boolean; invoiceMatches?: Map<number, InvoiceRowMatch> } = {},
+  opts: { onTripOnly?: boolean; invoiceMatches?: Map<number, InvoiceRowMatch[]> } = {},
 ): Promise<Prisma.ordersGetPayload<{ select: S }>[]> {
   const where = await billLookupWhere(term, opts);
   return (await prisma.orders.findMany({

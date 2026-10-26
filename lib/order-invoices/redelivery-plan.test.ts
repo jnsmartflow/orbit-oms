@@ -27,13 +27,13 @@ const ROWS = [
 ];
 
 test("targets: unsplit → the whole OBD (null); split by OBD number → every invoice, seq order", () => {
-  assert.equal(redeliveryTargetsOf({ split: false, rows: [ROWS[1]] }, null), null);
-  assert.deepEqual(redeliveryTargetsOf({ split: true, rows: ROWS }, null)!.map((r) => r.id), [17010, 36798, 36799, 36800]);
+  assert.equal(redeliveryTargetsOf({ split: false, rows: [ROWS[1]] }, []), null);
+  assert.deepEqual(redeliveryTargetsOf({ split: true, rows: ROWS }, [])!.map((r) => r.id), [17010, 36798, 36799, 36800]);
 });
 
 test("targets: an invoice number naming one row of a split OBD → that invoice only", () => {
-  assert.deepEqual(redeliveryTargetsOf({ split: true, rows: ROWS }, 36800)!.map((r) => r.id), [36800]);
-  assert.deepEqual(redeliveryTargetsOf({ split: true, rows: ROWS }, 999)!.length, 4); // not one of its rows
+  assert.deepEqual(redeliveryTargetsOf({ split: true, rows: ROWS }, [36800])!.map((r) => r.id), [36800]);
+  assert.deepEqual(redeliveryTargetsOf({ split: true, rows: ROWS }, [999])!.length, 4); // not one of its rows
 });
 
 const entry = (tripId: number, kind: "original" | "redelivery", day: string): AttemptHistoryEntry => ({
@@ -90,4 +90,16 @@ test("load: trip 668 carries 713 + 715 = 460 L, not 18648's 1,000 L; all four or
 test("history of the OBD: two invoices re-delivered on one trip are ONE attempt there", () => {
   const h = [entry(605, "original", "2026-10-06"), entry(668, "redelivery", "2026-10-07"), entry(668, "redelivery", "2026-10-07")];
   assert.deepEqual(dedupeObdAttempts(h).map((x) => x.tripId), [605, 668]);
+});
+
+// ── Split load, Phase 4 batch 4: a load group found by its number offers every part ──
+
+test("targets: several matched rows (I536233980's two parts) → all of them, seq order; one → as today", () => {
+  const LOAD = [
+    { id: 41213, seq: 2, invoiceNo: "I536233980" },
+    { id: 40777, seq: 1, invoiceNo: "I536233980" },
+  ];
+  assert.deepEqual(redeliveryTargetsOf({ split: true, rows: LOAD }, [41213, 40777])!.map((r) => r.id), [40777, 41213]);
+  assert.deepEqual(redeliveryTargetsOf({ split: true, rows: LOAD }, [41213])!.map((r) => r.id), [41213]);
+  assert.deepEqual(redeliveryTargetsOf({ split: true, rows: ROWS }, [36798])!.map((r) => r.id), [36798]);
 });

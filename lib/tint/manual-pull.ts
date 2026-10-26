@@ -267,7 +267,7 @@ export async function lookupManualPull(raw: string): Promise<PullLookupResult> {
     // Which invoice the term named, and where it sits among the OBD's invoices
     // (split-load parts are not invoices — the Floor count's rule, getInvoiceCounts).
     const invoiceRows = order.invoices.filter((r) => r.source !== INVOICE_SOURCE.LOAD);
-    const hit = invoiceMatches.get(order.id) ?? null;
+    const hit = invoiceMatches.get(order.id)?.[0] ?? null;
     const viaInvoice = order.obdNumber !== term.q;
     const matchedInvoice = viaInvoice ? (hit?.invoiceNo ?? term.invoiceTerms[0] ?? null) : null;
     const position =

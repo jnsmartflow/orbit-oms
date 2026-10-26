@@ -9,6 +9,7 @@ import { Search } from "lucide-react";
 import type { ParsedSearch, SearchReport } from "@/lib/floor/search";
 import type { TripSearchHit, LookupState, LookupTrip } from "./floor-page";
 import type { FloorSearchHit } from "@/lib/floor/types";
+import { loadPartText } from "@/lib/order-invoices/load-plan";
 
 /** "2026-09-24" → "24 Sep" — a trip's own day, for the lookup's choice list. */
 function formatTripDay(iso: string): string {
@@ -30,6 +31,11 @@ function hitPlace(h: FloorSearchHit): string {
     default:
       return "Floor";
   }
+}
+
+/** How many BILLS the strip lists — a split load's parts are one bill. */
+function billCount(hits: readonly FloorSearchHit[]): number {
+  return new Set(hits.map((h) => h.orderId)).size;
 }
 
 export function SearchBox({
@@ -190,17 +196,17 @@ export function SearchHits({
       {lookup?.status === "many" && (
         <span className="inline-flex flex-wrap items-center gap-1.5">
           <span className="text-[#6b7280]">
-            · {lookup.hits.length === 1 ? "Found:" : `${lookup.hits.length} bills:`}
+            · {billCount(lookup.hits) === 1 ? "Found:" : `${billCount(lookup.hits)} bills:`}
           </span>
           {lookup.hits.map((h) => (
             <button
-              key={h.orderId}
+              key={h.part ? `${h.orderId}:${h.part.id}` : h.orderId}
               type="button"
               onClick={() => onPickHit?.(h)}
               title={h.dealer}
               className="rounded-[4px] border border-brand-100 bg-white px-2 py-[2px] font-mono text-[10.5px] text-brand-700 hover:border-brand-500"
             >
-              {h.obdNumber} · {hitPlace(h)}
+              {h.part ? `${h.part.invoiceNo} ${loadPartText(h.part.k, h.part.n)}` : h.obdNumber} · {hitPlace(h)}
             </button>
           ))}
         </span>

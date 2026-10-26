@@ -447,11 +447,13 @@ export async function searchForRedelivery(tripId: number, raw: string): Promise<
     const customerName = dealerDisplayName(dealer?.customerName, b.shipToCustomerName);
     const area = effectiveArea(b, b.shipToArea, dealer?.area ?? null)?.name ?? null;
     const all = splitRows.get(b.id);
-    const matched = invoiceMatches.get(b.id);
+    // Every row the number named (Split load phase 4 batch 4: a load group's
+    // parts share the number, so all of them) — one row on any other bill.
+    const matched = invoiceMatches.get(b.id) ?? [];
     const targets = all
       ? redeliveryTargetsOf(
           { split: true, rows: all },
-          matched ? (all.find((r) => r.seq === matched.seq)?.id ?? null) : null,
+          matched.map((m) => all.find((r) => r.seq === m.seq)?.id).filter((id): id is number => id !== undefined),
         )
       : null;
     if (all && targets) {

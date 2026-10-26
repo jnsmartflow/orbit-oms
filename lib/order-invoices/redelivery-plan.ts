@@ -34,17 +34,19 @@ export interface RedeliveryRowFact {
 
 /**
  * What one found OBD offers the dialog: null = the whole OBD (unsplit, seq 1);
- * else the invoice rows, one tick each. An INVOICE number that named one row
- * of a split OBD offers just that row; an OBD / SO number offers every row.
+ * else the invoice rows, one tick each. An INVOICE number offers the rows it
+ * named — one on an Add-invoices bill, EVERY truck part of a split load (its
+ * parts share the number; Phase 4 batch 4); an OBD / SO number (no row named,
+ * or none of this OBD's) offers every row.
  */
 export function redeliveryTargetsOf(
   obd: { split: boolean; rows: readonly RedeliveryRowFact[] },
-  matchedRowId: number | null,
+  matchedRowIds: readonly number[],
 ): RedeliveryRowFact[] | null {
   if (!obd.split) return null;
   const rows = obd.rows.slice().sort((a, b) => a.seq - b.seq);
-  const hit = matchedRowId !== null ? rows.find((r) => r.id === matchedRowId) : undefined;
-  return hit ? [hit] : rows;
+  const hits = rows.filter((r) => matchedRowIds.includes(r.id));
+  return hits.length > 0 ? hits : rows;
 }
 
 /** A split invoice the dialog may not tick, or null. `history` = its own attempts. */

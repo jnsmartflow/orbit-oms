@@ -69,7 +69,7 @@ import { LoadMergeConfirm, SplitLoadDialog } from "./split-load-dialog";
 import { detailWalk, resolveScope, scopedHoldBody, scopedInvoiceRowId, type DetailKey } from "@/lib/floor/detail-scope";
 import { sortFloorRows } from "@/lib/floor/sort";
 import { invoiceCiRefusal } from "@/lib/order-invoices/ci-plan";
-import { LOAD_CI_LATER, LOAD_HALF_WRITTEN, mergeQuestionOf, mergeRowIdsOf, planLoadMerge } from "@/lib/order-invoices/load-plan";
+import { SPLIT_BILL_CI_PAGE, LOAD_HALF_WRITTEN, mergeQuestionOf, mergeRowIdsOf, planLoadMerge } from "@/lib/order-invoices/load-plan";
 import { loadRowsOfView } from "@/lib/order-invoices/load-dialog";
 import type { LoadView } from "@/lib/order-invoices/load-split";
 import { offFloorRefusal } from "@/lib/floor/off-floor";
@@ -118,7 +118,7 @@ import {
 } from "@/lib/floor/selection";
 import { narrowToInvoiceIds, narrowToPlace, narrowToPool, type FloorInvoiceRow } from "@/lib/floor/invoice-rows";
 import { rowsInScope, scopeBoard } from "@/lib/floor/scope";
-import { parseSearch, applySearch, searchReport, lookupTermOf, matchedInvoiceIdsOf, type Searchable, type ParsedSearch } from "@/lib/floor/search";
+import { parseSearch, applySearch, searchReport, lookupTermOf, matchedInvoiceIdsOf, litSeqsOf, partHitsOf, searchRowSelector, type Searchable, type ParsedSearch } from "@/lib/floor/search";
 import { applyFloorFilters, applyFlagFilters, EMPTY_FILTERS, type FloorFilters } from "@/lib/floor/filter";
 import type { DispatchWindow } from "@/components/floor/dispatch-slot-picker";
 import type { FloorScope, FloorBoardResult, FloorBoardRow, FloorPicker, FloorHoldRow, FloorCancelledRow, FloorDetailSource, FloorRouteClub, FloorSearchHit } from "@/lib/floor/types";
@@ -349,17 +349,9 @@ function stageWords(h: FloorSearchHit): string {
  * `staleData` — the board that was on screen when the jump had to leave
  * History; the live check waits until a newer board has replaced it.
  */
-/**
- * The DOM rows a search hit marks / scrolls to. A split OBD draws one row per
- * invoice (floor-table.tsx, each with data-invoice-seq), so a hit that named
- * ONE invoice (matchedInvoiceSeq) lands on that row only; every other row of
- * the bill — unsplit, Hold, Cancel & CI, a layout that does not expand — has
- * no data-invoice-seq and is matched as before.
- */
-function searchRowSelector(orderId: number, seq: number | null): string {
-  const id = `[data-order-id="${orderId}"]`;
-  return seq === null ? id : `${id}[data-invoice-seq="${seq}"], ${id}:not([data-invoice-seq])`;
-}
+// The DOM rows a search hit marks / scrolls to — searchRowSelector,
+// lib/floor/search.ts (moved there in Split load phase 4 batch 4, where it
+// takes every part's seq).
 
 interface SearchFocus {
   hit: FloorSearchHit;
@@ -509,7 +501,7 @@ function invoiceBillOf(
   // its own CI until phase 4. Every per-invoice opener (Floor bar, Hold bar,
   // the panel's ⋯ Cancel) builds its bill here, so the refusal is in one place.
   const refusals = ticked
-    .map((i) => (i.loadRootId !== undefined ? LOAD_CI_LATER : invoiceCiRefusal({ ...i, isDispatched: false, lines: [] })))
+    .map((i) => (i.loadRootId !== undefined ? SPLIT_BILL_CI_PAGE : invoiceCiRefusal({ ...i, isDispatched: false, lines: [] })))
     .filter((x): x is string => x !== null);
   return {
     orderId: r.orderId,
@@ -739,8 +731,9 @@ export function FloorPage({
   const [litIds, setLitIds] = useState<number[]>([]);
   // Add invoices Phase 4 — which INVOICE of a split OBD the search named
   // (FloorSearchHit.matchedInvoiceSeq): the mark and the scroll land on that
-  // invoice's row (floor-table data-invoice-seq), not on all n.
-  const [litSeqs, setLitSeqs] = useState<ReadonlyMap<number, number>>(new Map());
+  // invoice's row (floor-table data-invoice-seq), not on all n. Split load
+  // (phase 4 batch 4): EVERY truck part the number named (litSeqsOf).
+  const [litSeqs, setLitSeqs] = useState<ReadonlyMap<number, readonly number[]>>(new Map());
   /**
    * A Cancel & CI bill the search found OUTSIDE today's list (2026-10-06): the
    * tab shows these rows, read-only, under a "Search result · {date}" banner
@@ -2223,10 +2216,21 @@ export function FloorPage({
         if (seq !== lookupSeq.current) return;
         const hits = body.hits ?? [];
         setLitIds(hits.map((h) => h.orderId));
-        setLitSeqs(new Map(hits.flatMap((h) => (h.matchedInvoiceSeq !== null ? [[h.orderId, h.matchedInvoiceSeq] as [number, number]] : []))));
-        if (hits.length === 0) setLookup({ term, status: "none" });
-        else if (hits.length === 1 && navigate) goToHit(hits[0]);
-        else setLookup({ term, status: "many", hits });
+        setLitSeqs(
+          new Map(
+            hits.flatMap((h) => {
+              const seqs = litSeqsOf(h);
+              return seqs !== null ? [[h.orderId, seqs] as [number, readonly number[]]] : [];
+            }),
+          ),
+        );
+        // Split load (batch 4, owner answer 11): parts in DIFFERENT places are
+        // one choice each ("I536233980 part 2 of 2 · L-261024-23"); every
+        // other hit is exactly one choice, as before.
+        const choices = hits.flatMap(partHitsOf);
+        if (choices.length === 0) setLookup({ term, status: "none" });
+        else if (choices.length === 1 && navigate) goToHit(choices[0]);
+        else setLookup({ term, status: "many", hits: choices });
       } catch {
         if (seq === lookupSeq.current) setLookup({ term, status: "error" });
       }
@@ -2426,7 +2430,9 @@ export function FloorPage({
       moved(hit.target === "tinting" ? "no longer tinting" : "not on the live board");
       return;
     }
-    if (row.tripDropId !== null && row.tripNumber) {
+    // A chosen truck part (Split load batch 4) that is NOT on a trip is in the
+    // pool — never the trip the OBD's other part is on (row.tripDropId).
+    if (hit.part === undefined && row.tripDropId !== null && row.tripNumber) {
       const t = findTripByNumber(trips ?? [], row.tripNumber);
       setTopTab("floor");
       if (t) selectRail({ kind: "trip", tripId: t.id });
@@ -2450,7 +2456,7 @@ export function FloorPage({
   useEffect(() => {
     const f = searchFocus;
     if (f === null || f.phase !== "highlight") return;
-    const sel = searchRowSelector(f.hit.orderId, f.hit.matchedInvoiceSeq);
+    const sel = searchRowSelector(f.hit.orderId, litSeqsOf(f.hit));
     let tries = 0;
     const poll = setInterval(() => {
       tries++;
@@ -2840,7 +2846,7 @@ export function FloorPage({
     const all = r ? r.invoiceRowsAll ?? r.invoiceRows : [];
     return all.some((i) => u.invoiceRowIds!.includes(i.id) && i.loadRootId !== undefined);
   })
-    ? LOAD_CI_LATER
+    ? SPLIT_BILL_CI_PAGE
     : null;
 
   const [splitDlg, setSplitDlg] = useState<{ orderId: number; obdNumber: string; sourceRowId: number | null } | null>(null);

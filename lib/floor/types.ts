@@ -704,6 +704,28 @@ export interface FloorSearchHit {
   cis: Array<{ id: number; ciNumber: string | null; status: string }>;
   /** target "cancel_ci" only — the Cancel & CI tab's own row, any date. */
   cancelRow: FloorCancelledRow | null;
+  /** SPLIT LOAD (Phase 4 batch 4) — the invoice number named TWO OR MORE rows
+   *  of the OBD (the truck parts of one invoice): each part, seq order, with
+   *  its place ("part k of n" via loadGroupsOf) and where it is. ABSENT on
+   *  every other hit, so an unsplit or Add-invoices hit is byte-identical. */
+  parts?: FloorSearchPart[];
+  /** CLIENT ONLY — set by partHitsOf (lib/floor/search.ts) on a hit that
+   *  stands for ONE part in the short list; never sent by the server. */
+  part?: FloorSearchPart;
+}
+
+/** One truck part a search named (FloorSearchHit.parts). */
+export interface FloorSearchPart {
+  /** order_invoices.id / seq. */
+  id: number;
+  seq: number;
+  /** Its place in its load group — loadGroupsOf. */
+  k: number;
+  n: number;
+  invoiceNo: string;
+  /** Where THIS part is: the hit's own precedence, per part. */
+  target: FloorSearchTarget;
+  trip: FloorSearchHit["trip"];
 }
 
 // ── Detail panel (design §10) ────────────────────────────────────────────────

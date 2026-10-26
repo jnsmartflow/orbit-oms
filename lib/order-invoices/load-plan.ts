@@ -100,11 +100,10 @@ export function loadPartsText(ks: readonly number[]): string {
   return ks.length === 1 ? loadPartText(ks[0]) : `parts ${ks.join(", ")}`;
 }
 
-/** Owner answer 6 (2026-10-24): no CI on a single truck part until phase 4 —
- *  a part's CI would be marked FULL holding only part of the tins. Lives in
- *  ci-plan.ts since Phase 4 batch 2 (the server refuses it too); re-exported
- *  here so the Floor board's import is unchanged. */
-export { LOAD_CI_LATER } from "./ci-plan";
+/** No CI on a single truck part (owner decision 2026-10-26 — raise a whole-bill
+ *  CI from the CI page). Lives in ci-plan.ts (the server refuses it too);
+ *  re-exported here for the Floor board. */
+export { SPLIT_BILL_CI_PAGE } from "./ci-plan";
 
 /**
  * WHICH ROWS A MERGE PRESS SENDS (owner answer 1, 2026-10-24): ONE ticked row

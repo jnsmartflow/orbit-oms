@@ -440,8 +440,9 @@ export async function raiseInvoiceCi(args: {
       tripNumber: found.tripDrop?.trip.tripNumber ?? null,
       isDispatched: found.isDispatched,
       lines: found.lines,
-      // Split load: a part (or a root with parts) is refused until batch 3 —
-      // a CI here would be written FULL holding only part of the tins.
+      // Split load: a part (or a root with parts) is refused (SPLIT_BILL_CI_PAGE,
+      // owner 2026-10-26) — a CI here would be written FULL holding only part
+      // of the tins; a split bill's return is a whole-bill CI from the CI page.
       inLoadGroup: (loadGroupsOf(order.invoices).get(found.id)?.n ?? 1) > 1,
     };
     invoiceNo = row.invoiceNo;

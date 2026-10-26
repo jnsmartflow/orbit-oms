@@ -109,7 +109,7 @@ export async function GET(req: Request): Promise<NextResponse> {
       matchedInvoiceSeqs: [],
     };
     entry.obdNumbers.push(o.obdNumber);
-    entry.matchedInvoiceSeqs.push(invoiceMatches.get(o.id)?.seq ?? null);
+    entry.matchedInvoiceSeqs.push(invoiceMatches.get(o.id)?.[0]?.seq ?? null);
     byTrip.set(t.id, entry);
   }
 

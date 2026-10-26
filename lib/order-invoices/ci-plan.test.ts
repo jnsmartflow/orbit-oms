@@ -6,8 +6,8 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { ciCoversRow, invoiceCiDuplicate, invoiceCiPicks, invoiceCiRefusal, LOAD_CI_LATER, type CiInvoiceRow } from "./ci-plan";
-import { LOAD_CI_LATER as BOARD_LOAD_CI_LATER } from "./load-plan";
+import { ciCoversRow, invoiceCiDuplicate, invoiceCiPicks, invoiceCiRefusal, SPLIT_BILL_CI_PAGE, type CiInvoiceRow } from "./ci-plan";
+import { SPLIT_BILL_CI_PAGE as BOARD_SPLIT_BILL_CI_PAGE } from "./load-plan";
 
 const row = (over: Partial<CiInvoiceRow> = {}): CiInvoiceRow => ({
   id: 36798,
@@ -73,12 +73,12 @@ test("one CI per ticked invoice: each row is judged and lined on its own", () =>
   assert.ok(plan[0].picks.ok && plan[0].picks.picks.length === 1);
 });
 
-// ── Split load, Phase 4 batch 2: the server-side stopgap until batch 3 ──
+// ── Split load, Phase 4 batch 2: no CI on a part (text: owner 2026-10-26) ──
 
 test("a row in a load group is refused with the Floor button's own words, first", () => {
-  assert.equal(invoiceCiRefusal(row({ inLoadGroup: true })), "CI on split parts comes in the next update");
-  assert.equal(invoiceCiRefusal(row({ inLoadGroup: true, tripDropId: 5815, tripNumber: "L-261024-22" })), LOAD_CI_LATER);
-  assert.equal(LOAD_CI_LATER, BOARD_LOAD_CI_LATER); // one word, re-exported for the board
+  assert.equal(invoiceCiRefusal(row({ inLoadGroup: true })), "Split bill — raise CI from the CI page and choose the SKUs.");
+  assert.equal(invoiceCiRefusal(row({ inLoadGroup: true, tripDropId: 5815, tripNumber: "L-261024-22" })), SPLIT_BILL_CI_PAGE);
+  assert.equal(SPLIT_BILL_CI_PAGE, BOARD_SPLIT_BILL_CI_PAGE); // one text, re-exported for the board
   assert.equal(invoiceCiRefusal(row({ inLoadGroup: false })), null);
   assert.equal(invoiceCiRefusal(row()), null); // omitted = as before
 });
