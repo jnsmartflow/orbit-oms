@@ -291,3 +291,76 @@ export function searchRowSelector(orderId: number, seqs: readonly number[] | nul
   if (seqs === null || seqs.length === 0) return id;
   return `${seqs.map((s) => `${id}[data-invoice-seq="${s}"]`).join(", ")}, ${id}:not([data-invoice-seq])`;
 }
+
+// ── The trips a search reaches through the loaded desk (2026-09-29, owner) ───
+// Moved here from floor-page.tsx tripHitsFor (hotfix for Split load phase 4
+// batch 4, 2026-10-26) so it is tested. The strip's "N bills on L-… ›" lines,
+// the rail narrowing (searchTripIds) and the one-trip auto-open all read it.
+
+/** One invoice row of a board row, as the trip lines read it. */
+export interface TripSearchInvoice {
+  id: number;
+  invoiceNo: string | null;
+  tripNumber: string | null;
+  /** Present only on a row of a load group (lib/floor/invoice-rows.ts). */
+  loadRootId?: number;
+}
+
+/** A board row as the trip lines read it. */
+export interface TripSearchRow extends Searchable {
+  tripDropId: number | null;
+  tripNumber: string | null;
+  invoiceRows?: ReadonlyArray<TripSearchInvoice>;
+  invoiceRowsAll?: ReadonlyArray<TripSearchInvoice>;
+}
+
+/** A trip the search reached through bills on the loaded desk, with how many. */
+export interface TripSearchLine {
+  tripId: number;
+  tripNumber: string;
+  count: number;
+}
+
+/**
+ * The trips holding the bills `parsed` matches, first-seen order, one count
+ * per bill per trip. `tripByNumber` names a loaded trip (undefined = not on
+ * this desk); cancelled trips are skipped (they hold no bills).
+ *
+ * Every row is counted on ITS OWN trip (orders' derived stop — the lowest-seq
+ * invoice's), exactly as before — EXCEPT a row of a SPLIT LOAD (a load group):
+ * its truck parts ride different trucks, so each NAMED part counts on its own
+ * trip — numbers mode: the parts a token names (matchedInvoiceIdsOf); text
+ * mode: the parts whose number contains the text; a match on the OBD / SO /
+ * dealer names no part, so every part counts. Add-invoices bills keep the old
+ * single-trip answer.
+ */
+export function tripSearchHitsOf(
+  rows: readonly TripSearchRow[],
+  tripByNumber: (tripNumber: string) => { id: number; tripNumber: string; status: string } | undefined,
+  parsed: ParsedSearch,
+): TripSearchLine[] {
+  if (parsed.mode === "none") return [];
+  const byId = new Map<number, TripSearchLine>();
+  for (const r of applySearch(rows.slice(), parsed)) {
+    const all = r.invoiceRowsAll ?? r.invoiceRows ?? [];
+    let numbers: string[];
+    if (all.some((i) => i.loadRootId !== undefined)) {
+      const named =
+        parsed.mode === "numbers"
+          ? matchedInvoiceIdsOf({ invoiceRows: all }, parsed)
+          : all.filter((i) => (i.invoiceNo ?? "").toLowerCase().includes(parsed.text)).map((i) => i.id);
+      const counted = named.length > 0 ? all.filter((i) => named.includes(i.id)) : all;
+      numbers = Array.from(new Set(counted.map((i) => i.tripNumber).filter((n): n is string => !!n)));
+    } else {
+      numbers = r.tripDropId !== null && r.tripNumber ? [r.tripNumber] : [];
+    }
+    for (const n of numbers) {
+      const t = tripByNumber(n);
+      if (!t || t.status === "cancelled") continue;
+      const hit = byId.get(t.id) ?? { tripId: t.id, tripNumber: t.tripNumber, count: 0 };
+      hit.count++;
+      byId.set(t.id, hit);
+    }
+  }
+  return Array.from(byId.values());
+}

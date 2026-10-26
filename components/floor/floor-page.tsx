@@ -118,7 +118,7 @@ import {
 } from "@/lib/floor/selection";
 import { narrowToInvoiceIds, narrowToPlace, narrowToPool, type FloorInvoiceRow } from "@/lib/floor/invoice-rows";
 import { rowsInScope, scopeBoard } from "@/lib/floor/scope";
-import { parseSearch, applySearch, searchReport, lookupTermOf, matchedInvoiceIdsOf, litSeqsOf, partHitsOf, searchRowSelector, type Searchable, type ParsedSearch } from "@/lib/floor/search";
+import { parseSearch, applySearch, searchReport, lookupTermOf, matchedInvoiceIdsOf, litSeqsOf, partHitsOf, searchRowSelector, tripSearchHitsOf, type Searchable, type ParsedSearch, type TripSearchLine } from "@/lib/floor/search";
 import { applyFloorFilters, applyFlagFilters, EMPTY_FILTERS, type FloorFilters } from "@/lib/floor/filter";
 import type { DispatchWindow } from "@/components/floor/dispatch-slot-picker";
 import type { FloorScope, FloorBoardResult, FloorBoardRow, FloorPicker, FloorHoldRow, FloorCancelledRow, FloorDetailSource, FloorRouteClub, FloorSearchHit } from "@/lib/floor/types";
@@ -271,30 +271,18 @@ function findTripByNumber(trips: TripSummary[], tripNumber: string): TripSummary
 }
 
 /** A trip the search reached through bills on the loaded desk, with how many. */
-export interface TripSearchHit {
-  tripId: number;
-  tripNumber: string;
-  count: number;
-}
+export type TripSearchHit = TripSearchLine;
 
 /**
  * The trips holding bills that `parsed` matches (2026-09-29, owner). Read over
  * the UNSCOPED board rows — a trip is opened unscoped (floor-page's
  * `unfilteredRows`), so a Local trip carrying the searched Upcountry bill is
- * still that bill's trip. Cancelled trips are skipped (they hold no bills).
+ * still that bill's trip. The rule is tripSearchHitsOf (lib/floor/search.ts,
+ * tested): a split load's parts each count on their own trip (hotfix,
+ * 2026-10-26); every other bill on its own trip, as before.
  */
 function tripHitsFor(rows: FloorBoardRow[], trips: TripSummary[], parsed: ParsedSearch): TripSearchHit[] {
-  if (parsed.mode === "none") return [];
-  const byId = new Map<number, TripSearchHit>();
-  for (const r of applySearch(rows, parsed)) {
-    if (r.tripDropId === null || !r.tripNumber) continue;
-    const t = findTripByNumber(trips, r.tripNumber);
-    if (!t || t.status === "cancelled") continue;
-    const hit = byId.get(t.id) ?? { tripId: t.id, tripNumber: t.tripNumber, count: 0 };
-    hit.count++;
-    byId.set(t.id, hit);
-  }
-  return Array.from(byId.values());
+  return tripSearchHitsOf(rows, (n) => findTripByNumber(trips, n), parsed);
 }
 
 /** One trip GET /api/floor/trips/lookup returned. */
@@ -2227,9 +2215,13 @@ export function FloorPage({
         // Split load (batch 4, owner answer 11): parts in DIFFERENT places are
         // one choice each ("I536233980 part 2 of 2 · L-261024-23"); every
         // other hit is exactly one choice, as before.
+        // A hit that carries PARTS never jumps on its own (hotfix 2026-10-26):
+        // a jump ends in History's "Opening …" line, which the day's load
+        // clears (load() → settle), so the part choices would never be seen.
+        // It is always listed; every other single hit jumps as before.
         const choices = hits.flatMap(partHitsOf);
         if (choices.length === 0) setLookup({ term, status: "none" });
-        else if (choices.length === 1 && navigate) goToHit(choices[0]);
+        else if (choices.length === 1 && navigate && hits[0].parts === undefined) goToHit(choices[0]);
         else setLookup({ term, status: "many", hits: choices });
       } catch {
         if (seq === lookupSeq.current) setLookup({ term, status: "error" });
