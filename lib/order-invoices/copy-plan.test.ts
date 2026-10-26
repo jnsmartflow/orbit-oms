@@ -64,3 +64,22 @@ test("Copy inv on a split bill: only the invoices whose number went on the clipb
   assert.equal(badSentNo(here, new Set(["I536230716"])), "I536230716"); // not on this trip
   assert.equal(badSentNo([{ ...here[0], copied: true }], new Set(["I536230713"])), "I536230713"); // copied already
 });
+
+// ── Split load, Phase 4 batch 2 (F10): a truck part is not a split moment ──
+
+test("split moment ignores 'load' rows; 18648's ('manual' rows) is unchanged", () => {
+  const manual = ROWS.map((r, i) => ({ ...r, source: i === 0 ? "sap" : "manual" }));
+  assert.deepEqual(splitAtOf(manual), SPLIT_AT);
+  // I536233980: root 'sap' + one 'load' part → never split as papers.
+  const load = [
+    { seq: 1, createdAt: new Date("2026-10-20T09:00:00Z"), source: "sap" },
+    { seq: 2, createdAt: new Date("2026-10-24T12:00:00Z"), source: "load" },
+  ];
+  assert.equal(splitAtOf(load), null);
+  // An old copy of the root then covers ONLY the root, never the part.
+  const old = { tripId: 1295, orderInvoiceId: 40777, copiedAt: new Date("2026-10-23T00:00:00Z") };
+  assert.equal(copyCovers(old, 40777, splitAtOf(load)), true);
+  assert.equal(copyCovers(old, 41213, splitAtOf(load)), false);
+  // Add invoices + an earlier load part: the 'manual' rows are still the moment.
+  assert.deepEqual(splitAtOf([...manual, { seq: 5, createdAt: new Date("2026-10-01T00:00:00Z"), source: "load" }]), SPLIT_AT);
+});

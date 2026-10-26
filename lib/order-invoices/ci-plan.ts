@@ -23,6 +23,9 @@ export interface CiInvoiceRow {
   isDispatched: boolean;
   /** order_invoice_lines: the raw line and the tins on this invoice. */
   lines: ReadonlyArray<{ rawLineItemId: number; qty: number }>;
+  /** Split load — the row is in a load group (a truck part or a root with
+   *  parts; loadGroupsOf n > 1). Omitted = not. */
+  inLoadGroup?: boolean;
 }
 
 /** A non-voided CI of the OBD (draft included). */
@@ -43,8 +46,17 @@ export function ciCoversRow(ci: Pick<OrderCi, "orderInvoiceId">, rowId: number):
   return ci.orderInvoiceId === null || ci.orderInvoiceId === rowId;
 }
 
-/** On a trip / dispatched → refused, in the bottom bar's words. A HELD invoice is allowed. */
+/** Owner answer 6 (2026-10-24): no CI on a single truck part until Phase 4
+ *  batch 3 — today it would be written FULL holding only part of the tins. */
+export const LOAD_CI_LATER = "CI on split parts comes in the next update";
+
+/**
+ * On a trip / dispatched → refused, in the bottom bar's words. A HELD invoice is
+ * allowed. A row in a LOAD GROUP is refused first (the stopgap until batch 3 —
+ * the same word the Floor button shows).
+ */
 export function invoiceCiRefusal(r: CiInvoiceRow): string | null {
+  if (r.inLoadGroup === true) return LOAD_CI_LATER;
   if (r.isDispatched) return `${ciInvoiceLabel(r)} is dispatched — it cannot be returned here`;
   if (r.tripDropId !== null) return `${ciInvoiceLabel(r)} is on ${r.tripNumber ?? "a trip"} — remove it from the trip first`;
   return null;

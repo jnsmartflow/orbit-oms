@@ -110,6 +110,9 @@ type InvoicePart = {
   load: { k: number; n: number } | null;
   away: { text: string; title: string } | null;
   first: boolean;
+  /** Split load (Phase 4 batch 2): this row's share of SAP's article tag —
+   *  FloorInvoiceRow.articleTagText; absent off a load group. */
+  articleTagText?: string;
 };
 
 function Cell({ col, row, now, part = null }: { col: HoldColumn; row: FloorHoldRow; now: Date; part?: InvoicePart | null }) {
@@ -203,6 +206,7 @@ function Cell({ col, row, now, part = null }: { col: HoldColumn; row: FloorHoldR
       );
     }
     case "article":
+      if (part?.articleTagText !== undefined) return <td className={TD}>{part.articleTagText}</td>;
       return <td className={TD}>{row.articleTag ? formatArticleTag(row.articleTag) : DASH}</td>;
     case "heldSince": {
       const days = holdAgeDays(row.heldSince, now);
@@ -316,7 +320,15 @@ export function HoldTable({
       tick: invKey(d.invoice!.id),
       row,
       cellRow: invoiceCellRow(row, d.invoice!),
-      part: { k: d.k, n: d.n, chip: d.chip, load: d.load, away, first: d.first },
+      part: {
+        k: d.k,
+        n: d.n,
+        chip: d.chip,
+        load: d.load,
+        away,
+        first: d.first,
+        ...(d.invoice!.articleTagText !== undefined ? { articleTagText: d.invoice!.articleTagText } : {}),
+      },
       seq: d.invoice!.seq,
       last: d.last,
     }));

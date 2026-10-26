@@ -101,8 +101,10 @@ export function loadPartsText(ks: readonly number[]): string {
 }
 
 /** Owner answer 6 (2026-10-24): no CI on a single truck part until phase 4 —
- *  a part's CI would be marked FULL holding only part of the tins. */
-export const LOAD_CI_LATER = "CI on split parts comes in the next update";
+ *  a part's CI would be marked FULL holding only part of the tins. Lives in
+ *  ci-plan.ts since Phase 4 batch 2 (the server refuses it too); re-exported
+ *  here so the Floor board's import is unchanged. */
+export { LOAD_CI_LATER } from "./ci-plan";
 
 /**
  * WHICH ROWS A MERGE PRESS SENDS (owner answer 1, 2026-10-24): ONE ticked row
@@ -137,7 +139,7 @@ export function mergeQuestionOf(rows: readonly LoadRow[], plan: { survivorId: nu
 }
 
 /** The row's group root: its parent when it is a part, else itself. */
-export function rootOf<R extends LoadRow>(rows: readonly R[], row: R): R {
+export function rootOf<R extends Pick<LoadRow, "id" | "loadParentId">>(rows: readonly R[], row: R): R {
   if (row.loadParentId === null) return row;
   return rows.find((r) => r.id === row.loadParentId) ?? row;
 }
@@ -148,7 +150,7 @@ export function isUnsplit(rows: readonly LoadRow[]): boolean {
 }
 
 /** A split OBD with a row that has no lines — a press that died half-way. */
-export function isHalfWritten(rows: readonly LoadRow[]): boolean {
+export function isHalfWritten(rows: ReadonlyArray<Pick<LoadRow, "lines">>): boolean {
   const split = rows.length > 1 || rows.some((r) => r.lines.length > 0);
   return split && rows.some((r) => r.lines.length === 0);
 }
@@ -231,7 +233,7 @@ export function paperLabel(root: Pick<LoadRow, "seq" | "invoiceNo">, obdNumber: 
 }
 
 /** "I536230716 part 2 of 3" — a part's name in a refusal. */
-export function partLabel(rows: readonly LoadRow[], row: LoadRow, obdNumber: string): string {
+export function partLabel<R extends Pick<LoadRow, "id" | "seq" | "loadParentId" | "invoiceNo">>(rows: readonly R[], row: R, obdNumber: string): string {
   const place = loadGroupsOf(rows).get(row.id);
   const name = paperLabel(rootOf(rows, row), obdNumber);
   return place && place.n > 1 ? `${name} ${loadPartText(place.k, place.n)}` : name;
@@ -569,7 +571,7 @@ export function loadSplitRefusal(bill: LoadBill, rows: readonly LoadRow[], row: 
   if (isUnsplit(rows) && rows[0].isHeld !== (bill.dispatchStatus === "hold")) return LOAD_HOLD_OUT_OF_STEP;
   // E.7 — a billing copy covering the row on the trip it is on now.
   if (row.tripDropId !== null && row.tripId !== undefined && row.tripId !== null) {
-    const splitAt = splitAtOf(rows.map((r) => ({ seq: r.seq, createdAt: r.createdAt ?? new Date(0) })));
+    const splitAt = splitAtOf(rows.map((r) => ({ seq: r.seq, createdAt: r.createdAt ?? new Date(0), source: r.source })));
     const copy = coveringCopy(facts.copies, row.id, splitAt, (tid) => tid === row.tripId);
     if (copy) {
       return `Billing already copied ${paperLabel(rootOf(rows, row), bill.obdNumber)} for ${copy.tripNumber} — split it before billing copies it, or ask billing to take the trip back.`;

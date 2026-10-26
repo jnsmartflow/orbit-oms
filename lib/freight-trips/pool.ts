@@ -11,6 +11,9 @@
 // Held bills that are on a FLOOR trip still appear (owner decision): nothing
 // here reads tripDropId. Read-only.
 //
+// SPLIT LOAD (Phase 4 batch 2, plan F9): a bill with a truck part ('load'
+// invoice row) is left out — a freight trip holds whole bills (rules.ts).
+//
 // ROUTE CARDS (2026-10-02). The pool screen draws Floor-style club cards, which
 // need two facts a hold row does not carry: the effective dealer's route ID
 // (clubs match on route id, never name) and the stop key (computeDropKey). Both
@@ -24,6 +27,7 @@ import { applySearch, parseSearch } from "@/lib/floor/search";
 import { computeDropKey } from "@/lib/trips/drop-key";
 import type { FloorScope, FloorHoldRow } from "@/lib/floor/types";
 import { effectiveArea } from "@/lib/ship-to/effective";
+import { INVOICE_SOURCE } from "@/lib/order-invoices/source";
 
 /** A pool row: Floor's hold row + the two facts the route cards need. */
 export interface FreightPoolRow extends FloorHoldRow {
@@ -36,6 +40,7 @@ export interface FreightPoolRow extends FloorHoldRow {
 export async function getFreightPool(scope: FloorScope = "All", search?: string): Promise<FloorHoldRow[]> {
   const rows = await getFloorHold(scope, undefined, undefined, {
     freightTripBills: { none: { removedAt: null } },
+    invoices: { none: { source: INVOICE_SOURCE.LOAD } },
   });
   const q = search?.trim() ?? "";
   return q === "" ? rows : applySearch(rows, parseSearch(q));

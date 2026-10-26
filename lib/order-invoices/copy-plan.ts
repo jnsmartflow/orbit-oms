@@ -22,6 +22,8 @@
 //     is copied; partly copied → its picking state decides, and the next press
 //     writes only the rest.
 
+import { INVOICE_SOURCE } from "./source";
+
 /** One copy row, as the rules read it. */
 export interface CopyFact {
   tripId: number;
@@ -29,10 +31,18 @@ export interface CopyFact {
   copiedAt: Date;
 }
 
-/** The OBD's split moment: the earliest createdAt of a seq ≥ 2 row; null = never split. */
-export function splitAtOf(rows: ReadonlyArray<{ seq: number; createdAt: Date }>): Date | null {
+/**
+ * The OBD's split moment: the earliest createdAt of a seq ≥ 2 row; null = never
+ * split. A SPLIT LOAD truck part ('load' row) is NOT a split moment (design
+ * Answer 3, Phase 4 batch 2): it is the same paper on another truck, so a copy
+ * taken before it covers only the row it names. The same filter sits in
+ * lib/billing/print.ts (its own read and its raw-SQL MIN).
+ */
+export function splitAtOf(rows: ReadonlyArray<{ seq: number; createdAt: Date; source?: string }>): Date | null {
   let at: Date | null = null;
-  for (const r of rows) if (r.seq > 1 && (at === null || r.createdAt.getTime() < at.getTime())) at = r.createdAt;
+  for (const r of rows) {
+    if (r.seq > 1 && r.source !== INVOICE_SOURCE.LOAD && (at === null || r.createdAt.getTime() < at.getTime())) at = r.createdAt;
+  }
   return at;
 }
 

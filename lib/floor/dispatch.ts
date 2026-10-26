@@ -168,6 +168,9 @@ export async function markBillsDispatched(opts: {
         else if (r.kind === "already") alreadyDispatched.push(orderId);
         else if (r.kind === "held") held.push(orderId);
         else if (r.kind === "notChecked") notChecked.push({ orderId, workflowStage: r.workflowStage });
+        // Split load (Phase 4 batch 2): SAP changed the bill after the split —
+        // FAILED with the refusal, never held; the trip stays open.
+        else if (r.kind === "stale") failed.push({ orderId, error: r.error });
         else failed.push({ orderId, error: r.error });
       } catch (err) {
         failed.push({ orderId, error: err instanceof Error ? err.message : "Unexpected error" });

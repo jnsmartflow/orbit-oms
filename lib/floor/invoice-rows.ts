@@ -28,6 +28,8 @@
 import { kgShare, lineLitres } from "@/lib/order-invoices/entry";
 import { detectStale } from "@/lib/order-invoices/rules";
 import { loadGroupsOf, loadPartText } from "@/lib/order-invoices/load-plan";
+import { parseArticleTag } from "@/lib/article-tag-parse";
+import { ARTICLE_WORD_ABBR } from "@/lib/floor/format";
 
 /** One invoice of a SPLIT OBD, as the board row carries it. */
 export interface FloorInvoiceRow {
@@ -75,6 +77,15 @@ export interface FloorInvoiceRow {
   /** Split load — a row of this load-split OBD has no lines (a press died
    *  half-way → Repair, commit 3). ABSENT unless true. */
   halfWritten?: true;
+  /** Split load (Phase 4 batch 2) — THIS row's share of SAP's articles
+   *  (loadRowArticles; shown via articleShareText) and of SAP's article tag,
+   *  ready to draw ("35 D", "~18 D · 17 C"; loadRowArticleTags). Set on every
+   *  row of an OBD with a load group, by lib/order-invoices/invoice-load.ts;
+   *  ABSENT on every other row, so those payloads are byte-identical. The
+   *  Floor tables draw these instead of the OBD's tag and the picker's typed
+   *  count (owner answer 2: a part ignores the typed whole-bill count). */
+  articles?: number;
+  articleTagText?: string;
 }
 
 /** One order_invoices row with its lines, as the board's read returns it. */
@@ -341,6 +352,55 @@ export function articleShareText(n: number | null): string {
   if (n === null || !Number.isFinite(n)) return "—";
   const r = Math.round(n);
   return `${Math.abs(n - r) < 1e-9 ? "" : "~"}${r.toLocaleString("en-IN")}`;
+}
+
+/** One active raw line's article TAG (import_raw_line_items."articleTag", e.g. "70 Drum"). */
+export interface ArticleTagLine {
+  rawLineItemId: number;
+  unitQty: number;
+  /** null / "" = the import could not tell. */
+  articleTag: string | null;
+}
+
+/**
+ * Each row's share of the bill's article TAG, ready to draw (row id → "35 D",
+ * "~18 D · 17 C", "—" when the row carries none of it). THE SAME RULE as
+ * loadRowArticles, once per pack type: the type's count in SAP's order tag
+ * (querySnapshot.articleTag) is shared by each line's count of that type (its
+ * line tag) × tins ÷ line tins — tins when a line has no tag — with the
+ * remainder to the last row. Empty when the bill has no tag.
+ */
+export function loadRowArticleTags(input: {
+  rows: ReadonlyArray<{ id: number; seq: number; lines: ReadonlyArray<{ rawLineItemId: number; qty: number }> }>;
+  activeLines: readonly ArticleTagLine[];
+  obdTag: string | null;
+}): Map<number, string> {
+  const out = new Map<number, string>();
+  if (!input.obdTag) return out;
+  const types = new Map<string, number>();
+  for (const g of parseArticleTag(input.obdTag)) types.set(g.type, (types.get(g.type) ?? 0) + g.count);
+  if (types.size === 0) return out;
+  const groupsByLine = new Map(input.activeLines.map((l) => [l.rawLineItemId, l.articleTag ? parseArticleTag(l.articleTag) : null]));
+  const words = new Map<number, string[]>(input.rows.map((r) => [r.id, []]));
+  types.forEach((count, type) => {
+    const shares = loadRowArticles({
+      rows: input.rows,
+      activeLines: input.activeLines.map((l) => {
+        const g = groupsByLine.get(l.rawLineItemId) ?? null;
+        return {
+          rawLineItemId: l.rawLineItemId,
+          unitQty: l.unitQty,
+          article: g === null ? null : g.filter((x) => x.type === type).reduce((s, x) => s + x.count, 0),
+        };
+      }),
+      totalArticle: count,
+    });
+    shares.forEach((n, id) => {
+      if (n > 0) words.get(id)?.push(`${articleShareText(n)} ${ARTICLE_WORD_ABBR[type] ?? type}`);
+    });
+  });
+  words.forEach((w, id) => out.set(id, w.length > 0 ? w.join(" · ") : "—"));
+  return out;
 }
 
 /**

@@ -66,6 +66,7 @@ import { loadBillToByObd } from "@/lib/reports/bill-facts";
 import { linkRowForOrder } from "@/lib/order-invoices/links";
 import { computeFullBillLines, deriveCiLineRows, readActiveBillLines } from "@/lib/ci/full-bill";
 import { ciInvoiceLabel, invoiceCiDuplicate, invoiceCiPicks, invoiceCiRefusal } from "@/lib/order-invoices/ci-plan";
+import { loadGroupsOf } from "@/lib/order-invoices/load-plan";
 import { offFloorRefusal } from "@/lib/floor/off-floor";
 import { INVOICE_TRIPS_SELECT, invoiceTripsOf } from "@/lib/order-invoices/trip-refusal";
 import { mirrorObdHoldSafe } from "@/lib/order-invoices/hold";
@@ -414,6 +415,8 @@ export async function raiseInvoiceCi(args: {
             isDispatched: true,
             tripDrop: { select: { trip: { select: { tripNumber: true } } } },
             lines: { select: { rawLineItemId: true, qty: true } },
+            // Split load — the stopgap below (Phase 4 batch 2).
+            loadParentId: true,
           },
         },
       },
@@ -437,6 +440,9 @@ export async function raiseInvoiceCi(args: {
       tripNumber: found.tripDrop?.trip.tripNumber ?? null,
       isDispatched: found.isDispatched,
       lines: found.lines,
+      // Split load: a part (or a root with parts) is refused until batch 3 —
+      // a CI here would be written FULL holding only part of the tins.
+      inLoadGroup: (loadGroupsOf(order.invoices).get(found.id)?.n ?? 1) > 1,
     };
     invoiceNo = row.invoiceNo;
 

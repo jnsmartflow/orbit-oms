@@ -49,7 +49,7 @@ import { formatArticleTag } from "@/lib/floor/format";
 // panel's "Invoice date" reads) is used inside InvoiceLines.
 import { InvoiceCountChip, InvoiceLines, LoadPartChip, ObdDateLine, fmtDateTime } from "./bill-ref-cells";
 // ONE FLOOR ROW PER INVOICE (Add invoices Phase 4 commit 2) — the draw rule.
-import { awayChipOf, drawRowsOf, goneChipOf, paperCountOf, type InvoiceDrawRow } from "@/lib/floor/invoice-rows";
+import { articleShareText, awayChipOf, drawRowsOf, goneChipOf, paperCountOf, type InvoiceDrawRow } from "@/lib/floor/invoice-rows";
 // TINT / BASE -- one owner for the word, shared with both picking boards. The
 // pinks it paints are copied FROM this module's neighbour status-pill.tsx.
 import { ColourWorkBadge } from "@/components/picking/card-atoms";
@@ -2028,10 +2028,17 @@ export function FloorTable({
         <td className={`${TDR} text-[10.5px]`}>
           {/* An OBD fact — shown on a split block's FIRST row only; rows 2..n
               draw the cell EMPTY (never absent — the cell count stays). */}
-          {!splitRest && (
-          <span className="text-[#6b7280]">
-            {row.articleTag ? formatArticleTag(row.articleTag) : "—"}
-          </span>
+          {/* SPLIT LOAD (Phase 4 batch 2): a row of a load-group OBD draws ITS
+              share of SAP's tag ("35 D") on every row — built once in
+              lib/order-invoices/invoice-load.ts, absent on every other row. */}
+          {inv?.articleTagText !== undefined ? (
+            <span className="text-[#6b7280]">{inv.articleTagText}</span>
+          ) : (
+            !splitRest && (
+              <span className="text-[#6b7280]">
+                {row.articleTag ? formatArticleTag(row.articleTag) : "—"}
+              </span>
+            )
           )}
         </td>
         {/* ── ARTICLE — the supervisor's article no. (2026-10-06) ─────────────
@@ -2046,15 +2053,25 @@ export function FloorTable({
             design, so a dash there would read as "missing". Never "0".
 
             Colour is SWAPPED on TD, never stacked — same rule as the Vol/KG
-            cell above. */}
+            cell above.
+
+            SPLIT LOAD (Phase 4 batch 2): a load-group row shows ITS share of
+            SAP's articles ("35", "~18" — articleShareText), never the typed
+            whole-bill count (owner answer 2). Same status gate. */}
         <td
           className={`${
-            (st === "done" || st === "dispatched") && row.articleCount != null
+            (st === "done" || st === "dispatched") && (inv?.articles !== undefined || row.articleCount != null)
               ? TDR.replace("text-[#4b5563]", "text-ok-text font-semibold")
               : TDR.replace("text-[#4b5563]", "text-ink-400")
           } text-right tabular-nums`}
         >
-          {!splitRest && (st === "done" || st === "dispatched") ? (row.articleCount ?? "—") : null}
+          {st === "done" || st === "dispatched"
+            ? inv?.articles !== undefined
+              ? articleShareText(inv.articles)
+              : !splitRest
+                ? (row.articleCount ?? "—")
+                : null
+            : null}
         </td>
         {/* DC (2026-10-09) — per OBD, never row-spanned; same `dcCol` as the
             colgroup and the <th>. TDR keeps a merged block's dashed divider. */}

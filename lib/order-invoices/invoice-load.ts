@@ -17,10 +17,13 @@
 //   3. their ACTIVE raw lines (litres, SAP line kg).
 //   4. SAP's learned kg per tin for those lines' SKUs (kg rule 2,
 //      lib/order-invoices/kg-per-unit.ts).
+//   5. ONLY when an OBD has a load group (Split load, Phase 4 batch 2): SAP's
+//      order totals (import_obd_query_summary) — each row's share of the
+//      articles and the article tag (articles / articleTagText).
 // An OBD absent from the map is not split: callers use the OBD's own totals.
 
 import { prisma } from "../prisma";
-import { buildInvoiceRows, hasLoadGroup, loadRowArticles, type FloorInvoiceRow } from "../floor/invoice-rows";
+import { buildInvoiceRows, hasLoadGroup, loadRowArticles, loadRowArticleTags, type FloorInvoiceRow } from "../floor/invoice-rows";
 import { learnedKgPerUnit } from "./kg-per-unit";
 
 /**
@@ -73,7 +76,18 @@ export async function loadSplitInvoiceRows(
   // ACTIVE lines only — a removed line is the "stale" case, as loadSplitView reads it.
   const lines = await prisma.import_raw_line_items.findMany({
     where: { obdNumber: { in: obds }, lineStatus: "active" },
-    select: { id: true, obdNumber: true, lineId: true, skuCodeRaw: true, unitQty: true, volumeLine: true, totalWeight: true },
+    select: {
+      id: true,
+      obdNumber: true,
+      lineId: true,
+      skuCodeRaw: true,
+      unitQty: true,
+      volumeLine: true,
+      totalWeight: true,
+      // Split load (Phase 4 batch 2) — a part's share of SAP's articles / tag.
+      article: true,
+      articleTag: true,
+    },
   });
   // Kg rule 2's source — SAP's kg per tin learned from every line that carried
   // it (median per SKU). Only these OBDs' SKUs.
@@ -96,6 +110,42 @@ export async function loadSplitInvoiceRows(
       unitKgBySku,
     });
     if (built.length > 0) map.set(id, built);
+  }
+  // Split load (Phase 4 batch 2): every row of an OBD with a load group carries
+  // its SHARE of SAP's articles and article tag (the Floor tables draw them in
+  // place of the OBD's tag and the typed count). ONE more read — SAP's order
+  // totals — and only when such an OBD is here; every other row is untouched.
+  const loadIds = splitIds.filter((id) => hasLoadGroup(map.get(id)));
+  if (loadIds.length > 0) {
+    const loadObds = loadIds.map((id) => obdById.get(id)).filter((n): n is string => n !== undefined);
+    const sums = await prisma.import_obd_query_summary.findMany({
+      where: { obdNumber: { in: loadObds } },
+      select: { obdNumber: true, totalArticle: true, articleTag: true },
+    });
+    for (const id of loadIds) {
+      const obd = obdById.get(id);
+      const sum = sums.find((s) => s.obdNumber === obd);
+      const own = rows.filter((r) => r.orderId === id);
+      const active = lines.filter((l) => l.obdNumber === obd);
+      const arts = loadRowArticles({
+        rows: own,
+        activeLines: active.map((l) => ({ rawLineItemId: l.id, unitQty: l.unitQty, article: l.article })),
+        totalArticle: sum?.totalArticle ?? null,
+      });
+      const tags = loadRowArticleTags({
+        rows: own,
+        activeLines: active.map((l) => ({ rawLineItemId: l.id, unitQty: l.unitQty, articleTag: l.articleTag })),
+        obdTag: sum?.articleTag ?? null,
+      });
+      map.set(
+        id,
+        map.get(id)!.map((r) => ({
+          ...r,
+          ...(arts.has(r.id) ? { articles: arts.get(r.id)! } : {}),
+          ...(tags.has(r.id) ? { articleTagText: tags.get(r.id)! } : {}),
+        })),
+      );
+    }
   }
   return map;
 }

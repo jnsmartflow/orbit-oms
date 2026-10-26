@@ -6,7 +6,7 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { addedInvoiceNosOf, articleShareText, awayChipOf, buildInvoiceRows, drawRows, drawRowsOf, goneChipOf, hasLoadGroup, loadPlaceArticles, loadRowArticles, loadTripsOf, narrowToInvoiceIds, narrowToPlace, paperCountOf, placeLoad, type FloorInvoiceRow, type InvoiceLineFacts, type InvoiceRowSource } from "./invoice-rows";
+import { addedInvoiceNosOf, articleShareText, awayChipOf, buildInvoiceRows, drawRows, drawRowsOf, goneChipOf, hasLoadGroup, loadPlaceArticles, loadRowArticles, loadRowArticleTags, loadTripsOf, narrowToInvoiceIds, narrowToPlace, paperCountOf, placeLoad, type FloorInvoiceRow, type InvoiceLineFacts, type InvoiceRowSource } from "./invoice-rows";
 
 const LINES: InvoiceLineFacts[] = [
   { rawLineItemId: 62850, lineId: 1, skuCodeRaw: "5880380", unitQty: 13, volumeLine: 260, totalWeight: null },
@@ -376,4 +376,49 @@ test("hasLoadGroup / loadTripsOf: false for unsplit and 18648; I536233980 → on
   assert.deepEqual(loadTripsOf([...rows, { id: 5, seq: 3, tripDropId: null }], (d) => (d === 5815 ? 1295 : undefined)), [
     { tripId: 1295, dropId: 5815, rowIds: [40777] },
   ]);
+});
+
+// ── Phase 4 batch 2: the Floor ARTICLE / ARTICLE TAG cells of a truck part ──
+
+test("loadRowArticleTags: I536233980 — '70 Drum' over 35 / 35 tins → '35 D' on each part", () => {
+  const lines = [{ rawLineItemId: 74260, unitQty: 70, articleTag: "70 Drum" }];
+  const t = loadRowArticleTags({ rows: I233980_ROWS, activeLines: lines, obdTag: "70 Drum" });
+  assert.deepEqual(Array.from(t.entries()), [[40777, "35 D"], [41213, "35 D"]]);
+});
+
+test("loadRowArticleTags: each pack type shared line by line; '~' when not whole, remainder to the last part", () => {
+  // Line 1: 60 tins = 10 cartons; line 2: 4 drums. Part 1 takes 30 tins + all drums, part 2 the other 30 tins.
+  const lines = [{ rawLineItemId: 1, unitQty: 60, articleTag: "10 Carton" }, { rawLineItemId: 2, unitQty: 4, articleTag: "4 Drum" }];
+  const rows = [
+    { id: 10, seq: 1, lines: [{ rawLineItemId: 1, qty: 30 }, { rawLineItemId: 2, qty: 4 }] },
+    { id: 11, seq: 2, lines: [{ rawLineItemId: 1, qty: 30 }] },
+  ];
+  assert.deepEqual(Array.from(loadRowArticleTags({ rows, activeLines: lines, obdTag: "4 Drum, 10 Carton" }).entries()), [
+    [10, "4 D · 5 C"],
+    [11, "5 C"],
+  ]);
+  // 7 cartons over 3 trucks → 2.3 / 2.3 / 2.4 → "~2 C" each; the same shares as the Article column.
+  const three = [1, 2, 3].map((seq) => ({ id: 100 + seq, seq, lines: [{ rawLineItemId: 1, qty: 14 }] }));
+  const t = loadRowArticleTags({ rows: three, activeLines: [{ rawLineItemId: 1, unitQty: 42, articleTag: "7 Carton" }], obdTag: "7 Carton" });
+  assert.deepEqual(Array.from(t.values()), ["~2 C", "~2 C", "~2 C"]);
+  const a = loadRowArticles({ rows: three, activeLines: [{ rawLineItemId: 1, unitQty: 42, article: 7 }], totalArticle: 7 });
+  assert.deepEqual(Array.from(a.values()), [2.3, 2.3, 2.4]);
+});
+
+test("loadRowArticleTags: no SAP tag → nothing (the OBD's own '—' stays); a line with no tag → by tins", () => {
+  assert.equal(loadRowArticleTags({ rows: I233980_ROWS, activeLines: [], obdTag: null }).size, 0);
+  const lines = [{ rawLineItemId: 74260, unitQty: 70, articleTag: null }];
+  const t = loadRowArticleTags({
+    rows: [{ id: 1, seq: 1, lines: [{ rawLineItemId: 74260, qty: 20 }] }, { id: 2, seq: 2, lines: [{ rawLineItemId: 74260, qty: 50 }] }],
+    activeLines: lines,
+    obdTag: "70 Drum",
+  });
+  assert.deepEqual(Array.from(t.entries()), [[1, "20 D"], [2, "50 D"]]);
+});
+
+test("Floor article fields: buildInvoiceRows never sets them — unsplit / 18648 payloads keep their exact keys", () => {
+  for (const r of buildInvoiceRows({ rows: ROWS, activeLines: LINES, obdKg: 1357 })) {
+    assert.equal("articles" in r, false);
+    assert.equal("articleTagText" in r, false);
+  }
 });

@@ -78,6 +78,7 @@ import { badSentNo, coveringCopy, isWholeObdCopy, planCopyRows } from "@/lib/ord
 import { onStopsWhere, onTripsWhere, placeOnTrips, stopRowsSelect } from "@/lib/order-invoices/trip-read";
 import { loadSplitInvoiceRows } from "@/lib/order-invoices/invoice-load";
 import { placeLoad } from "@/lib/floor/invoice-rows";
+import { INVOICE_SOURCE } from "@/lib/order-invoices/source";
 
 /** `orders.dispatchStatus` for a held bill — the same test lib/trips/queries.ts bucketFor makes. */
 const HOLD = "hold";
@@ -377,7 +378,8 @@ export async function loadPrintTrips(tripIds: number[]): Promise<PrintTrip[]> {
   const splitAtByOrder = new Map<number, Date>();
   if (splitIds.length > 0) {
     for (const r of await prisma.order_invoices.findMany({
-      where: { orderId: { in: splitIds }, seq: { gt: 1 } },
+      // A split-load truck part is not a split moment (copy-plan.ts splitAtOf).
+      where: { orderId: { in: splitIds }, seq: { gt: 1 }, source: { not: INVOICE_SOURCE.LOAD } },
       select: { orderId: true, createdAt: true },
     })) {
       const at = splitAtByOrder.get(r.orderId);
@@ -645,7 +647,9 @@ export async function getPrintWorkTripIds(): Promise<number[]> {
                          -- and only the first arm (its one row) can hold.
                          AND (c."orderInvoiceId" = oi.id
                               OR c."copiedAt" < (SELECT MIN(x."createdAt") FROM order_invoices x
-                                                  WHERE x."orderId" = o.id AND x.seq > 1)))
+                                                  WHERE x."orderId" = o.id AND x.seq > 1
+                                                    -- A split-load part is not a split moment (copy-plan.ts splitAtOf).
+                                                    AND x.source <> ${INVOICE_SOURCE.LOAD})))
            )
          )
        )

@@ -15,6 +15,8 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { logFreightBills } from "./activity";
 import { REMOVED_REASON } from "./status";
+import { splitLoadFreightRefusal } from "./rules";
+import { INVOICE_SOURCE } from "@/lib/order-invoices/source";
 
 export interface BillSkip {
   orderId: number;
@@ -64,7 +66,14 @@ export async function addFreightBills(opts: {
     ids.length > 0
       ? await prisma.orders.findMany({
           where: { id: { in: ids } },
-          select: { id: true, obdNumber: true, isRemoved: true, dispatchStatus: true },
+          select: {
+            id: true,
+            obdNumber: true,
+            isRemoved: true,
+            dispatchStatus: true,
+            // Split load (plan F9): any truck part → never on a freight trip.
+            invoices: { where: { source: INVOICE_SOURCE.LOAD }, take: 1, select: { id: true } },
+          },
         })
       : [];
   const byId = new Map(orders.map((o) => [o.id, o]));
@@ -79,6 +88,7 @@ export async function addFreightBills(opts: {
     if (!o) { skipped.push({ orderId, reason: "Bill not found" }); continue; }
     if (o.isRemoved) { skipped.push({ orderId, reason: `${o.obdNumber} is removed` }); continue; }
     if (o.dispatchStatus !== "hold") { skipped.push({ orderId, reason: `${o.obdNumber} is not on hold` }); continue; }
+    if (o.invoices.length > 0) { skipped.push({ orderId, reason: splitLoadFreightRefusal(o.obdNumber) }); continue; }
     const current = onTrip.get(orderId);
     if (current) {
       skipped.push({
