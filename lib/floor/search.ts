@@ -255,6 +255,24 @@ export function partTargetOf(
 }
 
 /**
+ * Where a SPLIT OBD's hit goes when an INVOICE number named one of its rows
+ * (lib/floor/search-hits.ts): the hit's precedence (cancel_ci > hold > tinting
+ * > trip > floor) with hold and trip read off THAT row. `obdTarget` is the
+ * OBD-level answer; only its cancel_ci / hold / tinting are kept — its trip
+ * (the derived stop) is never used. A matched row on no trip is "floor".
+ * Matched invoice row, not OBD pointer (2026-10-26) — don't revert.
+ */
+export function matchedInvoiceTargetOf(
+  obdTarget: FloorSearchTarget,
+  row: { isHeld: boolean; onLiveTrip: boolean },
+): FloorSearchTarget {
+  if (obdTarget === "cancel_ci" || obdTarget === "hold") return obdTarget;
+  if (row.isHeld) return "hold";
+  if (obdTarget === "tinting") return "tinting";
+  return row.onLiveTrip ? "trip" : "floor";
+}
+
+/**
  * The choices a hit offers the search strip: [hit] as it is, unless its parts
  * sit in DIFFERENT places (target + trip) — then one hit per part, each
  * standing for that part alone (its own target / trip / seq, `part` set,
@@ -326,13 +344,16 @@ export interface TripSearchLine {
  * per bill per trip. `tripByNumber` names a loaded trip (undefined = not on
  * this desk); cancelled trips are skipped (they hold no bills).
  *
- * Every row is counted on ITS OWN trip (orders' derived stop — the lowest-seq
- * invoice's), exactly as before — EXCEPT a row of a SPLIT LOAD (a load group):
- * its truck parts ride different trucks, so each NAMED part counts on its own
- * trip — numbers mode: the parts a token names (matchedInvoiceIdsOf); text
- * mode: the parts whose number contains the text; a match on the OBD / SO /
- * dealer names no part, so every part counts. Add-invoices bills keep the old
- * single-trip answer.
+ * An unsplit row is counted on ITS OWN trip (orders' derived stop), exactly as
+ * before. A SPLIT row (its invoices ride different trucks) counts each NAMED
+ * invoice on that invoice's own trip — numbers mode: the invoices a token names
+ * (matchedInvoiceIdsOf); text mode: the invoices whose number contains the
+ * text. A named invoice on no trip counts nowhere. A match on the OBD / SO /
+ * dealer names no invoice: a load group then counts every part, an
+ * Add-invoices bill its derived trip.
+ * Matched invoice row, not OBD pointer (2026-10-26) — don't revert: 713 of
+ * order 18648 rides L-261006-05 while the derived stop (seq 1, 716) is
+ * L-261020-05.
  */
 export function tripSearchHitsOf(
   rows: readonly TripSearchRow[],
@@ -344,11 +365,13 @@ export function tripSearchHitsOf(
   for (const r of applySearch(rows.slice(), parsed)) {
     const all = r.invoiceRowsAll ?? r.invoiceRows ?? [];
     let numbers: string[];
-    if (all.some((i) => i.loadRootId !== undefined)) {
-      const named =
-        parsed.mode === "numbers"
+    const named =
+      all.length === 0
+        ? []
+        : parsed.mode === "numbers"
           ? matchedInvoiceIdsOf({ invoiceRows: all }, parsed)
           : all.filter((i) => (i.invoiceNo ?? "").toLowerCase().includes(parsed.text)).map((i) => i.id);
+    if (named.length > 0 || all.some((i) => i.loadRootId !== undefined)) {
       const counted = named.length > 0 ? all.filter((i) => named.includes(i.id)) : all;
       numbers = Array.from(new Set(counted.map((i) => i.tripNumber).filter((n): n is string => !!n)));
     } else {

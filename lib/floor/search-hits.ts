@@ -12,7 +12,7 @@ import { getFloorCancelled } from "@/lib/floor/queries";
 import { deskShipToName } from "@/lib/ship-to/effective";
 import { getTodayIST } from "@/lib/dates";
 import type { FloorCancelledRow, FloorSearchHit, FloorSearchPart, FloorSearchTarget } from "@/lib/floor/types";
-import { partTargetOf } from "@/lib/floor/search";
+import { matchedInvoiceTargetOf, partTargetOf } from "@/lib/floor/search";
 import { loadGroupsOf } from "@/lib/order-invoices/load-plan";
 
 /** The Tinting tab's stages — a tint bill not yet on the mixer (isTintRoomRow,
@@ -41,7 +41,9 @@ export async function getFloorSearchHits(term: BillLookupTerm): Promise<FloorSea
     shipToOverrideCustomer: { select: { customerName: true } },
     // "Which trip is this bill on" — the DERIVED stop (lowest-seq invoice row),
     // which orders."tripDropId" holds exactly while lib/order-invoices/
-    // trip-link.ts is the only writer (v27.66 readers B). Kept on orders.
+    // trip-link.ts is the only writer (v27.66 readers B). Kept on orders, for
+    // unsplit bills and OBD / SO numbers; a split OBD named by an invoice
+    // number reads that invoice's own row instead (matchedRowOf, below).
     tripDrop: {
       select: { trip: { select: { id: true, tripNumber: true, tripDate: true, status: true } } },
     },
@@ -80,13 +82,55 @@ export async function getFloorSearchHits(term: BillLookupTerm): Promise<FloorSea
     cisByOrder.set(c.orderId, list);
   }
 
-  const targetOf = (b: (typeof bills)[number]): FloorSearchTarget => {
+  // A SPLIT OBD NAMED BY AN INVOICE NUMBER: the matched row's own hold and trip
+  // (Split load parts and Add-invoices rows alike). One index-only read for
+  // which matched OBDs are split, then ONE read of their matched rows; an
+  // unsplit bill (row == OBD) keeps the OBD columns exactly as before.
+  // Matched invoice row, not OBD pointer (2026-10-26) — don't revert: 713 of
+  // order 18648 rides L-261006-05, orders."tripDropId" (716's) L-261020-05.
+  const matchedIds = bills.filter((b) => (invoiceMatches.get(b.id)?.length ?? 0) > 0).map((b) => b.id);
+  const splitMatched = new Set(
+    matchedIds.length > 0
+      ? (
+          await prisma.order_invoices.findMany({
+            where: { orderId: { in: matchedIds }, seq: { gt: 1 } },
+            select: { orderId: true },
+            distinct: ["orderId"],
+          })
+        ).map((r) => r.orderId)
+      : [],
+  );
+  const partRows =
+    splitMatched.size > 0
+      ? await prisma.order_invoices.findMany({
+          where: { id: { in: Array.from(splitMatched).flatMap((id) => invoiceMatches.get(id)!.map((m) => m.id)) } },
+          select: {
+            id: true,
+            isHeld: true,
+            tripDrop: { select: { trip: { select: { id: true, tripNumber: true, tripDate: true, status: true } } } },
+          },
+        })
+      : [];
+  const partRowById = new Map(partRows.map((r) => [r.id, r]));
+  /** The row the number named (the lowest matched seq) — split OBDs only. */
+  const matchedRowOf = (orderId: number) =>
+    splitMatched.has(orderId) ? partRowById.get(invoiceMatches.get(orderId)![0].id) : undefined;
+  const liveTripOf = <T extends { status: string }>(t: T | null | undefined): T | null =>
+    t && t.status !== TRIP_CANCELLED ? t : null;
+
+  /** The OBD-level answer — every unsplit hit, and an OBD / SO number. */
+  const obdTargetOf = (b: (typeof bills)[number]): FloorSearchTarget => {
     if (b.workflowStage === "cancelled" || (cisByOrder.get(b.id)?.length ?? 0) > 0) return "cancel_ci";
     if (b.dispatchStatus === "hold") return "hold";
     if (b.orderType === "tint" && TINT_ROOM_STAGES.includes(b.workflowStage)) return "tinting";
-    const t = b.tripDrop?.trip;
-    if (t && t.status !== TRIP_CANCELLED) return "trip";
+    if (liveTripOf(b.tripDrop?.trip)) return "trip";
     return "floor";
+  };
+  const obdTargets = new Map(bills.map((b) => [b.id, obdTargetOf(b)]));
+  const targetOf = (b: (typeof bills)[number]): FloorSearchTarget => {
+    const m = matchedRowOf(b.id);
+    const obd = obdTargets.get(b.id) ?? "floor";
+    return m ? matchedInvoiceTargetOf(obd, { isHeld: m.isHeld, onLiveTrip: liveTripOf(m.tripDrop?.trip) !== null }) : obd;
   };
   const targets = new Map(bills.map((b) => [b.id, targetOf(b)]));
 
@@ -98,21 +142,8 @@ export async function getFloorSearchHits(term: BillLookupTerm): Promise<FloorSea
   const cancelRowByOrder = new Map(cancelRows.map((r) => [r.orderId, r]));
 
   // SPLIT LOAD (Phase 4 batch 4): a number that named TWO OR MORE rows of one
-  // OBD — the truck parts of one invoice. Each part's own hold and trip, ONE
-  // read, and only then; every other hit reads exactly what it did before.
-  const multi = bills.filter((b) => (invoiceMatches.get(b.id)?.length ?? 0) >= 2);
-  const partRows =
-    multi.length > 0
-      ? await prisma.order_invoices.findMany({
-          where: { id: { in: multi.flatMap((b) => invoiceMatches.get(b.id)!.map((m) => m.id)) } },
-          select: {
-            id: true,
-            isHeld: true,
-            tripDrop: { select: { trip: { select: { id: true, tripNumber: true, tripDate: true, status: true } } } },
-          },
-        })
-      : [];
-  const partRowById = new Map(partRows.map((r) => [r.id, r]));
+  // OBD — the truck parts of one invoice — gets `parts`, each part's own hold
+  // and trip off partRows (read above, with every split OBD's matched rows).
 
   // On TODAY's desk? — tripsOnDeskWhere, the rail's own rule (as the lookup
   // decides it). One count per distinct trip, sequential.
@@ -154,8 +185,10 @@ export async function getFloorSearchHits(term: BillLookupTerm): Promise<FloorSea
   };
 
   const hits: FloorSearchHit[] = bills.map((b) => {
-    const t = b.tripDrop?.trip;
-    const liveTrip = t && t.status !== TRIP_CANCELLED ? t : null;
+    // The matched row's trip on a split OBD — "no trip" when that row is on
+    // none, never the derived stop (2026-10-26, don't revert).
+    const m = matchedRowOf(b.id);
+    const liveTrip = liveTripOf(m ? m.tripDrop?.trip : b.tripDrop?.trip);
     const target = targets.get(b.id) ?? "floor";
     return {
       orderId: b.id,
@@ -182,7 +215,8 @@ export async function getFloorSearchHits(term: BillLookupTerm): Promise<FloorSea
       cis: cisByOrder.get(b.id) ?? [],
       cancelRow: target === "cancel_ci" ? cancelRowByOrder.get(b.id) ?? null : null,
       // Only when the number named 2+ rows — every other hit keeps its exact keys.
-      ...((invoiceMatches.get(b.id)?.length ?? 0) >= 2 ? { parts: partsOf(b.id, target) } : {}),
+      // Each part from the OBD-level answer, so one held part never holds the rest.
+      ...((invoiceMatches.get(b.id)?.length ?? 0) >= 2 ? { parts: partsOf(b.id, obdTargets.get(b.id) ?? "floor") } : {}),
     };
   });
 

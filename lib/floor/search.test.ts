@@ -6,7 +6,7 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { applySearch, litSeqsOf, parseSearch, partHitsOf, partTargetOf, searchRowSelector, tripSearchHitsOf, type ParsedSearch, type TripSearchRow } from "./search";
+import { applySearch, litSeqsOf, matchedInvoiceTargetOf, parseSearch, partHitsOf, partTargetOf, searchRowSelector, tripSearchHitsOf, type ParsedSearch, type TripSearchRow } from "./search";
 import { loadPartText } from "@/lib/order-invoices/load-plan";
 import type { FloorSearchHit, FloorSearchPart } from "./types";
 
@@ -76,6 +76,25 @@ test("partTargetOf: the hit's precedence, per part", () => {
   assert.equal(partTargetOf("trip", { isHeld: false, onLiveTrip: true }), "trip");
   assert.equal(partTargetOf("trip", { isHeld: false, onLiveTrip: false }), "floor"); // part 1 on a trip, this one waiting
   assert.equal(partTargetOf("tinting", { isHeld: false, onLiveTrip: false }), "tinting");
+});
+
+// Matched invoice row, not OBD pointer (2026-10-26) — don't revert. Server hit
+// of a split OBD named by an invoice number (lib/floor/search-hits.ts).
+test("matchedInvoiceTargetOf: hold and trip off the matched row; the derived trip never used", () => {
+  // 18648 today: OBD 'trip' (716's L-261020-05). 713 on L-261006-05 (live) → trip there.
+  assert.equal(matchedInvoiceTargetOf("trip", { isHeld: false, onLiveTrip: true }), "trip");
+  // Matched row on no trip, though the OBD's derived stop is on one → Floor, not that trip.
+  assert.equal(matchedInvoiceTargetOf("trip", { isHeld: false, onLiveTrip: false }), "floor");
+  // 19 Oct shape: 714 held, OBD still 'dispatch' → On hold (was the OBD's trip / Floor).
+  assert.equal(matchedInvoiceTargetOf("trip", { isHeld: true, onLiveTrip: false }), "hold");
+  assert.equal(matchedInvoiceTargetOf("floor", { isHeld: true, onLiveTrip: false }), "hold");
+  // A matched row on a trip while the OBD has none → that trip.
+  assert.equal(matchedInvoiceTargetOf("floor", { isHeld: false, onLiveTrip: true }), "trip");
+  // OBD-level cancel / whole hold / tint room keep their precedence.
+  assert.equal(matchedInvoiceTargetOf("cancel_ci", { isHeld: true, onLiveTrip: true }), "cancel_ci");
+  assert.equal(matchedInvoiceTargetOf("hold", { isHeld: false, onLiveTrip: true }), "hold");
+  assert.equal(matchedInvoiceTargetOf("tinting", { isHeld: false, onLiveTrip: true }), "tinting");
+  assert.equal(matchedInvoiceTargetOf("tinting", { isHeld: true, onLiveTrip: false }), "hold");
 });
 
 // ── Hotfix 2026-10-26: the strip's trip lines / rail narrowing per truck part ──
@@ -167,9 +186,26 @@ test("tripSearchHitsOf: unsplit bills — exactly the old output", () => {
   }
 });
 
-test("tripSearchHitsOf: 18648 (Add invoices) — exactly the old output, its derived trip only", () => {
-  for (const q of ["I536230716", "I536230713", "30715", "9109951956", "dealer"]) {
+// Matched invoice row, not OBD pointer (2026-10-26) — don't revert. Live: 713 +
+// 715 on L-261006-05, 714 + 716 on L-261020-05; the derived stop is 716's.
+test("tripSearchHitsOf: 18648 (Add invoices) — an invoice number → THAT invoice's trip", () => {
+  const OLD = { tripId: 605, tripNumber: "L-261006-05", count: 1 };
+  const NEW = { tripId: 900, tripNumber: "L-261020-05", count: 1 };
+  for (const q of ["I536230713", "536230713", "1536230713", "30713", "I536230715", "30715"]) {
+    assert.deepEqual(tripSearchHitsOf([ADD_ROW], byNumber, parseSearch(q)), [OLD], q);
+  }
+  for (const q of ["I536230714", "30714", "I536230716", "30716"]) {
+    assert.deepEqual(tripSearchHitsOf([ADD_ROW], byNumber, parseSearch(q)), [NEW], q);
+  }
+  // The OBD / dealer names no invoice → the OBD's derived trip, exactly as before.
+  for (const q of ["9109951956", "51956", "dealer"]) {
     assert.deepEqual(tripSearchHitsOf([ADD_ROW, ...PLAIN], byNumber, parseSearch(q)), oldTripHits([ADD_ROW, ...PLAIN], parseSearch(q)), q);
   }
-  assert.deepEqual(tripSearchHitsOf([ADD_ROW], byNumber, parseSearch("I536230713")), [{ tripId: 900, tripNumber: "L-261020-05", count: 1 }]);
+  // Two invoices pasted on two trucks → both trips, one bill each.
+  assert.deepEqual(tripSearchHitsOf([ADD_ROW], byNumber, parseSearch("30713 30714")), [OLD, NEW]);
+  // A named invoice on NO trip counts nowhere — never the derived stop.
+  const offTrip = { ...ADD_ROW, invoiceRows: ADD_ROW.invoiceRows!.map((i) => (i.id === 36798 ? { ...i, tripNumber: null } : i)) };
+  assert.deepEqual(tripSearchHitsOf([offTrip], byNumber, parseSearch("I536230713")), []);
+  // The old rule sent 713 to 716's trip — the bug.
+  assert.deepEqual(oldTripHits([ADD_ROW], parseSearch("I536230713")), [NEW]);
 });

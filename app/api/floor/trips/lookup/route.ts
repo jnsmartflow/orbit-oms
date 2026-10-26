@@ -32,8 +32,10 @@ export const dynamic = "force-dynamic";
  * as a `1`) all look up `I536229654` — the same three forms lib/floor/search.ts
  * accepts on the client.
  *
- * Follows the bill's invoice rows (v27.66: the lowest-seq row on a stop —
- * deriveObdTripDropId, lib/order-invoices/trip-read.ts) → trip_drops.tripId → trips. Cancelled trips are
+ * Follows the bill's invoice rows → trip_drops.tripId → trips: an invoice
+ * number follows THE ROW IT NAMED (2026-10-26); an OBD / SO number the
+ * lowest-seq row on a stop (v27.66, deriveObdTripDropId, lib/order-invoices/
+ * trip-read.ts). Cancelled trips are
  * skipped (cancel detaches its bills, so one should not appear anyway).
  *
  * `onLiveDesk` — is the trip on TODAY's desk right now? Decided by
@@ -97,8 +99,14 @@ export async function GET(req: Request): Promise<NextResponse> {
     }
   >();
   for (const o of orders) {
-    const stop = deriveObdTripDropId(o.invoices);
-    const t = o.invoices.find((r) => r.tripDropId === stop)?.tripDrop?.trip;
+    // An invoice number → the MATCHED row's trip; that row on no trip → no
+    // trip for this OBD. An OBD / SO number → the derived stop, as before.
+    // Matched invoice row, not OBD pointer (2026-10-26) — don't revert.
+    const matchedSeq = invoiceMatches.get(o.id)?.[0]?.seq;
+    const t =
+      matchedSeq !== undefined
+        ? o.invoices.find((r) => r.seq === matchedSeq)?.tripDrop?.trip
+        : o.invoices.find((r) => r.tripDropId === deriveObdTripDropId(o.invoices))?.tripDrop?.trip;
     if (!t || t.status === TRIP_CANCELLED) continue;
     const entry = byTrip.get(t.id) ?? {
       tripId: t.id,

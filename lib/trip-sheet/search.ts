@@ -107,18 +107,27 @@ export async function searchTripSheets(q: string): Promise<TripSheetSearchHit[]>
     const raw = soByOrder.get(o.id)?.rawName;
     consider(tripOf(o), "so", raw ? displaySoName(raw) : null);
   }
-  for (const o of orders) consider(tripOf(o), "invoice", o.invoiceNo);
-  // Every TYPED invoice too (Add invoices Phase 4, 2026-10-13): a split OBD's
-  // seq 2..n rows on this window's stops, each on its OWN row's stop — the
-  // trip that invoice rides. ONE read (order_invoices_tripDropId_idx), only
-  // for the bills found above. Held bills stay out with their OBD.
-  const typedRows = orders.length
+  // Every invoice row on this window's stops (Add invoices Phase 4, 2026-10-13;
+  // seq 1 included since 2026-10-26), each on its OWN row's stop — the trip
+  // that invoice rides. ONE read (order_invoices_tripDropId_idx), only for the
+  // bills found above. Held bills stay out with their OBD.
+  const invoiceRows = orders.length
     ? await prisma.order_invoices.findMany({
-        where: { orderId: { in: Array.from(new Set(orders.map((o) => o.id))) }, seq: { gt: 1 }, tripDropId: { in: dropIds } },
-        select: { tripDropId: true, invoiceNo: true },
+        where: { orderId: { in: Array.from(new Set(orders.map((o) => o.id))) }, tripDropId: { in: dropIds } },
+        select: { orderId: true, seq: true, tripDropId: true, invoiceNo: true },
       })
     : [];
-  for (const r of typedRows) consider(r.tripDropId !== null ? tripIdByDrop.get(r.tripDropId) : undefined, "invoice", r.invoiceNo);
+  // A SPLIT OBD (a row of seq > 1 on these stops) is matched ONLY through its
+  // rows, so SAP's number (seq 1, I536230716) finds only the trip seq 1 rides,
+  // not every trip a typed invoice took the OBD onto. An unsplit bill keeps the
+  // orders.invoiceNo pass, unchanged. Matched invoice row, not OBD pointer
+  // (2026-10-26) — don't revert.
+  const splitIds = new Set(invoiceRows.filter((r) => r.seq > 1).map((r) => r.orderId));
+  for (const o of orders) if (!splitIds.has(o.id)) consider(tripOf(o), "invoice", o.invoiceNo);
+  for (const r of invoiceRows) {
+    if (r.seq === 1 && !splitIds.has(r.orderId)) continue; // unsplit: the pass above
+    consider(r.tripDropId !== null ? tripIdByDrop.get(r.tripDropId) : undefined, "invoice", r.invoiceNo);
+  }
   for (const o of orders) consider(tripOf(o), "obd", o.obdNumber);
   if (hit.size === 0) return [];
 
