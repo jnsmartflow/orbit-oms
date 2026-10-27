@@ -1,0 +1,301 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Shades Grouped Mockup</title>
+<!--
+  MOCKUP ONLY — /tint/operator "Shades at this site", grouped by sampling no.
+  Owner-approved design, 2026-10-27. Static: the small script at the bottom only
+  stamps the made-up data below into HTML; nothing is fetched, nothing is saved.
+  Tokens are copied by value from tailwind.config.ts (Orbit palette, CLAUDE_UI §2)
+  and the type scale from CLAUDE_UI §4 / §27. Not linked from the app.
+-->
+<style>
+  :root {
+    --brand-50:#F5F3FF; --brand-600:#7C3AED; --brand-700:#6D28D9;
+    --ink-0:#FFFFFF; --ink-25:#FAFAFC; --ink-50:#F4F3F8; --ink-100:#E9E7F0; --ink-200:#D6D3E0;
+    --ink-400:#9C99AC; --ink-500:#74718A; --ink-600:#514E63; --ink-700:#3A3748; --ink-900:#1B1826;
+    --tint-bg:#F0F9FF; --tint-bd:#BAE6FD; --tint-600:#0284C7; --tint-700:#0369A1;
+    --ok:#059669; --ok-bg:#ECFDF5; --ok-text:#047857;
+    --warn:#D97706; --warn-bg:#FFFBEB; --warn-text:#B45309;
+    --danger:#E11D48; --danger-bg:#FFF1F2;
+    --tinter:#2563EB; --acotone:#F97316;           /* tinter-type dots, CLAUDE_UI §3 */
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--ink-50); color:var(--ink-900);
+         font: 12px/1.4 Inter, "Segoe UI", system-ui, sans-serif; }
+  .page { max-width:1440px; margin:0 auto; padding:24px 16px 64px; }
+  h1.doc { font-size:16px; margin:0 0 4px; }
+  p.doc  { margin:0 0 20px; color:var(--ink-500); font-size:12px; max-width:900px; }
+
+  .state-label { display:flex; align-items:baseline; gap:10px; margin:32px 0 8px; }
+  .state-label b { font-size:11px; letter-spacing:.06em; text-transform:uppercase;
+                   background:var(--ink-900); color:#fff; border-radius:4px; padding:2px 7px; }
+  .state-label span { font-size:12px; color:var(--ink-600); }
+
+  /* ── screen frame ─────────────────────────────────────────── */
+  .screen { background:#fff; border:1px solid var(--ink-200); border-radius:10px; overflow:hidden; }
+  .hdr1 { height:52px; display:flex; align-items:center; gap:16px; padding:0 16px; border-bottom:1px solid var(--ink-100); }
+  .hdr1 .title { font-size:14px; font-weight:600; }
+  .seg { display:inline-flex; background:var(--ink-50); border-radius:7px; padding:2px; }
+  .seg span { font-size:11px; padding:3px 10px; border-radius:5px; color:var(--ink-500); }
+  .seg span.on { background:var(--brand-600); color:#fff; font-weight:600; }
+  .stats { font-size:11px; color:var(--ink-400); } .stats b { color:var(--ink-900); }
+  .clock { margin-left:auto; font-size:11px; color:var(--ink-400); }
+  .hdr2 { height:40px; display:flex; align-items:center; gap:12px; padding:0 16px; border-bottom:1px solid var(--ink-100); }
+  .jobpill { background:var(--brand-600); color:#fff; font-size:11px; font-weight:600; border-radius:999px; padding:4px 12px; }
+  .prog { margin-left:auto; display:flex; align-items:center; gap:8px; font-size:11px; color:var(--ink-500); }
+  .prog i { display:block; width:140px; height:6px; background:var(--ink-100); border-radius:3px; overflow:hidden; }
+  .prog i::after { content:""; display:block; width:40%; height:100%; background:var(--tint-600); }
+  .party { display:grid; grid-template-columns:1fr 1fr; gap:12px; padding:10px 16px; border-bottom:1px solid var(--ink-100); }
+  .card { border:1px solid var(--ink-200); border-radius:8px; padding:8px 12px; }
+  .card small { display:block; font-size:10px; text-transform:uppercase; letter-spacing:.06em; color:var(--ink-400); }
+  .card b { font-size:13.5px; } .card em { font-style:normal; color:var(--ink-500); font-size:11px; }
+
+  .main { display:grid; grid-template-columns:320px minmax(0,1fr); min-height:420px; }
+  .left { border-right:1px solid var(--ink-100); background:var(--ink-25); }
+  .left h4 { margin:0; padding:10px 12px 6px; font-size:10px; font-weight:600; letter-spacing:.06em; color:var(--ink-400); }
+  .line { padding:9px 12px; border-bottom:1px solid var(--ink-100); background:#fff; }
+  .line.sel { background:var(--ink-50); border-left:3px solid var(--ink-900); padding-left:9px; }
+  .line .code { font-family:var(--mono); font-size:11px; color:var(--ink-700); }
+  .line .desc { font-size:12px; font-weight:600; }
+  .line .meta { font-size:11px; color:var(--ink-500); }
+  .line .pending { font-size:11px; color:var(--warn-text); font-weight:600; }
+
+  .right { padding:14px 16px; min-width:0; }
+  .reuse-h { font-size:11px; font-weight:600; letter-spacing:.06em; color:var(--ink-900); margin:0 0 8px; }
+  .searchrow { display:flex; gap:8px; margin-bottom:12px; }
+  .sel-box { height:32px; display:flex; align-items:center; gap:6px; border:1px solid var(--ink-200); border-radius:7px;
+             padding:0 10px; font-size:11px; font-weight:600; white-space:nowrap; background:#fff; }
+  .sel-box.active { border-color:var(--brand-600); box-shadow:0 0 0 2px rgba(124,58,237,.1); }
+  .sel-box::after { content:"▾"; color:var(--ink-400); font-size:10px; }
+  .search { flex:1; min-width:0; height:32px; border:1px solid var(--ink-200); border-radius:7px; padding:0 10px;
+            display:flex; align-items:center; font-size:12px; color:var(--ink-400); background:#fff; }
+  .search.typed { color:var(--ink-900); border-color:var(--brand-600); box-shadow:0 0 0 2px rgba(124,58,237,.1); }
+  .addbtn { height:32px; border:1px dashed var(--ink-400); border-radius:7px; padding:0 12px; font-size:11px;
+            font-weight:600; background:#fff; color:var(--ink-700); white-space:nowrap; }
+
+  .scope { display:flex; justify-content:space-between; align-items:baseline; margin-bottom:6px; }
+  .scope p { margin:0; font-size:11px; font-weight:500; color:var(--ink-500); letter-spacing:.02em; }
+  .scope span { font-size:11px; color:var(--ink-400); }
+
+  /* ── the grouped list ─────────────────────────────────────── */
+  .list { border:1px solid var(--ink-200); border-radius:7px; overflow:hidden; max-height:560px; overflow-y:auto; }
+  table { width:100%; border-collapse:collapse; table-layout:fixed; }
+  thead th { position:sticky; top:0; z-index:2; background:var(--ink-25); border-bottom:1px solid var(--ink-100);
+             text-align:left; font-size:10px; font-weight:500; text-transform:uppercase; letter-spacing:.05em;
+             color:var(--ink-400); padding:6px 10px; }
+  col.c-sku { width:36%; } col.c-pack { width:9%; } col.c-form { width:31%; } col.c-date { width:12%; } col.c-use { width:12%; }
+
+  tr.ghead td { background:var(--ink-50); border-top:1px solid var(--ink-200); border-bottom:1px solid var(--ink-100); padding:7px 10px; }
+  tbody:first-of-type tr.ghead:first-child td { border-top:none; }
+  .gh { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+  .gh .no { font-family:var(--mono); font-size:12px; font-weight:600; }
+  .gh .shade { font-size:12px; font-weight:700; }
+  .gh .dot { color:var(--ink-400); }
+  .ttype { display:inline-flex; align-items:center; gap:4px; font-size:10px; font-weight:600; letter-spacing:.04em;
+           border-radius:4px; padding:1px 6px; border:1px solid; }
+  .ttype::before { content:""; width:6px; height:6px; border-radius:50%; }
+  .ttype.T { color:var(--ink-700); background:var(--ink-0); border-color:var(--ink-200); }
+  .ttype.T::before { background:var(--tinter); }
+  .ttype.A { color:#C2410C; background:#FFF7ED; border-color:#FED7AA; }
+  .ttype.A::before { background:var(--acotone); }
+  .gh .site { font-size:11px; color:var(--ink-600); }
+  .gh .more { font-size:10px; font-weight:600; color:var(--brand-700); }
+  .gh .count { margin-left:auto; font-size:10.5px; color:var(--ink-400); }
+  .gh .matchtag { font-size:10px; font-weight:700; color:var(--ok-text); background:var(--ok-bg);
+                  border:1px solid #A7F3D0; border-radius:4px; padding:1px 6px; }
+
+  tr.rl td { padding:7px 10px; border-bottom:1px solid var(--ink-100); vertical-align:middle; }
+  tr.rl td:first-child { padding-left:22px; }
+  tr.rl.match td { background:var(--ok-bg); }
+  tr.rl.match td:first-child { box-shadow:inset 3px 0 0 var(--ok); }
+  tr.rl.dim td > * { opacity:.38; }
+  .sku { display:flex; flex-direction:column; min-width:0; }
+  .sku .c { font-family:var(--mono); font-size:12.5px; font-weight:700; color:var(--ink-900); display:flex; align-items:center; gap:6px; }
+  .sku .c .tick { color:var(--ok); font-family:inherit; font-size:12px; }
+  .sku .n { font-size:11px; color:var(--ink-500); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .sku .n.none { color:var(--ink-400); font-style:italic; }
+  .pack { display:inline-flex; font-size:10px; font-weight:500; border-radius:4px; padding:1px 6px; border:1px solid; white-space:nowrap; }
+  .pack.fit { color:var(--ok-text); background:var(--ok-bg); border-color:#A7F3D0; }
+  .pack.other { color:var(--ink-500); background:var(--ink-50); border-color:var(--ink-200); }
+  tr.match .pack.fit { background:#fff; }
+  .chips { display:flex; flex-wrap:wrap; gap:3px; }
+  .chip { display:inline-flex; gap:4px; font-family:var(--mono); font-size:10px; color:var(--ink-700);
+          background:var(--ink-50); border:1px solid var(--ink-200); border-radius:4px; padding:1px 5px; }
+  tr.match .chip { background:#fff; }
+  .chip b { color:var(--ink-900); }
+  .date { font-size:11px; color:var(--ink-500); white-space:nowrap; }
+  .use { height:28px; padding:0 14px; border:0; border-radius:6px; background:var(--ink-100); color:var(--ink-700);
+         font-size:11px; font-weight:600; float:right; }
+  tr.match .use { background:var(--ink-900); color:#fff; }
+
+  .note { margin-top:8px; font-size:11px; color:var(--ink-500); }
+  .note b { color:var(--ink-700); }
+  .legend { display:flex; gap:16px; flex-wrap:wrap; margin-top:10px; font-size:11px; color:var(--ink-500); }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1 class="doc">Tint Operator — "Shades at this site", grouped by sampling no</h1>
+  <p class="doc">Mockup, 2026-10-27. Each group is one sampling no. Under it is one line per recipe (SKU × pack). Nothing is merged, nothing is folded away, and every line has its own pack, formula, date and <b>Use</b>. White shots (WHT 5 / 20 / 25) never appear. The data is made up from real-looking examples.</p>
+  <div id="states"></div>
+</div>
+
+<script>
+/* ── Made-up data. f = formula chips [code, value]. pk = nominal pack (LT). ── */
+const G = {
+  g132423: { no:"132423", shade:"40YY 65/061", t:"T", site:"VD TOWNSHIP 3", more:1, lines:[
+    { sku:"5949671", name:"WS Elastomeric 12 Gentint 92 base 20L", pk:20, f:[["YOX",42],["OXR",18],["BLK",3]], d:"17 Oct 2026" },
+    { sku:"5949669", name:"WS Elastomeric 12 Gentint 92 base 4L",  pk:4,  f:[["YOX",8.4],["OXR",3.6],["BLK",0.6]], d:"02 Oct 2026" },
+    { sku:"5911207", name:null, pk:20, f:[["YOX",40],["OXR",20],["BLK",2.5]], d:"21 Sep 2026" },
+    { sku:"5911204", name:null, pk:10, f:[["YOX",21],["OXR",9],["BLK",1.5]],  d:"04 Aug 2026" },
+    { sku:"5864218", name:"Weathershield Max 92 base 20L", pk:20, f:[["YOX",44],["OXR",17],["BLK",3.2]], d:"12 Jun 2026" },
+  ]},
+  g134980: { no:"134980", shade:"30YY 46/112", t:"A", site:"VD TOWNSHIP 3", more:0, lines:[
+    { sku:"5949672", name:"WS Elastomeric 12 Gentint 93 base 20L", pk:20, f:[["YE2",36],["XR1",6],["NO1",2]], d:"09 Oct 2026" },
+    { sku:"5949668", name:"WS Elastomeric 12 Gentint 93 base 4L",  pk:4,  f:[["YE2",7.2],["XR1",1.2],["NO1",0.4]], d:"09 Oct 2026" },
+  ]},
+  g260309: { no:"26-0309", shade:"PEACH BLOSSOM", t:"T", site:"VD TOWNSHIP 3", more:0, lines:[
+    { sku:"5579819", name:"Promise Smartchoice Int BR WHT/WHT BAS 4L", pk:4,  f:[["FFR",3],["YOX",6],["HEY",1.5]], d:"14 Oct 2026" },
+    { sku:"5579821", name:"Promise Smartchoice Int BR WHT/WHT BAS 20L", pk:20, f:[["FFR",15],["YOX",30],["HEY",7.5]], d:"14 Oct 2026" },
+  ]},
+  g135006: { no:"135006", shade:"10GG 72/045", t:"A", site:"VD TOWNSHIP 3", more:2, lines:[
+    { sku:"5841210", name:"Velvet Touch Pearl Glo 90 base 4L",  pk:4,  f:[["GR1",4],["YE1",2],["BU1",0.5]], d:"11 Oct 2026" },
+    { sku:"5841211", name:"Velvet Touch Pearl Glo 90 base 10L", pk:10, f:[["GR1",10],["YE1",5],["BU1",1.2]], d:"28 Sep 2026" },
+    { sku:"5841198", name:null, pk:1, f:[["GR1",1],["YE1",0.5],["BU1",0.1]], d:"03 Sep 2026" },
+  ]},
+  g134916: { no:"134916", shade:"70BG 51/124", t:"T", site:"VD TOWNSHIP 3", more:0, lines:[
+    { sku:"5930142", name:"Super Cover Int Emulsion 92 base 10L", pk:10, f:[["TBL",8],["GRN",2],["BLK",0.8]], d:"06 Oct 2026" },
+  ]},
+  g134125: { no:"134125", shade:"00NN 37/000", t:"A", site:"VD TOWNSHIP 3", more:1, lines:[
+    { sku:"5841673", name:"DPP-Sadolin 2KPU Gloss BAS90 WHT 1L", pk:1, f:[["NO2",3],["WH1",1]], d:"22 Aug 2026" },
+    { sku:"5841675", name:"DPP-Sadolin 2KPU Gloss BAS90 WHT 4L", pk:4, f:[["NO2",12],["WH1",4]], d:"22 Aug 2026" },
+  ]},
+  g131877: { no:"131877", shade:"40YY 65/061", t:"T", site:"SAKAR HEIGHTS", more:3, lines:[
+    { sku:"5949671", name:"WS Elastomeric 12 Gentint 92 base 20L", pk:20, f:[["YOX",41],["OXR",18.5],["BLK",3]], d:"25 Sep 2026" },
+    { sku:"5713390", name:null, pk:4, f:[["YOX",8.2],["OXR",3.7],["BLK",0.6]], d:"19 Jul 2026" },
+  ]},
+  g128440: { no:"128440", shade:"40YY 65/061", t:"A", site:"GREEN ARCADE", more:0, lines:[
+    { sku:"5949669", name:"WS Elastomeric 12 Gentint 92 base 4L", pk:4, f:[["YE2",7],["XR1",2.4],["NO1",0.3]], d:"30 Jun 2026" },
+  ]},
+  g260271: { no:"26-0271", shade:"40YY 65/061 (DARK)", t:"T", site:"SHIVAM RESIDENCY", more:0, lines:[
+    { sku:"5864218", name:"Weathershield Max 92 base 20L", pk:20, f:[["YOX",50],["OXR",22],["BLK",4.5]], d:"08 May 2026" },
+    { sku:"5864216", name:"Weathershield Max 92 base 4L",  pk:4,  f:[["YOX",10],["OXR",4.4],["BLK",0.9]], d:"08 May 2026" },
+  ]},
+};
+
+const LINE_A = { sku:"5949671", desc:"WS Elastomeric 12 Gentint 92 base 20L", pk:20, qty:"6 × 20 L" };
+const LINE_B = { sku:"5930140", desc:"Super Cover Int Emulsion 90 base 20L", pk:20, qty:"3 × 20 L" };
+
+const STATES = [
+  { id:"S1", title:"Site list. The current line's SKU + pack matches one recipe in #132423, so that group sorts first.",
+    line:LINE_A, pack:"20 LT · LINE", packActive:false, search:"", scope:"Shades at this site · VD TOWNSHIP 3",
+    groups:["g132423","g134980"], filter:null,
+    note:"<b>#132423</b> has 5 lines. The ✓ line is the exact SKU + pack. <b>5911207</b> and <b>5911204</b> have no name in Orbit, so they show the code with a grey note. Every line has its own <b>Use</b>, and only the matching line's Use is dark." },
+  { id:"S2", title:"A site with four groups, TINTER and ACOTONE mixed, and no match. Groups are ordered by most recent use.",
+    line:LINE_B, pack:"All packs · 8", packActive:false, search:"", scope:"Shades at this site · VD TOWNSHIP 3",
+    groups:["g260309","g135006","g134916","g134125"], filter:null, noMatch:true,
+    note:"No group holds 5930140 at 20 L, so no line is green and the groups keep their most-recent-first order. A green pack chip only means the same pack bucket; the formula would be used as stored. <b>+2 sites</b> opens the site list exactly as it does today." },
+  { id:"S3", title:"Pack filter set to 4 LT. Groups with any 4 LT line stay. Their other lines are dimmed, not hidden.",
+    line:LINE_A, pack:"4 LT · 3", packActive:true, search:"", scope:"Shades at this site · VD TOWNSHIP 3",
+    groups:["g132423","g134980"], filter:4,
+    note:"Both groups have a 4 LT recipe, so both stay. The 20 LT and 10 LT lines are still readable and still have Use, just dimmed. A group with no 4 LT line at all would drop out of the list." },
+  { id:"S4", title:"Typed search, any site: \"40yy 65\". Groups come from other sites; the site is in each group header.",
+    line:LINE_A, pack:"All packs · 5", packActive:false, search:"40yy 65", scope:"Any site · 3 shades for \"40yy 65\"",
+    groups:["g131877","g128440","g260271"], filter:null,
+    note:"The same shade code was saved three times at three sites, as TINTER and as ACOTONE. Grouping keeps them apart by sampling no. <b>#131877</b> sorts first because it holds the line's exact SKU + pack." },
+];
+
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[c]));
+
+function renderGroup(key, st) {
+  const g = G[key];
+  const isMatch = l => l.sku === st.line.sku && l.pk === st.line.pk;
+  const hasMatch = g.lines.some(isMatch);
+  const rows = g.lines.map(l => {
+    const m = isMatch(l);
+    const dim = st.filter != null && l.pk !== st.filter;
+    return `<tr class="rl${m ? " match" : ""}${dim ? " dim" : ""}">
+      <td><div class="sku">
+        <span class="c">${esc(l.sku)}${m ? '<span class="tick">✓</span>' : ""}</span>
+        ${l.name ? `<span class="n" title="${esc(l.name)}">${esc(l.name)}</span>` : '<span class="n none">Name not in Orbit yet</span>'}
+      </div></td>
+      <td><span class="pack ${l.pk === st.line.pk ? "fit" : "other"}">${l.pk} LT</span></td>
+      <td><div class="chips">${l.f.map(([c, v]) => `<span class="chip">${c} <b>${v}</b></span>`).join("")}</div></td>
+      <td><span class="date">${l.d}</span></td>
+      <td><button class="use" type="button">Use</button></td>
+    </tr>`;
+  }).join("");
+  return { hasMatch, html: `<tbody>
+    <tr class="ghead"><td colspan="5"><div class="gh">
+      <span class="no">#${esc(g.no)}</span><span class="dot">·</span>
+      <span class="shade">${esc(g.shade)}</span>
+      <span class="ttype ${g.t}">${g.t === "T" ? "TINTER" : "ACOTONE"}</span>
+      <span class="site">${esc(g.site)}</span>${g.more ? `<span class="more">+${g.more} site${g.more > 1 ? "s" : ""}</span>` : ""}
+      ${hasMatch ? '<span class="matchtag">✓ MATCHES THIS LINE</span>' : ""}
+      <span class="count">${g.lines.length} recipe${g.lines.length > 1 ? "s" : ""}</span>
+    </div></td></tr>${rows}</tbody>` };
+}
+
+function renderState(st) {
+  let groups = st.groups.map(k => ({ k, ...renderGroup(k, st) }));
+  if (st.filter != null) groups = groups.filter(x => G[x.k].lines.some(l => l.pk === st.filter));
+  groups.sort((a, b) => (b.hasMatch ? 1 : 0) - (a.hasMatch ? 1 : 0)); // stable: match first, else as given
+  const total = groups.reduce((n, x) => n + G[x.k].lines.length, 0);
+  return `
+  <div class="state-label"><b>${st.id}</b><span>${esc(st.title)}</span></div>
+  <div class="screen">
+    <div class="hdr1">
+      <span class="seg"><span class="on">Jobs</span><span>History</span></span>
+      <span class="stats">Today <b>7</b> jobs · <b>3</b> done</span>
+      <span class="clock">Mon 27 Oct · 11:42</span>
+    </div>
+    <div class="hdr2">
+      <span class="jobpill">CURRENT · OBD 8091452317 ▾</span>
+      <span class="prog">2 of 5 lines <i></i></span>
+    </div>
+    <div class="party">
+      <div class="card"><small>Bill to</small><b>Shree Krishna Paints</b> <em>· 1204417 · Surat</em></div>
+      <div class="card"><small>Ship to</small><b>VD TOWNSHIP 3</b> <em>· Pal, Surat</em></div>
+    </div>
+    <div class="main">
+      <div class="left">
+        <h4>TINTING LINES</h4>
+        <div class="line sel"><div class="code">${st.line.sku}</div><div class="desc">${esc(st.line.desc)}</div>
+          <div class="meta">${st.line.qty} · <span class="pending">Pending</span></div></div>
+        <div class="line"><div class="code">5949669</div><div class="desc">WS Elastomeric 12 Gentint 92 base 4L</div>
+          <div class="meta">4 × 4 L · <span class="pending">Pending</span></div></div>
+        <div class="line"><div class="code">5864218</div><div class="desc">Weathershield Max 92 base 20L</div>
+          <div class="meta">2 × 20 L · done</div></div>
+      </div>
+      <div class="right">
+        <p class="reuse-h">REUSE A SHADE — ANY SITE</p>
+        <div class="searchrow">
+          <span class="sel-box${st.packActive ? " active" : ""}">${esc(st.pack)}</span>
+          <span class="search${st.search ? " typed" : ""}">${st.search ? esc(st.search) : "Search sampling no, shade or site…"}</span>
+          <button class="addbtn" type="button">+ Add shade</button>
+        </div>
+        <div class="scope"><p>${esc(st.scope)}</p><span>${groups.length} sampling${groups.length > 1 ? "s" : ""} · ${total} recipes</span></div>
+        <div class="list"><table>
+          <colgroup><col class="c-sku"><col class="c-pack"><col class="c-form"><col class="c-date"><col class="c-use"></colgroup>
+          <thead><tr><th>SKU · product</th><th>Pack</th><th>Formula</th><th>Last used</th><th></th></tr></thead>
+          ${groups.map(x => x.html).join("")}
+        </table></div>
+        <p class="note">${st.note}</p>
+      </div>
+    </div>
+  </div>`;
+}
+
+document.getElementById("states").innerHTML = STATES.map(renderState).join("") + `
+  <div class="legend">
+    <span>✓ + green row = this line's SKU <i>and</i> pack</span>
+    <span>Green pack chip = same pack bucket as the line · grey = will scale on Use (TINTER only)</span>
+    <span>Dimmed = outside the pack filter, still usable</span>
+  </div>`;
+</script>
+</body>
+</html>
