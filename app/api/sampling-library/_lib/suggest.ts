@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import type { PackCode, Prisma, TinterType } from "@prisma/client";
 import { PIGMENT_CODES, decToNum, type PigmentCode } from "./validate";
+import { isWhiteShotSamplingNo } from "@/lib/tint/white-shots";
 
 // ── Public types ────────────────────────────────────────────────────────────
 // Matches Phase 4 execution spec §4.1 exactly so the UI in step 9 can
@@ -59,24 +60,25 @@ export interface SuggestOtherSite {
 }
 
 /**
- * One OTHER pack/SKU variant of the same shade — view-only.
+ * One recipe (SKU × pack) of a sampling — a line under its group in the
+ * operator's grouped list. Carries its OWN pigments so each line's Use applies
+ * that recipe, not the group's representative.
  *
- * ⚠ DELIBERATELY CARRIES NO PIGMENTS. This array exists so the operator can
- * SEE that a shade also lives in other packs and when each was last tinted; it
- * is not applyable. Adding pigments here would both bloat an uncapped list and
- * invite a second "Use" path that bypasses applySuggestionToEntry's pack
- * scaling. If a variant ever needs to be applyable, make it the representative
- * — do not grow this type.
+ * `productName`: resolved per SKU CODE by resolveProductNamesByCode — never
+ * per recipe, so one code reads the same in every group. null when neither
+ * source knows it (the client may still fill it from the tinting line).
  *
- * `lastUsedAt` is the recipe row's OWN sampling_recipes.lastUsedAt column,
- * never derived from sampling_usage_log — see the note in buildSuggestPayload.
+ * `lastUsedAt` is the recipe row's OWN sampling_recipes.lastUsedAt column
+ * (across all sites), never derived from the site-filtered usage logs.
  */
-export interface SuggestVariant {
-  recipeId:   number;
-  skuCode:    string;
-  packCode:   PackCode | null;
-  lastUsedAt: string | null;
-  usageCount: number;
+export interface SuggestLine {
+  recipeId:       number;
+  skuCode:        string;
+  packCode:       PackCode | null;
+  productName:    string | null;
+  pigments:       Record<string, number>;
+  activePigments: ActivePigment[];
+  lastUsedAt:     string | null;
 }
 
 export interface SuggestFlatRow {
@@ -97,12 +99,11 @@ export interface SuggestFlatRow {
   primarySiteName:      string;
   otherSites:           SuggestOtherSite[];
   /**
-   * Every OTHER variant of this shade, excluding the representative already
-   * described by this row's own recipeId/skuCode/packCode. Optional: absent
-   * (not `[]`) from any producer that hasn't populated it, so the client must
-   * read it as `row.otherVariants ?? []`.
+   * EVERY recipe of this sampling, the representative included, most recent
+   * first. Optional: formula-match does not fill it, so the client must fall
+   * back to the representative described by this row's own fields.
    */
-  otherVariants?:       SuggestVariant[];
+  lines?:               SuggestLine[];
 }
 
 export interface SuggestResponse {
@@ -188,58 +189,93 @@ export async function groupOtherSitesBySampling(
   return out;
 }
 
+/** The sampling_recipes columns buildLinesBySampling needs (pigments + name). */
+export const RECIPE_LINE_SELECT = {
+  id: true, samplingNo: true, skuCode: true, packCode: true,
+  lastUsedAt: true,
+  YOX: true, LFY: true, GRN: true, TBL: true, WHT: true, MAG: true,
+  FFR: true, BLK: true, OXR: true, HEY: true, HER: true, COB: true, COG: true,
+  YE2: true, YE1: true, XY1: true, XR1: true, WH1: true, RE2: true,
+  RE1: true, OR1: true, NO2: true, NO1: true, MA1: true, GR1: true,
+  BU2: true, BU1: true,
+} as const;
+
 /**
- * Map raw sampling_recipes rows to SuggestVariant, keyed by samplingNo.
- *
- * Takes the minimum shape both producers can supply, so operator-search can
- * pass its already-fetched full rows without re-querying.
+ * Product name per SKU code, in order:
+ *   a. sku_master_v2.description where material = code
+ *   b. the most recent non-empty sampling_recipes.productName for that code,
+ *      from ANY sampling (legacy imports named some recipes of a code and
+ *      left its other recipes blank — live saves never write it)
+ * Codes neither source knows are absent from the map. Two batched IN-list
+ * queries, sequential (CORE §3). Natural-key text match only — never an id
+ * (CORE §13); the old sku_master is never read.
  */
-export function groupVariantsBySampling(
-  rows: Array<{
-    id:         number;
-    samplingNo: string;
-    skuCode:    string;
-    packCode:   PackCode | null;
-    lastUsedAt: Date | null;
-    usageCount: number;
-  }>,
-): Map<string, SuggestVariant[]> {
-  const out = new Map<string, SuggestVariant[]>();
-  for (const r of rows) {
-    const list = out.get(r.samplingNo) ?? [];
-    list.push({
-      recipeId:   r.id,
-      skuCode:    r.skuCode,
-      packCode:   r.packCode,
-      // The recipe's OWN column — NOT a usage_log max. See buildSuggestPayload.
-      lastUsedAt: r.lastUsedAt ? r.lastUsedAt.toISOString() : null,
-      usageCount: r.usageCount,
-    });
-    out.set(r.samplingNo, list);
+export async function resolveProductNamesByCode(skuCodes: string[]): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  if (skuCodes.length === 0) return out;
+
+  const catalog = await prisma.sku_master_v2.findMany({
+    where:  { material: { in: skuCodes } },
+    select: { material: true, description: true },
+  });
+  for (const c of catalog) {
+    const d = c.description.trim();
+    if (d) out.set(c.material, d);
+  }
+
+  const missing = skuCodes.filter((c) => !out.has(c));
+  if (missing.length === 0) return out;
+  const named = await prisma.sampling_recipes.findMany({
+    where:   { skuCode: { in: missing }, productName: { not: null } },
+    select:  { skuCode: true, productName: true },
+    orderBy: [{ lastUsedAt: { sort: "desc", nulls: "last" } }, { id: "desc" }],
+  });
+  for (const r of named) {
+    const n = r.productName?.trim();
+    if (n && !out.has(r.skuCode)) out.set(r.skuCode, n); // first = most recent
   }
   return out;
 }
 
 /**
- * Drop the representative variant and order the rest most-recent-first.
- *
- * Shared by both producers so the disclosure list can never be ordered one way
- * in browse mode and another in search mode. ISO strings sort lexicographically,
- * and a null date coerces to "" so undated variants sink to the bottom.
+ * Map raw sampling_recipes rows to SuggestLine[], keyed by samplingNo, each
+ * list most-recent first (null dates last). Names come from
+ * resolveProductNamesByCode — batched, never per row. Shared by both
+ * producers so the two lists can never order or name lines differently.
  */
-export function buildOtherVariants(
-  all: SuggestVariant[] | undefined,
-  representativeRecipeId: number,
-): SuggestVariant[] {
-  if (!all || all.length === 0) return [];
-  return all
-    .filter((v) => v.recipeId !== representativeRecipeId)
-    .sort((a, b) => {
-      const at = a.lastUsedAt ?? "";
-      const bt = b.lastUsedAt ?? "";
-      if (at !== bt) return bt.localeCompare(at);
-      return b.usageCount - a.usageCount;
+export async function buildLinesBySampling(
+  rows: Array<{
+    id:          number;
+    samplingNo:  string;
+    skuCode:     string;
+    packCode:    PackCode | null;
+    lastUsedAt:  Date | null;
+  } & Record<PigmentCode, Prisma.Decimal | null>>,
+): Promise<Map<string, SuggestLine[]>> {
+  const out = new Map<string, SuggestLine[]>();
+  if (rows.length === 0) return out;
+
+  const nameByCode = await resolveProductNamesByCode(Array.from(new Set(rows.map((r) => r.skuCode))));
+
+  for (const r of rows) {
+    const { pigments, activePigments } = buildPigmentsAndActive(r);
+    const list = out.get(r.samplingNo) ?? [];
+    list.push({
+      recipeId:    r.id,
+      skuCode:     r.skuCode,
+      packCode:    r.packCode,
+      productName: nameByCode.get(r.skuCode) ?? null,
+      pigments,
+      activePigments,
+      lastUsedAt:  r.lastUsedAt ? r.lastUsedAt.toISOString() : null,
     });
+    out.set(r.samplingNo, list);
+  }
+  // ISO strings sort lexicographically; a null date coerces to "" and sinks.
+  for (const list of Array.from(out.values())) {
+    list.sort((a, b) => (b.lastUsedAt ?? "").localeCompare(a.lastUsedAt ?? ""));
+  }
+  return out;
 }
 
 /** Assemble a SuggestFlatRow from a recipe pigment row + scalar fields. */
@@ -258,7 +294,7 @@ export function assembleFlatRow(input: {
   isExactMatch:         boolean;
   primarySiteName:      string;
   otherSites:           SuggestOtherSite[];
-  otherVariants?:       SuggestVariant[];
+  lines?:               SuggestLine[];
 }): SuggestFlatRow {
   const { pigments, activePigments } = buildPigmentsAndActive(input.pigmentRow);
   return {
@@ -277,7 +313,7 @@ export function assembleFlatRow(input: {
     isExactMatch:         input.isExactMatch,
     primarySiteName:      input.primarySiteName,
     otherSites:           input.otherSites,
-    otherVariants:        input.otherVariants,
+    lines:                input.lines,
   };
 }
 
@@ -491,38 +527,33 @@ export async function buildSuggestPayload(
   const primarySiteName = currentSite?.customerName ?? "";
 
   // 6b) Other sites per sampling — shared helper, excluding the current site.
-  const samplingNos = Array.from(bySamplingNo.keys());
+  //     White shots (lib/tint/white-shots.ts) are left out of THIS list only;
+  //     typed search (operator-search) still finds them.
+  const samplingNos = Array.from(bySamplingNo.keys()).filter((no) => !isWhiteShotSamplingNo(no));
   const otherSitesBySampling = await groupOtherSitesBySampling(samplingNos, siteId);
 
-  // 6b2) EVERY pack/SKU variant of every sampling on this page.
+  // 6b2) EVERY recipe of every sampling on this page — one line each.
   //
   // ⚠ THIS CANNOT COME FROM `acc.variants`. That map is built from step 1's
   // sampling_usage_log rows filtered to THIS site, so it only ever holds
-  // variants the depot has already tinted here — a shade that exists in 20 L
-  // and 4 L but has only been used here in 20 L would report "no other packs",
-  // which is exactly the thing the operator needs to know. This is one extra
-  // query for the WHOLE page (not per row), sequential per CORE §3.
-  //
-  // ⚠ lastUsedAt is read from the recipe's OWN column, deliberately. Deriving
-  // it from usage_log the way the representative row's date is derived would
-  // reintroduce the stale-date bug: a variant last tinted at ANOTHER site would
-  // show blank or wrong here, because these logs are site-filtered.
+  // recipes the depot has already tinted here — a shade that exists in 20 L
+  // and 4 L but has only been used here in 20 L would hide its 4 L line,
+  // which is exactly the thing the operator needs to see. One extra query for
+  // the WHOLE page (not per row), plus one name lookup, sequential per CORE §3.
   const allRecipeRows = samplingNos.length > 0
     ? await prisma.sampling_recipes.findMany({
         where:  { samplingNo: { in: samplingNos } },
-        select: {
-          id: true, samplingNo: true, skuCode: true, packCode: true,
-          lastUsedAt: true, usageCount: true,
-        },
+        select: RECIPE_LINE_SELECT,
       })
     : [];
-  const variantsBySampling = groupVariantsBySampling(allRecipeRows);
+  const linesBySampling = await buildLinesBySampling(allRecipeRows);
 
   // 6c) Build one flat row per sampling. Prefer the exact (skuCode + packCode)
   //     variant as the representative + flag it; otherwise the most-used /
   //     most-recent variant (same rep logic as the reference list).
   const flatSuggestions: SuggestFlatRow[] = [];
   for (const acc of Array.from(bySamplingNo.values())) {
+    if (isWhiteShotSamplingNo(acc.samplingNo)) continue; // see 6b
     const variants = Array.from(acc.variants.values());
     if (variants.length === 0) continue;
     const exactVariant = variants.find(
@@ -551,8 +582,8 @@ export async function buildSuggestPayload(
       primarySiteName,
       otherSites:           otherSitesBySampling.get(acc.samplingNo) ?? [],
       // Representative unchanged — `rep` is still chosen exactly as before.
-      // This only lists the ones it isn't.
-      otherVariants:        buildOtherVariants(variantsBySampling.get(acc.samplingNo), rep.recipeId),
+      // `lines` lists every recipe, the representative included.
+      lines:                linesBySampling.get(acc.samplingNo),
     }));
   }
 

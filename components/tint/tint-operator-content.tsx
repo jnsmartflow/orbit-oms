@@ -16,7 +16,7 @@ import { SkuDisplayToggle } from "@/components/tint/sku-display-toggle";
 // Phase 4 — Sampling Library suggestion card replaces the legacy shade_master
 // suggestion strip + "All shades…" popover. Step 11 retired the save-as-shade
 // toggle; /suggest + /tinter-issue now handle the full Library write path.
-import { FlatSuggestionList } from "@/components/tint/operator/flat-suggestion-list";
+import { FlatSuggestionList, rowHasPackBucket } from "@/components/tint/operator/flat-suggestion-list";
 import { FormulaMatchModal } from "@/components/tint/operator/formula-match-modal";
 import {
   SaveSamplingPopup,
@@ -2217,8 +2217,11 @@ export function TintOperatorContent() {
                   // The dropdown always lists all four; counts come from the CURRENT
                   // rows (site list, or search results when searching). Default
                   // selection = the line's bucket when it's standard, else "ALL".
-                  // Rows with a null/non-standard dose (0.5/15/22/30/40) only show
-                  // under "All packs". The list is filtered by matching dose bucket.
+                  // Each row is a sampling GROUP; a bucket counts the groups with
+                  // ANY recipe line in it. The list itself does the filtering:
+                  // a group stays when any line is in the bucket, the others in
+                  // it are dimmed. Lines with a null/non-standard dose
+                  // (0.5/15/22/30/40) are never in a bucket.
                   const STANDARD_BUCKETS = [1, 4, 10, 20] as const;
                   const entryLinePack   = entry.packCode as PackCode | null;
                   const entryLineBucket = packDoseLitres(entryLinePack);
@@ -2229,20 +2232,14 @@ export function TintOperatorContent() {
                   const packFilter: number | "ALL" =
                     rawPackFilter !== undefined ? rawPackFilter : (lineBucket ?? "ALL");
                   const bucketCounts = new Map<number, number>();
-                  for (const r of browseRows) {
-                    const b = packDoseLitres(r.packCode);
-                    if (b != null && (STANDARD_BUCKETS as readonly number[]).includes(b)) {
-                      bucketCounts.set(b, (bucketCounts.get(b) ?? 0) + 1);
-                    }
+                  for (const b of STANDARD_BUCKETS) {
+                    bucketCounts.set(b, browseRows.filter(r => rowHasPackBucket(r, b)).length);
                   }
                   const packOptions = STANDARD_BUCKETS.map(b => ({
                     bucket: b,
                     count:  bucketCounts.get(b) ?? 0,
                     isLine: b === lineBucket,
                   }));
-                  const filteredBrowseRows = packFilter === "ALL"
-                    ? browseRows
-                    : browseRows.filter(r => packDoseLitres(r.packCode) === packFilter);
                   // View routing (Part A). Search box shows in browse + newshade.
                   // List shows in browse (always) or newshade while searching.
                   // The new-shade form shows in newshade with no active search.
@@ -2367,10 +2364,13 @@ export function TintOperatorContent() {
                       {/* LIST — this-site browse list OR active-search results */}
                       {showList && (
                         <FlatSuggestionList
-                          rows={filteredBrowseRows}
+                          rows={browseRows}
                           isLoading={browseLoading}
                           isSearching={isSearching}
                           linePack={entry.packCode as PackCode | null}
+                          lineSkuCode={entry.skuCodeRaw || null}
+                          lineDescription={entry.skuDescriptionRaw || null}
+                          packFilter={packFilter}
                           onUse={(row) => handleUseSuggestion(entryId, row)}
                         />
                       )}

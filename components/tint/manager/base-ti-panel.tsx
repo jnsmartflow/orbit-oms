@@ -299,10 +299,8 @@ export function BaseTiPanel({
   // ── The reuse list ────────────────────────────────────────────────────────
   const rows: SuggestFlatRow[] = searchResults ?? suggestData?.flatSuggestions ?? [];
   const lineBucket = packDoseLitres(linePack);
+  // The list filters by group (any recipe line in the bucket) and dims the rest.
   const effectiveFilter = packFilter ?? (lineBucket ?? "ALL");
-  const visibleRows = effectiveFilter === "ALL"
-    ? rows
-    : rows.filter((r) => packDoseLitres(r.packCode) === effectiveFilter);
 
   const activePigments = codes
     .map((c) => ({ code: c as string, value: shadeValues[c] ?? 0 }))
@@ -404,10 +402,13 @@ export function BaseTiPanel({
               </button>
             </div>
             <FlatSuggestionList
-              rows={visibleRows}
+              rows={rows}
               isLoading={suggestLoading}
               isSearching={searchLoading}
               linePack={linePack}
+              lineSkuCode={line.skuCodeRaw || null}
+              lineDescription={line.skuDescriptionRaw}
+              packFilter={effectiveFilter}
               onUse={applyRow}
             />
           </>

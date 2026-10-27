@@ -6,9 +6,8 @@ import { prisma } from "@/lib/prisma";
 import { isValidTinterType, type PigmentCode } from "../_lib/validate";
 import {
   assembleFlatRow,
-  buildOtherVariants,
+  buildLinesBySampling,
   groupOtherSitesBySampling,
-  groupVariantsBySampling,
   type SuggestFlatRow,
 } from "../_lib/suggest";
 
@@ -127,11 +126,11 @@ export async function GET(req: Request): Promise<NextResponse> {
       if (r.usageCount > cur.usageCount) repBySampling.set(r.samplingNo, r);
     }
 
-    // 4b) Variant list for the disclosure — built from the SAME `recipes`
-    //     fetch above, which already pulls every recipe row for every matched
-    //     sampling and then discards all but the representative. NO new query.
-    //     lastUsedAt comes from each recipe's own column (see SuggestVariant).
-    const variantsBySampling = groupVariantsBySampling(recipes);
+    // 4b) One line per recipe — built from the SAME `recipes` fetch above,
+    //     which already pulls every recipe row for every matched sampling. The
+    //     only new query is ONE batched product-name lookup (see SuggestLine).
+    //     White shots are NOT excluded here: typed search must still find them.
+    const linesBySampling = await buildLinesBySampling(recipes);
 
     // 5) Sites per sampling — shared helper with NO exclusion (global search has
     //    no "current site"): primary = most-recent site, rest = otherSites.
@@ -162,8 +161,8 @@ export async function GET(req: Request): Promise<NextResponse> {
         isExactMatch:         false,
         primarySiteName,
         otherSites,
-        // Representative selection above is untouched; this lists the rest.
-        otherVariants:        buildOtherVariants(variantsBySampling.get(m.samplingNo), rep.id),
+        // Representative selection above is untouched; this lists every recipe.
+        lines:                linesBySampling.get(m.samplingNo),
       }));
     }
 

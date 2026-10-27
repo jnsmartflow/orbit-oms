@@ -7,8 +7,9 @@
 // (the depot puts the same WHT 20 on a 4 L and a 20 L tin; live history, §A).
 //
 // Read by the bulk route (app/api/tint/manager/ti-bulk — which re-verifies the
-// recipe server-side before every request) and by the Tint Manager's bar and
-// confirm dialog for their labels. Pure: no Prisma, no React.
+// recipe server-side before every request), by the Tint Manager's bar and
+// confirm dialog for their labels, and by the sampling-library suggest builder
+// (isWhiteShotSamplingNo). Pure: no Prisma, no React.
 //
 // ⚠ Never retype "26-0315" / "26-0318" / "26-0319" anywhere else. Changing a
 // number here is the whole change; the route's recipe check refuses a number
@@ -23,6 +24,15 @@ export const WHITE_SHOTS = [
 ] as const;
 
 export type WhiteShotDose = (typeof WHITE_SHOTS)[number]["dose"];
+
+/**
+ * True when a sampling number is one of the white shots above. The operator's
+ * "Shades at this site" list (sampling-library suggest) leaves these out, so a
+ * new dose added to WHITE_SHOTS is hidden there with no other edit.
+ */
+export function isWhiteShotSamplingNo(samplingNo: string): boolean {
+  return WHITE_SHOTS.some((s) => s.samplingNo === samplingNo);
+}
 
 /** The white shot for a dose, or null for anything that is not one of the three. */
 export function whiteShotFor(dose: unknown): (typeof WHITE_SHOTS)[number] | null {

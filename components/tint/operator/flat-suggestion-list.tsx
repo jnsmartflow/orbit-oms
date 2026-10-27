@@ -1,37 +1,93 @@
 "use client";
 
-import { Fragment, useState } from "react";
+import { useState } from "react";
 import { cn } from "@/lib/utils";
 import type { PackCode } from "@prisma/client";
-import type { SuggestFlatRow } from "@/app/api/sampling-library/_lib/suggest";
+import type { SuggestFlatRow, SuggestLine } from "@/app/api/sampling-library/_lib/suggest";
 import { packDoseLitres } from "@/lib/sampling/pack-litres";
 
-// Search-first flat suggestion list for the Tint Operator TI form. Pure list:
-// the PACK FILTER + search box + "Add shade" live in the parent so they stay
-// mounted as the view toggles between this list and the new-shade form, and so
-// the parent owns the filtering (rows arrive already filtered to one pack).
+// Search-first suggestion list for the Tint Operator TI form, GROUPED by
+// sampling no (mockup: docs/mockups/tint/operator-shades-grouped.html). Pure
+// list: the PACK FILTER + search box + "Add shade" live in the parent so they
+// stay mounted as the view toggles between this list and the new-shade form.
 // - empty query  → this-site flatSuggestions (exact pinned → recent).
 // - typed query  → global operator-search results (all sites).
-// Rows are SuggestFlatRow so the parent's applySuggestionToEntry consumes them
-// unchanged. Stays inside the §34 colour budget — gray family only, no teal:
-// exact rows get a grey "EXACT" chip + grey wash + gray-900 left accent (the
-// selected-card idiom); "Use" is soft grey. FORMULA shows the shade's RAW
-// stored pigments (no scaling) — applySuggestionToEntry scales on Use.
+// One card per row (= one sampling); in it ONE line per recipe (SKU × pack)
+// from row.lines, nothing merged. Each line has its own Use, which hands the
+// parent a SuggestFlatRow rebuilt around THAT recipe (lineAsRow), so the
+// parent's apply path (pack scaling included) runs unchanged on the recipe the
+// operator picked. FORMULA shows each recipe's RAW stored pigments.
+// The parent passes UNFILTERED rows plus the pack filter: a group stays when
+// ANY of its lines is in the bucket, and its other lines are dimmed, not hidden.
+//
+// Owner rule: NOTHING in this list is truncated — no ellipsis, no clipping, no
+// inner scroll box. Long names, headers and formulas wrap and the row grows.
+// Colour: the matching line's ok tint and the tinter-type tag's dot (CLAUDE_UI
+// §3) — the formula and everything else is ink.
 
 export interface FlatSuggestionListProps {
   rows:        SuggestFlatRow[];
   isLoading:   boolean;
   isSearching: boolean;
-  // Current tinting line's pack — only used to colour the PACK pill green when a
-  // row's stored pack matches the line. null → every pill renders gray.
+  // Current tinting line's pack — marks the line's pack bucket on the PACK chip
+  // and (with lineSkuCode) the matching line.
   linePack:    PackCode | null;
+  // Current tinting line's SKU. A line whose skuCode AND packCode equal the
+  // tinting line's gets the ✓ match treatment and its group sorts first.
+  lineSkuCode: string | null;
+  // Current tinting line's SAP description — the last-resort name for any
+  // recipe line carrying the same SKU code that the server could not name.
+  lineDescription: string | null;
+  // Nominal pack bucket (1/4/10/20) or "ALL". Filters groups, dims lines.
+  packFilter:  number | "ALL";
   onUse:       (row: SuggestFlatRow) => void;
 }
 
-function formatDayMonth(iso: string): string {
+/**
+ * The recipe lines of a row. A producer that does not fill `lines`
+ * (formula-match) falls back to the single representative the row describes.
+ */
+export function rowLines(row: SuggestFlatRow): SuggestLine[] {
+  if (row.lines && row.lines.length > 0) return row.lines;
+  return [{
+    recipeId:       row.recipeId,
+    skuCode:        row.skuCode,
+    packCode:       row.packCode,
+    productName:    null,
+    pigments:       row.pigments,
+    activePigments: row.activePigments,
+    lastUsedAt:     row.lastUsedAt,
+  }];
+}
+
+/** True when any line of the row sits in this nominal pack bucket. */
+export function rowHasPackBucket(row: SuggestFlatRow, bucket: number): boolean {
+  return rowLines(row).some((l) => packDoseLitres(l.packCode) === bucket);
+}
+
+// The row handed to onUse for one line: the group's identity (sampling no,
+// shade, tinter type, sites) with THAT recipe's id, SKU, pack and pigments.
+function lineAsRow(row: SuggestFlatRow, line: SuggestLine, isMatch: boolean): SuggestFlatRow {
+  return {
+    ...row,
+    recipeId:       line.recipeId,
+    skuCode:        line.skuCode,
+    packCode:       line.packCode,
+    pigments:       line.pigments,
+    activePigments: line.activePigments,
+    lastUsedAt:     line.lastUsedAt ?? row.lastUsedAt,
+    isExactMatch:   isMatch,
+  };
+}
+
+// "21-10-2026" — DD-MM-YYYY, the viewer's local date.
+function formatDate(iso: string | null): string {
+  if (!iso) return "—";
   const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "—";
-  return d.toLocaleDateString("en-IN", { day: "2-digit", month: "short" });
+  if (Number.isNaN(d.getTime()) || d.getTime() === 0) return "—";
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  return `${dd}-${mm}-${d.getFullYear()}`;
 }
 
 function packCodeToLabel(code: string | null | undefined): string {
@@ -44,29 +100,20 @@ function packCodeToLabel(code: string | null | undefined): string {
   return `${frac !== undefined ? `${whole}.${frac}` : whole} LT`;
 }
 
-function PigmentChips({
-  pigments,
-  onWash,
-}: {
-  pigments: Array<{ code: string; value: number }>;
-  onWash?:  boolean; // exact rows sit on a grey wash → white chips stay readable
-}) {
+// Formula: one fixed-width slot per tinter — code small on top, value big
+// below, tabular figures so the columns of numbers line up across lines. No
+// pigment colour. Slots wrap inside the row; every tinter is always shown.
+function FormulaSlots({ pigments }: { pigments: Array<{ code: string; value: number }> }) {
   if (pigments.length === 0) {
-    return <span className="text-[10px] text-gray-400 italic">No pigments</span>;
+    return <span className="text-[12px] text-ink-400 italic">No pigments</span>;
   }
   return (
-    <div className="flex flex-wrap gap-[3px]">
+    <div className="flex flex-wrap gap-x-1 gap-y-2">
       {pigments.map((p) => (
-        <span
-          key={p.code}
-          className={cn(
-            "inline-flex items-center gap-1 text-gray-700 rounded font-mono text-[10px] px-[5px] py-[1px] border",
-            onWash ? "bg-white border-gray-300" : "bg-gray-100 border-gray-200",
-          )}
-        >
-          <span>{p.code}</span>
-          <span className="font-semibold text-gray-900">{p.value}</span>
-        </span>
+        <div key={p.code} className="w-[60px] flex flex-col">
+          <span className="font-mono text-[11px] leading-tight text-ink-400">{p.code}</span>
+          <span className="font-mono tabular-nums text-[17px] leading-tight text-ink-900">{p.value}</span>
+        </div>
       ))}
     </div>
   );
@@ -74,26 +121,55 @@ function PigmentChips({
 
 const STANDARD_BUCKETS: readonly number[] = [1, 4, 10, 20];
 
-// The PACK pill's label rule, extracted so the "+N packs" disclosure rows read
-// identically to the pill above them (a variant shown as "4 LT" in the list and
-// "3.7L" in the sub-row would look like two different packs).
+// The PACK chip's label: the NOMINAL bucket ({n} LT) for a standard pack, so a
+// 3.7 L recipe reads "4 LT"; the raw label otherwise.
 function nominalPackLabel(code: string | null | undefined): string {
   const dose = packDoseLitres((code ?? null) as PackCode | null);
   return dose != null && STANDARD_BUCKETS.includes(dose) ? `${dose} LT` : packCodeToLabel(code);
 }
 
-export function FlatSuggestionList({ rows, isLoading, isSearching, linePack, onUse }: FlatSuggestionListProps) {
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  // Line's NOMINAL bucket (1/4/10/20) — used to green the PACK pill. null when
+// One grid for the label row and every recipe line, so the columns line up
+// across cards. minmax(0, …) lets the flexible columns shrink and wrap their
+// content instead of pushing the row wider than the panel.
+const LINE_GRID = "grid grid-cols-[minmax(0,2fr)_76px_minmax(132px,3fr)_100px_80px] gap-x-3";
+
+export function FlatSuggestionList({
+  rows, isLoading, isSearching, linePack, lineSkuCode, lineDescription, packFilter, onUse,
+}: FlatSuggestionListProps) {
+  const [sitesOpen, setSitesOpen] = useState<Set<string>>(new Set());
+  // Line's NOMINAL bucket (1/4/10/20) — marks same-bucket PACK chips. null when
   // the line pack is null/unknown/non-standard, so nothing matches it.
   const lineDose = packDoseLitres(linePack);
   const lineNominal = lineDose != null && STANDARD_BUCKETS.includes(lineDose) ? lineDose : null;
-  const scopeLabel = isSearching
-    ? `Searching all sites · ${rows.length}`
-    : `Shades at this site · ${rows.length}`;
+  const isMatchLine = (l: SuggestLine) =>
+    lineSkuCode != null && linePack != null && l.skuCode === lineSkuCode && l.packCode === linePack;
+  // Name step (c): the server could not name this code, but it IS the tinting
+  // line's code — the line's own description is the right name for it.
+  const lineName = lineDescription?.trim() || null;
+  const nameFor = (l: SuggestLine) =>
+    l.productName ?? (lineName && l.skuCode === lineSkuCode ? lineName : null);
 
-  function toggle(key: string) {
-    setExpanded((prev) => {
+  // Groups: filtered by pack bucket (any line in it), then the group holding
+  // the tinting line's SKU + pack first; otherwise the order the API sent.
+  const groups = rows
+    .filter((row) => packFilter === "ALL" || rowHasPackBucket(row, packFilter))
+    .map((row, i) => {
+      const lines = rowLines(row);
+      const hasMatch = lines.some(isMatchLine);
+      // The matching line leads its group; the rest keep most-recent order.
+      const ordered = hasMatch
+        ? [...lines.filter(isMatchLine), ...lines.filter((l) => !isMatchLine(l))]
+        : lines;
+      return { row, lines: ordered, hasMatch, i };
+    })
+    .sort((a, b) => (a.hasMatch === b.hasMatch ? a.i - b.i : a.hasMatch ? -1 : 1));
+  const recipeCount = groups.reduce((n, g) => n + g.lines.length, 0);
+  const scopeLabel = isSearching
+    ? `Searching all sites · ${groups.length}`
+    : `Shades at this site · ${groups.length}`;
+
+  function toggleSites(key: string) {
+    setSitesOpen((prev) => {
       const next = new Set(prev);
       if (next.has(key)) next.delete(key); else next.add(key);
       return next;
@@ -103,220 +179,153 @@ export function FlatSuggestionList({ rows, isLoading, isSearching, linePack, onU
   return (
     <div className="mb-3">
       {/* Scope line (pack is chosen via the parent's PACK FILTER dropdown) */}
-      <div className="flex items-center justify-between gap-2 mb-1.5">
-        <p className="text-[11px] font-medium tracking-wide text-gray-500">{scopeLabel}</p>
-      </div>
-
-      {/* Table */}
-      <div className="border border-gray-200 rounded-md overflow-hidden">
-        {isLoading ? (
-          <div className="p-4"><div className="h-16 bg-gray-100 rounded animate-pulse" /></div>
-        ) : rows.length === 0 ? (
-          <div className="px-3 py-6 text-center">
-            <p className="text-[11px] text-gray-400 font-medium">
-              No match. Tap &ldquo;+ Add shade&rdquo; to create one.
-            </p>
-          </div>
-        ) : (
-          <div className="max-h-[320px] overflow-y-auto">
-            <table className="w-full" style={{ borderCollapse: "collapse", tableLayout: "fixed" }}>
-              {/* Last Used widened 9→12 (taken from Formula 23→20): its header
-                  becomes "Last Used Here" in browse mode, which wrapped to
-                  three lines at 9%. */}
-              <colgroup>
-                <col style={{ width: "13%" }} />
-                <col style={{ width: "20%" }} />
-                <col style={{ width: "17%" }} />
-                <col style={{ width: "20%" }} />
-                <col style={{ width: "11%" }} />
-                <col style={{ width: "12%" }} />
-                <col style={{ width: "7%" }} />
-              </colgroup>
-              <thead>
-                <tr className="bg-gray-50 border-b border-gray-100">
-                  <th className="text-left text-[10px] font-medium text-gray-400 uppercase tracking-wider px-2.5 py-1.5">Sampling</th>
-                  <th className="text-left text-[10px] font-medium text-gray-400 uppercase tracking-wider px-2.5 py-1.5">Shade</th>
-                  <th className="text-left text-[10px] font-medium text-gray-400 uppercase tracking-wider px-2.5 py-1.5">Site</th>
-                  <th className="text-left text-[10px] font-medium text-gray-400 uppercase tracking-wider px-2.5 py-1.5">Formula</th>
-                  <th className="text-left text-[10px] font-medium text-gray-400 uppercase tracking-wider px-2.5 py-1.5">Pack</th>
-                  {/* Mode-aware: the two lists mean different things by this
-                      date. Browse rows carry the shade's last use AT THIS SITE
-                      (suggest.ts derives it from this site's usage logs);
-                      search rows carry its last use ANYWHERE. Unlabelled, the
-                      per-variant dates in the "+N packs" disclosure — which are
-                      always global, straight off sampling_recipes.lastUsedAt —
-                      would look like they contradicted this column in browse
-                      mode. `isSearching` is the same flag the scope line above
-                      already switches on. */}
-                  <th className="text-left text-[10px] font-medium text-gray-400 uppercase tracking-wider px-2.5 py-1.5">
-                    {isSearching ? "Last Used" : "Last Used Here"}
-                  </th>
-                  <th className="px-2.5 py-1.5" />
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((row) => {
-                  const key = `${row.samplingNo}-${row.recipeId}`;
-                  // Two independent disclosures per row now (sites and packs),
-                  // so the keys are namespaced into the SAME `expanded` set —
-                  // a shared bare key would toggle both at once.
-                  const siteKey   = `sites:${key}`;
-                  const packKey   = `packs:${key}`;
-                  const sitesOpen = expanded.has(siteKey);
-                  const packsOpen = expanded.has(packKey);
-                  // Optional on the wire — a producer that hasn't populated it
-                  // omits the field entirely rather than sending [].
-                  const otherVariants = row.otherVariants ?? [];
-                  // Pack-FILTER model: rows arrive already filtered to one nominal
-                  // bucket by the parent. The PACK pill shows the NOMINAL label
-                  // ({n} LT) for standard buckets, raw label otherwise. Green when
-                  // the row's bucket equals the line's bucket. No scaling here —
-                  // applySuggestionToEntry scales the picked recipe on Use.
-                  const rowDose    = packDoseLitres(row.packCode);
-                  const rowNominal = rowDose != null && STANDARD_BUCKETS.includes(rowDose) ? rowDose : null;
-                  const packLabel  = nominalPackLabel(row.packCode);
-                  const isLinePack = rowNominal != null && rowNominal === lineNominal;
-                  return (
-                    <Fragment key={key}>
-                      <tr
-                        className={cn(
-                          "border-b border-gray-50 align-top border-l-[3px]",
-                          row.isExactMatch
-                            ? "bg-[#eef1f4] border-l-gray-900"
-                            : "border-l-transparent",
-                        )}
-                      >
-                        {/* Sampling */}
-                        <td className="px-2.5 py-2">
-                          <div className="flex flex-col gap-0.5 min-w-0">
-                            <span className="font-mono font-medium text-[12px] text-gray-900 truncate">#{row.samplingNo}</span>
-                            <div className="flex items-center gap-1.5">
-                              <span className={cn(
-                                "font-mono text-[10px] font-medium uppercase tracking-wider leading-none",
-                                row.tinterType === "TINTER" ? "text-gray-400" : "text-orange-700",
-                              )}>
-                                {row.tinterType}
-                              </span>
-                              {row.isExactMatch && (
-                                <span className="text-[9px] font-bold uppercase tracking-wider text-gray-700 bg-gray-200 border border-gray-300 rounded px-1 py-px leading-none">
-                                  Exact
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        </td>
-                        {/* Shade */}
-                        <td className="px-2.5 py-2">
-                          <span className="text-[12px] font-semibold text-gray-900 break-words">{row.shadeName}</span>
-                        </td>
-                        {/* Site */}
-                        <td className="px-2.5 py-2">
-                          <div className="flex flex-col gap-0.5 min-w-0">
-                            <span className="text-[11px] text-gray-600 truncate">{row.primarySiteName || "—"}</span>
-                            {row.otherSites.length > 0 && (
-                              <button
-                                type="button"
-                                onClick={() => toggle(siteKey)}
-                                className="text-[10px] font-semibold text-brand-700 hover:text-brand-800 text-left"
-                              >
-                                +{row.otherSites.length} site{row.otherSites.length > 1 ? "s" : ""}
-                              </button>
-                            )}
-                          </div>
-                        </td>
-                        {/* Formula — RAW stored pigments (no scaling) */}
-                        <td className="px-2.5 py-2">
-                          <PigmentChips pigments={row.activePigments} onWash={row.isExactMatch} />
-                        </td>
-                        {/* Pack — plain pill; green when it equals the line pack.
-                            "+N packs" below it mirrors the "+N sites" control in
-                            the Site cell: same toggle set, same grey/red link
-                            styling, same collapsed-by-default behaviour. */}
-                        <td className="px-2.5 py-2">
-                          <div className="flex flex-col gap-0.5 items-start min-w-0">
-                            <span className={cn(
-                              "inline-flex items-center text-[10px] font-medium rounded px-1.5 py-px whitespace-nowrap border",
-                              isLinePack
-                                ? "text-green-700 bg-green-50 border-green-200"
-                                : "text-gray-500 bg-gray-100 border-gray-200",
-                            )}>
-                              {packLabel}
-                            </span>
-                            {otherVariants.length > 0 && (
-                              <button
-                                type="button"
-                                onClick={() => toggle(packKey)}
-                                className="text-[10px] font-semibold text-brand-700 hover:text-brand-800 text-left"
-                              >
-                                +{otherVariants.length} pack{otherVariants.length > 1 ? "s" : ""}
-                              </button>
-                            )}
-                          </div>
-                        </td>
-                        {/* Last Used */}
-                        <td className="px-2.5 py-2">
-                          <span className="text-[10px] text-gray-400 whitespace-nowrap">{formatDayMonth(row.lastUsedAt)}</span>
-                        </td>
-                        {/* Use */}
-                        <td className="px-2.5 py-2 text-right">
-                          <button
-                            type="button"
-                            onClick={() => onUse(row)}
-                            className="h-[28px] px-3 rounded-md bg-gray-200 text-gray-800 text-[11px] font-medium hover:bg-gray-300 transition-colors whitespace-nowrap"
-                          >
-                            Use
-                          </button>
-                        </td>
-                      </tr>
-                      {sitesOpen && row.otherSites.length > 0 && (
-                        <tr className="border-b border-gray-50 bg-gray-50/40">
-                          <td />
-                          <td colSpan={6} className="px-2.5 py-1.5">
-                            <div className="flex flex-col gap-0.5">
-                              {row.otherSites.map((s, i) => (
-                                <div key={i} className="flex items-center justify-between text-[10px]">
-                                  <span className="text-gray-600 truncate">{s.siteName}</span>
-                                  <span className="text-gray-400 ml-2 flex-shrink-0">{formatDayMonth(s.lastUsed)}</span>
-                                </div>
-                              ))}
-                            </div>
-                          </td>
-                        </tr>
-                      )}
-                      {/* Other pack/SKU variants of the SAME shade. VIEW-ONLY —
-                          no "Use" here by design: these rows carry no pigments,
-                          and applying one has to go through the representative
-                          so pack scaling still runs. Dates are each recipe's own
-                          sampling_recipes.lastUsedAt, i.e. across all sites. */}
-                      {packsOpen && otherVariants.length > 0 && (
-                        <tr className="border-b border-gray-50 bg-gray-50/40">
-                          <td />
-                          <td colSpan={6} className="px-2.5 py-1.5">
-                            <div className="flex flex-col gap-0.5">
-                              {otherVariants.map((v) => (
-                                <div key={v.recipeId} className="flex items-center justify-between text-[10px]">
-                                  <span className="text-gray-600 truncate min-w-0">
-                                    <span className="font-medium">{nominalPackLabel(v.packCode)}</span>
-                                    <span className="text-gray-300"> · </span>
-                                    <span className="font-mono">{v.skuCode}</span>
-                                  </span>
-                                  <span className="text-gray-400 ml-2 flex-shrink-0">
-                                    {v.lastUsedAt ? formatDayMonth(v.lastUsedAt) : "—"}
-                                  </span>
-                                </div>
-                              ))}
-                            </div>
-                          </td>
-                        </tr>
-                      )}
-                    </Fragment>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+      <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5 mb-2">
+        <p className="text-[12px] font-medium tracking-wide text-ink-500">{scopeLabel}</p>
+        {groups.length > 0 && (
+          <p className="text-[12px] text-ink-400">{recipeCount} recipe{recipeCount === 1 ? "" : "s"}</p>
         )}
       </div>
+
+      {isLoading ? (
+        <div className="border border-ink-200 rounded-lg p-4"><div className="h-16 bg-ink-100 rounded animate-pulse" /></div>
+      ) : groups.length === 0 ? (
+        <div className="border border-ink-200 rounded-lg px-3 py-6 text-center">
+          <p className="text-[12px] text-ink-400 font-medium">
+            No match. Tap &ldquo;+ Add shade&rdquo; to create one.
+          </p>
+        </div>
+      ) : (
+        <div className="flex flex-col gap-4">
+          {/* Column labels — once, on the same grid as the lines (inset by the
+              card's 1px border + px-4 so the columns sit over their values). */}
+          <div className={cn(LINE_GRID, "px-[17px] -mb-2")}>
+            {["SKU · Product", "Pack", "Formula", "Last used"].map((h) => (
+              <span key={h} className="text-[10px] font-medium text-ink-400 uppercase tracking-wider">{h}</span>
+            ))}
+            <span />
+          </div>
+
+          {groups.map(({ row, lines, hasMatch }) => {
+            const key = row.samplingNo;
+            const open = sitesOpen.has(key);
+            return (
+              <div key={key} className="border border-ink-200 rounded-lg bg-white">
+                {/* Header strip — wraps onto a second line when it must */}
+                <div className="bg-ink-50 border-b border-ink-200 rounded-t-[7px] px-4 py-2.5 flex flex-wrap items-center gap-x-3 gap-y-1.5">
+                  <span className="font-mono text-[14px] font-semibold text-ink-900">#{row.samplingNo}</span>
+                  <span className="text-[15px] font-semibold text-ink-900 break-words min-w-0">{row.shadeName}</span>
+                  {/* Tinter-type tag keeps the app-wide dot colours (CLAUDE_UI §3:
+                      TINTER blue-600, ACOTONE orange-500) — the owner's
+                      "no colour" rule covers the formula, not this tag. */}
+                  <span className={cn(
+                    "inline-flex items-center gap-1.5 text-[10.5px] font-semibold uppercase tracking-wider bg-white border border-ink-200 rounded px-1.5 py-0.5 leading-none",
+                    row.tinterType === "TINTER" ? "text-ink-600" : "text-orange-700",
+                  )}>
+                    <span className={cn(
+                      "h-1.5 w-1.5 rounded-full",
+                      row.tinterType === "TINTER" ? "bg-blue-600" : "bg-orange-500",
+                    )} />
+                    {row.tinterType}
+                  </span>
+                  <span className="text-[12px] text-ink-600 break-words min-w-0">{row.primarySiteName || "—"}</span>
+                  {row.otherSites.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => toggleSites(key)}
+                      className="text-[12px] font-semibold text-ink-700 underline underline-offset-2 hover:text-ink-900"
+                    >
+                      +{row.otherSites.length} site{row.otherSites.length > 1 ? "s" : ""}
+                    </button>
+                  )}
+                  {hasMatch && (
+                    <span className="text-[10.5px] font-bold uppercase tracking-wider text-ok-text bg-ok-bg border border-ok/30 rounded px-1.5 py-0.5 leading-none">
+                      ✓ Matches this line
+                    </span>
+                  )}
+                  <span className="ml-auto text-[12px] text-ink-500 whitespace-nowrap">
+                    {lines.length} recipe{lines.length === 1 ? "" : "s"}
+                  </span>
+                </div>
+
+                {open && row.otherSites.length > 0 && (
+                  <div className="border-b border-ink-100 bg-ink-25 px-4 py-2 flex flex-col gap-1">
+                    {row.otherSites.map((s, i) => (
+                      <div key={i} className="flex items-start justify-between gap-3 text-[12px]">
+                        <span className="text-ink-600 break-words min-w-0">{s.siteName}</span>
+                        <span className="font-mono text-ink-400 flex-shrink-0">{formatDate(s.lastUsed)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* One line per recipe (SKU × pack) — nothing merged */}
+                {lines.map((line, li) => {
+                  const isMatch = isMatchLine(line);
+                  const dose    = packDoseLitres(line.packCode);
+                  const nominal = dose != null && STANDARD_BUCKETS.includes(dose) ? dose : null;
+                  const isLinePack = nominal != null && nominal === lineNominal;
+                  // Outside the pack filter: dimmed, still usable (hover lifts it).
+                  const dimmed = packFilter !== "ALL" && dose !== packFilter;
+                  const name   = nameFor(line);
+                  return (
+                    <div
+                      key={line.recipeId}
+                      className={cn(
+                        LINE_GRID,
+                        "items-center px-4 py-3.5 last:rounded-b-[7px]",
+                        li > 0 && "border-t border-ink-100",
+                        isMatch && "bg-ok-bg shadow-[inset_3px_0_0_theme(colors.ok.DEFAULT)]",
+                        dimmed && "opacity-40 hover:opacity-100 transition-opacity",
+                      )}
+                    >
+                      {/* SKU code on top, product name below — wraps, never cut */}
+                      <div className="flex flex-col gap-0.5 min-w-0">
+                        <span className="flex flex-wrap items-center gap-1.5 font-mono font-semibold text-[15px] text-ink-900 break-all">
+                          {line.skuCode}
+                          {isMatch && <span className="font-sans text-[14px] text-ok">✓</span>}
+                        </span>
+                        {name ? (
+                          <span className="text-[13px] leading-snug text-ink-500 break-words">{name}</span>
+                        ) : (
+                          <span className="text-[13px] leading-snug text-ink-400 italic">Name not in Orbit yet</span>
+                        )}
+                      </div>
+                      {/* Pack — the tinting line's bucket reads darker; no colour */}
+                      <div>
+                        <span className={cn(
+                          "inline-flex items-center text-[13px] rounded-md px-2 py-0.5 whitespace-nowrap border bg-white",
+                          isLinePack ? "text-ink-900 font-semibold border-ink-400" : "text-ink-500 border-ink-200",
+                        )}>
+                          {nominalPackLabel(line.packCode)}
+                        </span>
+                      </div>
+                      {/* Formula — RAW stored pigments (no scaling) */}
+                      <FormulaSlots pigments={line.activePigments} />
+                      {/* Last used — the recipe's own date, any site */}
+                      <span className="font-mono text-[13px] text-ink-600 whitespace-nowrap">{formatDate(line.lastUsedAt)}</span>
+                      {/* Use — applies THIS recipe */}
+                      <div className="flex justify-end">
+                        <button
+                          type="button"
+                          onClick={() => onUse(lineAsRow(row, line, isMatch))}
+                          className={cn(
+                            "h-10 min-w-[68px] px-4 rounded-md text-[13px] font-semibold transition-colors whitespace-nowrap",
+                            isMatch
+                              ? "bg-ink-900 text-white hover:bg-ink-700"
+                              : "bg-ink-100 text-ink-700 hover:bg-ink-200",
+                          )}
+                        >
+                          Use
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
