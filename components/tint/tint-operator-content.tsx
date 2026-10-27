@@ -16,7 +16,7 @@ import { SkuDisplayToggle } from "@/components/tint/sku-display-toggle";
 // Phase 4 — Sampling Library suggestion card replaces the legacy shade_master
 // suggestion strip + "All shades…" popover. Step 11 retired the save-as-shade
 // toggle; /suggest + /tinter-issue now handle the full Library write path.
-import { FlatSuggestionList, rowHasPackBucket } from "@/components/tint/operator/flat-suggestion-list";
+import { FlatSuggestionList, rowHasPackBucket, rowsOfType } from "@/components/tint/operator/flat-suggestion-list";
 import { FormulaMatchModal } from "@/components/tint/operator/formula-match-modal";
 import {
   SaveSamplingPopup,
@@ -2231,9 +2231,12 @@ export function TintOperatorContent() {
                   const rawPackFilter = packFilterByEntry[entryId];
                   const packFilter: number | "ALL" =
                     rawPackFilter !== undefined ? rawPackFilter : (lineBucket ?? "ALL");
+                  // Counts cover the TOGGLE'S type only — the list shows only
+                  // that type (owner rule), so the dropdown must agree with it.
+                  const typedRows = rowsOfType(browseRows, tinterType);
                   const bucketCounts = new Map<number, number>();
                   for (const b of STANDARD_BUCKETS) {
-                    bucketCounts.set(b, browseRows.filter(r => rowHasPackBucket(r, b)).length);
+                    bucketCounts.set(b, typedRows.filter(r => rowHasPackBucket(r, b)).length);
                   }
                   const packOptions = STANDARD_BUCKETS.map(b => ({
                     bucket: b,
@@ -2324,7 +2327,7 @@ export function TintOperatorContent() {
                                 value={packFilter}
                                 onChange={e => setPackFilterByEntry(prev => ({ ...prev, [entryId]: e.target.value === "ALL" ? "ALL" : Number(e.target.value) }))}
                                 className="h-[34px] px-2 rounded-md border border-gray-200 bg-white text-gray-700 text-[12px] font-medium focus:border-gray-900 focus:outline-none flex-shrink-0">
-                                <option value="ALL">All packs · {browseRows.length}</option>
+                                <option value="ALL">All packs · {typedRows.length}</option>
                                 {packOptions.map(opt => (
                                   <option key={opt.bucket} value={opt.bucket} disabled={opt.count === 0}>
                                     {opt.bucket} LT{opt.isLine ? " · LINE" : ""} · {opt.count}
@@ -2371,6 +2374,8 @@ export function TintOperatorContent() {
                           lineSkuCode={entry.skuCodeRaw || null}
                           lineDescription={entry.skuDescriptionRaw || null}
                           packFilter={packFilter}
+                          tinterType={tinterType}
+                          onSwitchType={handleTinterTypeChange}
                           onUse={(row) => handleUseSuggestion(entryId, row)}
                         />
                       )}

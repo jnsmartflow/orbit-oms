@@ -159,6 +159,18 @@ export function BaseTiPanel({
   }, [siteId, packCode, line.skuCodeRaw]);
 
   // ── Debounced cross-site search ───────────────────────────────────────────
+  // One search request for an EXPLICIT type: the toggle handler below passes
+  // the new type, because the tinterType state has not updated when it runs.
+  const runSearch = useCallback((q: string, type: "TINTER" | "ACOTONE") => {
+    const my = ++searchVersion.current;
+    setSearchLoading(true);
+    fetch(`/api/sampling-library/operator-search?q=${encodeURIComponent(q)}&type=${type}`)
+      .then((r) => (r.ok ? (r.json() as Promise<{ rows: SuggestFlatRow[] }>) : null))
+      .then((d) => { if (searchVersion.current === my) setSearchResults(d?.rows ?? []); })
+      .catch(() => { if (searchVersion.current === my) setSearchResults([]); })
+      .finally(() => { if (searchVersion.current === my) setSearchLoading(false); });
+  }, []);
+
   const onSearchChange = useCallback((value: string) => {
     setSearch(value);
     if (searchDebounce.current) clearTimeout(searchDebounce.current);
@@ -171,16 +183,25 @@ export function BaseTiPanel({
       setSearchLoading(false);
       return;
     }
-    searchDebounce.current = setTimeout(() => {
-      const my = ++searchVersion.current;
-      setSearchLoading(true);
-      fetch(`/api/sampling-library/operator-search?q=${encodeURIComponent(q)}&type=${tinterType}`)
-        .then((r) => (r.ok ? (r.json() as Promise<{ rows: SuggestFlatRow[] }>) : null))
-        .then((d) => { if (searchVersion.current === my) setSearchResults(d?.rows ?? []); })
-        .catch(() => { if (searchVersion.current === my) setSearchResults([]); })
-        .finally(() => { if (searchVersion.current === my) setSearchLoading(false); });
-    }, 300);
-  }, [tinterType]);
+    searchDebounce.current = setTimeout(() => runSearch(q, tinterType), 300);
+  }, [tinterType, runSearch]);
+
+  // ── TINTER / ACOTONE toggle ───────────────────────────────────────────────
+  // Resets the entry as before, and re-runs an active typed search for the NEW
+  // type (search is type-filtered on the server) so results of the old type
+  // never linger. With no search the site list is already loaded; the list
+  // component filters it to the new type. Also the hint's "switch" target.
+  const changeTinterType = useCallback((t: "TINTER" | "ACOTONE") => {
+    if (t === tinterType) return;
+    setTinterType(t);
+    setShadeValues({});
+    setSamplingNo(null);
+    setShadeName("");
+    setMode("browse");
+    if (searchDebounce.current) clearTimeout(searchDebounce.current);
+    const q = search.trim();
+    if (q !== "") runSearch(q, t);
+  }, [tinterType, search, runSearch]);
 
   // ── Apply a picked row ────────────────────────────────────────────────────
   // Type-aware, copied from applySuggestionToEntry: pigment columns come from
@@ -328,14 +349,7 @@ export function BaseTiPanel({
               <button
                 key={t}
                 type="button"
-                onClick={() => {
-                  if (t === tinterType) return;
-                  setTinterType(t);
-                  setShadeValues({});
-                  setSamplingNo(null);
-                  setShadeName("");
-                  setMode("browse");
-                }}
+                onClick={() => changeTinterType(t)}
                 className={cn(
                   "px-2.5 py-1 rounded-[5px] text-[11px] font-semibold transition-colors",
                   t === tinterType ? "bg-white text-gray-900 shadow-sm" : "text-gray-500",
@@ -403,12 +417,14 @@ export function BaseTiPanel({
             </div>
             <FlatSuggestionList
               rows={rows}
-              isLoading={suggestLoading}
-              isSearching={searchLoading}
+              isLoading={search.trim() !== "" ? searchLoading : suggestLoading}
+              isSearching={search.trim() !== ""}
               linePack={linePack}
               lineSkuCode={line.skuCodeRaw || null}
               lineDescription={line.skuDescriptionRaw}
               packFilter={effectiveFilter}
+              tinterType={tinterType}
+              onSwitchType={changeTinterType}
               onUse={applyRow}
             />
           </>

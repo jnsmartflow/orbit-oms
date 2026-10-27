@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { cn } from "@/lib/utils";
-import type { PackCode } from "@prisma/client";
+import type { PackCode, TinterType } from "@prisma/client";
 import type { SuggestFlatRow, SuggestLine } from "@/app/api/sampling-library/_lib/suggest";
 import { packDoseLitres } from "@/lib/sampling/pack-litres";
 
@@ -17,8 +17,11 @@ import { packDoseLitres } from "@/lib/sampling/pack-litres";
 // parent a SuggestFlatRow rebuilt around THAT recipe (lineAsRow), so the
 // parent's apply path (pack scaling included) runs unchanged on the recipe the
 // operator picked. FORMULA shows each recipe's RAW stored pigments.
-// The parent passes UNFILTERED rows plus the pack filter: a group stays when
-// ANY of its lines is in the bucket, and its other lines are dimmed, not hidden.
+// The parent passes rows UNFILTERED by type and pack, plus the toggle's type
+// and the pack filter. Only groups of the selected TINTER / ACOTONE type show
+// (owner rule); a group stays when ANY of its lines is in the pack bucket, and
+// its other lines are dimmed, not hidden. When the OTHER type holds an exact
+// match for the tinting line, a one-line hint offers to switch.
 //
 // Owner rule: NOTHING in this list is truncated — no ellipsis, no clipping, no
 // inner scroll box. Long names, headers and formulas wrap and the row grows.
@@ -40,6 +43,10 @@ export interface FlatSuggestionListProps {
   lineDescription: string | null;
   // Nominal pack bucket (1/4/10/20) or "ALL". Filters groups, dims lines.
   packFilter:  number | "ALL";
+  // The TINTER / ACOTONE toggle. Only groups of this type are listed.
+  tinterType:  TinterType;
+  // Flip the toggle through the parent's normal change handler (the hint).
+  onSwitchType: (type: TinterType) => void;
   onUse:       (row: SuggestFlatRow) => void;
 }
 
@@ -58,6 +65,14 @@ export function rowLines(row: SuggestFlatRow): SuggestLine[] {
     activePigments: row.activePigments,
     lastUsedAt:     row.lastUsedAt,
   }];
+}
+
+/**
+ * The rows of one TINTER / ACOTONE type. The parent counts its pack-select
+ * options over this same set, so the counts and the list always agree.
+ */
+export function rowsOfType(rows: SuggestFlatRow[], type: TinterType): SuggestFlatRow[] {
+  return rows.filter((r) => r.tinterType === type);
 }
 
 /** True when any line of the row sits in this nominal pack bucket. */
@@ -134,7 +149,8 @@ function nominalPackLabel(code: string | null | undefined): string {
 const LINE_GRID = "grid grid-cols-[minmax(0,2fr)_76px_minmax(132px,3fr)_100px_80px] gap-x-3";
 
 export function FlatSuggestionList({
-  rows, isLoading, isSearching, linePack, lineSkuCode, lineDescription, packFilter, onUse,
+  rows, isLoading, isSearching, linePack, lineSkuCode, lineDescription, packFilter,
+  tinterType, onSwitchType, onUse,
 }: FlatSuggestionListProps) {
   const [sitesOpen, setSitesOpen] = useState<Set<string>>(new Set());
   // Line's NOMINAL bucket (1/4/10/20) — marks same-bucket PACK chips. null when
@@ -149,9 +165,17 @@ export function FlatSuggestionList({
   const nameFor = (l: SuggestLine) =>
     l.productName ?? (lineName && l.skuCode === lineSkuCode ? lineName : null);
 
-  // Groups: filtered by pack bucket (any line in it), then the group holding
-  // the tinting line's SKU + pack first; otherwise the order the API sent.
-  const groups = rows
+  // The hidden type's exact matches (same SKU + pack) — counted in samplings.
+  // Typed search is type-filtered on the server, so this is 0 while searching.
+  const otherType: TinterType = tinterType === "TINTER" ? "ACOTONE" : "TINTER";
+  const hiddenMatches = rowsOfType(rows, otherType)
+    .filter((row) => rowLines(row).some(isMatchLine)).length;
+
+  // Groups: the selected type only, filtered by pack bucket (any line in it),
+  // then the group holding the tinting line's SKU + pack first; otherwise the
+  // order the API sent.
+  const typedRows = rowsOfType(rows, tinterType);
+  const groups = typedRows
     .filter((row) => packFilter === "ALL" || rowHasPackBucket(row, packFilter))
     .map((row, i) => {
       const lines = rowLines(row);
@@ -186,12 +210,29 @@ export function FlatSuggestionList({
         )}
       </div>
 
+      {!isLoading && hiddenMatches > 0 && (
+        <p className="text-[12px] text-ink-500 mb-2">
+          {hiddenMatches} {otherType} match{hiddenMatches === 1 ? "" : "es"} —{" "}
+          <button
+            type="button"
+            onClick={() => onSwitchType(otherType)}
+            className="font-semibold text-brand-700 underline underline-offset-2 hover:text-brand-800"
+          >
+            switch
+          </button>
+        </p>
+      )}
+
       {isLoading ? (
         <div className="border border-ink-200 rounded-lg p-4"><div className="h-16 bg-ink-100 rounded animate-pulse" /></div>
       ) : groups.length === 0 ? (
         <div className="border border-ink-200 rounded-lg px-3 py-6 text-center">
           <p className="text-[12px] text-ink-400 font-medium">
-            No match. Tap &ldquo;+ Add shade&rdquo; to create one.
+            {/* None of this type at the site → say so; otherwise (pack filter
+                or a search found nothing) the generic line. */}
+            {!isSearching && typedRows.length === 0
+              ? `No ${tinterType} shades at this site. Search all sites or add a shade.`
+              : <>No match. Tap &ldquo;+ Add shade&rdquo; to create one.</>}
           </p>
         </div>
       ) : (
