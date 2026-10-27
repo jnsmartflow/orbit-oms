@@ -144,31 +144,10 @@ function nominalPackLabel(code: string | null | undefined): string {
   return dose != null && STANDARD_BUCKETS.includes(dose) ? `${dose} LT` : packCodeToLabel(code);
 }
 
-// Formula slot geometry — FormulaSlots draws w-[60px] slots with gap-x-1
-// (4px); keep these three numbers in step with those two classes.
-const FORMULA_SLOTS  = 5;   // N slots per row before the formula wraps (owner: ~90–95% of recipes)
-const FORMULA_SLOT_W = 60;
-const FORMULA_GAP    = 4;
-
-// ONE grid for the whole list; every card and every line is a SUBGRID of it,
-// so a column is as wide as its widest cell in ANY card and the columns line
-// up across cards. Every column is sized to its content (no flexible track):
-//   SKU · Product  fit-content(300px)  — longest content, capped; names wrap
-//   Pack           max-content         — the chip
-//   Formula        fit-content(N slots) — wider formulas wrap inside the row
-//   Last used      max-content         — "21-10-2026"
-//   Use            max-content         — the button
-// The grid's justify-content: space-between (justify-between) then shares the
-// spare width EQUALLY between the four column gaps, on top of the 24px minimum
-// (gap-x-6): the row fills the width, the first column starts at the left
-// edge and Use ends at the right. Subgrids inherit those line positions, so
-// cards and the label row stay aligned. In a narrow panel (Tint Manager) there
-// is no spare width — gaps stay 24px and the fit-content tracks shrink to
-// their min-content, so the row wraps rather than overflowing.
-const LIST_COLUMNS =
-  `fit-content(300px) max-content ` +
-  `fit-content(${FORMULA_SLOTS * FORMULA_SLOT_W + (FORMULA_SLOTS - 1) * FORMULA_GAP}px) ` +
-  `max-content max-content`;
+// One grid for the label row and every recipe line, so the columns line up
+// across cards. minmax(0, …) lets the flexible columns shrink and wrap their
+// content instead of pushing the row wider than the panel.
+const LINE_GRID = "grid grid-cols-[minmax(0,2fr)_76px_minmax(132px,3fr)_100px_80px] gap-x-3";
 
 export function FlatSuggestionList({
   rows, isLoading, isSearching, linePack, lineSkuCode, lineDescription, packFilter,
@@ -258,10 +237,10 @@ export function FlatSuggestionList({
           </p>
         </div>
       ) : (
-        <div className="grid justify-between gap-x-6 gap-y-4" style={{ gridTemplateColumns: LIST_COLUMNS }}>
-          {/* Column labels — once, a subgrid with the same 1px border + px-4
-              inset as a card's line, so each label sits over its column. */}
-          <div className="col-span-full grid grid-cols-subgrid border border-transparent px-4 -mb-2">
+        <div className="flex flex-col gap-4">
+          {/* Column labels — once, on the same grid as the lines (inset by the
+              card's 1px border + px-4 so the columns sit over their values). */}
+          <div className={cn(LINE_GRID, "px-[17px] -mb-2")}>
             {["SKU · Product", "Pack", "Formula", "Last used"].map((h) => (
               <span key={h} className="text-[10px] font-medium text-ink-400 uppercase tracking-wider">{h}</span>
             ))}
@@ -272,9 +251,9 @@ export function FlatSuggestionList({
             const key = row.samplingNo;
             const open = sitesOpen.has(key);
             return (
-              <div key={key} className="col-span-full grid grid-cols-subgrid border border-ink-200 rounded-lg bg-white">
+              <div key={key} className="border border-ink-200 rounded-lg bg-white">
                 {/* Header strip — wraps onto a second line when it must */}
-                <div className="col-span-full bg-ink-50 border-b border-ink-200 rounded-t-[7px] px-4 py-2.5 flex flex-wrap items-center gap-x-3 gap-y-1.5">
+                <div className="bg-ink-50 border-b border-ink-200 rounded-t-[7px] px-4 py-2.5 flex flex-wrap items-center gap-x-3 gap-y-1.5">
                   <span className="font-mono text-[14px] font-semibold text-ink-900">#{row.samplingNo}</span>
                   <span className="text-[15px] font-semibold text-ink-900 break-words min-w-0">{row.shadeName}</span>
                   {/* Tinter-type tag keeps the app-wide dot colours (CLAUDE_UI §3:
@@ -311,7 +290,7 @@ export function FlatSuggestionList({
                 </div>
 
                 {open && row.otherSites.length > 0 && (
-                  <div className="col-span-full border-b border-ink-100 bg-ink-25 px-4 py-2 flex flex-col gap-1">
+                  <div className="border-b border-ink-100 bg-ink-25 px-4 py-2 flex flex-col gap-1">
                     {row.otherSites.map((s, i) => (
                       <div key={i} className="flex items-start justify-between gap-3 text-[12px]">
                         <span className="text-ink-600 break-words min-w-0">{s.siteName}</span>
@@ -334,7 +313,8 @@ export function FlatSuggestionList({
                     <div
                       key={line.recipeId}
                       className={cn(
-                        "col-span-full grid grid-cols-subgrid items-center px-4 py-3.5 last:rounded-b-[7px]",
+                        LINE_GRID,
+                        "items-center px-4 py-3.5 last:rounded-b-[7px]",
                         li > 0 && "border-t border-ink-100",
                         isMatch && "bg-ok-bg shadow-[inset_3px_0_0_theme(colors.ok.DEFAULT)]",
                         dimmed && "opacity-40 hover:opacity-100 transition-opacity",
