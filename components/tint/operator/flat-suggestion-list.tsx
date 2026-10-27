@@ -152,20 +152,23 @@ const FORMULA_GAP    = 4;
 
 // ONE grid for the whole list; every card and every line is a SUBGRID of it,
 // so a column is as wide as its widest cell in ANY card and the columns line
-// up across cards. Each column is sized to its content with one uniform gap
-// (gap-x-6, 24px) between columns — no stretched gaps:
+// up across cards. Every column is sized to its content (no flexible track):
 //   SKU · Product  fit-content(300px)  — longest content, capped; names wrap
 //   Pack           max-content         — the chip
 //   Formula        fit-content(N slots) — wider formulas wrap inside the row
 //   Last used      max-content         — "21-10-2026"
-//   Use            minmax(max-content, 1fr) — ALL spare width lands here, so
-//                  the only open space is between Last used and Use (right-aligned)
-// fit-content tracks shrink to their min-content in a narrow panel (Tint
-// Manager), so the row wraps rather than overflowing.
+//   Use            max-content         — the button
+// The grid's justify-content: space-between (justify-between) then shares the
+// spare width EQUALLY between the four column gaps, on top of the 24px minimum
+// (gap-x-6): the row fills the width, the first column starts at the left
+// edge and Use ends at the right. Subgrids inherit those line positions, so
+// cards and the label row stay aligned. In a narrow panel (Tint Manager) there
+// is no spare width — gaps stay 24px and the fit-content tracks shrink to
+// their min-content, so the row wraps rather than overflowing.
 const LIST_COLUMNS =
   `fit-content(300px) max-content ` +
   `fit-content(${FORMULA_SLOTS * FORMULA_SLOT_W + (FORMULA_SLOTS - 1) * FORMULA_GAP}px) ` +
-  `max-content minmax(max-content, 1fr)`;
+  `max-content max-content`;
 
 export function FlatSuggestionList({
   rows, isLoading, isSearching, linePack, lineSkuCode, lineDescription, packFilter,
@@ -255,7 +258,7 @@ export function FlatSuggestionList({
           </p>
         </div>
       ) : (
-        <div className="grid gap-x-6 gap-y-4" style={{ gridTemplateColumns: LIST_COLUMNS }}>
+        <div className="grid justify-between gap-x-6 gap-y-4" style={{ gridTemplateColumns: LIST_COLUMNS }}>
           {/* Column labels — once, a subgrid with the same 1px border + px-4
               inset as a card's line, so each label sits over its column. */}
           <div className="col-span-full grid grid-cols-subgrid border border-transparent px-4 -mb-2">
