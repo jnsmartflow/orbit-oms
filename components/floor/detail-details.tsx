@@ -11,6 +11,8 @@
 import type { ReactNode } from "react";
 import { formatDateIST } from "@/lib/floor/format";
 import type { FloorDetail } from "@/lib/floor/types";
+import { humaniseReason } from "@/lib/tint/pause-reasons";
+import { formatTintPauseAt, formatTintPausedFor } from "./status-pill";
 
 const WD = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -153,19 +155,20 @@ export function DetailDetails({
           Everything the four pink pills have no room for: WHO has it, WHEN they
           started and finished, and how many shades are done.
 
-          🔴 THIS IS THE ONLY FLOOR SURFACE THAT READS `tint_assignments`, and it
-          reads it on CLICK. The board query does not touch that table and must
-          not — the rail feed that used to was deleted on 2026-09-13 for costing
-          772 ms and 25 statements on every board load and every 30-second poll.
-          A pill per row would have spent that back; a panel spends it once, when
-          somebody asks.
+          🔴 THIS IS THE ONLY FLOOR SURFACE THAT READS THE WHOLE TINT STORY, and
+          it reads it on CLICK. The board query reads `tint_assignments` only
+          narrowly (completedAt + status + lastPausedAt, and the open pause event
+          when paused); the rail feed that read the rest was deleted on
+          2026-09-13 for costing 772 ms and 25 statements on every board load and
+          every 30-second poll. A panel spends the rest once, when somebody asks.
 
-          🔴 "Machine status" IS THE ASSIGNMENT'S STATUS, AND IT IS THE ONLY
-          PLACE A PAUSE IS VISIBLE. Pause and resume write the assignment row and
-          never the order's stage (CLAUDE_TINT §5), so `workflowStage` — and
-          therefore the pill — cannot tell a paused job from a running one. The
-          pill says "With operator", which stays true either way; this cell says
-          which.
+          🔴 "Machine status" IS THE ASSIGNMENT'S STATUS. Pause and resume write
+          the assignment row and never the order's stage (CLAUDE_TINT §5), so
+          `workflowStage` alone cannot tell a paused job from a running one. The
+          pill now can — it reads `tintPause` and says "Tint paused" (it used to
+          say "Tinting", not "With operator" as this comment once claimed) — and
+          the Paused block below gives the why, who and since when.
+          2026-10-28: paused now has its own pill — do not revert to plain Tinting.
 
           Rendered only on a tint bill. `d.tint` is null on a plain order, so the
           whole section is absent rather than a grid of dashes. */}
@@ -190,6 +193,22 @@ export function DetailDetails({
               v={d.tint.hasSplits ? `${d.tint.shadesDone} of ${d.tint.shadesTotal} done` : "Full OBD — no split"}
             />
           </div>
+          {/* THE OPEN PAUSE (2026-10-28) — the same row the board pill reads
+              (lib/floor/tint-pause.ts), so the two can never disagree. Absent
+              unless the job is paused right now. Reason words from
+              lib/tint/pause-reasons.ts; times IST. */}
+          {d.tint.pause && (
+            <>
+              <Section title="Paused" />
+              <div className="grid grid-cols-2">
+                <Cell k="Reason" v={humaniseReason(d.tint.pause.reason)} />
+                <Cell k="Paused by" v={d.tint.pause.by} />
+                <Cell k="Paused at" v={formatTintPauseAt(d.tint.pause.at)} />
+                <Cell k="Paused for" v={formatTintPausedFor(d.tint.pause.at)} />
+                <Cell k="Remark" v={d.tint.pause.remark} />
+              </div>
+            </>
+          )}
         </>
       )}
     </div>

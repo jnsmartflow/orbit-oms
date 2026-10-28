@@ -7,7 +7,7 @@
 
 import { ProgressBar } from "./progress-bar";
 import { FloorTable, type FloorTableVariant } from "./floor-table";
-import { countByStatus, finishedCount, formatLitres, sumLitres } from "./status-pill";
+import { countByStatus, finishedCount, formatLitres, sumLitres, tintPausedCount } from "./status-pill";
 import type { FloorDeskKey } from "@/lib/floor/selection";
 import type { FloorBoardRow } from "@/lib/floor/types";
 
@@ -100,7 +100,7 @@ export function RouteRow({
         <span className="w-[128px] text-[10.5px] text-gray-400">
           {rows.length} bills · {formatLitres(litres)} L
         </span>
-        <ProgressBar counts={counts} className="max-w-[300px] flex-1 !bg-[#f3f4f6]" />
+        <ProgressBar counts={counts} tintPaused={tintPausedCount(rows)} className="max-w-[300px] flex-1 !bg-[#f3f4f6]" />
         <span className="w-[92px] text-right text-[11px] tabular-nums text-gray-700">
           {/* finishedCount, not counts.done (2026-09-11) — a shipped bill is
               finished and must count here. Identical to counts.done on a live

@@ -313,6 +313,9 @@ function liveTime(row: FloorBoardRow, nowMs: number): string | null {
   if (st === "needsCheck") return shortElapsed(asStr(row.pickedAt), nowMs);
   if (st === "withPicker") return shortElapsed(asStr(row.assignedAt), nowMs);
   if (st === "tintPending") return shortElapsed(asStr(row.obdDateTime), nowMs);
+  // "Tint paused" (2026-10-28): elapsed SINCE THE PAUSE, the in-progress rule.
+  // Its clock is on the row (`tintPause.at`); a running Tinting still has none.
+  if (st === "tinting" && row.tintPause) return shortElapsed(row.tintPause.at, nowMs);
   // FINISHED, so the CLOCK, exactly as "done" reads — the board's standing rule
   // is elapsed while in progress, wall time once finished. Null when the stamp
   // is missing: no time beats a borrowed one (2026-09-14).
@@ -1444,6 +1447,7 @@ export function FloorTable({
             time={liveTime(row, nowMs)}
             heldBack={gateOn && isHeldBack(row)}
             person={livePerson(row)}
+            tintPause={row.tintPause}
           />
           {/* Row hover actions (design §7.10). ⚡ is LIVE (instant urgent
               toggle, lights red when urgent); ⋯ is INERT (detail panel is

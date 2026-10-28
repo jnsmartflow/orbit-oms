@@ -50,6 +50,8 @@ import {
   rowStatus,
   sumLitres,
   sumWeightKg,
+  TINT_PAUSED_SEGMENT,
+  tintPausedCount,
 } from "./status-pill";
 import { FloorTable, shipMarkers, type FloorTableVariant } from "./floor-table";
 import { DivisionBand, ShipToBlockHeader } from "./ship-to-blocks";
@@ -89,6 +91,9 @@ export const SEGMENTS = [
   { key: "picking", color: "#5b8ded" },
   { key: "waiting", color: "#d3d3dd" },
   { key: "tint", color: "#f9a8d4" },
+  // Tint paused (2026-10-28) — right after tint, carved OUT of it. The pill's
+  // own orange (TINT_PAUSED_SEGMENT, status-pill.tsx).
+  { key: "tintPaused", color: TINT_PAUSED_SEGMENT },
 ] as const;
 type BarKey = (typeof SEGMENTS)[number]["key"];
 
@@ -104,16 +109,22 @@ type BarKey = (typeof SEGMENTS)[number]["key"];
  *   waiting    = waiting + tint done (the same rung: on the floor, nobody has it)
  *   tint       = tinting, plus the two tint-room states (never in the pool — they
  *                are the Tinting tab's — counted anyway so nothing falls through)
+ *                MINUS the paused ones (2026-10-28)
+ *   tintPaused = tinting bills whose operator paused them (tintPausedCount, a
+ *                sub-count of `tinting`) — so tint + tintPaused is the old tint
+ *                and the segments still sum to the row count
  */
 export function barCounts(rows: FloorBoardRow[]): Record<BarKey, number> {
   const c = countByStatus(rows);
+  const paused = tintPausedCount(rows);
   return {
     done: c.done + c.dispatched,
     direct: c.direct,
     needsCheck: c.needsCheck,
     picking: c.withPicker,
     waiting: c.waiting + c.tintDone,
-    tint: c.tinting + c.tintAssigned + c.tintPending,
+    tint: c.tinting - paused + c.tintAssigned + c.tintPending,
+    tintPaused: paused,
   };
 }
 

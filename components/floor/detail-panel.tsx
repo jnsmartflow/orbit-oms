@@ -20,7 +20,7 @@
 // surfaces — never a swallowed response.
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Building2, Truck, X } from "lucide-react";
+import { Building2, Pause, Truck, X } from "lucide-react";
 // TINT / BASE -- one owner for the word (components/picking/card-atoms.tsx).
 import { ColourWorkBadge } from "@/components/picking/card-atoms";
 import { HandBadge } from "@/components/shared/hand-badge";
@@ -43,7 +43,8 @@ import { InvoiceCountChip, InvoicePartChip } from "./bill-ref-cells";
 import { activityForInvoice, otherInvoices, scopeItems, walkIndex, type DetailKey } from "@/lib/floor/detail-scope";
 import type { FloorInvoiceRow } from "@/lib/floor/invoice-rows";
 import type { SplitView } from "@/lib/order-invoices/split";
-import { ON_HOLD_PILL_CLS } from "./status-pill";
+import { ON_HOLD_PILL_CLS, pillMeta, rowStatus } from "./status-pill";
+import { tintPhaseOf } from "@/lib/floor/tint-phase";
 import {
   DuplicateSoTag,
   DUP_SO_SOFT_BAR,
@@ -117,7 +118,7 @@ function directLoadedStatus(d: FloorDetail): { label: string; cls: string; truck
 function headerStatus(
   d: FloorDetail,
   source: FloorDetailSource,
-): { label: string; cls: string; truck?: true } {
+): { label: string; cls: string; truck?: true; pause?: true } {
   // HISTORY FIRST, and specifically ABOVE the `d.dispatchStatus === "hold"`
   // line below — that term reads the bill's CURRENT status, so without this a
   // bill put on hold last week would render "On hold" inside the record of a
@@ -160,6 +161,22 @@ function headerStatus(
     if (d.isChecked) return { label: "Done", cls: "bg-[#dcfce7] text-[#15803d]" };
     if (d.isDone) return { label: "Needs check", cls: "bg-[#fef3c7] text-[#b45309]" };
     if (d.isAssigned) return { label: "With picker", cls: "bg-tint-bg text-tint-700" };
+    // THE TINT ROOM (2026-10-28) — this arm used to fall straight to grey
+    // "Waiting", so a bill on the mixer (or paused) opened from the Floor tab
+    // read as untouched. Same rule as the row's pill: tintPhaseOf (with the
+    // "Base — No Tint" override getFloorBoard applies) → rowStatus → pillMeta,
+    // which owns the paused override. Nothing above this line changes.
+    // 2026-10-28: paused now has its own pill — do not revert to plain Tinting.
+    const tintSt = rowStatus({
+      isAssigned: false,
+      isDone: false,
+      isChecked: false,
+      tintPhase: d.colourWork === "base" ? null : tintPhaseOf(d.orderType, d.workflowStage),
+    });
+    if (tintSt !== "waiting") {
+      const m = pillMeta(tintSt, d.tint?.pause ?? null);
+      return m.paused ? { label: m.label, cls: m.cls, pause: true } : { label: m.label, cls: m.cls };
+    }
     return { label: "Waiting", cls: "bg-[#f3f4f6] text-[#6b7280]" };
   }
   // rail
@@ -825,6 +842,7 @@ function PanelBody({
           {d.isObdImport && <ObdBadge />}
           <span className={`inline-flex items-center rounded-[4px] px-2.5 py-1 text-[10.5px] font-semibold ${status.cls}`}>
             {status.truck && <Truck size={11} strokeWidth={2.4} className="mr-1 shrink-0" />}
+            {status.pause && <Pause size={11} strokeWidth={3} className="mr-1 shrink-0" />}
             {status.label}
           </span>
           {d.isKeyCustomer && <span className="rounded-[4px] bg-[#fffbeb] px-2 py-[3px] text-[10px] font-semibold text-[#b45309]">★ Key</span>}

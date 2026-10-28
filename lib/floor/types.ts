@@ -177,7 +177,11 @@ export interface FloorBoardRow extends PickingQueueRow {
    *                too: pause/resume write the assignment row and never the
    *                order's stage (CLAUDE_TINT §5), so the stage cannot tell a
    *                paused job from a running one and this value must not claim
-   *                to. See the pill labels for how that is handled honestly.
+   *                to. The pause is carried SEPARATELY on `tintPause` below,
+   *                which turns the pill into "Tint paused"; this phase stays
+   *                "tinting" so Billing Print and the Cancel form's stage
+   *                mapping (both keyed on it) are unchanged.
+   *                2026-10-28: paused now has its own pill — do not revert to plain Tinting.
    *   "done"     — a tint bill past all four tint stages. NOT "it was tinted"
    *                — it is "the tint room has no more claim on it", which is the
    *                question the floor is asking.
@@ -214,11 +218,13 @@ export interface FloorBoardRow extends PickingQueueRow {
    * relation rather than a SQL JOIN, so the board's own query plan is
    * byte-identical either way.
    *
-   * ⚠ EVERYTHING ELSE ABOUT THE TINT ROOM STAYS OFF THIS ROW. Operator, start,
-   * assignment status and shade progress are on the detail panel, which pays a
-   * round trip on click, and the operator name is on the Tinting tab's own
-   * tab-scoped route. This field is here only because a pill with no time beside
-   * three pills that have one reads as broken.
+   * ⚠ EVERYTHING ELSE ABOUT THE TINT ROOM STAYS OFF THIS ROW — except the
+   * pause (`tintPause` below, 2026-10-28), whose `status` + `lastPausedAt`
+   * ride on this same select at no extra statement. Operator, start and shade
+   * progress are on the detail panel, which pays a round trip on click, and the
+   * operator name is on the Tinting tab's own tab-scoped route. This field is
+   * here only because a pill with no time beside three pills that have one
+   * reads as broken.
    *
    * ⚠ NO FALLBACK. When it is null the pill renders no time. `order_status_logs`
    * records the stage change out of `tinting_in_progress` and could stand in,
@@ -228,6 +234,21 @@ export interface FloorBoardRow extends PickingQueueRow {
    * null case is rare by construction rather than by hope.
    */
   tintCompletedAt: string | null;
+  /**
+   * The operator's CURRENT pause on this bill — null unless the bill is at
+   * `tinting_in_progress` AND its latest whole-OBD assignment is
+   * TINT_STATUS_PAUSED (2026-10-28). Turns the solid pink Tinting pill into the
+   * amber "Tint paused" one; the status itself stays `tinting`, so every count
+   * and bar is unchanged.
+   *
+   * The pause is the assignment's OPEN `tint_pause_events` row (resumedAt null,
+   * newest pausedAt) — the same row resume/route.ts closes. Read in ONE batched
+   * query after the board fetch, and only when some row is paused.
+   *
+   * 🔴 THE STAGE CHECK IS THE POINT. A leftover `paused` assignment sits on a
+   * long-dispatched bill; only `tinting_in_progress` lets a pause through.
+   */
+  tintPause: FloorTintPause | null;
   smu: string | null;
   billToName: string | null;
   // The ship-to PAIR, mirroring FloorRailCard above: `customerName` is the
@@ -816,6 +837,27 @@ export interface FloorDetailTint {
    *  splits were all cancelled also reports 0. The same trap the retired
    *  TintState carried this flag for. */
   hasSplits: boolean;
+  /** tint_assignments.lastPausedAt — set by pause, nulled by resume. */
+  lastPausedAt: string | null;
+  /** The OPEN pause (2026-10-28) — same rule and shape as FloorBoardRow.tintPause.
+   *  Null unless the bill is at tinting_in_progress and the assignment is paused. */
+  pause: FloorTintPause | null;
+}
+
+/**
+ * One operator pause, as Floor shows it (2026-10-28) — the assignment's OPEN
+ * `tint_pause_events` row (resumedAt null, newest pausedAt). `reason` is the
+ * raw value; render it through humaniseReason (lib/tint/pause-reasons.ts).
+ */
+export interface FloorTintPause {
+  /** tint_pause_events.pauseReason — raw, e.g. "lunch_break". */
+  reason: string;
+  /** tint_pause_events.pauseRemark — null when the operator typed none. */
+  remark: string | null;
+  /** The operator who paused it (tint_pause_events.operatorId → users.name). */
+  by: string | null;
+  /** tint_pause_events.pausedAt, ISO (UTC). */
+  at: string;
 }
 
 export interface FloorDetail {
@@ -852,18 +894,19 @@ export interface FloorDetail {
    * has never been assigned (2026-09-14).
    *
    * 🔴 THIS IS WHY THE BOARD ROW DOES NOT CARRY THEM. Operator, start and finish
-   * all live on `tint_assignments`, which the board query deliberately does not
-   * read: the rail feed that used to was deleted on 2026-09-13 for costing
-   * 772 ms and 25 statements per call on a payload nothing rendered. Reading it
-   * here costs ONE round trip, ON CLICK — not on every board load and not on
-   * every 30-second poll. The pill says which state; the panel says who, when
-   * and how far.
+   * all live on `tint_assignments`, which the board query reads only narrowly —
+   * `completedAt`, `status` and `lastPausedAt` of the latest whole-OBD row, plus
+   * one batched pause-event read when something is paused. The rail feed that
+   * read the rest was deleted on 2026-09-13 for costing 772 ms and 25 statements
+   * per call on a payload nothing rendered. Reading it here costs ONE round
+   * trip, ON CLICK — not on every board load and not on every 30-second poll.
+   * The pill says which state; the panel says who, when and how far.
    *
-   * ⚠ `status` IS THE ASSIGNMENT'S, NOT THE ORDER'S, and that is the whole
-   * reason it is here. Pause and resume write the assignment row and never the
-   * order's stage (CLAUDE_TINT §5), so `workflowStage` cannot tell a paused job
-   * from a running one and neither can the pill. This field can, and it is the
-   * only place on the floor that can.
+   * ⚠ `status` IS THE ASSIGNMENT'S, NOT THE ORDER'S. Pause and resume write the
+   * assignment row and never the order's stage (CLAUDE_TINT §5), so
+   * `workflowStage` cannot tell a paused job from a running one. This field and
+   * the board row's `tintPause` can.
+   * 2026-10-28: paused now has its own pill — do not revert to plain Tinting.
    */
   tint: FloorDetailTint | null;
 

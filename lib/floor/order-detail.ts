@@ -19,6 +19,7 @@ import { getColourWorkByOrder } from "@/lib/picking/colour-work-query";
 // The Sales Officer — the board's own resolver, so the row and the panel agree.
 import { salesOfficerByOrder } from "@/lib/floor/queries";
 import { countActiveOwnCopies, countBillingCopiesVisible } from "@/lib/ship-to/copies-server";
+import { getOpenTintPauses, isPausedTintCandidate } from "@/lib/floor/tint-pause";
 import type { FloorDetail, FloorActivityEntry, FloorDetailLine, FloorDetailTint } from "@/lib/floor/types";
 
 const PROJECT_SMUS = new Set(["Retail Offtake", "Decorative Projects"]);
@@ -136,14 +137,17 @@ export async function getOrderDetail(orderId: number): Promise<FloorDetail | nul
 
   // ── THE TINT BLOCK (2026-09-14) ───────────────────────────────────────────
   //
-  // 🔴 THE ONLY PLACE ON THE FLOOR THAT READS `tint_assignments`, AND IT READS
-  // IT ON CLICK. The board query does not touch that table and must not: the
-  // rail feed that used to was deleted on 2026-09-13 for costing 772 ms and 25
-  // statements on every board load and every 30-second poll, for a payload
-  // nothing rendered. The four pink pills say WHICH state a bill is in from
-  // `orders.workflowStage` alone; who has it, when they started and how many
-  // shades are done cost a round trip, so they are paid for here, once, by
-  // someone who asked.
+  // 🔴 THE ONLY PLACE ON THE FLOOR THAT READS THE WHOLE TINT STORY, AND IT
+  // READS IT ON CLICK. The board query reads `tint_assignments` only narrowly
+  // (completedAt + status + lastPausedAt of the latest whole-OBD row, and the
+  // open pause event when paused); the rail feed that read the rest was deleted
+  // on 2026-09-13 for costing 772 ms and 25 statements on every board load and
+  // every 30-second poll, for a payload nothing rendered. Who has it, when they
+  // started and how many shades are done cost a round trip, so they are paid
+  // for here, once, by someone who asked.
+  // 2026-10-28: paused now has its own pill — do not revert to plain Tinting.
+  //
+  // ⚠ A PAUSE ADDS ONE MORE AWAIT, and only when the job is paused.
   //
   // ⚠ TWO SEQUENTIAL AWAITS, GUARDED BY `orderType`. A plain order — the large
   // majority of every panel opened — issues NEITHER. Never $transaction
@@ -160,13 +164,21 @@ export async function getOrderDetail(orderId: number): Promise<FloorDetail | nul
           where: { orderId, splitId: null },
           orderBy: { createdAt: "desc" },
           select: {
+            id: true,
             status: true,
             createdAt: true,
             startedAt: true,
             completedAt: true,
+            lastPausedAt: true,
             assignedTo: { select: { name: true } },
           },
         })
+      : null;
+  // The OPEN pause (2026-10-28) — the board's own rule (lib/floor/tint-pause.ts),
+  // so the panel and the pill can never disagree. Queries only when paused.
+  const tintPause =
+    tintAssignment && isPausedTintCandidate(order.workflowStage, tintAssignment.status)
+      ? (await getOpenTintPauses([tintAssignment.id])).get(tintAssignment.id) ?? null
       : null;
   const tintSplits =
     order.orderType === "tint"
@@ -204,6 +216,8 @@ export async function getOrderDetail(orderId: number): Promise<FloorDetail | nul
           // The RAW array — cancelled included. An all-cancelled split order
           // reports shadesTotal 0 and would otherwise pass for a full OBD.
           hasSplits: tintSplits.length > 0,
+          lastPausedAt: tintAssignment?.lastPausedAt?.toISOString() ?? null,
+          pause: tintPause,
         }
       : null;
 

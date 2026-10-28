@@ -55,6 +55,13 @@ export const TINT_ASSIGNMENT_DEAD_STATUSES = [
 /** The finished value. NOT `"done"` — that literal has never existed. */
 export const TINT_STATUS_DONE = "tinting_done";
 
+/**
+ * An operator's paused job (app/api/tint/operator/pause). Whole-OBD only — the
+ * route rejects splits. The order's stage stays `tinting_in_progress`, so this
+ * row is the ONLY place a pause is visible (Floor's "Tint paused" pill reads it).
+ */
+export const TINT_STATUS_PAUSED = "paused";
+
 /** Whole-OBD and split cancellation. */
 export const TINT_STATUS_CANCELLED = "cancelled";
 

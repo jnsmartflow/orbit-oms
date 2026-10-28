@@ -8,9 +8,10 @@
 // Also exports the row→status mapping and count helper reused by the progress
 // bar, slot bands and route rows so the four surfaces can never disagree.
 
-import { Check, Truck } from "lucide-react";
+import { Check, Pause, Truck } from "lucide-react";
 import { DUP_SO_BADGE_CLASS } from "@/components/shared/duplicate-so-tag";
-import type { FloorBoardRow } from "@/lib/floor/types";
+import type { FloorBoardRow, FloorTintPause } from "@/lib/floor/types";
+import { humaniseReason } from "@/lib/tint/pause-reasons";
 import { loadLitres } from "@/lib/orders/gift";
 
 export type FloorStatus =
@@ -261,14 +262,14 @@ const META: Record<FloorStatus, { label: string; cls: string }> = {
   },
   tintAssigned: {
     // ⚠ "With operator", MIRRORING "With picker" ONE COLUMN OVER — the same
-    // sentence shape for the same fact, a named person is holding it.
+    // sentence shape for the same fact, a named person is holding it. This is
+    // the `tint_assigned` stage ONLY: assigned, not started.
     //
-    // 🔴 IT IS ALSO THE HONEST WORD FOR A PAUSED JOB. Pause is written to the
-    // assignment row and never to the order's stage (CLAUDE_TINT §5), so a
-    // paused bill is indistinguishable from a running one at `tinting_in_
-    // progress` — the board cannot know. "With operator" stays true either way;
-    // it claims possession, not activity. Whether the machine is running is on
-    // the detail panel, which reads the assignment row.
+    // 🔴 A PAUSED JOB DOES NOT WEAR THIS. Pause leaves the order at
+    // `tinting_in_progress`, so before 2026-10-28 a paused bill wore the solid
+    // "Tinting" pill (this comment wrongly said "With operator"). It now wears
+    // TINT_PAUSED_META below, driven by the row's `tintPause`.
+    // 2026-10-28: paused now has its own pill — do not revert to plain Tinting.
     label: "With operator",
     cls: "bg-[#fce7f3] text-[#be185d] dark:bg-[#3d1229] dark:text-[#f9a8d4]",
   },
@@ -312,6 +313,89 @@ const TICKED: readonly FloorStatus[] = ["tintDone"];
 // waiting grey to read at a glance, quiet enough not to shout.
 const HELD_BACK_META = { label: "At desk", cls: "bg-[#e2e8f0] text-[#475569]" };
 
+// ── The PAUSED reading of `tinting` (2026-10-28) ────────────────────────────
+// An operator paused the job: the order is still at `tinting_in_progress`, but
+// no machine is running. Same shape as "At desk" above — A PROP ON THE PILL,
+// NOT A NEW `FloorStatus` — because a paused bill is still the tint room's on
+// every count: the bars, route cards, Billing Print chips and `stillTinting`
+// all keep reading `tinting`, and must.
+//
+// AMBER, per TINT §1.4 (paused → the "needs check" wash, so a colour means the
+// same on the Tint Manager board and here). Amber is ALSO "Needs check" on this
+// very column, so the PAUSE GLYPH and the word "Tint" are what tell the two
+// apart — never remove either. Owner decision 2026-10-28.
+// 2026-10-28: paused now has its own pill — do not revert to plain Tinting.
+export const TINT_PAUSED_META = { label: "Tint paused", cls: "bg-[#fef3c7] text-[#b45309]" };
+/**
+ * The pill's text/glyph orange as a solid BAR SEGMENT (2026-10-28) — the SAME
+ * value as `text-[#b45309]` in the class above (a Tailwind class cannot be
+ * built from a variable, so the two are kept equal by hand, like
+ * ON_HOLD_PILL_CLS / ON_HOLD_SEGMENT). Deep orange, deliberately far from the
+ * pale needs-check bar yellow (NEEDS_CHECK_SEGMENT, #fbbf24).
+ */
+export const TINT_PAUSED_SEGMENT = "#b45309";
+
+/**
+ * How many of `rows` are "Tint paused" — a DERIVED SUB-COUNT of the `tinting`
+ * bucket, never a bucket of its own (2026-10-28). Bars subtract it from their
+ * tinting segment and draw it beside; StatusCounts, the tabs, stillTinting and
+ * Billing Print never see it. Asks pillMeta, the one owner of the override.
+ */
+export function tintPausedCount(rows: Array<StatusInput & Partial<Pick<FloorBoardRow, "tintPause">>>): number {
+  let n = 0;
+  for (const r of rows) if (pillMeta(rowStatus(r), r.tintPause ?? null).paused) n++;
+  return n;
+}
+
+/**
+ * The label + wash a status wears — the ONE place the paused override is
+ * decided, shared by StatusPill and the detail panel's header (detail-panel.tsx
+ * headerStatus) so the two can never disagree. `paused` is true only on
+ * "tinting" with an open pause.
+ */
+export function pillMeta(
+  status: FloorStatus,
+  tintPause: FloorTintPause | null = null,
+): { label: string; cls: string; paused: boolean } {
+  if (status === "tinting" && tintPause !== null) return { ...TINT_PAUSED_META, paused: true };
+  return { ...META[status], paused: false };
+}
+
+const IST_DAY = (d: Date) => d.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+
+/**
+ * When a pause began, in IST (the DB stores UTC). "15:02" today; "26 Oct 15:02"
+ * on an earlier IST day, so an overnight pause is never read as this afternoon.
+ */
+export function formatTintPauseAt(iso: string, nowMs: number = Date.now()): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const time = d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Kolkata" });
+  if (IST_DAY(d) === IST_DAY(new Date(nowMs))) return time;
+  const day = d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", timeZone: "Asia/Kolkata" });
+  return `${day} ${time}`;
+}
+
+/** How long it has been paused: "12m", "2h 05m", "1d 3h". Wall clock since pausedAt. */
+export function formatTintPausedFor(iso: string, nowMs: number = Date.now()): string {
+  const from = new Date(iso).getTime();
+  if (Number.isNaN(from)) return "";
+  const mins = Math.max(0, Math.floor((nowMs - from) / 60000));
+  if (mins < 60) return `${mins}m`;
+  const h = Math.floor(mins / 60);
+  if (h < 24) return `${h}h ${String(mins % 60).padStart(2, "0")}m`;
+  return `${Math.floor(h / 24)}d ${h % 24}h`;
+}
+
+/** The hover line: Paused · Lunch break · "remark" · by Ramesh · 15:02 */
+export function tintPauseTitle(p: FloorTintPause, nowMs: number = Date.now()): string {
+  const parts = ["Paused", humaniseReason(p.reason)];
+  if (p.remark) parts.push(`"${p.remark}"`);
+  if (p.by) parts.push(`by ${p.by}`);
+  parts.push(formatTintPauseAt(p.at, nowMs));
+  return parts.join(" · ");
+}
+
 // Radius 4px (design §7.6 — a pill, not a capsule). Time rides inside after a
 // faded dot; two-char units keep the pill from growing the column (§7.7).
 // ⚠ `onRed` — on a duplicate-SO row (#dc2626 fill) all four pale washes above
@@ -326,10 +410,19 @@ export function StatusPill({
   onRed = false,
   heldBack = false,
   person,
+  tintPause = null,
 }: {
   status: FloorStatus;
   time?: string | null;
   onRed?: boolean;
+  /**
+   * The row's open tint pause (FloorBoardRow.tintPause, 2026-10-28). Renders
+   * TINT_PAUSED_META + a pause glyph + the hover line instead of "Tinting".
+   * ⚠ Applied only when `status` is "tinting" — the one status a pause can sit
+   * on — so a stale pause on a row that has moved on can never relabel it.
+   * Defaulted, so every call site that does not pass it is byte-identical.
+   */
+  tintPause?: FloorTintPause | null;
   /** Floor-only: shows picker (with picker / needs check) or checker (done) first name; old label goes to tooltip. Statuses unchanged. */
   person?: string | null;
   /**
@@ -352,17 +445,24 @@ export function StatusPill({
   // header yet kept its "Tint done" pill: the header said one thing, the row
   // another. The caller has already asked isHeldBack(); a second, narrower test
   // here is the drift. One rule, one place.
-  const m = heldBack ? HELD_BACK_META : META[status];
+  const base = pillMeta(status, tintPause);
+  const paused = base.paused && !heldBack;
+  const m = heldBack ? HELD_BACK_META : base;
   // First name only. Empty/absent → undefined, so the pill renders exactly as
   // before (no title, the label as plain text).
   const firstName = person?.trim().split(/\s+/)[0] || undefined;
+  // A paused pill always carries the hover line; otherwise unchanged.
+  const title = paused && tintPause ? tintPauseTitle(tintPause) : firstName ? m.label : undefined;
   return (
     <span
       className={`inline-flex items-center rounded-[4px] px-2 py-[2px] text-[10px] font-semibold ${
         onRed ? DUP_SO_BADGE_CLASS : m.cls
       }`}
-      title={firstName ? m.label : undefined}
+      title={title}
     >
+      {/* The pause glyph — kept on a duplicate row too, like the truck: on the
+          shared white pill it is what tells "Tint paused" from "Needs check". */}
+      {paused && <Pause size={10} strokeWidth={3} className="mr-1 shrink-0" />}
       {/* The tick on Tint done — see TICKED. `strokeWidth` 3 because at 10px a
           default-weight check reads as a smudge. */}
       {TICKED.includes(status) && !onRed && (

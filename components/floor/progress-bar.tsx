@@ -22,7 +22,7 @@
 // mockup's lighter segment tones (#22c55e/#fbbf24/#a78bfa/#d1d5db), distinct
 // from the pill text/bg colours (status-pill.tsx) — do not merge the two sets.
 
-import type { StatusCounts } from "./status-pill";
+import { TINT_PAUSED_SEGMENT, type StatusCounts } from "./status-pill";
 
 // ── EIGHT SEGMENTS SINCE 2026-09-13 ─────────────────────────────────────────
 // The three tint buckets joined StatusCounts with the tint pills, and the rule
@@ -57,7 +57,7 @@ export const NEEDS_CHECK_SEGMENT = "#fbbf24";
 export const DIRECT_SEGMENT = "#1B1826";
 
 const SEGMENTS: Array<{
-  key: "dispatched" | "done" | "direct" | "needsCheck" | "withPicker" | "waiting" | "tintDone" | "tinting" | "tintAssigned" | "tintPending";
+  key: "dispatched" | "done" | "direct" | "needsCheck" | "withPicker" | "waiting" | "tintDone" | "tinting" | "tintPaused" | "tintAssigned" | "tintPending";
   color: string;
 }> = [
   { key: "dispatched", color: "#94a3b8" },
@@ -71,16 +71,31 @@ const SEGMENTS: Array<{
   { key: "waiting", color: "#d1d5db" },
   { key: "tintDone", color: "#fbcfe8" },
   { key: "tinting", color: "#db2777" },
+  // Tint paused (2026-10-28) — right after tinting, carved OUT of it. NOT a
+  // StatusCounts key: the caller passes `tintPaused` (tintPausedCount,
+  // status-pill.tsx) and the tinting segment shrinks by the same amount, so
+  // the bar still fills exactly. The pill's own orange.
+  { key: "tintPaused", color: TINT_PAUSED_SEGMENT },
   { key: "tintAssigned", color: "#f9a8d4" },
   { key: "tintPending", color: "#fce7f3" },
 ];
 
-export function ProgressBar({ counts, className = "" }: { counts: StatusCounts; className?: string }) {
+export function ProgressBar({
+  counts,
+  className = "",
+  tintPaused = 0,
+}: {
+  counts: StatusCounts;
+  className?: string;
+  /** How many of `counts.tinting` are paused. Omitted → 0, byte-identical bar. */
+  tintPaused?: number;
+}) {
   const total = counts.total || 1;
+  const paused = Math.min(tintPaused, counts.tinting);
   return (
     <span className={`flex h-[7px] overflow-hidden rounded-[4px] bg-[#e5e7eb] ${className}`}>
       {SEGMENTS.map((s) => {
-        const n = counts[s.key];
+        const n = s.key === "tintPaused" ? paused : s.key === "tinting" ? counts.tinting - paused : counts[s.key];
         if (!n) return null;
         return <span key={s.key} style={{ width: `${(n / total) * 100}%`, background: s.color }} />;
       })}

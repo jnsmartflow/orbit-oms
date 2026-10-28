@@ -15,7 +15,9 @@ export const dynamic = "force-dynamic";
  *   count  — COUNT(*) of live-floor orders (arrivals/departures move it)
  *   latest — the LATER of MAX(orders.updatedAt) (in-place edits move it; hits
  *            orders_updatedAt_idx) and MAX(pick_delete_decisions.updatedAt)
- *            (a Billing All OK / Undo moves the same-SO tag, not an order).
+ *            (a Billing All OK / Undo moves the same-SO tag, not an order) and
+ *            MAX(tint_assignments.updatedAt) over bills at tinting_in_progress
+ *            (a tint pause / resume moves only that row — 2026-10-28).
  *
  * The WHERE comes from getFloorLiveMarkerWhere() — the SAME predicate
  * getFloorBoard's live branch renders (floorLiveBaseWhere + hide) — so the marker
@@ -50,8 +52,24 @@ export async function GET(): Promise<NextResponse> {
   // The predicate above is untouched — marker and board still watch ONE set.
   const decisionsLatest = await getDecisionsLatest();
 
+  // …and the TINT ASSIGNMENT clock (2026-10-28), for the "Tint paused" pill.
+  // Pause / resume write ONLY tint_assignments (app/api/tint/operator/pause|
+  // resume — zero orders.update), so the orders clock above never moves for
+  // them. Scoped to bills still at tinting_in_progress, the only stage a pause
+  // shows on — the same scoping lib/picking/tint-workload.ts getTintWorkloadMarker
+  // uses. The predicate above is untouched. A bill leaving the stage moves the
+  // orders clock itself, so dropping out of this scope is still seen.
+  const tintAgg = await prisma.tint_assignments.aggregate({
+    where: { order: { workflowStage: "tinting_in_progress", isRemoved: false } },
+    _max: { updatedAt: true },
+  });
+  const orderOrDecisions = laterIso(agg._max.updatedAt, decisionsLatest);
+
   return NextResponse.json(
-    { count: agg._count, latest: laterIso(agg._max.updatedAt, decisionsLatest) },
+    {
+      count: agg._count,
+      latest: laterIso(orderOrDecisions ? new Date(orderOrDecisions) : null, tintAgg._max.updatedAt),
+    },
     { headers: { "Cache-Control": "no-store, max-age=0" } },
   );
 }

@@ -23,6 +23,7 @@ import { getISTDayRange } from "@/lib/dates";
 import { sortFloorRows, compareCancelledRows, compareHoldRows } from "@/lib/floor/sort";
 import { resolveFloorDisplayDate } from "@/lib/floor/format";
 import { tintPhaseOf } from "@/lib/floor/tint-phase";
+import { getOpenTintPauses, isPausedTintCandidate } from "@/lib/floor/tint-pause";
 import {
   STAGE_LADDER,
   PICKING_OPEN_STAGES,
@@ -1056,11 +1057,15 @@ const FLOOR_BOARD_INCLUDE = {
   // latest-first + take 1 is the WHOLE-ORDER completion, the same boundary the
   // detail panel draws. Operator, start and shade progress stay OFF this query
   // — they are on the panel and on the Tinting tab's own route.
+  //
+  // + `id`, `status`, `lastPausedAt` (2026-10-28) — the SAME row, so still one
+  // statement: they feed `tintPause` (lib/floor/tint-pause.ts), whose own pause
+  // event read runs only when a row is paused.
   tintAssignments: {
     where: { splitId: null },
     orderBy: { createdAt: "desc" },
     take: 1,
-    select: { completedAt: true },
+    select: { id: true, completedAt: true, status: true, lastPausedAt: true },
   },
   pickAssignment: {
     select: {
@@ -1322,6 +1327,16 @@ export async function getFloorBoard(
     orders.map((o) => ({ orderId: o.id, smu: o.smu, orderType: o.orderType, manualTintEntry: o.manualTintEntry })),
   );
 
+  // TINT PAUSED (2026-10-28) — same post-fetch contract. The candidates come off
+  // the row already fetched (stage + latest whole-OBD assignment status); the
+  // pause event read runs only when one is paused, which is ONE query for the page.
+  const pausedAssignmentIds: number[] = [];
+  for (const o of orders) {
+    const ta = o.tintAssignments[0];
+    if (ta && isPausedTintCandidate(o.workflowStage, ta.status)) pausedAssignmentIds.push(ta.id);
+  }
+  const openPauseByAssignment = await getOpenTintPauses(pausedAssignmentIds);
+
   // ── The bill's TRIP (2026-09-09) ─────────────────────────────────────────
   //
   // TWO batched reads, both keyed on an `id IN (…)` list — drops first, then the
@@ -1498,6 +1513,12 @@ export async function getFloorBoard(
       // has not finished — the pill then renders no time rather than a
       // borrowed one (see the field on FloorBoardRow).
       tintCompletedAt: order.tintAssignments[0]?.completedAt?.toISOString() ?? null,
+      // The open pause, or null — the batch above (lib/floor/tint-pause.ts).
+      // A candidate with no open event (none live 2026-10-28) reads as not paused.
+      tintPause:
+        order.tintAssignments[0] && isPausedTintCandidate(order.workflowStage, order.tintAssignments[0].status)
+          ? openPauseByAssignment.get(order.tintAssignments[0].id) ?? null
+          : null,
       // Floor does not render product families — skip the catalog join; empties
       // are honest "not computed / not applicable" for this board.
       families: [],
