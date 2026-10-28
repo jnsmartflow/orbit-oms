@@ -90,17 +90,19 @@ const IN_TINTING: readonly FloorStatus[] = ["tintPending", "tintAssigned", "tint
  * written as two independent conditions; this is the include, and `!` of it is
  * the exclude.
  *
- * ⚠ `tinting` IS DELIBERATELY NOT HERE, AND THAT IS NOT AN OVERSIGHT. A bill on
- * the mixer LEAVES this tab and appears on Floor wearing the solid pink Tinting
- * pill: it is coming soon, and the planner is the person who needs to see it.
- * Owner ruling 2026-09-14. `rowStatus` does have a value for it, so the omission
- * is a choice the code can state rather than a gap it fell into — widening this
- * set would silently pull mixing bills off the planner's board.
+ * ⚠ `tinting` IS HERE — a bill on the mixer AND a paused one (the paused
+ * reading is a prop on `tinting`, never its own status, so this stays a pure
+ * status test). Until 2026-10-28 mixing bills sat on Floor (owner ruling
+ * 2026-09-14); the owner reversed that. The planner still puts them on trucks:
+ * the add-to-trip bar and the rail picker work on the Tinting tab too
+ * (floor-page.tsx `barVisible` / `addMode`).
+ * 2026-10-28 PM: all in-tint bills live on Tinting tab; add-to-trip works there.
+ * Floor = can go out now. Do not revert.
  *
- * ⚠ `tintDone` IS NOT HERE EITHER. Its shades are finished, it is pickable, and
- * it belongs on Floor with everything else anyone can act on.
+ * ⚠ `tintDone` IS NOT HERE. Its shades are finished, it is pickable, and it
+ * belongs on Floor with everything else anyone can act on.
  */
-const TINT_ROOM: readonly FloorStatus[] = ["tintPending", "tintAssigned"];
+const TINT_ROOM: readonly FloorStatus[] = ["tintPending", "tintAssigned", "tinting"];
 
 /**
  * Is this row the Tinting tab's, rather than the Floor tab's?

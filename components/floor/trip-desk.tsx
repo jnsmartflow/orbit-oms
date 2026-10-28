@@ -763,10 +763,14 @@ export function TripDesk({
   // in through `floorBoardWhere` arm 2 and is a row like any other — no
   // predicate, no arm, no query was added to build this tab. It is a `filter`.
   //
-  // WHAT IT HOLDS: tint bills NOT YET BEING MIXED — `pending_tint_assignment`
-  // and `tint_assigned`. A bill LEAVES this tab the moment mixing starts and
-  // appears on Floor wearing the solid pink Tinting pill, because at that point
-  // it is coming soon and the planner should be looking at it.
+  // WHAT IT HOLDS: every tint bill NOT YET TINT DONE — `pending_tint_assignment`,
+  // `tint_assigned` and `tinting_in_progress` (mixing, and paused). A bill
+  // reaches Floor only at tint done. Until 2026-10-28 a mixing bill moved to
+  // Floor; the owner reversed that. Bills here are tickable and the add-to-trip
+  // bar / rail picker work on this tab (floor-page.tsx `deskTab`), so the
+  // planner can still put an in-tint bill on a truck.
+  // 2026-10-28 PM: all in-tint bills live on Tinting tab; add-to-trip works
+  // there. Floor = can go out now. Do not revert.
   //
   // ⚠ THE STATUS ASKED IS rowStatus, NOT `tintPhase` DIRECTLY. The phase says
   // where the tint room is; the status says whether anyone downstream has taken
@@ -796,9 +800,9 @@ export function TripDesk({
       {tintingTabRows.length === 0 ? (
         <div className="px-5 py-14 text-center">
           <div className="text-[28px] leading-none text-gray-300">○</div>
-          <h4 className="mt-2 text-[13px] font-semibold text-gray-900">Nothing waiting on tint</h4>
+          <h4 className="mt-2 text-[13px] font-semibold text-gray-900">Nothing in tint</h4>
           <p className="mt-1.5 text-[11.5px] leading-relaxed text-gray-400">
-            Every tint bill is either being mixed or finished. Both are on the Floor tab.
+            No tint bill is waiting, with an operator, mixing or paused. Tint-done bills are on the Floor tab.
           </p>
         </div>
       ) : tintPivot === "route" ? (
@@ -1283,9 +1287,11 @@ export function TripDesk({
   // heading landing somewhere new on a tab change. Switching tabs must change
   // WHAT IS IN THE TABLE and never where the table is.
   //
-  // On the non-Floor tabs the rail is informational: nothing on those tabs is
-  // addable to a trip anyway, so it needs no special rule, no disabled state
-  // and no second code path.
+  // On Floor AND Tinting the rail is the add-to-trip picker while bills are
+  // ticked (floor-page.tsx `deskTab` / `addMode`). On the other tabs it is
+  // informational: they own their own selection, so `addMode` is false there.
+  // 2026-10-28 PM: all in-tint bills live on Tinting tab; add-to-trip works
+  // there. Floor = can go out now. Do not revert.
   const body: ReactNode =
     activeTab === "tinting" ? tintingBody : activeTab === "floor" ? middle : sideBody;
 

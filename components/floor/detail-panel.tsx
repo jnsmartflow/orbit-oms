@@ -162,8 +162,9 @@ function headerStatus(
     if (d.isDone) return { label: "Needs check", cls: "bg-[#fef3c7] text-[#b45309]" };
     if (d.isAssigned) return { label: "With picker", cls: "bg-tint-bg text-tint-700" };
     // THE TINT ROOM (2026-10-28) — this arm used to fall straight to grey
-    // "Waiting", so a bill on the mixer (or paused) opened from the Floor tab
-    // read as untouched. Same rule as the row's pill: tintPhaseOf (with the
+    // "Waiting", so a bill on the mixer (or paused) opened from the board read
+    // as untouched. 2026-10-28 PM: all in-tint bills live on Tinting tab;
+    // add-to-trip works there. Floor = can go out now. Do not revert. Same rule as the row's pill: tintPhaseOf (with the
     // "Base — No Tint" override getFloorBoard applies) → rowStatus → pillMeta,
     // which owns the paused override. Nothing above this line changes.
     // 2026-10-28: paused now has its own pill — do not revert to plain Tinting.

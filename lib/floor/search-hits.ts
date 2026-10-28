@@ -15,9 +15,11 @@ import type { FloorCancelledRow, FloorSearchHit, FloorSearchPart, FloorSearchTar
 import { matchedInvoiceTargetOf, partTargetOf } from "@/lib/floor/search";
 import { loadGroupsOf } from "@/lib/order-invoices/load-plan";
 
-/** The Tinting tab's stages — a tint bill not yet on the mixer (isTintRoomRow,
- *  components/floor/status-pill.tsx). On the mixer it is a Floor row. */
-const TINT_ROOM_STAGES = ["pending_tint_assignment", "tint_assigned"];
+/** The Tinting tab's stages — every tint bill not yet tint done, on the mixer
+ *  and paused included (isTintRoomRow, components/floor/status-pill.tsx).
+ *  2026-10-28 PM: all in-tint bills live on Tinting tab; add-to-trip works
+ *  there. Floor = can go out now. Do not revert. */
+const TINT_ROOM_STAGES = ["pending_tint_assignment", "tint_assigned", "tinting_in_progress"];
 
 /** Every bill one full number names, as the Floor search box jumps to it. */
 export async function getFloorSearchHits(term: BillLookupTerm): Promise<FloorSearchHit[]> {

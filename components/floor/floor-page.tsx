@@ -3746,7 +3746,14 @@ export function FloorPage({
   // the bar always was). Live-only machinery (marker, feed, carry) is not.
   const pastDayEdits = viewMode === "history" && histDate !== null && canEdit;
   const tripEditsOn = viewMode === "live" || pastDayEdits;
-  const barVisible = topTab === "floor" && tripEditsOn && selection.size > 0 && data !== null;
+  // THE TWO DESK TABS (2026-10-28 PM). The Tinting tab holds every in-tint bill
+  // now, and the planner still puts those on trucks — so the add-to-trip bar
+  // and the rail picker work there as on Floor. Never on On hold / Cancel & CI
+  // / Challan orders, which own their own selection.
+  // 2026-10-28 PM: all in-tint bills live on Tinting tab; add-to-trip works
+  // there. Floor = can go out now. Do not revert.
+  const deskTab = topTab === "floor" || topTab === "tinting";
+  const barVisible = deskTab && tripEditsOn && selection.size > 0 && data !== null;
   // The menu lives on the bar, so it closes when the bar goes (ticks cleared,
   // tab changed, History) — never left "open" to reappear with the next tick.
   useEffect(() => {
@@ -3770,7 +3777,12 @@ export function FloorPage({
   //
   // The trip mode's Remove posts per trip anyway (removeSelectionFromTrips
   // groups by tripNumber), so a selection spanning stops is ordinary.
-  const barMode: "pool" | "trip" = railSelection.kind === "trip" ? "trip" : "pool";
+  //
+  // ⚠ THE TINTING TAB IS ALWAYS POOL (2026-10-28 PM). Its table does not change
+  // with the rail — a trip lit on the rail does not put that trip's bills on
+  // screen there — so "what comes off this load" has nothing to read off, and
+  // the ticks there always mean "where does this go".
+  const barMode: "pool" | "trip" = topTab === "floor" && railSelection.kind === "trip" ? "trip" : "pool";
   /**
    * THE RAIL IS THE PICKER while pool bills are ticked (2026-09-16, owner's
    * add-to-trip design). Derived from the two things already on screen — no new
@@ -3780,7 +3792,7 @@ export function FloorPage({
    * and its bar says so; turning the rail into a picker there would offer to
    * add bills that are already on a trip.
    */
-  const addMode = barMode === "pool" && selection.size > 0 && addingToTripId === null;
+  const addMode = deskTab && barMode === "pool" && selection.size > 0 && addingToTripId === null;
   /**
    * The trip being filled, read off the live rail feed — so the band-s counts
    * and the button-s name are the trip as it is now, not as it was when "+ Add
@@ -4188,7 +4200,8 @@ export function FloorPage({
 
   // ── THE TINTING TAB'S COUNT AND ITS OPERATOR LOOKUP ──────────────────────
   //
-  // The tab holds tint bills NOT YET BEING MIXED. Counted off `rowStatus`, the
+  // The tab holds every tint bill NOT YET TINT DONE — waiting, with operator,
+  // mixing and paused (2026-10-28 PM; mixing sat on Floor before). Counted off `rowStatus`, the
   // one owner, so the badge and the rows behind it cannot disagree — and off
   // EVERY row rather than the due slice, because a tint bill promised for
   // Saturday is exactly what "what is coming" means.

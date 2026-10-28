@@ -128,7 +128,9 @@ function partnerWhere(
       const row = rowById.get(p.orderId);
       if (!row) return { word: "not on board", warn: true };
       const selfTint = isTintRoomRow(self);
-      // The tabs' own split (isTintRoomRow), plus a bill on the mixer.
+      // The tabs' own split (isTintRoomRow). Since 2026-10-28 PM it holds a
+      // bill on the mixer too, so stillTinting adds nothing here — kept so the
+      // word cannot drift if the tab rule ever narrows again.
       if (!selfTint && (isTintRoomRow(row) || stillTinting(row))) return { word: "at tint", warn: true };
       if (selfTint && !isTintRoomRow(row)) return { word: "on Floor", warn: true };
       if (row.tripNumber && row.tripNumber !== self.tripNumber) {

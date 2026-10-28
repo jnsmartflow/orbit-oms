@@ -25,11 +25,16 @@ export const dynamic = "force-dynamic";
  * manager assigns, which is a handful of times a day; a name 30 seconds stale
  * is not worth a recurring read on the depot's link. Owner decision 2026-09-14.
  *
- * ⚠ `tint_assigned` ONLY, AND THAT IS THE WHOLE SET THAT CAN HAVE AN ANSWER. A
- * bill at `pending_tint_assignment` has no assignment row by definition — the
- * column renders a dash for it — and a bill at `tinting_in_progress` has left
- * the Tinting tab for the Floor tab (it wears the solid pink pill there). One
- * stage, one bounded read, no ids in the URL.
+ * ⚠ `tint_assigned` AND `tinting_in_progress` — THE WHOLE SET THAT CAN HAVE AN
+ * ANSWER. A bill at `pending_tint_assignment` has no assignment row by
+ * definition — the column renders a dash for it. `tinting_in_progress` joined
+ * on 2026-10-28 PM, when mixing and paused bills moved onto the Tinting tab:
+ * the assignment's `assignedTo` is the operator on the job, running or paused,
+ * so this route stays the ONE owner of the Operator column (not the board row's
+ * `tintPause.by`, which is who pressed pause and only exists while paused).
+ * Two stages, one bounded read, no ids in the URL.
+ * 2026-10-28 PM: all in-tint bills live on Tinting tab; add-to-trip works
+ * there. Floor = can go out now. Do not revert.
  *
  * ⚠ NO HIDE EXCLUSION, AND IT CANNOT LEAK. This returns a lookup keyed by
  * orderId, joined client-side against rows the client already holds — and those
@@ -55,7 +60,7 @@ export async function GET(): Promise<NextResponse> {
   const rows = await prisma.tint_assignments.findMany({
     where: {
       splitId: null,
-      order: { workflowStage: "tint_assigned", isRemoved: false },
+      order: { workflowStage: { in: ["tint_assigned", "tinting_in_progress"] }, isRemoved: false },
     },
     orderBy: { createdAt: "desc" },
     select: { orderId: true, assignedTo: { select: { name: true } } },
