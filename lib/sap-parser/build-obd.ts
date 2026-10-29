@@ -13,6 +13,7 @@ import type { GroupedDelivery } from "./group-rows";
 import type { AppliedRulesResult, LineInterim } from "./apply-rules";
 import type { SkippedRow, Warning } from "./types";
 import { computeArticleInfo, loadPackCatalog, type PackCatalog } from "../article-tag";
+import { loadLines } from "../orders/sticker";
 
 export interface BuildObdResult {
   obds:     ObdInput[];
@@ -62,9 +63,13 @@ export async function buildObds(
     // Sum numeric line fields up to the OBD level. "sum or null" semantics:
     // null only if every line's value is null; otherwise sum the non-null
     // values (treating null as not-applicable rather than zero).
+    // Sticker lines (lib/orders/sticker.ts) carry SAP placeholder L/kg equal to
+    // their qty: left OUT of volume/grossWeight. The lines themselves keep
+    // their raw values. totalUnitQty is a tin count and keeps every line.
     const totalUnitQty = lines.reduce((acc, l) => acc + l.unitQty, 0);
-    const volume       = sumOrNull(lines.map((l) => l.volumeLine));
-    const grossWeight  = sumOrNull(lines.map((l) => l.totalWeight));
+    const counted      = loadLines(lines);
+    const volume       = sumOrNull(counted.map((l) => l.volumeLine));
+    const grossWeight  = sumOrNull(counted.map((l) => l.totalWeight));
 
     // Resolve article/articleTag per line against the preloaded catalog.
     // Sequential awaits, no $transaction (CLAUDE_CORE.md §3) — and with the

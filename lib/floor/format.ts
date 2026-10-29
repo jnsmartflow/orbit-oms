@@ -6,6 +6,7 @@
 // of the Support retirement — Floor is the only remaining consumer.
 
 import { parseArticleTag, TYPE_ORDER } from "@/lib/article-tag-parse";
+import { STICKER_TAG } from "@/lib/orders/sticker";
 
 // ── Article pack-word abbreviation ───────────────────────────────────────────
 // articleTag is a comma-separated "{integer} {word}" list written at import
@@ -39,13 +40,16 @@ export const ARTICLE_WORD_ABBR: Record<string, string> = { Drum: "D", Carton: "C
  */
 export function formatArticleBreakdown(tags: Array<string | null | undefined>): string | null {
   const totals = new Map<string, number>();
+  let sticker = false;
   for (const tag of tags) {
     if (!tag) continue;
     for (const { count, type } of parseArticleTag(tag)) {
+      // Bare "Sticker" (count 0) — shown once, last, never totalled.
+      if (type === STICKER_TAG) { sticker = true; continue; }
       totals.set(type, (totals.get(type) ?? 0) + count);
     }
   }
-  if (totals.size === 0) return null;
+  if (totals.size === 0 && !sticker) return null;
 
   const known: string[] = [];
   for (const type of TYPE_ORDER) {
@@ -58,6 +62,7 @@ export function formatArticleBreakdown(tags: Array<string | null | undefined>): 
     .map((t) => `${totals.get(t)} ${ARTICLE_WORD_ABBR[t] ?? t}`);
 
   const parts = [...known, ...extra];
+  if (sticker) parts.push(STICKER_TAG);
   return parts.length > 0 ? parts.join(" · ") : null;
 }
 
@@ -93,6 +98,8 @@ export function formatArticleTag(raw: string): string {
   if (groups.length === 0) return raw;
   const parts: string[] = [];
   for (const g of groups) {
+    // The bare sticker word has no count by design (lib/orders/sticker.ts).
+    if (g === STICKER_TAG) { parts.push(STICKER_TAG); continue; }
     const m = g.match(/^(\d+)\s+(\S.*)$/);
     if (!m) return raw;
     const [, num, word] = m;

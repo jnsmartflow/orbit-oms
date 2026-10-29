@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 import { checkAnyPermission } from "@/lib/permissions";
+import { isStickerLine } from "@/lib/orders/sticker";
 
 export const dynamic = "force-dynamic";
 
@@ -89,7 +90,7 @@ export async function POST(req: Request): Promise<NextResponse> {
   // ── STEP 2: Load all raw line items for this OBD ───────────────────────────
   const rawLineItems = await prisma.import_raw_line_items.findMany({
     where:  { obdNumber: order.obdNumber, lineStatus: "active" },
-    select: { id: true, unitQty: true, volumeLine: true, article: true, articleTag: true, isTinting: true },
+    select: { id: true, skuCodeRaw: true, unitQty: true, volumeLine: true, article: true, articleTag: true, isTinting: true },
   });
   const rawLineMap = new Map(rawLineItems.map((l) => [l.id, l]));
 
@@ -165,7 +166,8 @@ export async function POST(req: Request): Promise<NextResponse> {
       let totalVolume = 0;
       for (const l of splitInput.lines) {
         const raw = rawLineMap.get(l.rawLineItemId)!;
-        if (raw.volumeLine != null && raw.unitQty > 0) {
+        // Sticker lines add no litres (lib/orders/sticker.ts).
+        if (raw.volumeLine != null && raw.unitQty > 0 && !isStickerLine(raw)) {
           totalVolume += (l.assignedQty / raw.unitQty) * raw.volumeLine;
         }
       }

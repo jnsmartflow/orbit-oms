@@ -66,6 +66,7 @@ import type {
   CiReturnType,
   CiMaterialMoved,
 } from "./types";
+import { isStickerLine } from "@/lib/orders/sticker";
 
 // ── Search-term normalisation (spec §4) ──────────────────────────────────────
 // The rule itself lives in ./search-term (pure, shared with Add invoices).
@@ -226,7 +227,7 @@ export async function searchCiBills(rawQuery: string): Promise<CiSearchResult> {
       obdNumber: { in: orders.map((o) => o.obdNumber) },
       lineStatus: "active",
     },
-    select: { obdNumber: true, volumeLine: true },
+    select: { obdNumber: true, skuCodeRaw: true, volumeLine: true },
   });
 
   const agg = new Map<string, { n: number; litres: number }>();
@@ -234,7 +235,8 @@ export async function searchCiBills(rawQuery: string): Promise<CiSearchResult> {
     if (l.obdNumber === null) continue;
     const cur = agg.get(l.obdNumber) ?? { n: 0, litres: 0 };
     cur.n += 1;
-    cur.litres += l.volumeLine ?? 0;
+    // A sticker line is still a line, but adds no litres (lib/orders/sticker.ts).
+    if (!isStickerLine(l)) cur.litres += l.volumeLine ?? 0;
     agg.set(l.obdNumber, cur);
   }
 

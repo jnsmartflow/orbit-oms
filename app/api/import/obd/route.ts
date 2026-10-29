@@ -43,6 +43,7 @@ import {
 } from "@/lib/import-qty-guard";
 import type { ImportAnomaly, QtyMismatch } from "@/lib/import-qty-guard";
 import { computeArticleInfo, loadPackCatalog, rollupArticleTagsBySku } from "@/lib/article-tag";
+import { headerKgLessStickers, headerLitresLessStickers, isStickerLine, loadLines, STICKER_TAG } from "@/lib/orders/sticker";
 import type { ArticleRollup, PackCatalog } from "@/lib/article-tag";
 import { applySoTagHolds } from "@/lib/billing/telephonic-apply";
 import { catchChallanObds } from "@/lib/challan-orders/reconcile";
@@ -889,6 +890,10 @@ async function createChallanForOrder(
   }
 }
 
+/** headerFile markers of the SAP-parser batches (.xlsx, paste, ODB paste) — their
+ *  import_raw_summary grossWeight is build-obd.ts's line sum, stickers already out. */
+const SAP_PARSER_BATCH_PREFIXES = ["[manual-sap]", "[sap-paste]", "[obd-paste]"] as const;
+
 /**
  * Upsert one row into import_obd_query_summary for an order. Used by the
  * manual-SAP confirm path's effect loop. The `orderId` column is @unique,
@@ -908,19 +913,31 @@ async function rebuildQuerySummaryForOrder(
     where:  { obdNumber, lineStatus: "active" },
     // skuCodeRaw joined the select 2026-08-10 for the SKU-grouped rollup —
     // same query, one more column, no extra round trip.
-    select: { skuCodeRaw: true, unitQty: true, volumeLine: true, isTinting: true, article: true, articleTag: true },
+    // totalWeight joined 2026-10-29 for the sticker kg (lib/orders/sticker.ts).
+    select: { skuCodeRaw: true, unitQty: true, volumeLine: true, totalWeight: true, isTinting: true, article: true, articleTag: true },
   });
 
   const summary = await prisma.import_raw_summary.findFirst({
     where:   { obdNumber },
     orderBy: { id: "asc" },
-    select:  { grossWeight: true, totalUnitQty: true, volume: true },
+    select:  { grossWeight: true, totalUnitQty: true, volume: true, batch: { select: { headerFile: true } } },
   });
 
   const totalLines   = lines.length;
   const totalUnitQty = lines.reduce((sum, l) => sum + l.unitQty,                 0);
-  const totalVolume  = lines.reduce((sum, l) => sum + (l.volumeLine ?? 0),       0);
+  // Sticker lines keep their raw volume but add none (lib/orders/sticker.ts).
+  const totalVolume  = loadLines(lines).reduce((sum, l) => sum + (l.volumeLine ?? 0), 0);
   const hasTinting   = lines.some((l) => l.isTinting);
+
+  // kg = the FIRST raw summary's grossWeight. A summary written by the SAP
+  // parser (.xlsx / paste) already left sticker lines out (build-obd.ts), so
+  // subtracting again would count them twice; any other summary is SAP's own
+  // header, so the sticker lines' kg comes off — only what the lines carry.
+  const headerFile   = summary?.batch.headerFile ?? "";
+  const sapParserSum = SAP_PARSER_BATCH_PREFIXES.some((p) => headerFile.startsWith(p));
+  const totalWeight  = sapParserSum
+    ? (summary?.grossWeight ?? 0)
+    : (headerKgLessStickers(summary?.grossWeight ?? null, lines) ?? 0);
 
   // articleTag + totalArticle — SKU-GROUPED (lib/article-tag.ts), shared with
   // the other two roll-up sites. Groups duplicate-SKU lines and sums their
@@ -938,7 +955,7 @@ async function rebuildQuerySummaryForOrder(
     update: {
       totalLines,
       totalUnitQty: totalUnitQtyResolved,
-      totalWeight:  summary?.grossWeight ?? 0,
+      totalWeight,
       totalVolume:  totalVolumeResolved,
       hasTinting,
       totalArticle,
@@ -949,7 +966,7 @@ async function rebuildQuerySummaryForOrder(
       obdNumber,
       totalLines,
       totalUnitQty: totalUnitQtyResolved,
-      totalWeight:  summary?.grossWeight ?? 0,
+      totalWeight,
       totalVolume:  totalVolumeResolved,
       hasTinting,
       totalArticle,
@@ -1170,8 +1187,11 @@ async function handlePreview(req: Request, session: Session): Promise<NextRespon
       const unitQty    = toInt(lr["unit_qty"]) ?? 0;
       const volumeLine = toNum(lr["volume_line"]);
       const isTinting  = parseBooleanCell(lr["Tinting"]);
-      const article    = lr["article"]     != null ? parseInt(String(lr["article"]), 10)  : null;
-      const articleTag = lr["article_tag"] != null ? String(lr["article_tag"]).trim()     : null;
+      // The file's own article columns, EXCEPT a sticker line, which always
+      // gets the bare sticker tag and article 0 (lib/orders/sticker.ts).
+      const sticker    = isStickerLine({ skuCodeRaw });
+      const article    = sticker ? 0           : lr["article"]     != null ? parseInt(String(lr["article"]), 10)  : null;
+      const articleTag = sticker ? STICKER_TAG : lr["article_tag"] != null ? String(lr["article_tag"]).trim()     : null;
 
       let lineStatus: "valid" | "error" = "valid";
       let lineError:  string | null     = null;
@@ -1517,7 +1537,8 @@ async function handleConfirm(req: Request, session: Session): Promise<NextRespon
     let totalVolume  = 0;
     for (const line of validLines) {
       totalLineQty += line.unitQty;
-      totalVolume  += line.volumeLine ?? 0;
+      // Sticker lines keep their raw volume but add none (lib/orders/sticker.ts).
+      if (!isStickerLine(line)) totalVolume += line.volumeLine ?? 0;
     }
 
     orderInterims.push({
@@ -1552,8 +1573,10 @@ async function handleConfirm(req: Request, session: Session): Promise<NextRespon
         natureOfTransaction: summary.natureOfTransaction,
         warehouse:           summary.warehouse,
         totalUnitQty:        summary.totalUnitQty,
-        grossWeight:         summary.grossWeight,
-        volume:              summary.volume,
+        // SAP header figures less the sticker lines' own L / kg — only what
+        // the lines carry is taken out; these lines carry no kg (see D3).
+        grossWeight:         headerKgLessStickers(summary.grossWeight, validLines),
+        volume:              headerLitresLessStickers(summary.volume, validLines),
         customerMissing:     summary.rowStatus === "warning",
       },
     });
@@ -1712,7 +1735,9 @@ async function handleConfirm(req: Request, session: Session): Promise<NextRespon
         orderId,
         totalLines:   o.validLines.length,
         totalUnitQty: hasLines ? o.totalLineQty : (rs?.totalUnitQty ?? 0),
-        totalWeight:  rs?.grossWeight ?? 0,
+        // Header kg less sticker lines' kg. ⚠ GAP: these lines never carry
+        // totalWeight, so a sticker's kg stays inside the SAP header figure.
+        totalWeight:  headerKgLessStickers(rs?.grossWeight ?? null, o.validLines) ?? 0,
         totalVolume:  hasLines ? o.totalVolume  : (rs?.volume ?? 0),
         hasTinting:   o.hasTinting,
         totalArticle,
@@ -4050,7 +4075,8 @@ async function processAutoImportRows(
     let totalVolume  = 0;
     for (const line of validLines) {
       totalLineQty += line.unitQty;
-      totalVolume  += line.volumeLine ?? 0;
+      // Sticker lines keep their raw volume but add none (lib/orders/sticker.ts).
+      if (!isStickerLine(line)) totalVolume += line.volumeLine ?? 0;
     }
 
     autoOrderInterims.push({
@@ -4085,8 +4111,10 @@ async function processAutoImportRows(
         natureOfTransaction: summary.natureOfTransaction,
         warehouse:           summary.warehouse,
         totalUnitQty:        summary.totalUnitQty,
-        grossWeight:         summary.grossWeight,
-        volume:              summary.volume,
+        // SAP header figures less the sticker lines' own L / kg — only what
+        // the lines carry is taken out; these lines carry no kg (see D3).
+        grossWeight:         headerKgLessStickers(summary.grossWeight, validLines),
+        volume:              headerLitresLessStickers(summary.volume, validLines),
         customerMissing:     summary.rowStatus === "warning",
       },
     });
@@ -4239,7 +4267,9 @@ async function processAutoImportRows(
         orderId,
         totalLines:   o.validLines.length,
         totalUnitQty: hasLines ? o.totalLineQty : (rs?.totalUnitQty ?? 0),
-        totalWeight:  rs?.grossWeight ?? 0,
+        // Header kg less sticker lines' kg. ⚠ GAP: these lines never carry
+        // totalWeight, so a sticker's kg stays inside the SAP header figure.
+        totalWeight:  headerKgLessStickers(rs?.grossWeight ?? null, o.validLines) ?? 0,
         totalVolume:  hasLines ? o.totalVolume  : (rs?.volume ?? 0),
         hasTinting:   o.hasTinting,
         totalArticle,

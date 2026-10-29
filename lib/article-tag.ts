@@ -8,6 +8,7 @@
 // `articleTag: null` on every line since 2026-05-14.
 //
 // Resolution order (first match wins):
+//   0. Sticker SKUs (lib/orders/sticker.ts) -> bare "Sticker", article 0.
 //   1. sku_master_v2 by `material` — the primary source.
 //      a. unit === "PC"           -> piece goods, "N Pcs"
 //      b. piecesPerCarton != null -> carton math at the SKU's OWN pack count
@@ -30,6 +31,7 @@ import { prisma } from "./prisma";
 // Local binding for rollupArticleTagsBySku below — the `export { … } from` line
 // further down re-exports for outside callers but creates no binding in here.
 import { aggregateArticleTags } from "./article-tag-parse";
+import { isStickerSku, STICKER_TAG } from "./orders/sticker";
 
 // ─── Types ────────────────────────────────────────────────────────────────
 
@@ -163,6 +165,11 @@ export async function computeArticleInfo(
 
   // No positive quantity -> nothing countable, whatever the SKU is.
   if (unitQty === null || !Number.isFinite(unitQty) || unitQty <= 0) return NONE;
+
+  // ── 0. Sticker SKUs (lib/orders/sticker.ts, owner 2026-10-29) ───────────
+  //     Checked BEFORE the catalog: 6028563 is unit PC and would read "N Pcs".
+  //     Bare word, no count, and article 0 so no total counts it.
+  if (isStickerSku(material)) return { article: 0, articleTag: STICKER_TAG };
 
   // ── 1. Catalog lookup (primary source) ──────────────────────────────────
   let row: PackCatalogRow | null = null;

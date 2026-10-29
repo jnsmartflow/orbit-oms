@@ -16,7 +16,10 @@
 // lib/article-tag.ts remains THE owner of the rule itself (which pack is a
 // drum, what a carton splits into). Nothing about that moved. Do not add a DB
 // read, a catalog lookup or a React import to this file — the whole point is
-// that it has no dependencies at all.
+// that it has no dependencies at all. The ONE import, lib/orders/sticker.ts,
+// is itself pure (no prisma, no I/O, no React) and only supplies the word.
+
+import { STICKER_TAG } from "./orders/sticker";
 
 /** Display order for a rolled-up tag. */
 export const TYPE_ORDER = ["Drum", "Bag", "Carton", "Tin", "Pcs"] as const;
@@ -51,10 +54,21 @@ export const TYPE_ORDER = ["Drum", "Bag", "Carton", "Tin", "Pcs"] as const;
 export function parseArticleTag(tag: string): Array<{ count: number; type: string }> {
   const out: Array<{ count: number; type: string }> = [];
   const tokens = tag.trim().split(/[\s,]+/).filter(Boolean);
-  for (let i = 0; i + 1 < tokens.length; i += 2) {
+  let i = 0;
+  while (i < tokens.length) {
+    // The bare sticker word (lib/orders/sticker.ts, owner 2026-10-29) is the
+    // one group with NO count. Kept as count 0 so every caller that sums
+    // counts adds nothing for it, and a sticker-only tag still parses.
+    if (tokens[i] === STICKER_TAG) {
+      out.push({ count: 0, type: STICKER_TAG });
+      i += 1;
+      continue;
+    }
+    if (i + 1 >= tokens.length) break;
     const count = parseInt(tokens[i], 10);
     const type  = tokens[i + 1];
     if (!Number.isNaN(count) && type) out.push({ count, type });
+    i += 2;
   }
   return out;
 }
@@ -63,17 +77,23 @@ export function parseArticleTag(tag: string): Array<{ count: number; type: strin
  * Roll a set of line tags into one order-level tag, e.g.
  * ["2 Drum", "1 Carton 3 Tin", "1 Carton"] -> "2 Drum, 2 Carton, 3 Tin".
  * Returns null when nothing summed.
+ *
+ * A sticker tag (any number of them) adds the bare word ONCE, LAST, after Pcs:
+ * ["5 Carton", "Sticker"] -> "5 Carton, Sticker"; ["Sticker"] -> "Sticker".
  */
 export function aggregateArticleTags(tags: Array<string | null | undefined>): string | null {
   const totals: Record<string, number> = {};
+  let sticker = false;
   for (const tag of tags) {
     if (!tag) continue;
     for (const { count, type } of parseArticleTag(tag)) {
+      if (type === STICKER_TAG) { sticker = true; continue; }
       totals[type] = (totals[type] ?? 0) + count;
     }
   }
-  return TYPE_ORDER
+  const parts = TYPE_ORDER
     .filter((t) => (totals[t] ?? 0) > 0)
-    .map((t) => `${totals[t]} ${t}`)
-    .join(", ") || null;
+    .map((t) => `${totals[t]} ${t}`);
+  if (sticker) parts.push(STICKER_TAG);
+  return parts.join(", ") || null;
 }

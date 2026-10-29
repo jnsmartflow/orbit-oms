@@ -25,10 +25,13 @@
 
 import { Prisma } from "@prisma/client";
 import { prisma } from "../prisma";
+import { isStickerSku } from "../orders/sticker";
 
 /** SKU code → median SAP kg per tin, for the SKUs that have ever carried line kg. */
 export async function learnedKgPerUnit(skus: string[]): Promise<Map<string, number>> {
-  const wanted = Array.from(new Set(skus.filter((s) => s !== "")));
+  // Sticker SKUs never learn a kg per tin: their line kg is a SAP placeholder
+  // equal to the qty, and they carry no kg anywhere (lib/orders/sticker.ts).
+  const wanted = Array.from(new Set(skus.filter((s) => s !== "" && !isStickerSku(s))));
   const map = new Map<string, number>();
   if (wanted.length === 0) return map;
   const rows = await prisma.$queryRaw<{ sku: string; kg: number }[]>`

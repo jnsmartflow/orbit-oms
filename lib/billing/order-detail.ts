@@ -20,6 +20,7 @@ import { prisma } from "@/lib/prisma";
 import { resolveCatalogByCode } from "@/lib/picking/resolve-lines";
 import type { BillingDetailLine, BillingOrderDetail } from "@/lib/billing/types";
 import { isRedirected } from "@/lib/ship-to/effective";
+import { isStickerSku } from "@/lib/orders/sticker";
 
 /** The panel payload minus the Picking tab's own `isPending` fact. */
 export type BillingOrderDetailBase = Omit<BillingOrderDetail, "isPending">;
@@ -153,8 +154,9 @@ export async function loadBillingOrderDetail(orderId: number): Promise<BillingOr
     };
   });
 
-  // Gift lines OUT OF SCOPE — plain sum, no gift exclusion, same as Floor's.
-  const totalLitres = lines.reduce((s, l) => s + l.litres, 0);
+  // Gift lines OUT OF SCOPE — no gift exclusion, same as Floor's. Sticker lines
+  // (lib/orders/sticker.ts) show their own litres but add none to the total.
+  const totalLitres = lines.reduce((s, l) => s + (isStickerSku(l.sku) ? 0 : l.litres), 0);
 
   // The dealer actually being shipped to: the override when one resolved, else
   // the matched customer, else the raw SAP name. Same precedence the list route

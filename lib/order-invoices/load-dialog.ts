@@ -13,6 +13,7 @@
 
 import { invoiceKg, type InvoiceLineFacts } from "@/lib/floor/invoice-rows";
 import { lineLitres } from "./entry";
+import { isStickerLine, loadLines } from "@/lib/orders/sticker";
 import { planLoadSplit, type LoadRow, type TruckInput } from "./load-plan";
 import type { ActiveLine } from "./rules";
 
@@ -105,7 +106,7 @@ export function kgFactsOf(
     activeById.set(a.rawLineItemId, { ...a, totalWeight: k?.totalWeight ?? null });
     if (k?.unitKg && k.unitKg > 0) unitKgBySku.set(a.skuCodeRaw, k.unitKg);
   }
-  return { activeById, unitKgBySku, obdKg: kg.obdKg, obdLitres: active.reduce((s, a) => s + (a.volumeLine ?? 0), 0) };
+  return { activeById, unitKgBySku, obdKg: kg.obdKg, obdLitres: loadLines(active).reduce((s, a) => s + (a.volumeLine ?? 0), 0) };
 }
 
 /** One line's kg per tin by rules 1 / 2 (null = only the shared "~" rule 3 is left). */
@@ -130,7 +131,8 @@ export function truckTotalOf(truck: TruckInput, facts: KgFacts): TruckTotal {
   const tins = lines.reduce((s, l) => s + l.qty, 0);
   const litres = lines.reduce((s, l) => {
     const a = facts.activeById.get(l.rawLineItemId);
-    return s + (a ? lineLitres(a.volumeLine, a.unitQty, l.qty) : 0);
+    // Sticker lines add no litres (lib/orders/sticker.ts); invoiceKg skips their kg.
+    return s + (a && !isStickerLine(a) ? lineLitres(a.volumeLine, a.unitQty, l.qty) : 0);
   }, 0);
   if (tins === 0) return { tins, litres, kg: 0, kgExact: true };
   const { kg, kgExact } = invoiceKg(lines, facts.activeById, facts.unitKgBySku, facts.obdKg, litres, facts.obdLitres);

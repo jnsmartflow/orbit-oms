@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { getHideExclusion } from "@/lib/hide/visibility";
 import { getBaseOperatorId } from "@/lib/tint/base-operator";
+import { isStickerLine } from "@/lib/orders/sticker";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Shared data-gathering for the daily "Tint Summary" report.
@@ -229,7 +230,7 @@ export async function getTintSummaryData(params: TintSummaryParams = {}): Promis
         assignedTo: { select: { id: true, name: true } },
         lineItems: {
           where: { lineStatus: "active" },
-          select: { rawLineItem: { select: { volumeLine: true } } },
+          select: { rawLineItem: { select: { skuCodeRaw: true, volumeLine: true } } },
         },
         order: {
           select: {
@@ -414,7 +415,8 @@ export async function getTintSummaryData(params: TintSummaryParams = {}): Promis
     const smu = resolveSmu(o.obdNumber, o.smu);
     const area = resolveArea(o.customer as Customer);
     const isHold = isHoldOf(o.dispatchStatus);
-    const splitLitres = s.lineItems.reduce((sum, li) => sum + (li.rawLineItem.volumeLine ?? 0), 0);
+    // Sticker lines add no litres (lib/orders/sticker.ts).
+    const splitLitres = s.lineItems.reduce((sum, li) => sum + (isStickerLine(li.rawLineItem) ? 0 : li.rawLineItem.volumeLine ?? 0), 0);
     jobs.push({ operatorId: s.assignedTo?.id ?? null, operator: s.assignedTo?.name ?? null, litres: splitLitres, smu, area, isHold });
 
     // OBD-level: aggregate split litres, keep MAX completedAt + that split's operator.

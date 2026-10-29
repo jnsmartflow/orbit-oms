@@ -29,6 +29,7 @@ import { kgShare, lineLitres } from "@/lib/order-invoices/entry";
 import { detectStale } from "@/lib/order-invoices/rules";
 import { loadGroupsOf, loadPartsOf, loadPartText, type LoadPart } from "@/lib/order-invoices/load-plan";
 import { parseArticleTag } from "@/lib/article-tag-parse";
+import { isStickerLine, loadLines } from "@/lib/orders/sticker";
 import { ARTICLE_WORD_ABBR } from "@/lib/floor/format";
 
 /** One invoice of a SPLIT OBD, as the board row carries it. */
@@ -145,7 +146,8 @@ export function buildInvoiceRows(input: {
   // The litres the header kg is shared by — every active line, as the detail
   // panel's Invoices section did (components/floor/detail-invoices.tsx — kept on
   // disk, not mounted since Phase 4, 2026-10-13).
-  const obdLitres = input.activeLines.reduce((s, l) => s + (l.volumeLine ?? 0), 0);
+  // Sticker lines (lib/orders/sticker.ts) add no litres and take no kg share.
+  const obdLitres = loadLines(input.activeLines).reduce((s, l) => s + (l.volumeLine ?? 0), 0);
   const savedLines = rows.flatMap((r) => r.lines);
   // Half-written (a row with no lines) counts as stale — lib/order-invoices/split.ts loadSplitView.
   const stale = rows.some((r) => r.lines.length === 0) || detectStale(input.activeLines, savedLines);
@@ -159,7 +161,7 @@ export function buildInvoiceRows(input: {
     const tins = r.lines.reduce((s, l) => s + l.qty, 0);
     const litres = r.lines.reduce((s, l) => {
       const line = activeById.get(l.rawLineItemId);
-      return s + (line ? lineLitres(line.volumeLine, line.unitQty, l.qty) : 0);
+      return s + (line && !isStickerLine(line) ? lineLitres(line.volumeLine, line.unitQty, l.qty) : 0);
     }, 0);
     const { kg, kgExact } = invoiceKg(r.lines, activeById, input.unitKgBySku, input.obdKg, litres, obdLitres);
     return {
@@ -196,7 +198,11 @@ export function invoiceKg(
   litres: number,
   obdLitres: number,
 ): { kg: number | null; kgExact: boolean } {
-  const facts = lines.map((l) => ({ qty: l.qty, line: activeById.get(l.rawLineItemId) }));
+  // Sticker lines carry no kg (lib/orders/sticker.ts): out of every rule. An
+  // invoice of stickers only weighs a KNOWN 0.
+  const all = lines.map((l) => ({ qty: l.qty, line: activeById.get(l.rawLineItemId) }));
+  const facts = all.filter((f) => !(f.line && isStickerLine(f.line)));
+  if (all.length > 0 && facts.length === 0) return { kg: 0, kgExact: true };
   const allActive = facts.length > 0 && facts.every((f) => f.line !== undefined && f.line.unitQty > 0);
 
   // 1. SAP line kg on every line.

@@ -21,6 +21,7 @@ import { salesOfficerByOrder } from "@/lib/floor/queries";
 import { countActiveOwnCopies, countBillingCopiesVisible } from "@/lib/ship-to/copies-server";
 import { getOpenTintPauses, isPausedTintCandidate } from "@/lib/floor/tint-pause";
 import type { FloorDetail, FloorActivityEntry, FloorDetailLine, FloorDetailTint } from "@/lib/floor/types";
+import { isStickerSku } from "@/lib/orders/sticker";
 
 const PROJECT_SMUS = new Set(["Retail Offtake", "Decorative Projects"]);
 
@@ -101,8 +102,9 @@ export async function getOrderDetail(orderId: number): Promise<FloorDetail | nul
       isTint: l.isTinting,
     };
   });
-  // Gift lines OUT OF SCOPE — plain sum, no gift exclusion.
-  const totalLitres = lines.reduce((s, l) => s + l.litres, 0);
+  // Gift lines OUT OF SCOPE — no gift exclusion. Sticker lines (lib/orders/
+  // sticker.ts) show their own litres on their row but add none to the total.
+  const totalLitres = lines.reduce((s, l) => s + (isStickerSku(l.sku) ? 0 : l.litres), 0);
 
   // ── Activity — real logs, newest first ─────────────────────────────────────
   const activity: FloorActivityEntry[] = order.statusLogs.map((log) => ({

@@ -27,6 +27,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { validateSplit, type SplitInvoiceInput } from "@/lib/order-invoices/rules";
 import { expandInvoiceNo, kgShare, lineLitres, tinsLeft } from "@/lib/order-invoices/entry";
 import type { SplitView } from "@/lib/order-invoices/split";
+import { isStickerLine } from "@/lib/orders/sticker";
 import { formatLitres } from "./status-pill";
 import { BAR_DANGER, BAR_PRIMARY, BAR_SECONDARY } from "./floor-action-bar";
 
@@ -145,7 +146,8 @@ export function AddInvoicesDialog({
   const sapNo = view?.sapInvoice?.invoiceNo ?? null;
   const unitQtys = useMemo(() => lines.map((l) => l.unitQty), [lines]);
   const totalTins = sum(unitQtys.map((u) => Math.max(u, 0)));
-  const obdLitres = sum(lines.map((l) => l.volumeLine ?? 0));
+  // Sticker lines add no litres (lib/orders/sticker.ts), so they take no kg share.
+  const obdLitres = sum(lines.map((l) => (isStickerLine(l) ? 0 : l.volumeLine ?? 0)));
   const left = useMemo(() => tinsLeft(unitQtys, saved.map((p) => p.q)), [unitQtys, saved]);
   const leftAll = sum(left.map((x) => Math.max(x, 0)));
   const paperIndex = editingIndex ?? saved.length;
@@ -698,7 +700,7 @@ function Summary({
       </p>
       <div className="mt-3 overflow-hidden rounded-[10px] border border-ink-100">
         {saved.map((p, i) => {
-          const litres = sum(lines.map((l, j) => lineLitres(l.volumeLine, l.unitQty, p.q[j] ?? 0)));
+          const litres = sum(lines.map((l, j) => (isStickerLine(l) ? 0 : lineLitres(l.volumeLine, l.unitQty, p.q[j] ?? 0))));
           const kg = fmtKg(kgShare(obdKg, litres, obdLitres));
           const nLines = p.q.filter((x) => x > 0).length;
           return (
