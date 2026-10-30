@@ -15,8 +15,11 @@
 // bills are "today" or which dealer comes first.
 //
 // Two sheets:
-//   Summary  Customer name · Total invoices · Total litres — one row per dealer,
-//            then a Total row.
+//   Summary  Bill to · Ship to · Total bills · Total litres — one row per dealer
+//            group (stopKey), then a Total row. Total bills counts what the
+//            screen draws: a split OBD its held invoices, every other OBD 1 —
+//            an ODB / no-invoice bill is a bill (owner 2026-10-30; it counted 0
+//            until then, so the total read 101 against 109 on screen).
 //   Details  one row per bill (OBD), in screen order.
 //
 // ⚠ NO BOLD AND NO FROZEN HEADER. This build of `xlsx` (0.18.5, community)
@@ -58,33 +61,34 @@ export function istDateText(iso: string | Date): string {
 }
 
 /**
- * A bill's SAP invoice numbers and how many invoices it really carries.
- *   split OBD (drawn per invoice) → its HELD invoices' numbers, one each;
- *   one OBD row                  → orders.invoiceNo (an ODB import has none → 0);
- *   a split OBD held whole before per-invoice hold (no invoice rows on the hold
- *   row) → orders.invoiceNo and the OBD's own invoice count.
+ * A bill's SAP invoice numbers, and how many bills it is on the screen.
+ *   split OBD (drawn per invoice) → its HELD invoices' numbers; counts one per
+ *     held invoice row;
+ *   any other OBD (one drawn row) → orders.invoiceNo, or none for an ODB /
+ *     no-invoice bill; counts 1 either way.
  */
 function invoicesOf(row: FloorHoldRow): { numbers: string[]; count: number } {
   if (row.invoiceRows.length > 0) {
     const numbers = row.invoiceRows.map((i) => i.invoiceNo).filter((n): n is string => !!n);
-    return { numbers, count: numbers.length };
+    return { numbers, count: row.invoiceRows.length };
   }
-  if (!row.invoiceNo) return { numbers: [], count: 0 };
-  return { numbers: [row.invoiceNo], count: Math.max(1, row.invoiceCount) };
+  return { numbers: row.invoiceNo ? [row.invoiceNo] : [], count: 1 };
 }
 
 const SUMMARY_COLUMNS = [
-  { header: "Customer name", width: 38 },
-  { header: "Total invoices", width: 14 },
+  { header: "Bill to", width: 34 },
+  { header: "Ship to", width: 34 },
+  { header: "Total bills", width: 12 },
   { header: "Total litres", width: 13 },
 ];
 
 const DETAIL_COLUMNS = [
-  { header: "Customer", width: 34 },
-  { header: "OBD", width: 13 },
-  { header: "OBD date", width: 11 },
-  { header: "Invoice(s)", width: 24 },
   { header: "Invoice date", width: 12 },
+  { header: "Invoice no", width: 24 },
+  { header: "OBD date", width: 11 },
+  { header: "OBD no", width: 13 },
+  { header: "Bill to", width: 30 },
+  { header: "Ship to", width: 30 },
   { header: "SO", width: 18 },
   { header: "Area", width: 16 },
   { header: "Route", width: 16 },
@@ -95,7 +99,7 @@ const DETAIL_COLUMNS = [
   { header: "Held by", width: 18 },
 ];
 /** Details columns that hold a date serial (0-based). */
-const DETAIL_DATE_COLS = [2, 4, 11];
+const DETAIL_DATE_COLS = [0, 2, 12];
 
 type Cell = string | number | null;
 
@@ -125,16 +129,18 @@ export function buildHoldWorkbook(rows: readonly FloorHoldRow[], view: HoldExpor
 
   // ── Summary ──
   const summary: Cell[][] = [SUMMARY_COLUMNS.map((c) => c.header)];
-  let totalInvoices = 0;
+  let totalBills = 0;
   let totalLitres = 0;
   for (const g of groups) {
-    const invoices = g.rows.reduce((s, r) => s + invoicesOf(r).count, 0);
+    const bills = g.rows.reduce((s, r) => s + invoicesOf(r).count, 0);
     const litres = g.rows.reduce((s, r) => s + loadLitres(r.volumeLitres, r.isGift), 0);
-    totalInvoices += invoices;
+    totalBills += bills;
     totalLitres += litres;
-    summary.push([g.name, invoices, round1(litres)]);
+    // More than one bill-to under one ship-to → all of them, first-seen order.
+    const billTo = Array.from(new Set(g.rows.map((r) => r.billToName).filter((n): n is string => !!n))).join(", ");
+    summary.push([billTo || null, g.name, bills, round1(litres)]);
   }
-  summary.push(["Total", totalInvoices, round1(totalLitres)]);
+  summary.push(["Total", null, totalBills, round1(totalLitres)]);
 
   // ── Details ──
   const details: Cell[][] = [DETAIL_COLUMNS.map((c) => c.header)];
@@ -150,11 +156,12 @@ export function buildHoldWorkbook(rows: readonly FloorHoldRow[], view: HoldExpor
             ? `~ ${istDateText(r.heldSince)}`
             : excelDate(r.heldSince);
       details.push([
-        r.dealerName,
-        r.obdNumber,
-        excelDate(r.obdDateTime),
-        inv.numbers.join(", ") || null,
         inv.numbers.length > 0 ? excelDate(invoiceDate) : null,
+        inv.numbers.join(", ") || null,
+        excelDate(r.obdDateTime),
+        r.obdNumber,
+        r.billToName,
+        r.dealerName,
         r.salesOfficerName ?? null,
         r.area,
         r.route,
