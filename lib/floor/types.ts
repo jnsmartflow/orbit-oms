@@ -633,6 +633,15 @@ export interface FloorHoldRow extends FloorPartyFields {
   invoiceRows: FloorInvoiceRow[];
   /** Every invoice of the OBD when invoiceRows is narrowed — k/n, the away chip. */
   invoiceRowsAll?: FloorInvoiceRow[];
+  // ── Floor's On hold tab ONLY (2026-10-30, dealer groups) — set by
+  // getFloorHold's `floorExtras` option, which only /api/floor/hold and the
+  // live row patches (lib/floor/rows.ts) pass. ABSENT for Freight Trips and the
+  // Tint Manager, so their payloads are unchanged.
+  /** computeDropKey (lib/trips/drop-key.ts) — the dealer group's key. Equality only. */
+  stopKey?: string;
+  /** salesOfficerByOrder (lib/floor/queries.ts) — the board's SO, as shown. */
+  salesOfficerName?: string | null;
+  salesOfficerSource?: FloorSalesOfficerSource | null;
 }
 
 /** Cancel & CI source chip. auto_bill_only is Billing (mail-order CI mark) or

@@ -12,6 +12,14 @@
 // Columns (fixed table standard, CLAUDE_UI §27), default:
 //   ☐ · OBD · Invoice · Ship to · Route · Type · L · Kg · Article · Held since · Held by
 // "Held from" is available on request (`columns`), not shown by default.
+//
+// FLOOR'S ON HOLD TAB (2026-10-30, dealer groups — mockup
+// docs/mockups/floor-hold/hold-dealer-groups.html) asks for more, ALL OPT-IN:
+// the columns "so" / "area" / "volKg", `columnWidths`, `look="floor"` (the
+// floor-table.tsx row: 31px header, the block tags after the OBD number, the
+// stacked Vol / KG cell, the article tag's 10.5px grey) and
+// `showSelectAll={false}` (the dealer header carries the tick). Freight Trips
+// passes none of them and renders exactly as before.
 // Rows are `FloorHoldRow` (lib/floor/queries.ts getFloorHold). "Held since" reads
 // heldSince — the real hold moment, "~" when approximated from the arrival date.
 
@@ -21,7 +29,7 @@ import { HandBadge } from "@/components/shared/hand-badge";
 import { SampleBadge } from "@/components/shared/sample-badge";
 import { ChallanBadge } from "@/components/shared/challan-badge";
 import { ObdBadge } from "@/components/shared/obd-badge";
-import { shipMarkers, shortTripNumber, SEARCH_HIT_ROW_CLS } from "./floor-table";
+import { blockTags, shipMarkers, shortTripNumber, SEARCH_HIT_ROW_CLS } from "./floor-table";
 import { InvoiceLines, LoadPartChip, ObdDateLine } from "./bill-ref-cells";
 import { PairPlaceChip, pairBarBorderCls, type PairBarKind } from "./pair-cells";
 import { awayChipOf, drawRowsOf, type FloorInvoiceRow } from "@/lib/floor/invoice-rows";
@@ -50,7 +58,11 @@ export type HoldColumn =
   | "article"
   | "heldSince"
   | "heldFrom"
-  | "heldBy";
+  | "heldBy"
+  // Opt-in (2026-10-30, Floor's On hold tab) — never in HOLD_COLUMNS.
+  | "so"
+  | "area"
+  | "volKg";
 
 /** Each data column's share of the row. The DEFAULT set below sums to 97 (the tick
  *  column takes 3 → 100); any `columns` choice is re-scaled to fill the row. */
@@ -66,6 +78,10 @@ const COLUMN_WIDTH: Record<HoldColumn, number> = {
   heldSince: 8,
   heldFrom: 9,
   heldBy: 8,
+  // Not in the default set, so the default re-scale is untouched.
+  so: 13,
+  area: 11,
+  volKg: 9,
 };
 
 /** The default columns, in display order. "Held from" is NOT shown by default
@@ -88,13 +104,21 @@ const HEADER: Record<HoldColumn, string> = {
   heldSince: "Held since",
   heldFrom: "Held from",
   heldBy: "Held by",
+  so: "SO",
+  area: "Area",
+  volKg: "Vol / KG",
 };
-const NUMERIC: ReadonlySet<HoldColumn> = new Set<HoldColumn>(["litres", "kg"]);
+const NUMERIC: ReadonlySet<HoldColumn> = new Set<HoldColumn>(["litres", "kg", "volKg"]);
+
+/** "default" = the table as it always was (Freight Trips); "floor" = floor-table.tsx's row. */
+export type HoldTableLook = "default" | "floor";
 
 // §27 sizing — header 32px, cells px-3.5, first column centred and narrow.
 const HEAD_TH = "h-[32px] border-b border-[#ebebeb] px-3.5 text-left text-[10px] font-medium uppercase tracking-[0.05em] text-[#9ca3af]";
 const HEAD_TH_R = HEAD_TH.replace("text-left", "text-right");
 const HEAD_TH_C = "h-[32px] border-b border-[#ebebeb] pl-[10px] pr-[4px] text-center text-[10px] font-medium uppercase tracking-[0.05em] text-[#9ca3af]";
+// look="floor": floor-table.tsx's HEAD_TH is 31px — the only header difference.
+const toFloorHead = (cls: string) => cls.replace("h-[32px]", "h-[31px]");
 const TD = "border-b border-[#f0f0f0] px-3.5 py-2 text-[11px] text-[#4b5563] whitespace-nowrap overflow-hidden text-ellipsis";
 const TD_R = `${TD} text-right tabular-nums`;
 const TD_C = "border-b border-[#f0f0f0] pl-[10px] pr-[4px] py-2 text-center text-[11px]";
@@ -115,12 +139,29 @@ type InvoicePart = {
   articleTagText?: string;
 };
 
-function Cell({ col, row, now, part = null }: { col: HoldColumn; row: FloorHoldRow; now: Date; part?: InvoicePart | null }) {
+function Cell({
+  col,
+  row,
+  now,
+  part = null,
+  look = "default",
+}: {
+  col: HoldColumn;
+  row: FloorHoldRow;
+  now: Date;
+  part?: InvoicePart | null;
+  look?: HoldTableLook;
+}) {
   switch (col) {
     case "obd":
       return (
         <td className={TD}>
           <span className="font-mono text-[11.5px] font-medium text-[#111827]">{row.obdNumber}</span>
+          {/* look="floor": the Ship to column is gone (the dealer is the group
+              header), so its per-bill marks ride here — floor-table.tsx's block
+              row tags, same order and shape (no Same tag: a hold row carries no
+              duplicate-SO flag). */}
+          {look === "floor" && blockTags(row, false)}
           {/* A truck part with no SAP number yet: its tag sits by the OBD number. */}
           {part?.load && row.invoiceNo === null && <LoadPartChip k={part.load.k} n={part.load.n} className="ml-1.5" />}
           <ObdDateLine iso={row.obdDateTime} isEmailTime={false} />
@@ -206,8 +247,52 @@ function Cell({ col, row, now, part = null }: { col: HoldColumn; row: FloorHoldR
       );
     }
     case "article":
+      if (look === "floor") {
+        // floor-table.tsx's Article tag cell: 10.5px, #6b7280.
+        const text =
+          part?.articleTagText !== undefined ? part.articleTagText : row.articleTag ? formatArticleTag(row.articleTag) : null;
+        return <td className={`${TD} text-[10.5px]`}>{text ? <span className="text-[#6b7280]">{text}</span> : DASH}</td>;
+      }
       if (part?.articleTagText !== undefined) return <td className={TD}>{part.articleTagText}</td>;
       return <td className={TD}>{row.articleTag ? formatArticleTag(row.articleTag) : DASH}</td>;
+    case "so":
+      // floor-table.tsx's SO cell: grey Telecaller, a pale dash when not found.
+      return (
+        <td
+          className={TD}
+          title={
+            row.salesOfficerSource === "telecaller"
+              ? "Telecaller — the mail order came from a depot mailbox"
+              : row.salesOfficerName ?? undefined
+          }
+        >
+          {row.salesOfficerName == null ? (
+            <span className="text-[11.5px] text-[#d1d5db]">—</span>
+          ) : row.salesOfficerSource === "telecaller" ? (
+            <span className="text-[11.5px] text-[#9ca3af]">{row.salesOfficerName}</span>
+          ) : (
+            <span className="text-[11.5px] text-[#4b5563]">{row.salesOfficerName}</span>
+          )}
+        </td>
+      );
+    case "area":
+      return <td className={TD}>{row.area ?? DASH}</td>;
+    case "volKg": {
+      // floor-table.tsx's stacked Vol / KG cell: litres over kg (10px grey). A
+      // GIFT's figures are shown but greyed — they are left out of every total.
+      const kg = formatWeightKg(row.weightKg);
+      return (
+        <td
+          className={`${row.isGift ? TD.replace("text-[#4b5563]", "text-ink-400") : TD} text-right tabular-nums`}
+          title={row.isGift ? "Gift — not counted in L / kg" : undefined}
+        >
+          <div>{formatLitres(row.volumeLitres ?? 0)} L</div>
+          <div className={`text-[10px] ${row.isGift ? "text-ink-400" : "text-[#9ca3af]"}`}>
+            {kg !== null ? `${kg} kg` : <span title="No weight recorded for this bill">&mdash;</span>}
+          </div>
+        </td>
+      );
+    }
     case "heldSince": {
       const days = holdAgeDays(row.heldSince, now);
       const approx = row.heldSinceSource === "approx";
@@ -281,6 +366,9 @@ export function HoldTable({
   columns = HOLD_COLUMNS,
   perInvoice = false,
   onToggleKey,
+  look = "default",
+  columnWidths,
+  showSelectAll = true,
 }: {
   rows: FloorHoldRow[];
   /** One clock per render pass, so every age on screen agrees. */
@@ -305,6 +393,13 @@ export function HoldTable({
   perInvoice?: boolean;
   /** perInvoice: a tick by key (orderId or `inv:<id>`). */
   onToggleKey?: (key: FloorDeskKey) => void;
+  /** 2026-10-30 — "floor" draws floor-table.tsx's row (see the header). Default "default". */
+  look?: HoldTableLook;
+  /** 2026-10-30 — per-column shares overriding COLUMN_WIDTH, re-scaled as usual. Default none. */
+  columnWidths?: Partial<Record<HoldColumn, number>>;
+  /** 2026-10-30 — false leaves the tick column's header cell empty (a group
+   *  header above carries the select-all). Default true. */
+  showSelectAll?: boolean;
 }) {
   const sel: ReadonlySet<FloorDeskKey> = selection ?? new Set<number>();
   const allOn = perInvoice ? isAllHoldKeysSelected(sel, rows) : isAllIdsSelected(sel as FloorSelection, rows);
@@ -335,8 +430,10 @@ export function HoldTable({
   });
   // Re-scale the chosen columns so the row always fills 100%.
   const dataShare = 100 - (selectable ? TICK_WIDTH : 0);
-  const chosenTotal = columns.reduce((s, c) => s + COLUMN_WIDTH[c], 0) || 1;
-  const width = (c: HoldColumn) => `${((COLUMN_WIDTH[c] / chosenTotal) * dataShare).toFixed(3)}%`;
+  const share = (c: HoldColumn) => columnWidths?.[c] ?? COLUMN_WIDTH[c];
+  const chosenTotal = columns.reduce((s, c) => s + share(c), 0) || 1;
+  const width = (c: HoldColumn) => `${((share(c) / chosenTotal) * dataShare).toFixed(3)}%`;
+  const head = (cls: string) => (look === "floor" ? toFloorHead(cls) : cls);
 
   return (
     <table className="w-full table-fixed border-collapse">
@@ -349,18 +446,20 @@ export function HoldTable({
       <thead>
         <tr>
           {selectable && (
-            <th className={HEAD_TH_C}>
-              <input
-                type="checkbox"
-                aria-label="Select all held bills in this group"
-                className="h-[13px] w-[13px] cursor-pointer align-middle accent-brand-600"
-                checked={allOn}
-                onChange={() => onToggleAll?.(rows)}
-              />
+            <th className={head(HEAD_TH_C)}>
+              {showSelectAll && (
+                <input
+                  type="checkbox"
+                  aria-label="Select all held bills in this group"
+                  className="h-[13px] w-[13px] cursor-pointer align-middle accent-brand-600"
+                  checked={allOn}
+                  onChange={() => onToggleAll?.(rows)}
+                />
+              )}
             </th>
           )}
           {columns.map((c) => (
-            <th key={c} className={NUMERIC.has(c) ? HEAD_TH_R : HEAD_TH}>
+            <th key={c} className={head(NUMERIC.has(c) ? HEAD_TH_R : HEAD_TH)}>
               {HEADER[c]}
             </th>
           ))}
@@ -398,7 +497,7 @@ export function HoldTable({
                 </td>
               )}
               {columns.map((c) => (
-                <Cell key={c} col={c} row={cellRow} now={now} part={part} />
+                <Cell key={c} col={c} row={cellRow} now={now} part={part} look={look} />
               ))}
             </tr>
           );

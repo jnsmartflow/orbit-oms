@@ -379,8 +379,13 @@ const BLOCK_TAG_OBD = "bg-data-plum text-white";
  * GIFT · HAND · SAME. Each keeps its surface's own test — URGENT is
  * `priorityLevel === 1`, the ⚡ rule; TINT/BASE is `colourWork`, the
  * ColourWorkBadge rule. Only the first tag gets the ~8px gap after the number.
+ * Exported (2026-10-30) for the On hold tab's floor-look rows (hold-table.tsx
+ * `look="floor"`) — typed to the fields it reads, so a hold row fits as-is.
  */
-function blockTags(row: FloorBoardRow, dup: boolean): ReactNode[] {
+export function blockTags(
+  row: Pick<FloorBoardRow, "isChallanOrder" | "isObdImport" | "priorityLevel" | "colourWork" | "isGift" | "isHand" | "isSample">,
+  dup: boolean,
+): ReactNode[] {
   const tags: Array<{ key: string; cls: string; title: string; label: string }> = [];
   // CHALLAN (2026-10-07, Challan orders M1) — FIRST: it says why the number in
   // front of it is an ORB number. This table's square shape; the shared

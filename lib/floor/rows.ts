@@ -77,7 +77,9 @@ export async function getFloorRowsByIds(ids: number[]): Promise<FloorRowsResult>
 
   const hide = await getHideExclusion();
   const board = await getFloorBoard({ mode: "live", scope: "All", hideExclusion: hide, onlyIds: unique });
-  const hold = await getFloorHold("All", hide, unique);
+  // floorExtras: the On hold tab groups by stopKey and shows the SO — a patched
+  // row must carry them too, or it would fall out of its dealer group.
+  const hold = await getFloorHold("All", hide, unique, undefined, { floorExtras: true });
   const cancelled = await getFloorCancelled("All", hide, unique);
 
   const found = new Map<number, FloorRowPatch>();

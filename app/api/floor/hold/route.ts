@@ -22,6 +22,7 @@ export async function GET(req: Request) {
   if (!allowed) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const scope = parseScope(new URL(req.url).searchParams.get("scope"));
-  const rows = await getFloorHold(scope);
+  // floorExtras: stopKey (the dealer groups) + the SO — Floor's On hold tab only.
+  const rows = await getFloorHold(scope, undefined, undefined, undefined, { floorExtras: true });
   return NextResponse.json({ scope, rows, count: rows.length });
 }

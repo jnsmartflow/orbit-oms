@@ -4564,6 +4564,8 @@ export function FloorPage({
                     windows={dispatchWindows}
                     onRelease={holdRelease}
                     onOpenDetail={(id, invoiceSeq) => openDetail(id, "hold", invoiceSeq ?? null)}
+                    // A search jump landing here turns the Today filter off if it would hide the bill.
+                    focusOrderId={searchFocus?.hit.orderId ?? null}
                     menuOpen={holdMoreOpen}
                     onMenuOpenChange={setHoldMoreOpen}
                     onOpenOffFloor={(rows, keepTicked, units) =>

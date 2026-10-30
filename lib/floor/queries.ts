@@ -1781,6 +1781,12 @@ export async function getFloorHold(
   // tabs build step 7): the Tint Manager's Hold tab passes { orderType: "tint" }.
   // Floor passes nothing, so its query is byte-for-byte what it was.
   extraWhere?: Prisma.ordersWhereInput,
+  // OPTIONAL (2026-10-30) — Floor's On hold tab only: also fill stopKey and the
+  // SO (FloorHoldRow's three optional fields). stopKey costs no read (the
+  // order's own scalars); the SO is the board's salesOfficerByOrder, batched.
+  // Freight Trips and the Tint Manager pass nothing, so their rows and reads
+  // are unchanged.
+  opts: { floorExtras?: boolean } = {},
 ): Promise<FloorHoldRow[]> {
   const hide = hideExclusion ?? (await getHideExclusion());
   const holdTerms: Prisma.ordersWhereInput[] = onlyIds ? [floorHoldWhere(), hide, { id: { in: onlyIds } }] : [floorHoldWhere(), hide];
@@ -1897,6 +1903,10 @@ export async function getFloorHold(
   // Typed ship-to areas (step 7A) — no read when none is typed.
   const typedAreas = await typedAreasById(orders);
 
+  // Floor's On hold tab only (opts.floorExtras): whose bill it is — the
+  // board's own helper, the same rule and the same batched reads.
+  const salesOfficers = opts.floorExtras ? await salesOfficerByOrder(orders) : null;
+
   const rows: FloorHoldRow[] = [];
   for (const order of orders) {
     const ship = floorShipTo(order, typedAreas);
@@ -1990,6 +2000,13 @@ export async function getFloorHold(
       heldByName: latestHeld ? latestHeld.heldByName : heldByName,
       invoiceCount: invoiceCounts.get(order.id) ?? 1,
       invoiceRows: perInvoice ? all : [],
+      ...(salesOfficers
+        ? {
+            stopKey: computeDropKey(order),
+            salesOfficerName: salesOfficers.get(order.id)?.name ?? null,
+            salesOfficerSource: salesOfficers.get(order.id)?.source ?? null,
+          }
+        : {}),
     };
     // Narrowed to the HELD invoices: their litres / kg, every invoice kept in
     // invoiceRowsAll for "k/n" and the away chip. The same object when all are held.
