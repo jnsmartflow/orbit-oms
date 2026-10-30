@@ -1,8 +1,9 @@
 // Floor Control — detail panel Items tab (design §10.4, mockup 02-detail-panel
 // `itemsHTML`). Index · product name · SKU · pack chip · quantity · litres.
 // A violet dot marks a tint line. Litre total at the foot — the ONE place a
-// total appears (design §10.1 cut the kg/litre header strip). Gift lines are
-// OUT OF SCOPE: no gift tag, no gift-excluded total.
+// total appears (design §10.1 cut the kg/litre header strip). The gift rule
+// lives in lib/orders/gift.ts (a whole bill, materialType GIFTS); sticker lines
+// in lib/orders/sticker.ts (left out of the litre total).
 
 import { formatLitres, formatWeightKg } from "./status-pill";
 import type { FloorDetailLine } from "@/lib/floor/types";

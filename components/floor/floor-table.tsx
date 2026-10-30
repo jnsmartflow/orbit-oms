@@ -30,7 +30,8 @@
 //    minimums for two short values that are read together, and ten positions
 //    did not fit — Due, Status and Article were all clipping on the live
 //    screen. Stacking them is one position for the same two facts, and it is
-//    the shape the OBD and Invoice cells already use. Gift lines OUT OF SCOPE.
+//    the shape the OBD and Invoice cells already use. The gift rule lives in
+//    lib/orders/gift.ts (GIFT pill, 0 L / 0 kg).
 //  - KG renders an EM DASH at zero, never "0" — see the cell.
 //  - Article reuses formatArticleTag (D/C/T/B), CLAUDE_SUPPORT §4.19.
 //  - The ☐ and # columns use NARROW padding so the row number never truncates

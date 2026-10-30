@@ -86,7 +86,10 @@ export async function buildObds(
         obdNumber:           g.delivery,
         division:            header.division,
         sapStatus:           null,
-        materialType:        null,
+        // A delivery of sticker lines only is a GIFT bill (owner, 2026-10-30):
+        // lib/orders/gift.ts keys on this value. SAP .xlsx and paste carry no
+        // material type, so anything else stays null as before.
+        materialType:        stickerOnly ? "GIFTS" : null,
         natureOfTransaction: null,
         warehouse:           header.warehouse,
         obdEmailDate:        fallbackObdEmailDate,

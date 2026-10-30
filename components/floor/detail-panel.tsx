@@ -27,6 +27,8 @@ import { HandBadge } from "@/components/shared/hand-badge";
 import { SampleBadge } from "@/components/shared/sample-badge";
 import { ChallanBadge } from "@/components/shared/challan-badge";
 import { ObdBadge } from "@/components/shared/obd-badge";
+import { GiftBadge } from "./gift-badge";
+import { isGiftBill } from "@/lib/orders/gift";
 import type { DispatchWindow } from "@/components/floor/dispatch-slot-picker";
 import { SlotPickerButton } from "@/components/floor/slot-picker-button";
 import { ShipToModal } from "@/components/shared/ship-to-modal";
@@ -859,6 +861,9 @@ function PanelBody({
               project divisions, exactly as the chip rendered nothing on a plain
               bill, so this row is unchanged on every other panel. */}
           <ColourWorkBadge work={d.colourWork} />
+          {/* GIFT — materialType GIFTS (lib/orders/gift.ts), beside TINT / BASE
+              as on the Floor table and both Picking phones. */}
+          {isGiftBill(d.materialType) && <GiftBadge />}
           {/* HAND — the dealer collects (2026-09-24), beside TINT / BASE. */}
           {isHand && <HandBadge />}
           {/* SAMPLE (2026-10-24) — beside HAND, off the detail payload. */}

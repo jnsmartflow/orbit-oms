@@ -43,7 +43,7 @@ import {
 } from "@/lib/import-qty-guard";
 import type { ImportAnomaly, QtyMismatch } from "@/lib/import-qty-guard";
 import { computeArticleInfo, loadPackCatalog, rollupArticleTagsBySku } from "@/lib/article-tag";
-import { headerKgLessStickers, headerLitresLessStickers, isStickerLine, loadLines, STICKER_TAG } from "@/lib/orders/sticker";
+import { headerKgLessStickers, headerLitresLessStickers, isStickerLine, isStickerOnly, loadLines, STICKER_TAG } from "@/lib/orders/sticker";
 import type { ArticleRollup, PackCatalog } from "@/lib/article-tag";
 import { applySoTagHolds } from "@/lib/billing/telephonic-apply";
 import { catchChallanObds } from "@/lib/challan-orders/reconcile";
@@ -1569,7 +1569,9 @@ async function handleConfirm(req: Request, session: Session): Promise<NextRespon
         orderDateTime:       emailDateTime,
         smu:                 summary.smu,
         sapStatus:           summary.sapStatus,
-        materialType:        summary.materialType,
+        // SAP's own MaterialType wins; only a MISSING one on a sticker-only
+        // bill becomes GIFTS (owner, 2026-10-30 — same rule as build-obd.ts).
+        materialType:        summary.materialType ?? (isStickerOnly(validLines) ? "GIFTS" : null),
         natureOfTransaction: summary.natureOfTransaction,
         warehouse:           summary.warehouse,
         totalUnitQty:        summary.totalUnitQty,
@@ -4107,7 +4109,9 @@ async function processAutoImportRows(
         orderDateTime:       emailDateTime,
         smu:                 summary.smu,
         sapStatus:           summary.sapStatus,
-        materialType:        summary.materialType,
+        // SAP's own MaterialType wins; only a MISSING one on a sticker-only
+        // bill becomes GIFTS (owner, 2026-10-30 — same rule as build-obd.ts).
+        materialType:        summary.materialType ?? (isStickerOnly(validLines) ? "GIFTS" : null),
         natureOfTransaction: summary.natureOfTransaction,
         warehouse:           summary.warehouse,
         totalUnitQty:        summary.totalUnitQty,
