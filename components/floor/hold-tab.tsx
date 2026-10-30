@@ -33,7 +33,8 @@ import { HoldBar } from "./hold-bar";
 import { HoldTable, type HoldColumn } from "./hold-table";
 import { PdfPreview } from "./pdf-preview";
 import { shipMarkers } from "./floor-table";
-import { formatLitres, sumLitres } from "./status-pill";
+import { formatLitres, formatWeightKg, sumLitres, sumWeightKg } from "./status-pill";
+import { narrowToInvoiceIds } from "@/lib/floor/invoice-rows";
 import {
   holdKeysOf,
   holdUnits,
@@ -133,6 +134,12 @@ export function HoldTab({
   // The bar's figures — the same two helpers' meaning as the Floor tab's bar.
   const selectedArticles = countArticles(selectedRows.map((r) => r.articleTag)).pieces;
   const selectedRoutes = new Set(selectedRows.map((r) => r.route ?? "\u0000unrouted")).size;
+  // L / kg (2026-10-30) — the Floor bar's rule (floor-page selectedLoadRows): a
+  // partly-ticked split OBD counts only its TICKED held invoices; gift = 0;
+  // a missing weight makes the kg a lower bound.
+  const unitByOrder = new Map(units.map((u) => [u.orderId, u] as const));
+  const selectedLoadRows = selectedRows.map((r) => narrowToInvoiceIds(r, unitByOrder.get(r.orderId)?.invoiceRowIds ?? null));
+  const selectionWeight = sumWeightKg(selectedLoadRows);
   const clear = () => setSelection(new Set());
   // The menu lives on the bar; when the ticks go, the bar goes, and the menu
   // must not come back "open" with the next tick.
@@ -265,6 +272,9 @@ export function HoldTab({
           count={selectedIds.length}
           articles={selectedArticles}
           routes={selectedRoutes}
+          litres={formatLitres(sumLitres(selectedLoadRows))}
+          weight={formatWeightKg(selectionWeight.kg)}
+          weightIsPartial={selectionWeight.unknown > 0}
           windows={windows}
           busy={busy}
           onRelease={doRelease}

@@ -3,6 +3,7 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { getTodayIST } from "@/lib/dates";
+import { BAR_SECONDARY } from "@/components/floor/floor-action-bar";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -43,6 +44,14 @@ interface Props {
   // the same overlay the assign bar and detail panel already build by hand in
   // CSS, expressed as a prop instead. Default false = today's behaviour.
   hideTrigger?: boolean;
+  // WHICH TRIGGER (2026-10-30). "pill" — the 22px chip every caller has always
+  // had (the default; nothing else changes). "bar" — the Hold bar's control: a
+  // 44px secondary button the height of Release (floor-action-bar.tsx
+  // BAR_SECONDARY), calendar + "Set slot" / "Fri 30 Oct · 16:00", and the clear
+  // × as a SEPARATE 44px button beside it — never nested inside the trigger.
+  // Disabled is the bar's grey (UI §10), not opacity-40. The popover, its
+  // anchor (this trigger) and its behaviour are identical in both.
+  trigger?: "pill" | "bar";
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -50,6 +59,13 @@ interface Props {
 function fmtSlot(v: DispatchSlotValue): string {
   const [, m, d] = v.date.split("-");
   return `${d}-${m} · ${v.windowTime}`;
+}
+
+/** trigger="bar": "Fri 30 Oct · 16:00" — the popover's own day words (WEEKDAYS / MONTHS). */
+function fmtBarSlot(v: DispatchSlotValue): string {
+  const [y, m, d] = v.date.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  return `${WEEKDAYS[dt.getUTCDay()]} ${d} ${MONTHS[m - 1]} · ${v.windowTime}`;
 }
 
 function getQuickDates(): { today: string; tomorrow: string } {
@@ -90,6 +106,7 @@ export function DispatchSlotPicker({
   forceOpenGen,
   suggested,
   hideTrigger,
+  trigger = "pill",
 }: Props) {
   const [open, setOpen]           = useState(false);
   const [calOpen, setCalOpen]     = useState(false);
@@ -351,6 +368,44 @@ export function DispatchSlotPicker({
   );
 
   // ── Render ────────────────────────────────────────────────────────────────
+
+  if (trigger === "bar" && !hideTrigger) {
+    return (
+      <div className="relative inline-flex items-center gap-1">
+        <button
+          ref={triggerRef}
+          type="button"
+          disabled={disabled}
+          onClick={handleToggle}
+          // Open = the ··· More button's open look (floor-action-bar.tsx MoreMenu).
+          className={`${BAR_SECONDARY} ${open ? "border-ink-400 bg-ink-50" : ""}`}
+        >
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="shrink-0" aria-hidden>
+            <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+            <line x1="16" y1="2" x2="16" y2="6" />
+            <line x1="8" y1="2" x2="8" y2="6" />
+            <line x1="3" y1="10" x2="21" y2="10" />
+          </svg>
+          <span>{value ? fmtBarSlot(value) : "Set slot"}</span>
+        </button>
+        {value && (
+          <button
+            type="button"
+            disabled={disabled}
+            onClick={handleClear}
+            title="Clear slot"
+            aria-label="Clear slot"
+            // BAR_SECONDARY's box and disabled grey, square, written out rather
+            // than overriding its min-width / padding / colour utilities.
+            className="inline-flex h-[44px] w-[44px] items-center justify-center rounded-lg border border-ink-200 bg-white text-[18px] leading-none text-ink-500 hover:border-ink-400 hover:bg-ink-50 hover:text-ink-900 disabled:cursor-not-allowed disabled:border-gray-200 disabled:bg-gray-100 disabled:text-gray-400"
+          >
+            ×
+          </button>
+        )}
+        {open && mounted && createPortal(popover, document.body)}
+      </div>
+    );
+  }
 
   return (
     <div className={hideTrigger ? "absolute inset-0" : "relative inline-block"}>

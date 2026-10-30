@@ -7,22 +7,28 @@
 // tick rows, the bottom bar rises with `release to [date ▾] [window ▾]`, then
 // Release. Same shape as Support." (design §8)
 //
-// The date+window control is components/floor/dispatch-slot-picker.tsx USED
-// AS-IS — its one popover already carries both halves the mockup draws as two
-// selects, so there is nothing to fork. Release is disabled until a slot is
-// chosen; a held bill must never go to the floor without a dispatch promise.
+// The date+window control is components/floor/dispatch-slot-picker.tsx with
+// `trigger="bar"` (2026-10-30, mockup docs/mockups/floor-hold/hold-dealer-groups.html):
+// a 44px "Set slot" button the height of Release, and the clear × as its own
+// 44px button beside it. The popover is the picker's, unchanged — commit on
+// tap, no confirm, honest highlight, auto-flip, portalled. Every other caller
+// keeps the default 22px pill. Release is disabled until a slot is chosen — a
+// held bill must never go to the floor without a dispatch promise — and says
+// so: "Set a slot first" under it. The one exception is `slotOptional` (every
+// tick a held invoice of a partly-held split OBD): enabled, no hint.
 //
 // 🔴 THE SAME SHELL AS THE FLOOR TAB'S BAR (2026-09-22): floor-action-bar.tsx —
-// same size, same "{N} selected · ✕ Clear", same figures line. Release and the
-// slot picker sit in the CTA area, then ··· More with one item, Cancel / Raise
-// CI… (off-floor-dialog.tsx, 2026-09-22). Release
-// is the one brand button, and disabled is grey, never a faded brand (it was
-// `disabled:opacity-40` until this change — CLAUDE_UI §10).
+// same size, same "{N} selected · ✕ Clear", same figures line. Set slot and
+// Release sit in the CTA area, then ··· More with one item, Cancel / Raise
+// CI… (off-floor-dialog.tsx, 2026-09-22). Release is the one brand button, and
+// disabled is grey, never a faded brand (CLAUDE_UI §10) — the slot trigger too.
 //
-// ⚠ ARTICLES AND ROUTES ONLY, NO LITRES OR KG. FloorHoldRow carries no
-// `isGift` and no `weightKg`, and a litre total that counted GIFT bills would
-// disagree with the Floor tab's (sumLitres excludes them). No number beats a
-// number that is wrong in a way nobody can see.
+// FIGURES: articles · routes · L · kg (2026-10-30). The caller computes L and kg
+// with the Floor bar's own helpers — sumLitres / sumWeightKg / formatWeightKg
+// (status-pill.tsx): a GIFT is 0 L / 0 kg, a bill with no weight makes the kg a
+// lower bound ("67+ kg"), and no recorded weight at all prints no kg. (Until
+// 2026-10-30 this said FloorHoldRow carried no isGift / weightKg; both have been
+// on it since 2026-10-02.)
 
 import { useState } from "react";
 import { X } from "lucide-react";
@@ -33,6 +39,9 @@ export function HoldBar({
   count,
   articles,
   routes,
+  litres,
+  weight,
+  weightIsPartial,
   windows,
   busy,
   onRelease,
@@ -48,6 +57,13 @@ export function HoldBar({
   articles: number;
   /** Distinct routes the selection spans. */
   routes: number;
+  /** Already formatted through formatLitres (sumLitres — gift = 0). */
+  litres: string;
+  /** Already formatted through formatWeightKg; NULL when no ticked bill has a
+   *  recorded weight — then no kg is printed (zero is not a weight). */
+  weight: string | null;
+  /** At least one ticked bill has no weight → the kg is a lower bound ("+"). */
+  weightIsPartial: boolean;
   windows: DispatchWindow[];
   busy: boolean;
   /** date / windowId null only when `slotOptional` and no slot was picked. */
@@ -71,23 +87,48 @@ export function HoldBar({
   offFloorBlock?: string | null;
 }) {
   const [slot, setSlot] = useState<DispatchSlotValue | null>(null);
+  const needsSlot = !slot && !slotOptional;
 
   const figures: BarFigure[] = [];
   if (articles > 0) figures.push({ key: "art", value: String(articles), unit: articles === 1 ? "article" : "articles" });
   if (routes > 0) figures.push({ key: "rt", value: String(routes), unit: routes === 1 ? "route" : "routes" });
+  figures.push({ key: "l", value: litres, unit: "L" });
+  if (weight !== null) {
+    figures.push({
+      key: "kg",
+      value: `${weight}${weightIsPartial ? "+" : ""}`,
+      unit: "kg",
+      title: weightIsPartial ? "Some selected bills have no weight recorded — this total is a lower bound" : undefined,
+    });
+  }
 
   return (
     <FloorActionBar count={count} figures={figures} onClear={onClear} clearDisabled={busy}>
-      <span className="text-[13px] text-ink-500">release to</span>
-      <DispatchSlotPicker value={slot} onChange={setSlot} windows={windows} popoverDir="up" popoverAlign="right" />
-      <button
-        type="button"
-        disabled={(!slot && !slotOptional) || busy}
-        onClick={() => (slot ? onRelease(slot.date, slot.dispatchWindowId) : slotOptional && onRelease(null, null))}
-        className={BAR_PRIMARY}
-      >
-        {busy ? "Releasing…" : "Release"}
-      </button>
+      <DispatchSlotPicker
+        value={slot}
+        onChange={setSlot}
+        windows={windows}
+        popoverDir="up"
+        popoverAlign="right"
+        trigger="bar"
+        disabled={busy}
+      />
+      {/* The hint hangs under Release (absolute) so the row never shifts when it goes. */}
+      <span className="relative inline-flex">
+        <button
+          type="button"
+          disabled={needsSlot || busy}
+          onClick={() => (slot ? onRelease(slot.date, slot.dispatchWindowId) : slotOptional && onRelease(null, null))}
+          className={BAR_PRIMARY}
+        >
+          {busy ? "Releasing…" : "Release"}
+        </button>
+        {needsSlot && (
+          <span className="pointer-events-none absolute left-0 right-0 top-full mt-0.5 whitespace-nowrap text-center text-[11px] text-ink-400">
+            Set a slot first
+          </span>
+        )}
+      </span>
       <BarDivider />
       {/* One item on this bar (2026-09-22): a held bill has no Hold to offer. */}
       <MoreMenu
