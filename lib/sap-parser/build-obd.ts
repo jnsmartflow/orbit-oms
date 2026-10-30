@@ -13,7 +13,7 @@ import type { GroupedDelivery } from "./group-rows";
 import type { AppliedRulesResult, LineInterim } from "./apply-rules";
 import type { SkippedRow, Warning } from "./types";
 import { computeArticleInfo, loadPackCatalog, type PackCatalog } from "../article-tag";
-import { loadLines } from "../orders/sticker";
+import { isStickerOnly, loadLines } from "../orders/sticker";
 
 export interface BuildObdResult {
   obds:     ObdInput[];
@@ -66,10 +66,12 @@ export async function buildObds(
     // Sticker lines (lib/orders/sticker.ts) carry SAP placeholder L/kg equal to
     // their qty: left OUT of volume/grossWeight. The lines themselves keep
     // their raw values. totalUnitQty is a tin count and keeps every line.
+    // A sticker-only delivery totals 0, not null (owner, 2026-10-30).
     const totalUnitQty = lines.reduce((acc, l) => acc + l.unitQty, 0);
     const counted      = loadLines(lines);
-    const volume       = sumOrNull(counted.map((l) => l.volumeLine));
-    const grossWeight  = sumOrNull(counted.map((l) => l.totalWeight));
+    const stickerOnly  = isStickerOnly(lines);
+    const volume       = stickerOnly ? 0 : sumOrNull(counted.map((l) => l.volumeLine));
+    const grossWeight  = stickerOnly ? 0 : sumOrNull(counted.map((l) => l.totalWeight));
 
     // Resolve article/articleTag per line against the preloaded catalog.
     // Sequential awaits, no $transaction (CLAUDE_CORE.md §3) — and with the

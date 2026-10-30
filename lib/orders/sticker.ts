@@ -42,6 +42,16 @@ export function isStickerLine(line: { skuCodeRaw: string | null | undefined }): 
   return isStickerSku(line.skuCodeRaw);
 }
 
+/**
+ * True when a bill HAS lines and every one is a sticker line. Such a bill's
+ * litre / kg total is 0, never null (owner, 2026-10-30): a total that skips
+ * sticker lines is a SUM, and an empty sum is 0. A bill with NO lines at all
+ * is not sticker-only — its missing data stays missing.
+ */
+export function isStickerOnly(lines: ReadonlyArray<{ skuCodeRaw: string | null | undefined }>): boolean {
+  return lines.length > 0 && lines.every(isStickerLine);
+}
+
 /** The lines that count toward litre / kg / article totals — sticker lines removed. */
 export function loadLines<T extends { skuCodeRaw: string | null | undefined }>(lines: readonly T[]): T[] {
   return lines.filter((l) => !isStickerLine(l));
@@ -52,14 +62,14 @@ export function loadLines<T extends { skuCodeRaw: string | null | undefined }>(l
  *
  * Only what the lines actually carry is subtracted: a sticker line with no
  * totalWeight (Auto-Import lines carry none) subtracts nothing, so its kg stays
- * inside the header figure — we do not invent one. null stays null; the result
- * never goes below 0.
+ * inside the header figure — we do not invent one. null stays null — except on a
+ * sticker-only bill, which totals 0 (isStickerOnly); the result never goes below 0.
  */
 export function headerKgLessStickers(
   headerKg: number | null,
   lines: ReadonlyArray<{ skuCodeRaw: string | null | undefined; totalWeight?: number | null }>,
 ): number | null {
-  if (headerKg === null) return null;
+  if (headerKg === null) return isStickerOnly(lines) ? 0 : null;
   let sticker = 0;
   for (const l of lines) {
     if (isStickerLine(l) && (l.totalWeight ?? 0) > 0) sticker += l.totalWeight!;
@@ -72,7 +82,7 @@ export function headerLitresLessStickers(
   headerLitres: number | null,
   lines: ReadonlyArray<{ skuCodeRaw: string | null | undefined; volumeLine?: number | null }>,
 ): number | null {
-  if (headerLitres === null) return null;
+  if (headerLitres === null) return isStickerOnly(lines) ? 0 : null;
   let sticker = 0;
   for (const l of lines) {
     if (isStickerLine(l) && (l.volumeLine ?? 0) > 0) sticker += l.volumeLine!;
