@@ -18,8 +18,8 @@
 // `columnWidths`, `showSelectAll={false}`). Freight Trips uses the same table
 // with none of those and is unchanged. Everything Floor-only stays HERE: the
 // groups, the Today filter, the release bar (bulk selection), row click →
-// detail panel, and Export PDF (components/floor/pdf-preview.tsx — it still
-// bands by age itself, unchanged).
+// detail panel, and Export XLS (app/api/floor/hold/export, lib/floor/hold-workbook.ts —
+// built on the server; the old Export PDF, pdf-preview.tsx + hold-pdf.ts, is unmounted).
 //
 // "Held since" reads FloorHoldRow.heldSince — the real wall-clock hold moment,
 // derived on the read side (lib/floor/queries.ts getFloorHold + hold-log.ts), NOT
@@ -27,11 +27,10 @@
 // never read as a recorded one.
 
 import { useEffect, useMemo, useState } from "react";
-import { Building2, FileText } from "lucide-react";
+import { Building2, FileSpreadsheet } from "lucide-react";
 import { FloorSkeleton } from "./floor-skeleton";
 import { HoldBar } from "./hold-bar";
 import { HoldTable, type HoldColumn } from "./hold-table";
-import { PdfPreview } from "./pdf-preview";
 import { shipMarkers } from "./floor-table";
 import { formatLitres, formatWeightKg, sumLitres, sumWeightKg } from "./status-pill";
 import { narrowToInvoiceIds } from "@/lib/floor/invoice-rows";
@@ -110,7 +109,8 @@ export function HoldTab({
   // orderIds, plus `inv:<id>` for a split OBD's held invoices (6.1).
   const [selection, setSelection] = useState<Set<FloorDeskKey>>(new Set());
   const [busy, setBusy] = useState(false);
-  const [pdfOpen, setPdfOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
 
   // A stable clock for this render pass — every age computation on screen agrees.
   const now = useMemo(() => new Date(), [rows]);
@@ -167,11 +167,43 @@ export function HoldTab({
     }
   };
 
+  // Export XLS (2026-10-30) — the server builds the file (lib/floor/hold-workbook.ts,
+  // `xlsx` never reaches the browser) for this scope and view; search / filters
+  // are not applied. A failure says so beside the button — never silent.
+  const exportXls = async () => {
+    setExporting(true);
+    setExportError(null);
+    try {
+      const qs = new URLSearchParams({ view: todayOnly ? "today" : "all", scope });
+      const res = await fetch(`/api/floor/hold/export?${qs.toString()}`, { cache: "no-store" });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(body?.error ?? `HTTP ${res.status}`);
+      }
+      const blob = await res.blob();
+      const name =
+        /filename="([^"]+)"/.exec(res.headers.get("Content-Disposition") ?? "")?.[1] ??
+        `OnHold_${todayOnly ? "Today" : "All"}.xlsx`;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (e) {
+      setExportError(`Export failed — ${e instanceof Error ? e.message : "try again"}`);
+    } finally {
+      setExporting(false);
+    }
+  };
+
   const segBtn = (on: boolean) => `px-[11px] text-[11px] ${on ? "bg-white font-semibold text-gray-900" : "text-gray-500"}`;
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
-      {/* Toolbar — All / Today + Export PDF. */}
+      {/* Toolbar — All / Today + Export XLS. */}
       <div className="flex items-center gap-2 border-b border-gray-200 bg-[#fcfcfd] px-3.5 py-[7px]">
         {!loading && !error && (
           <span className="text-[11px] text-gray-400">
@@ -193,14 +225,20 @@ export function HoldTab({
               Today · <span className="tabular-nums">{todayRows.length}</span>
             </button>
           </span>
+          {exportError && (
+            <span role="alert" className="text-[11px] text-danger-text">
+              {exportError}
+            </span>
+          )}
           <button
             type="button"
-            onClick={() => setPdfOpen(true)}
-            disabled={list.length === 0}
-            className="flex h-[27px] items-center gap-1.5 rounded-[6px] border border-gray-200 bg-white px-[10px] text-[11px] text-gray-500 hover:border-gray-300 hover:text-gray-700 disabled:opacity-40"
+            onClick={() => void exportXls()}
+            disabled={shown.length === 0 || exporting}
+            title={`Download the ${todayOnly ? "Today" : "All"} list as .xlsx (search and filters not applied)`}
+            className="flex h-[27px] items-center gap-1.5 rounded-[6px] border border-gray-200 bg-white px-[10px] text-[11px] text-gray-500 hover:border-gray-300 hover:text-gray-700 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400"
           >
-            <FileText size={12} />
-            Export PDF
+            <FileSpreadsheet size={12} />
+            {exporting ? "Exporting…" : "Export XLS"}
           </button>
         </span>
       </div>
@@ -294,7 +332,6 @@ export function HoldTab({
         />
       )}
 
-      {pdfOpen && <PdfPreview rows={list} scope={scope} onClose={() => setPdfOpen(false)} />}
     </div>
   );
 }
