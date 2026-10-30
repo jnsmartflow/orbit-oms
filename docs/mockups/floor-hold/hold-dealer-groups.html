@@ -1,25 +1,39 @@
 <!doctype html>
 <!--
-  MOCKUP — Floor · On hold tab: dealer groups, Today filter, Set-slot bar. 2026-10-30.
-  Reference only. No app code reads this file.
+  MOCKUP — Floor · On hold tab, ROUND 2 (owner decisions 2026-10-30). Reference only.
 
-  🔴 HOLD-ONLY DESIGN. Two of the components this redraws are SHARED:
-    · components/floor/hold-table.tsx is also Freight Trips' table
-      (components/freight-trips/pool-view.tsx, trip-view.tsx). Any dealer grouping,
-      new column set or width change must be OFF BY DEFAULT there (a prop the Hold
-      tab passes), or live in hold-tab.tsx — Freight must render exactly as today.
-    · components/floor/dispatch-slot-picker.tsx is also used by Billing
-      (billing-action-ribbon.tsx, billing-bottom-bar.tsx) and, through
-      slot-picker-button.tsx, by the Floor detail panel and the Tint Manager.
-      The full-height "Set slot" trigger drawn here must be a Hold-bar-only
-      trigger (hideTrigger + the bar's own button, or a new size prop defaulting
-      to today's 22px pill). The popover itself is unchanged.
+  DECIDED
+    · Layout (a) DEALERS ONLY. No age bands, no band headings, no layout switch.
+    · Fixed sort: the dealer with the newest held bill on top; newest bill first
+      inside. Recent first / Oldest first is gone.
+    · Looks the SAME as Floor's "By route" table — values copied from
+      components/floor/floor-table.tsx (HEAD_TH h-31px · TD px-3.5 py-2 11px #4b5563 ·
+      OBD mono 11.5px/500 #111827 · date line 10px #9ca3af · SO 11.5px · Vol 11px over
+      kg 10px #9ca3af · article tag 10.5px #6b7280 · row tags 10.5px bold uppercase)
+      and the dealer header from components/floor/ship-to-blocks.tsx ShipToBlockHeader.
+    · Type column removed. Ship to column removed (the dealer is the header).
+    · Export PDF REPLACED by Export XLS (same spot). Exports the current view.
 
-  Dealer key in the build = stopKey (computeDropKey, lib/trips/drop-key.ts) — needs
-  the one extra batched read lib/freight-trips/pool.ts already does; not dealerName.
-  "Today" = bandOfDays(holdAgeDays(heldSince)) === "today" AND heldSinceSource === "log"
-  (excludes ~approximate and unknown).
-  Tokens: tailwind.config.ts (brand / ink / warn / danger / data.plum).
+  BUILD NOTES
+    · Dealer key = stopKey (computeDropKey, lib/trips/drop-key.ts), never dealerName.
+      FloorHoldRow has no stopKey and NO SO OFFICER NAME (only soNumber) — both need
+      the same one extra batched read lib/freight-trips/pool.ts already does.
+    · "Today" = bandOfDays(holdAgeDays(heldSince)) === "today" AND
+      heldSinceSource === "log" (excludes ~approximate and unknown).
+    · XLS: `xlsx` (SheetJS 0.18.5), written SERVER-SIDE in its own *-workbook.ts and
+      served by an API route — the pattern of lib/mrn/workbook.ts, lib/ci/workbook.ts,
+      lib/reports/freight-report-workbook.ts. Never import it into a client component
+      (~900KB, CLAUDE_MRN). `exceljs` is in package.json but nothing imports it.
+
+  🔴 SHARED — THE BUILD MUST KEEP THESE UNCHANGED
+    · components/floor/hold-table.tsx is also Freight Trips' table (pool-view.tsx,
+      trip-view.tsx). Dealer grouping / new columns / widths: off by default, or in
+      hold-tab.tsx only.
+    · components/floor/dispatch-slot-picker.tsx is also Billing's (billing-action-ribbon,
+      billing-bottom-bar) and, via slot-picker-button.tsx, the Floor detail panel's and
+      the Tint Manager's. The full-height "Set slot" trigger is Hold-bar-only
+      (hideTrigger + the bar's own button, or a size prop defaulting to today's pill).
+
   The JS below only builds the sample rows and flips the mockup states.
 -->
 <html lang="en">
@@ -29,16 +43,15 @@
 <title>Hold dealer groups</title>
 <style>
   :root{
-    --brand-50:#F5F3FF;--brand-100:#EDE9FE;--brand-600:#7C3AED;--brand-700:#6D28D9;--brand-800:#5B21B6;
-    --ink-0:#FFFFFF;--ink-25:#FAFAFC;--ink-50:#F4F3F8;--ink-100:#E9E7F0;--ink-200:#D6D3E0;--ink-400:#9C99AC;
-    --ink-500:#74718A;--ink-600:#514E63;--ink-700:#3A3748;--ink-900:#1B1826;
-    --warn:#D97706;--warn-bg:#FFFBEB;--warn-text:#B45309;
-    --danger:#E11D48;--danger-bg:#FFF1F2;--danger-text:#BE123C;
+    --brand-50:#F5F3FF;--brand-600:#7C3AED;--brand-700:#6D28D9;
+    --ink-50:#F4F3F8;--ink-100:#E9E7F0;--ink-200:#D6D3E0;--ink-400:#9C99AC;
+    --ink-500:#74718A;--ink-600:#514E63;--ink-900:#1B1826;
+    --warn-text:#B45309;--danger-bg:#FFF1F2;--danger-text:#BE123C;
     --plum:#86198F;--gray-100:#F3F4F6;--gray-200:#E5E7EB;--gray-400:#9CA3AF;
   }
   *{box-sizing:border-box}
   body{margin:0;background:#eceaf2;font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;color:var(--ink-900);font-size:13px}
-  .mono{font-family:"SF Mono",ui-monospace,Menlo,Consolas,monospace}
+  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
 
   /* ── mockup switch (outside the fake screen) ── */
   .switch{max-width:1320px;margin:18px auto 10px;padding:12px 16px;background:#fff;border:1px dashed var(--ink-200);border-radius:10px;display:flex;flex-wrap:wrap;gap:14px;align-items:center}
@@ -50,7 +63,7 @@
   .note{max-width:1320px;margin:0 auto 10px;font-size:11.5px;color:var(--ink-500);padding:0 4px}
 
   /* ── fake screen ── */
-  .screen{max-width:1320px;min-width:1100px;margin:0 auto 40px;background:#fff;border:1px solid var(--ink-200);border-radius:10px;overflow:hidden;position:relative;height:820px;display:flex;flex-direction:column}
+  .screen{max-width:1320px;min-width:1100px;margin:0 auto 28px;background:#fff;border:1px solid var(--ink-200);border-radius:10px;overflow:hidden;position:relative;height:800px;display:flex;flex-direction:column}
   .tabs{display:flex;gap:22px;padding:0 18px;border-bottom:1px solid var(--gray-200);align-items:center}
   .tab{display:flex;gap:6px;align-items:center;border-bottom:2px solid transparent;padding:12px 0;font-size:12px;color:#6b7280}
   .tab.on{border-color:var(--ink-900);color:var(--ink-900);font-weight:600}
@@ -65,54 +78,52 @@
   .seg{display:flex;height:27px;border:1px solid var(--gray-200);border-radius:6px;overflow:hidden;background:#f9fafb}
   .seg button{border:0;background:transparent;padding:0 11px;font-size:11px;color:#6b7280;cursor:pointer}
   .seg button.on{background:#fff;font-weight:600;color:#111827;box-shadow:0 0 0 1px var(--gray-200)}
-  .seg button .c{font-variant-numeric:tabular-nums}
-  .tbtn{height:27px;border:1px solid var(--gray-200);background:#fff;border-radius:6px;padding:0 10px;font-size:11px;color:#6b7280;display:flex;gap:6px;align-items:center}
-  .todaynote{padding:6px 14px;font-size:11px;color:var(--ink-500);background:var(--ink-25);border-bottom:1px solid #f0f0f0}
+  .tbtn{height:27px;border:1px solid var(--gray-200);background:#fff;border-radius:6px;padding:0 10px;font-size:11px;color:#6b7280;display:flex;gap:6px;align-items:center;cursor:pointer}
+  .tbtn:hover{border-color:#d1d5db;color:#374151}
+  .todaynote{padding:6px 14px;font-size:11px;color:var(--ink-500);background:#fafafc;border-bottom:1px solid #f0f0f0}
 
   .body{flex:1;overflow-y:auto;min-height:0}
   .body.withbar{padding-bottom:90px}
 
-  .band{display:flex;gap:8px;border-bottom:1px solid #f0f0f0;background:#fafafa;padding:7px 14px;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#6b7280;margin-top:10px}
-  .band:first-child{margin-top:0}
-  .band span{font-weight:400;text-transform:none;letter-spacing:0;color:var(--gray-400)}
-
-  /* ShipToBlockHeader look (ship-to-blocks.tsx) + a figures line on the right */
+  /* ShipToBlockHeader (ship-to-blocks.tsx): flex items-baseline gap-[9px] border-b #e7e7ee pb-7 pl-3.5 pr-18 pt-5 */
   .dealer{display:flex;align-items:baseline;gap:9px;border-bottom:1px solid #e7e7ee;padding:20px 18px 7px 14px}
   .dealer input{align-self:center}
   .dealer .name{font-size:16px;font-weight:600;color:#1a1a22}
   .dealer .star{font-size:13px;color:#f59e0b}
-  .dealer .area{font-size:12.5px;color:#96969f}
   .redir{align-self:center;border-radius:5px;background:#f3edff;padding:2px 7px;font-size:10.5px;font-weight:700;color:#6d28d9}
-  .dealer .fig{margin-left:auto;font-size:12px;color:#96969f;white-space:nowrap;font-variant-numeric:tabular-nums}
+  .dealer .fig{margin-left:auto;font-size:12.5px;color:#96969f;white-space:nowrap;font-variant-numeric:tabular-nums}
   .dealer .fig b{color:#55556a;font-weight:600}
 
+  /* floor-table.tsx HEAD_TH / TD */
   table{width:100%;table-layout:fixed;border-collapse:collapse}
-  th{height:32px;border-bottom:1px solid #ebebeb;padding:0 14px;text-align:left;font-size:10px;font-weight:500;text-transform:uppercase;letter-spacing:.05em;color:#9ca3af;white-space:nowrap}
+  th{height:31px;border-bottom:1px solid #ebebeb;padding:0 14px;text-align:left;font-size:10px;font-weight:500;text-transform:uppercase;letter-spacing:.05em;color:#9ca3af;white-space:nowrap}
   th.r{text-align:right}
   th.c,td.c{padding-left:10px;padding-right:4px;text-align:center}
-  td{border-bottom:1px solid #f0f0f0;padding:8px 14px;font-size:11px;color:#4b5563;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;vertical-align:top}
+  td{border-bottom:1px solid #f0f0f0;padding:8px 14px;font-size:11px;color:#4b5563;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   td.r{text-align:right;font-variant-numeric:tabular-nums}
   tr.row{cursor:pointer}
   tr.row:hover td{background:#fafafa}
   tr.sel td{background:var(--brand-50)}
   tr.sel td.c{box-shadow:inset 3px 0 0 var(--brand-600)}
   input[type=checkbox]{width:13px;height:13px;accent-color:var(--brand-600);margin:0;cursor:pointer;vertical-align:middle}
-  .obd{font-family:"SF Mono",ui-monospace,Menlo,monospace;font-size:11.5px;font-weight:500;color:#111827}
-  .sub{font-size:10.5px;color:#9ca3af;margin-top:1px}
-  .chip{display:inline-block;border-radius:999px;padding:1px 7px;font-size:10px;font-weight:700;letter-spacing:.04em;margin-left:6px;vertical-align:1px}
+  .obd{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11.5px;font-weight:500;color:#111827}
+  .dl{font-size:10px;color:#9ca3af}
+  /* floor-table.tsx row tag: ml-1.5 rounded-[4px] px-[5px] py-[1px] 10.5px bold uppercase tracking .06em */
+  .tag{display:inline-block;margin-left:6px;border-radius:4px;padding:1px 5px;font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;line-height:1.4;vertical-align:1px}
   .odb{background:var(--plum);color:#fff}
-  .urg{background:var(--danger-bg);color:var(--danger-text);border-radius:4px}
-  .vk .l{color:#111827}
-  .vk .k{font-size:10.5px;color:#9ca3af}
-  .muted{color:var(--ink-400)}
-  .held{font-size:10.5px;color:#6b7280}
+  .urg{background:var(--danger-bg);color:var(--danger-text)}
+  .so{font-size:11.5px;color:#4b5563}
+  .so.tele{color:#9ca3af}
+  .kg{font-size:10px;color:#9ca3af}
+  .art{font-size:10.5px;color:#6b7280}
+  .dash{color:#d1d5db}
   .sys{color:var(--ink-400)}
 
   .empty{padding:56px 20px;text-align:center}
   .empty .tick{font-size:28px;color:#22c55e;line-height:1}
   .empty h4{margin:8px 0 0;font-size:13px;color:#111827}
   .empty p{margin:6px 0 0;font-size:11.5px;color:#9ca3af}
-  .empty a{color:var(--brand-700);font-weight:600;text-decoration:none;cursor:pointer}
+  .empty a{color:var(--brand-700);font-weight:600;cursor:pointer}
 
   /* ── bottom bar: the floor-action-bar.tsx shell ── */
   .bar{position:absolute;left:0;right:0;bottom:0;z-index:20;min-height:76px;display:flex;align-items:center;gap:16px;border-top:1px solid var(--gray-200);background:#fff;padding:10px 18px;box-shadow:0 -6px 18px -12px rgba(0,0,0,.25)}
@@ -152,16 +163,30 @@
   .time{border:1px solid var(--gray-200);border-radius:6px;text-align:center;padding:7px 0;font-size:12px;font-weight:500;color:#111827;cursor:pointer}
   .time:hover{border-color:var(--ink-900)}
   .popfoot{margin-top:10px;font-size:10.5px;color:var(--gray-400)}
+
+  /* ── XLS preview ── */
+  .xls{max-width:1320px;min-width:1100px;margin:0 auto 48px;background:#fff;border:1px solid var(--ink-200);border-radius:10px;padding:16px 18px}
+  .xls h2{margin:0;font-size:15px}
+  .xls .fn{margin:4px 0 12px;font-size:12px;color:var(--ink-500)}
+  .xls .fn b{font-family:ui-monospace,Menlo,Consolas,monospace;color:var(--ink-900);font-weight:600}
+  .sheet{border:1px solid #c6c6c6;overflow-x:auto;font-family:Calibri,Carlito,"Segoe UI",sans-serif}
+  .sheet table{table-layout:auto;width:auto;min-width:100%}
+  .sheet th,.sheet td{border:1px solid #d4d4d4;padding:3px 8px;font-size:12px;color:#000;height:auto;text-transform:none;letter-spacing:0;font-weight:400;overflow:visible}
+  .sheet .colhdr th{background:#f0f0f0;color:#555;text-align:center;font-size:11px}
+  .sheet .rn{background:#f0f0f0;color:#555;text-align:center;width:34px}
+  .sheet .hd td{font-weight:700;background:#e8f0e8}
+  .sheet .tot td{font-weight:700;border-top:2px solid #777}
+  .sheet td.n{text-align:right;font-variant-numeric:tabular-nums}
+  .tabsx{display:flex;gap:2px;margin:0 0 14px;border:1px solid #c6c6c6;border-top:0;background:#f0f0f0;padding:0 6px}
+  .tabsx span{padding:4px 14px;font-size:12px;color:#444;font-family:Calibri,Carlito,"Segoe UI",sans-serif}
+  .tabsx span.on{background:#fff;color:#217346;font-weight:700;border-bottom:2px solid #217346}
+  .xls .lib{margin-top:4px;font-size:11.5px;color:var(--ink-500);line-height:1.55}
+  .xls .lib code{font-size:11px;background:var(--ink-50);padding:1px 4px;border-radius:3px}
 </style>
 </head>
 <body>
 
 <div class="switch">
-  <b>Layout</b>
-  <div class="sw" id="swLayout">
-    <button data-v="a" class="on">(a) Dealers only</button>
-    <button data-v="b">(b) Bands → dealers</button>
-  </div>
   <b>State</b>
   <div class="sw" id="swState">
     <button data-v="none" class="on">Nothing selected</button>
@@ -171,7 +196,7 @@
     <button data-v="empty">Today, empty</button>
   </div>
 </div>
-<div class="note">Mockup only · today is Fri 30 Oct 2026 (IST). Toolbar buttons (All / Today, Recent / Oldest) also work. Hover "~ 3 days ago" (Shiv Shakti) for the approximate tooltip.</div>
+<div class="note">Mockup only · today is Fri 30 Oct 2026 (IST). The All / Today toggle also works and drives the XLS preview below. Hover "~ 3 days ago" (Shiv Shakti) for the approximate tooltip.</div>
 
 <div class="screen">
   <div class="tabs">
@@ -188,15 +213,11 @@
     <span class="right">
       <span class="seg" id="segToday">
         <button data-v="all" class="on">All</button>
-        <button data-v="today">Today · <span class="c" id="todayN">0</span></button>
+        <button data-v="today">Today · <span id="todayN">0</span></button>
       </span>
-      <span class="seg" id="segSort">
-        <button data-v="recent" class="on">Recent first</button>
-        <button data-v="oldest">Oldest first</button>
-      </span>
-      <button class="tbtn" type="button">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
-        Export PDF
+      <button class="tbtn" type="button" id="xlsBtn" title="Download the current view as .xlsx">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="3" x2="9" y2="21"/></svg>
+        Export XLS
       </button>
     </span>
   </div>
@@ -206,119 +227,106 @@
   <div id="bar"></div>
 </div>
 
+<div class="xls" id="xls"></div>
+
 <script>
 // ── sample data (live-shaped). days = IST days since held; src log|approx|unknown ──
 const D = [];
 let seq = 0;
 function bill(dealer, o) { D.push(Object.assign({ id: ++seq, dealer }, o)); }
 const DEALERS = {
-  mohan:   { name: "Mohan Colour Co", star: true, area: "Adajan" },
-  khod:    { name: "I Shree Khodiyar Paints", star: true, area: "Varachha" },
-  shiv:    { name: "Shiv Shakti Hardware", area: "Udhna", redir: true },
-  patel:   { name: "Patel Paint House", area: "Katargam" },
-  ambika:  { name: "Ambika Traders", area: "Pandesara" },
+  mohan:  { name: "Mohan Colour Co", star: true, area: "Adajan", route: "Adajan–Pal", so: "Rakesh Patel" },
+  khod:   { name: "I Shree Khodiyar Paints", star: true, area: "Varachha", route: "Varachha", so: "Nilesh Desai" },
+  shiv:   { name: "Shiv Shakti Hardware", area: "Udhna", route: "Udhna–Sachin", so: "Telecaller", redir: true },
+  patel:  { name: "Patel Paint House", area: "Katargam", route: "Katargam", so: "Rakesh Patel" },
+  ambika: { name: "Ambika Traders", area: "Pandesara", route: "Pandesara", so: null },
 };
-const ROUTE = { mohan: "Adajan–Pal", khod: "Varachha", shiv: "Udhna–Sachin", patel: "Katargam", ambika: "Pandesara" };
-// Mohan Colour Co — 12 bills, across today / 6 / 11 / 14 / 17 days; three ODB, no invoice.
-[[0,"Ajay Vansia",186,242,"8 D · 4 C",false,"0905"],[0,"Ajay Vansia",64,81,"4 D",false,"0904"],
- [6,"System",120,151,"6 D · 2 B",true],[6,"Ajay Vansia",42,55,"2 D · 2 C",false,"0893"],[6,"Ajay Vansia",30,38,"6 C",false,"0892"],
- [11,"System",210,268,"10 D · 1 B",true],[11,"Ajay Vansia",88,112,"4 D · 2 C",false,"0871"],
- [14,"Ajay Vansia",56,70,"3 D",false,"0866"],[14,"System",24,31,"8 B",true],
- [17,"Ajay Vansia",140,176,"7 D",false,"0852"],[17,"Ajay Vansia",18,23,"6 B",false,"0851"],[17,"System",36,46,"2 D · 4 B",false,"0850"]]
-  .forEach(([days, by, l, kg, art, odb, inv], i) =>
-    bill("mohan", { days, src: "log", by, l, kg, art, odb, inv: odb ? null : "93061" + (20400 + i * 7), invDate: odb ? null : dateOf(days + 1), obd: "910624" + (5130 + i * 3) }));
-bill("khod",   { days: 2, src: "log", by: "Ajay Vansia", l: 1020, kg: 1356, art: "50 D", inv: "9306120511", invDate: dateOf(3), obd: "9106245044" });
-bill("shiv",   { days: 3, src: "approx", by: "System", l: 76, kg: 98, art: "4 D · 1 B", inv: "9306120477", invDate: dateOf(3), obd: "9106245012" });
-bill("shiv",   { days: 9, src: "log", by: "Ajay Vansia", l: 132, kg: 170, art: "6 D · 3 C", inv: "9306120390", invDate: dateOf(10), obd: "9106244930" });
-bill("patel",  { days: 0, src: "log", by: "Ajay Vansia", l: 48, kg: 62, art: "4 D", urgent: true, inv: "9306120534", invDate: dateOf(0), obd: "9106245101" });
-bill("patel",  { days: 35, src: "log", by: "Ajay Vansia", l: 260, kg: 331, art: "13 D", inv: "9306119802", invDate: dateOf(36), obd: "9106243377" });
-bill("ambika", { days: null, src: "unknown", by: null, l: 40, kg: null, art: "2 D", inv: "9306118710", invDate: dateOf(50), obd: "9106242210" });
+// Mohan Colour Co — 12 bills, held today / 6 / 11 / 14 / 17 days; three ODB, no invoice.
+[[0,"Ajay Vansia",186,242,"8 D · 4 C",false],[0,"Ajay Vansia",64,81,"4 D",false],
+ [6,"System",120,151,"6 D · 2 B",true],[6,"Ajay Vansia",42,55,"2 D · 2 C",false],[6,"Ajay Vansia",30,38,"6 C",false],
+ [11,"System",210,268,"10 D · 1 B",true],[11,"Ajay Vansia",88,112,"4 D · 2 C",false],
+ [14,"Ajay Vansia",56,70,"3 D",false],[14,"System",24,31,"8 B",true],
+ [17,"Ajay Vansia",140,176,"7 D",false],[17,"Ajay Vansia",18,23,"6 B",false],[17,"System",36,46,"2 D · 4 B",false]]
+  .forEach(([days, by, l, kg, art, odb], i) =>
+    bill("mohan", { days, src: "log", by, l, kg, art, odb, inv: odb ? null : "93061" + (20400 + i * 7), obd: "910624" + (5130 + i * 3) }));
+bill("khod",   { days: 2, src: "log", by: "Ajay Vansia", l: 1020, kg: 1356, art: "50 D", inv: "9306120511", obd: "9106245044" });
+bill("shiv",   { days: 3, src: "approx", by: "System", l: 76, kg: 98, art: "4 D · 1 B", inv: "9306120477", obd: "9106245012" });
+bill("shiv",   { days: 9, src: "log", by: "Ajay Vansia", l: 132, kg: 170, art: "6 D · 3 C", inv: "9306120390", obd: "9106244930" });
+bill("patel",  { days: 0, src: "log", by: "Ajay Vansia", l: 48, kg: 62, art: "4 D", urgent: true, inv: "9306120534", obd: "9106245101" });
+bill("patel",  { days: 35, src: "log", by: "Ajay Vansia", l: 260, kg: 331, art: "13 D", inv: "9306119802", obd: "9106243377" });
+bill("ambika", { days: null, src: "unknown", by: null, l: 40, kg: null, art: "2 D", inv: "9306118710", obd: "9106242210", age: 50 });
 
-function dateOf(days) {
-  const d = new Date(Date.UTC(2026, 9, 30) - days * 864e5);
-  return String(d.getUTCDate()).padStart(2, "0") + "-" + String(d.getUTCMonth() + 1).padStart(2, "0");
-}
+// A bill arrived (OBD) the day before it was held; SAP invoiced it the same day as the OBD.
+const MON = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+const dayD = (daysAgo) => new Date(Date.UTC(2026, 9, 30) - daysAgo * 864e5);
+const obdAgo = (b) => (b.days ?? b.age) + 1;
+const short = (d) => String(d.getUTCDate()).padStart(2, "0") + " " + MON[d.getUTCMonth()];           // fmtDateTime: "24 Oct"
+const full = (d) => [d.getUTCDate(), d.getUTCMonth() + 1].map((x) => String(x).padStart(2, "0")).join("-") + "-" + d.getUTCFullYear();
 const heldLabel = (d) => d === null ? "—" : d === 0 ? "today" : d === 1 ? "yesterday" : d + " days ago";
-const bandOf = (d) => d === null ? "unknown" : d === 0 ? "today" : d <= 7 ? "week" : d <= 30 ? "month" : "older";
-const BANDS = [["today","Held today"],["week","This week"],["month","1 week to 1 month"],["older","Older than a month"],["unknown","Held date unknown"]];
 const fmt = (n) => n.toLocaleString("en-IN");
 const isToday = (b) => b.days === 0 && b.src === "log";
 
-// ── state ──
-const S = { layout: "a", state: "none", today: false, oldest: false };
+const S = { state: "none", today: false };
 const SELECTED = new Set([1, 2, 3]); // two of Mohan's today bills + one 6-day bill
 
-function sortRows(rows) {
-  const k = (b) => b.days === null ? Infinity : b.days;
-  return rows.slice().sort((x, y) => S.oldest ? k(y) - k(x) : k(x) - k(y));
-}
+// Fixed sort: newest held first inside; dealers by their newest held bill; unknown-only last.
+const k = (b) => b.days === null ? Infinity : b.days;
 function groupsOf(rows) {
   const m = new Map();
   rows.forEach((b) => { if (!m.has(b.dealer)) m.set(b.dealer, []); m.get(b.dealer).push(b); });
-  const gs = Array.from(m, ([key, rs]) => ({ key, rows: sortRows(rs) }));
-  const newest = (g) => Math.min(...g.rows.map((b) => b.days === null ? Infinity : b.days));
-  const oldest = (g) => Math.max(...g.rows.map((b) => b.days === null ? -1 : b.days));
-  // unknown-only dealers always last
-  return gs.sort((a, b) => {
-    const ua = newest(a) === Infinity, ub = newest(b) === Infinity;
-    if (ua !== ub) return ua ? 1 : -1;
-    return S.oldest ? oldest(b) - oldest(a) : newest(a) - newest(b);
-  });
+  return Array.from(m, ([key, rs]) => ({ key, rows: rs.slice().sort((x, y) => k(x) - k(y)) }))
+    .sort((a, b) => k(a.rows[0]) - k(b.rows[0]));
 }
 
-// Widths: tick 3 · OBD 15 · Invoice 13 · Route 11 · Type 7 · Vol/KG 10 · Article 12 · Held since 12 · Held by 17 = 100
-const COLS = `<colgroup><col style="width:3%"><col style="width:15%"><col style="width:13%"><col style="width:11%"><col style="width:7%"><col style="width:10%"><col style="width:12%"><col style="width:12%"><col style="width:17%"></colgroup>`;
-const HEAD = `<thead><tr><th class="c"></th><th>OBD</th><th>Invoice</th><th>Route</th><th>Type</th><th class="r">Vol / KG</th><th>Article</th><th>Held since</th><th>Held by</th></tr></thead>`;
+// Widths at 1,100px: ☐ 3 · OBD 15 · Invoice 13 · SO 13 · Area 11 · Vol/KG 9 · Article 11 · Held since 11 · Held by 14 = 100
+const COLS = `<colgroup><col style="width:3%"><col style="width:15%"><col style="width:13%"><col style="width:13%"><col style="width:11%"><col style="width:9%"><col style="width:11%"><col style="width:11%"><col style="width:14%"></colgroup>`;
+const HEAD = `<thead><tr><th class="c"></th><th>OBD</th><th>Invoice</th><th>SO</th><th>Area</th><th class="r">Vol / KG</th><th>Article</th><th>Held since</th><th>Held by</th></tr></thead>`;
+const on = () => S.state !== "none" && S.state !== "empty";
 
 function rowHtml(b) {
-  const sel = S.state !== "none" && S.state !== "empty" && SELECTED.has(b.id);
+  const d = DEALERS[b.dealer];
+  const sel = on() && SELECTED.has(b.id);
   const approx = b.src === "approx";
+  const obdDate = dayD(obdAgo(b));
   return `<tr class="row${sel ? " sel" : ""}">
     <td class="c"><input type="checkbox" ${sel ? "checked" : ""} aria-label="Select ${b.obd}"></td>
-    <td><span class="obd">${b.obd}</span>${b.odb ? '<span class="chip odb">ODB</span>' : ""}${b.urgent ? '<span class="chip urg">URGENT</span>' : ""}<div class="sub">${dateOf((b.days ?? 49) + 1)} · 11:42</div></td>
-    <td>${b.inv ? `<span class="mono" style="color:#111827">${b.inv}</span><div class="sub">${b.invDate}</div>` : '<span class="muted">—</span>'}</td>
-    <td>${ROUTE[b.dealer]}</td>
-    <td>Local</td>
-    <td class="r vk"><div class="l">${fmt(b.l)} L</div><div class="k">${b.kg === null ? "—" : fmt(b.kg) + " kg"}</div></td>
-    <td>${b.art}</td>
-    <td class="held"${approx ? ' title="Approximate — no hold event recorded; showing arrival date"' : ""}${b.src === "unknown" ? ' style="color:#9ca3af"' : ""}>${approx ? "~ " : ""}${heldLabel(b.days)}</td>
-    <td class="${b.by === "System" ? "sys" : ""}">${b.by ?? '<span class="muted">—</span>'}</td>
+    <td><span class="obd">${b.obd}</span>${b.odb ? '<span class="tag odb">ODB</span>' : ""}${b.urgent ? '<span class="tag urg">Urgent</span>' : ""}<div class="dl">${short(obdDate)} 11:42</div></td>
+    <td>${b.inv ? `<span class="obd">${b.inv}</span><div class="dl">${short(obdDate)}</div>` : ""}</td>
+    <td>${d.so === null ? '<span class="so dash">—</span>' : `<span class="so${d.so === "Telecaller" ? " tele" : ""}">${d.so}</span>`}</td>
+    <td>${d.area}</td>
+    <td class="r"><div>${fmt(b.l)} L</div><div class="kg">${b.kg === null ? "—" : fmt(b.kg) + " kg"}</div></td>
+    <td><span class="art">${b.art}</span></td>
+    <td${approx ? ' title="Approximate — no hold event recorded; showing arrival date"' : ""}${b.src === "unknown" ? ' style="color:#9ca3af"' : ""}>${approx ? "~ " : ""}${heldLabel(b.days)}</td>
+    <td class="${b.by === "System" ? "sys" : ""}">${b.by ?? '<span class="dash">—</span>'}</td>
   </tr>`;
 }
 function dealerHtml(g) {
   const d = DEALERS[g.key];
   const L = g.rows.reduce((s, b) => s + b.l, 0);
-  const kgKnown = g.rows.filter((b) => b.kg !== null);
-  const KG = kgKnown.reduce((s, b) => s + b.kg, 0);
-  const kgTxt = kgKnown.length < g.rows.length ? (kgKnown.length ? fmt(KG) + "+ kg" : "— kg") : fmt(KG) + " kg";
-  const newest = g.rows.map((b) => b.days).filter((x) => x !== null);
-  const nb = newest.length ? Math.min(...newest) : null;
-  const nbSrc = g.rows.find((b) => b.days === nb)?.src === "approx" ? "~ " : "";
-  const allSel = S.state !== "none" && S.state !== "empty" && g.rows.every((b) => SELECTED.has(b.id));
-  const someSel = S.state !== "none" && S.state !== "empty" && !allSel && g.rows.some((b) => SELECTED.has(b.id));
+  const allSel = on() && g.rows.every((b) => SELECTED.has(b.id));
+  const someSel = on() && !allSel && g.rows.some((b) => SELECTED.has(b.id));
   return `<div class="dealer">
       <input type="checkbox" ${allSel ? "checked" : ""} ${someSel ? 'data-ind="1"' : ""} aria-label="Select every held bill for ${d.name}">
       <span class="name">${d.name}</span>${d.star ? '<span class="star" title="Key customer">★</span>' : ""}
-      <span class="area">${d.area}</span>
       ${d.redir ? '<span class="redir">→ ship-to changed</span>' : ""}
-      <span class="fig"><b>${g.rows.length}</b> bill${g.rows.length === 1 ? "" : "s"} · <b>${fmt(L)}</b> L · <b>${kgTxt}</b> · newest held <b>${nbSrc}${heldLabel(nb)}</b></span>
+      <span class="fig"><b>${g.rows.length}</b> bill${g.rows.length === 1 ? "" : "s"} · <b>${fmt(L)}</b> L</span>
     </div>
     <table>${COLS}${HEAD}<tbody>${g.rows.map(rowHtml).join("")}</tbody></table>`;
 }
 
-function render() {
+function view() {
   const todayOn = S.today || S.state === "empty";
-  // "Today, empty" pretends nothing was held today.
-  const pool = S.state === "empty" ? D.filter((b) => !isToday(b)) : D;
-  const rows = todayOn ? pool.filter(isToday) : pool;
-  const todayN = pool.filter(isToday).length;
+  const pool = S.state === "empty" ? D.filter((b) => !isToday(b)) : D; // "Today, empty" pretends nothing was held today
+  return { todayOn, pool, rows: todayOn ? pool.filter(isToday) : pool };
+}
 
+function render() {
+  const { todayOn, pool, rows } = view();
   document.getElementById("tabN").textContent = pool.length;
-  document.getElementById("todayN").textContent = todayN;
+  document.getElementById("todayN").textContent = pool.filter(isToday).length;
   document.getElementById("count").textContent = (todayOn ? `${rows.length} of ${pool.length} on hold` : `${pool.length} on hold`) + " · Local";
   document.getElementById("todayNote").hidden = !todayOn;
   setOn("segToday", todayOn ? "today" : "all");
-  setOn("segSort", S.oldest ? "oldest" : "recent");
 
   const body = document.getElementById("body");
   if (rows.length === 0) {
@@ -326,29 +334,25 @@ function render() {
       <p>Bills with a ~ approximate or unknown hold date are never counted as today.</p>
       <p><a id="showAll">Show all ${pool.length} on hold</a></p></div>`;
     document.getElementById("showAll").onclick = () => { S.today = false; if (S.state === "empty") S.state = "none"; syncSwitch(); render(); };
-  } else if (S.layout === "a") {
-    body.innerHTML = groupsOf(rows).map(dealerHtml).join("");
   } else {
-    const order = S.oldest ? [...BANDS.slice(0, 4)].reverse().concat([BANDS[4]]) : BANDS;
-    body.innerHTML = order.map(([k, label]) => {
-      const rs = rows.filter((b) => bandOf(b.days) === k);
-      if (!rs.length) return "";
-      return `<div class="band">${label}<span>· ${rs.length} bill${rs.length === 1 ? "" : "s"}</span></div>` + groupsOf(rs).map(dealerHtml).join("");
-    }).join("");
+    body.innerHTML = groupsOf(rows).map(dealerHtml).join("");
   }
   body.querySelectorAll('input[data-ind="1"]').forEach((el) => (el.indeterminate = true));
+  renderBar(body);
+  renderXls(rows, todayOn);
+}
 
-  // ── bottom bar ──
+function renderBar(body) {
   const bar = document.getElementById("bar");
   const showBar = ["noslot", "slot", "picker"].includes(S.state);
   body.classList.toggle("withbar", showBar);
   if (!showBar) { bar.innerHTML = ""; return; }
   const sel = D.filter((b) => SELECTED.has(b.id));
   const L = sel.reduce((s, b) => s + b.l, 0), KG = sel.reduce((s, b) => s + (b.kg ?? 0), 0);
-  const routes = new Set(sel.map((b) => ROUTE[b.dealer])).size;
+  const routes = new Set(sel.map((b) => DEALERS[b.dealer].route)).size;
   const arts = 24; // countArticles over the ticked tags: (8 D · 4 C) + (4 D) + (6 D · 2 B)
   const hasSlot = S.state === "slot";
-  const calIcon = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>`;
+  const cal = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>`;
   bar.innerHTML = `<div class="bar">
     <div class="left">
       <div class="cnt"><b>${sel.length} selected</b><button class="clr" type="button">✕ Clear</button></div>
@@ -356,7 +360,7 @@ function render() {
     </div>
     <div class="cta">
       <div class="slotwrap">
-        <button class="btn btn2${S.state === "picker" ? " open" : ""}" type="button" id="slotBtn">${hasSlot ? `${calIcon} Fri 30 Oct · 16:00` : `${calIcon} Set slot`}</button>
+        <button class="btn btn2${S.state === "picker" ? " open" : ""}" type="button" id="slotBtn">${cal} ${hasSlot ? "Fri 30 Oct · 16:00" : "Set slot"}</button>
         ${hasSlot ? '<button class="slotx" type="button" title="Clear slot" aria-label="Clear slot">×</button>' : ""}
         ${S.state === "picker" ? popHtml() : ""}
       </div>
@@ -385,12 +389,51 @@ function popHtml() {
   </div>`;
 }
 
+// ── XLS preview: the CURRENT view, same dealer order as the screen ──
+function renderXls(rows, todayOn) {
+  const el = document.getElementById("xls");
+  const groups = groupsOf(rows);
+  const letters = (n) => Array.from({ length: n }, (_, i) => String.fromCharCode(65 + i));
+  const colHdr = (n) => `<tr class="colhdr"><th class="rn"></th>${letters(n).map((c) => `<th>${c}</th>`).join("")}</tr>`;
+  let r = 1;
+  const line = (cells, cls = "") => `<tr class="${cls}"><td class="rn">${r++}</td>${cells.join("")}</tr>`;
+  const t = (v) => `<td>${v ?? ""}</td>`, n = (v) => `<td class="n">${v ?? ""}</td>`;
+
+  const totInv = rows.filter((b) => b.inv).length, totL = rows.reduce((s, b) => s + b.l, 0);
+  let sum = colHdr(3) + line([t("Customer name"), t("Total invoices"), t("Total litres")], "hd");
+  groups.forEach((g) => { sum += line([t(DEALERS[g.key].name), n(g.rows.filter((b) => b.inv).length), n(fmt(g.rows.reduce((s, b) => s + b.l, 0)))]); });
+  sum += line([t("Total"), n(totInv), n(fmt(totL))], "tot");
+
+  r = 1;
+  const H = ["Customer","OBD","OBD date","Invoice","Invoice date","SO","Area","Route","Litres","KG","Article","Held since","Held by"];
+  let det = colHdr(H.length) + line(H.map(t), "hd");
+  groups.forEach((g) => g.rows.forEach((b) => {
+    const d = DEALERS[g.key], od = full(dayD(obdAgo(b)));
+    const held = b.days === null ? "" : (b.src === "approx" ? "~ " : "") + full(dayD(b.days));
+    det += line([t(d.name), t(b.obd), t(od), t(b.inv), t(b.inv ? od : ""), t(d.so), t(d.area), t(d.route), n(fmt(b.l)), n(b.kg === null ? "" : fmt(b.kg)), t(b.art), t(held), t(b.by)]);
+  }));
+
+  el.innerHTML = `<h2>Export XLS — preview</h2>
+    <div class="fn">File: <b>OnHold_${todayOn ? "Today" : "All"}_30-10-2026.xlsx</b> · ${rows.length} bill${rows.length === 1 ? "" : "s"} · exports the current view (${todayOn ? "Today" : "All"})</div>
+    <div class="sheet"><table>${sum}</table></div>
+    <div class="tabsx"><span class="on">Summary</span><span>Details</span></div>
+    <div class="sheet"><table>${det}</table></div>
+    <div class="tabsx"><span>Summary</span><span class="on">Details</span></div>
+    <div class="lib">
+      Build: <code>xlsx</code> (SheetJS 0.18.5, already a dependency) — written server-side in its own
+      <code>lib/floor/hold-workbook.ts</code> and served by an API route, the same split as
+      <code>lib/mrn/workbook.ts</code>, <code>lib/ci/workbook.ts</code> and <code>lib/reports/freight-report-workbook.ts</code>.
+      Never imported by a client component (≈900 KB, CLAUDE_MRN). <code>exceljs</code> is in package.json but nothing imports it.<br>
+      Total invoices counts bills with an SAP invoice (ODB rows have none). Held since is the hold date; "~" marks an approximate (arrival) date, blank when unknown.
+      The two sheet previews show the same file; tabs drawn under each for clarity.
+    </div>`;
+}
+
 function setOn(id, v) { document.querySelectorAll(`#${id} button`).forEach((b) => b.classList.toggle("on", b.dataset.v === v)); }
-function syncSwitch() { setOn("swLayout", S.layout); setOn("swState", S.state); }
-document.querySelectorAll("#swLayout button").forEach((b) => (b.onclick = () => { S.layout = b.dataset.v; syncSwitch(); render(); }));
+function syncSwitch() { setOn("swState", S.state); }
 document.querySelectorAll("#swState button").forEach((b) => (b.onclick = () => { S.state = b.dataset.v; if (S.state !== "empty") S.today = false; syncSwitch(); render(); }));
 document.querySelectorAll("#segToday button").forEach((b) => (b.onclick = () => { S.today = b.dataset.v === "today"; if (!S.today && S.state === "empty") S.state = "none"; syncSwitch(); render(); }));
-document.querySelectorAll("#segSort button").forEach((b) => (b.onclick = () => { S.oldest = b.dataset.v === "oldest"; render(); }));
+document.getElementById("xlsBtn").onclick = () => document.getElementById("xls").scrollIntoView({ behavior: "smooth" });
 render();
 </script>
 </body>
