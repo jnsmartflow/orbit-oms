@@ -1,0 +1,397 @@
+<!doctype html>
+<!--
+  MOCKUP — Floor · On hold tab: dealer groups, Today filter, Set-slot bar. 2026-10-30.
+  Reference only. No app code reads this file.
+
+  🔴 HOLD-ONLY DESIGN. Two of the components this redraws are SHARED:
+    · components/floor/hold-table.tsx is also Freight Trips' table
+      (components/freight-trips/pool-view.tsx, trip-view.tsx). Any dealer grouping,
+      new column set or width change must be OFF BY DEFAULT there (a prop the Hold
+      tab passes), or live in hold-tab.tsx — Freight must render exactly as today.
+    · components/floor/dispatch-slot-picker.tsx is also used by Billing
+      (billing-action-ribbon.tsx, billing-bottom-bar.tsx) and, through
+      slot-picker-button.tsx, by the Floor detail panel and the Tint Manager.
+      The full-height "Set slot" trigger drawn here must be a Hold-bar-only
+      trigger (hideTrigger + the bar's own button, or a new size prop defaulting
+      to today's 22px pill). The popover itself is unchanged.
+
+  Dealer key in the build = stopKey (computeDropKey, lib/trips/drop-key.ts) — needs
+  the one extra batched read lib/freight-trips/pool.ts already does; not dealerName.
+  "Today" = bandOfDays(holdAgeDays(heldSince)) === "today" AND heldSinceSource === "log"
+  (excludes ~approximate and unknown).
+  Tokens: tailwind.config.ts (brand / ink / warn / danger / data.plum).
+  The JS below only builds the sample rows and flips the mockup states.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hold dealer groups</title>
+<style>
+  :root{
+    --brand-50:#F5F3FF;--brand-100:#EDE9FE;--brand-600:#7C3AED;--brand-700:#6D28D9;--brand-800:#5B21B6;
+    --ink-0:#FFFFFF;--ink-25:#FAFAFC;--ink-50:#F4F3F8;--ink-100:#E9E7F0;--ink-200:#D6D3E0;--ink-400:#9C99AC;
+    --ink-500:#74718A;--ink-600:#514E63;--ink-700:#3A3748;--ink-900:#1B1826;
+    --warn:#D97706;--warn-bg:#FFFBEB;--warn-text:#B45309;
+    --danger:#E11D48;--danger-bg:#FFF1F2;--danger-text:#BE123C;
+    --plum:#86198F;--gray-100:#F3F4F6;--gray-200:#E5E7EB;--gray-400:#9CA3AF;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:#eceaf2;font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;color:var(--ink-900);font-size:13px}
+  .mono{font-family:"SF Mono",ui-monospace,Menlo,Consolas,monospace}
+
+  /* ── mockup switch (outside the fake screen) ── */
+  .switch{max-width:1320px;margin:18px auto 10px;padding:12px 16px;background:#fff;border:1px dashed var(--ink-200);border-radius:10px;display:flex;flex-wrap:wrap;gap:14px;align-items:center}
+  .switch b{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-500)}
+  .sw{display:flex;border:1px solid var(--ink-200);border-radius:7px;overflow:hidden}
+  .sw button{border:0;background:#fff;padding:6px 11px;font-size:12px;color:var(--ink-600);cursor:pointer;border-right:1px solid var(--ink-100)}
+  .sw button:last-child{border-right:0}
+  .sw button.on{background:var(--ink-900);color:#fff}
+  .note{max-width:1320px;margin:0 auto 10px;font-size:11.5px;color:var(--ink-500);padding:0 4px}
+
+  /* ── fake screen ── */
+  .screen{max-width:1320px;min-width:1100px;margin:0 auto 40px;background:#fff;border:1px solid var(--ink-200);border-radius:10px;overflow:hidden;position:relative;height:820px;display:flex;flex-direction:column}
+  .tabs{display:flex;gap:22px;padding:0 18px;border-bottom:1px solid var(--gray-200);align-items:center}
+  .tab{display:flex;gap:6px;align-items:center;border-bottom:2px solid transparent;padding:12px 0;font-size:12px;color:#6b7280}
+  .tab.on{border-color:var(--ink-900);color:var(--ink-900);font-weight:600}
+  .tab .n{border-radius:4px;padding:1px 6px;font-size:10px;font-weight:700;background:var(--gray-100);color:#6b7280}
+  .tab.on .n{background:#111827;color:#fff}
+  .tab .grey{font-size:11px;color:var(--gray-400);font-weight:400}
+  .hist{margin-left:auto;font-size:12px;color:var(--ink-500)}
+
+  .toolbar{display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--gray-200);background:#fcfcfd;padding:7px 14px}
+  .toolbar .count{font-size:11px;color:var(--gray-400)}
+  .toolbar .right{margin-left:auto;display:flex;gap:8px;align-items:center}
+  .seg{display:flex;height:27px;border:1px solid var(--gray-200);border-radius:6px;overflow:hidden;background:#f9fafb}
+  .seg button{border:0;background:transparent;padding:0 11px;font-size:11px;color:#6b7280;cursor:pointer}
+  .seg button.on{background:#fff;font-weight:600;color:#111827;box-shadow:0 0 0 1px var(--gray-200)}
+  .seg button .c{font-variant-numeric:tabular-nums}
+  .tbtn{height:27px;border:1px solid var(--gray-200);background:#fff;border-radius:6px;padding:0 10px;font-size:11px;color:#6b7280;display:flex;gap:6px;align-items:center}
+  .todaynote{padding:6px 14px;font-size:11px;color:var(--ink-500);background:var(--ink-25);border-bottom:1px solid #f0f0f0}
+
+  .body{flex:1;overflow-y:auto;min-height:0}
+  .body.withbar{padding-bottom:90px}
+
+  .band{display:flex;gap:8px;border-bottom:1px solid #f0f0f0;background:#fafafa;padding:7px 14px;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#6b7280;margin-top:10px}
+  .band:first-child{margin-top:0}
+  .band span{font-weight:400;text-transform:none;letter-spacing:0;color:var(--gray-400)}
+
+  /* ShipToBlockHeader look (ship-to-blocks.tsx) + a figures line on the right */
+  .dealer{display:flex;align-items:baseline;gap:9px;border-bottom:1px solid #e7e7ee;padding:20px 18px 7px 14px}
+  .dealer input{align-self:center}
+  .dealer .name{font-size:16px;font-weight:600;color:#1a1a22}
+  .dealer .star{font-size:13px;color:#f59e0b}
+  .dealer .area{font-size:12.5px;color:#96969f}
+  .redir{align-self:center;border-radius:5px;background:#f3edff;padding:2px 7px;font-size:10.5px;font-weight:700;color:#6d28d9}
+  .dealer .fig{margin-left:auto;font-size:12px;color:#96969f;white-space:nowrap;font-variant-numeric:tabular-nums}
+  .dealer .fig b{color:#55556a;font-weight:600}
+
+  table{width:100%;table-layout:fixed;border-collapse:collapse}
+  th{height:32px;border-bottom:1px solid #ebebeb;padding:0 14px;text-align:left;font-size:10px;font-weight:500;text-transform:uppercase;letter-spacing:.05em;color:#9ca3af;white-space:nowrap}
+  th.r{text-align:right}
+  th.c,td.c{padding-left:10px;padding-right:4px;text-align:center}
+  td{border-bottom:1px solid #f0f0f0;padding:8px 14px;font-size:11px;color:#4b5563;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;vertical-align:top}
+  td.r{text-align:right;font-variant-numeric:tabular-nums}
+  tr.row{cursor:pointer}
+  tr.row:hover td{background:#fafafa}
+  tr.sel td{background:var(--brand-50)}
+  tr.sel td.c{box-shadow:inset 3px 0 0 var(--brand-600)}
+  input[type=checkbox]{width:13px;height:13px;accent-color:var(--brand-600);margin:0;cursor:pointer;vertical-align:middle}
+  .obd{font-family:"SF Mono",ui-monospace,Menlo,monospace;font-size:11.5px;font-weight:500;color:#111827}
+  .sub{font-size:10.5px;color:#9ca3af;margin-top:1px}
+  .chip{display:inline-block;border-radius:999px;padding:1px 7px;font-size:10px;font-weight:700;letter-spacing:.04em;margin-left:6px;vertical-align:1px}
+  .odb{background:var(--plum);color:#fff}
+  .urg{background:var(--danger-bg);color:var(--danger-text);border-radius:4px}
+  .vk .l{color:#111827}
+  .vk .k{font-size:10.5px;color:#9ca3af}
+  .muted{color:var(--ink-400)}
+  .held{font-size:10.5px;color:#6b7280}
+  .sys{color:var(--ink-400)}
+
+  .empty{padding:56px 20px;text-align:center}
+  .empty .tick{font-size:28px;color:#22c55e;line-height:1}
+  .empty h4{margin:8px 0 0;font-size:13px;color:#111827}
+  .empty p{margin:6px 0 0;font-size:11.5px;color:#9ca3af}
+  .empty a{color:var(--brand-700);font-weight:600;text-decoration:none;cursor:pointer}
+
+  /* ── bottom bar: the floor-action-bar.tsx shell ── */
+  .bar{position:absolute;left:0;right:0;bottom:0;z-index:20;min-height:76px;display:flex;align-items:center;gap:16px;border-top:1px solid var(--gray-200);background:#fff;padding:10px 18px;box-shadow:0 -6px 18px -12px rgba(0,0,0,.25)}
+  .bar .left{display:flex;flex-direction:column;gap:4px;min-width:0}
+  .bar .cnt{display:flex;align-items:center;gap:10px}
+  .bar .cnt b{font-size:18px;color:var(--ink-900)}
+  .clr{border:1px solid var(--ink-100);background:var(--ink-50);border-radius:6px;padding:3px 8px;font-size:12px;font-weight:600;color:var(--ink-600)}
+  .figs{display:flex;gap:16px;font-size:13px;color:var(--ink-500);white-space:nowrap}
+  .figs b{font-size:15px;color:var(--ink-900);font-variant-numeric:tabular-nums}
+  .cta{margin-left:auto;display:flex;align-items:center;gap:10px}
+  .btn{height:44px;min-width:112px;display:inline-flex;align-items:center;justify-content:center;gap:8px;white-space:nowrap;border-radius:8px;padding:0 18px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit}
+  .btn2{border:1px solid var(--ink-200);background:#fff;color:var(--ink-900)}
+  .btn2:hover{border-color:var(--ink-400);background:var(--ink-50)}
+  .btn2.open{border-color:var(--ink-900);box-shadow:0 0 0 3px rgba(27,24,38,.07)}
+  .btn1{border:1px solid var(--brand-600);background:var(--brand-600);color:#fff}
+  .btn1:hover{background:var(--brand-700)}
+  /* UI §10 disabled — grey, same box, never a faded brand */
+  .btn1[disabled]{cursor:not-allowed;border-color:var(--gray-200);background:var(--gray-100);color:var(--gray-400)}
+  .slotwrap{position:relative;display:flex;align-items:center;gap:4px}
+  .slotx{height:44px;width:34px;border:1px solid var(--ink-200);background:#fff;border-radius:8px;color:var(--ink-500);font-size:17px;cursor:pointer}
+  .slotx:hover{background:var(--ink-50);color:var(--ink-900)}
+  .relwrap{display:flex;flex-direction:column;align-items:center;gap:3px}
+  .hint{font-size:11px;color:var(--ink-400);height:13px}
+  .divider{width:1px;height:30px;background:var(--ink-100)}
+  .more{width:48px;min-width:48px;padding:0}
+
+  /* slot popover — dispatch-slot-picker.tsx, unchanged */
+  .pop{position:absolute;bottom:calc(100% + 8px);right:0;width:300px;background:#fff;border:1px solid var(--gray-200);border-radius:10px;box-shadow:0 10px 30px -8px rgba(0,0,0,.25);padding:12px;z-index:30}
+  .pop h5{margin:0 0 6px;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#9ca3af}
+  .days{display:flex;gap:4px;background:var(--gray-100);border-radius:8px;padding:3px;margin-bottom:12px}
+  .day{flex:1;text-align:center;border-radius:6px;padding:5px 0;font-size:11px;color:#4b5563;cursor:pointer;line-height:1.25}
+  .day b{display:block;font-size:13px;color:#111827}
+  .day .m{font-size:9px;color:var(--warn-text);font-weight:700}
+  .day.on{background:var(--ink-900);color:#fff}
+  .day.on b{color:#fff}
+  .times{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+  .time{border:1px solid var(--gray-200);border-radius:6px;text-align:center;padding:7px 0;font-size:12px;font-weight:500;color:#111827;cursor:pointer}
+  .time:hover{border-color:var(--ink-900)}
+  .popfoot{margin-top:10px;font-size:10.5px;color:var(--gray-400)}
+</style>
+</head>
+<body>
+
+<div class="switch">
+  <b>Layout</b>
+  <div class="sw" id="swLayout">
+    <button data-v="a" class="on">(a) Dealers only</button>
+    <button data-v="b">(b) Bands → dealers</button>
+  </div>
+  <b>State</b>
+  <div class="sw" id="swState">
+    <button data-v="none" class="on">Nothing selected</button>
+    <button data-v="noslot">Selected, no slot</button>
+    <button data-v="slot">Slot chosen</button>
+    <button data-v="picker">Picker open</button>
+    <button data-v="empty">Today, empty</button>
+  </div>
+</div>
+<div class="note">Mockup only · today is Fri 30 Oct 2026 (IST). Toolbar buttons (All / Today, Recent / Oldest) also work. Hover "~ 3 days ago" (Shiv Shakti) for the approximate tooltip.</div>
+
+<div class="screen">
+  <div class="tabs">
+    <div class="tab">Floor <span class="n">64</span><span class="grey">12 waiting</span></div>
+    <div class="tab">Tinting <span class="n">7</span></div>
+    <div class="tab on">On hold <span class="n" id="tabN">0</span></div>
+    <div class="tab">Cancel &amp; CI <span class="n">3</span></div>
+    <div class="tab">Challan orders <span class="n">2</span></div>
+    <div class="hist">History ›</div>
+  </div>
+
+  <div class="toolbar">
+    <span class="count" id="count"></span>
+    <span class="right">
+      <span class="seg" id="segToday">
+        <button data-v="all" class="on">All</button>
+        <button data-v="today">Today · <span class="c" id="todayN">0</span></button>
+      </span>
+      <span class="seg" id="segSort">
+        <button data-v="recent" class="on">Recent first</button>
+        <button data-v="oldest">Oldest first</button>
+      </span>
+      <button class="tbtn" type="button">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
+        Export PDF
+      </button>
+    </span>
+  </div>
+  <div class="todaynote" id="todayNote" hidden>Only bills held today. ~ dates excluded.</div>
+
+  <div class="body" id="body"></div>
+  <div id="bar"></div>
+</div>
+
+<script>
+// ── sample data (live-shaped). days = IST days since held; src log|approx|unknown ──
+const D = [];
+let seq = 0;
+function bill(dealer, o) { D.push(Object.assign({ id: ++seq, dealer }, o)); }
+const DEALERS = {
+  mohan:   { name: "Mohan Colour Co", star: true, area: "Adajan" },
+  khod:    { name: "I Shree Khodiyar Paints", star: true, area: "Varachha" },
+  shiv:    { name: "Shiv Shakti Hardware", area: "Udhna", redir: true },
+  patel:   { name: "Patel Paint House", area: "Katargam" },
+  ambika:  { name: "Ambika Traders", area: "Pandesara" },
+};
+const ROUTE = { mohan: "Adajan–Pal", khod: "Varachha", shiv: "Udhna–Sachin", patel: "Katargam", ambika: "Pandesara" };
+// Mohan Colour Co — 12 bills, across today / 6 / 11 / 14 / 17 days; three ODB, no invoice.
+[[0,"Ajay Vansia",186,242,"8 D · 4 C",false,"0905"],[0,"Ajay Vansia",64,81,"4 D",false,"0904"],
+ [6,"System",120,151,"6 D · 2 B",true],[6,"Ajay Vansia",42,55,"2 D · 2 C",false,"0893"],[6,"Ajay Vansia",30,38,"6 C",false,"0892"],
+ [11,"System",210,268,"10 D · 1 B",true],[11,"Ajay Vansia",88,112,"4 D · 2 C",false,"0871"],
+ [14,"Ajay Vansia",56,70,"3 D",false,"0866"],[14,"System",24,31,"8 B",true],
+ [17,"Ajay Vansia",140,176,"7 D",false,"0852"],[17,"Ajay Vansia",18,23,"6 B",false,"0851"],[17,"System",36,46,"2 D · 4 B",false,"0850"]]
+  .forEach(([days, by, l, kg, art, odb, inv], i) =>
+    bill("mohan", { days, src: "log", by, l, kg, art, odb, inv: odb ? null : "93061" + (20400 + i * 7), invDate: odb ? null : dateOf(days + 1), obd: "910624" + (5130 + i * 3) }));
+bill("khod",   { days: 2, src: "log", by: "Ajay Vansia", l: 1020, kg: 1356, art: "50 D", inv: "9306120511", invDate: dateOf(3), obd: "9106245044" });
+bill("shiv",   { days: 3, src: "approx", by: "System", l: 76, kg: 98, art: "4 D · 1 B", inv: "9306120477", invDate: dateOf(3), obd: "9106245012" });
+bill("shiv",   { days: 9, src: "log", by: "Ajay Vansia", l: 132, kg: 170, art: "6 D · 3 C", inv: "9306120390", invDate: dateOf(10), obd: "9106244930" });
+bill("patel",  { days: 0, src: "log", by: "Ajay Vansia", l: 48, kg: 62, art: "4 D", urgent: true, inv: "9306120534", invDate: dateOf(0), obd: "9106245101" });
+bill("patel",  { days: 35, src: "log", by: "Ajay Vansia", l: 260, kg: 331, art: "13 D", inv: "9306119802", invDate: dateOf(36), obd: "9106243377" });
+bill("ambika", { days: null, src: "unknown", by: null, l: 40, kg: null, art: "2 D", inv: "9306118710", invDate: dateOf(50), obd: "9106242210" });
+
+function dateOf(days) {
+  const d = new Date(Date.UTC(2026, 9, 30) - days * 864e5);
+  return String(d.getUTCDate()).padStart(2, "0") + "-" + String(d.getUTCMonth() + 1).padStart(2, "0");
+}
+const heldLabel = (d) => d === null ? "—" : d === 0 ? "today" : d === 1 ? "yesterday" : d + " days ago";
+const bandOf = (d) => d === null ? "unknown" : d === 0 ? "today" : d <= 7 ? "week" : d <= 30 ? "month" : "older";
+const BANDS = [["today","Held today"],["week","This week"],["month","1 week to 1 month"],["older","Older than a month"],["unknown","Held date unknown"]];
+const fmt = (n) => n.toLocaleString("en-IN");
+const isToday = (b) => b.days === 0 && b.src === "log";
+
+// ── state ──
+const S = { layout: "a", state: "none", today: false, oldest: false };
+const SELECTED = new Set([1, 2, 3]); // two of Mohan's today bills + one 6-day bill
+
+function sortRows(rows) {
+  const k = (b) => b.days === null ? Infinity : b.days;
+  return rows.slice().sort((x, y) => S.oldest ? k(y) - k(x) : k(x) - k(y));
+}
+function groupsOf(rows) {
+  const m = new Map();
+  rows.forEach((b) => { if (!m.has(b.dealer)) m.set(b.dealer, []); m.get(b.dealer).push(b); });
+  const gs = Array.from(m, ([key, rs]) => ({ key, rows: sortRows(rs) }));
+  const newest = (g) => Math.min(...g.rows.map((b) => b.days === null ? Infinity : b.days));
+  const oldest = (g) => Math.max(...g.rows.map((b) => b.days === null ? -1 : b.days));
+  // unknown-only dealers always last
+  return gs.sort((a, b) => {
+    const ua = newest(a) === Infinity, ub = newest(b) === Infinity;
+    if (ua !== ub) return ua ? 1 : -1;
+    return S.oldest ? oldest(b) - oldest(a) : newest(a) - newest(b);
+  });
+}
+
+// Widths: tick 3 · OBD 15 · Invoice 13 · Route 11 · Type 7 · Vol/KG 10 · Article 12 · Held since 12 · Held by 17 = 100
+const COLS = `<colgroup><col style="width:3%"><col style="width:15%"><col style="width:13%"><col style="width:11%"><col style="width:7%"><col style="width:10%"><col style="width:12%"><col style="width:12%"><col style="width:17%"></colgroup>`;
+const HEAD = `<thead><tr><th class="c"></th><th>OBD</th><th>Invoice</th><th>Route</th><th>Type</th><th class="r">Vol / KG</th><th>Article</th><th>Held since</th><th>Held by</th></tr></thead>`;
+
+function rowHtml(b) {
+  const sel = S.state !== "none" && S.state !== "empty" && SELECTED.has(b.id);
+  const approx = b.src === "approx";
+  return `<tr class="row${sel ? " sel" : ""}">
+    <td class="c"><input type="checkbox" ${sel ? "checked" : ""} aria-label="Select ${b.obd}"></td>
+    <td><span class="obd">${b.obd}</span>${b.odb ? '<span class="chip odb">ODB</span>' : ""}${b.urgent ? '<span class="chip urg">URGENT</span>' : ""}<div class="sub">${dateOf((b.days ?? 49) + 1)} · 11:42</div></td>
+    <td>${b.inv ? `<span class="mono" style="color:#111827">${b.inv}</span><div class="sub">${b.invDate}</div>` : '<span class="muted">—</span>'}</td>
+    <td>${ROUTE[b.dealer]}</td>
+    <td>Local</td>
+    <td class="r vk"><div class="l">${fmt(b.l)} L</div><div class="k">${b.kg === null ? "—" : fmt(b.kg) + " kg"}</div></td>
+    <td>${b.art}</td>
+    <td class="held"${approx ? ' title="Approximate — no hold event recorded; showing arrival date"' : ""}${b.src === "unknown" ? ' style="color:#9ca3af"' : ""}>${approx ? "~ " : ""}${heldLabel(b.days)}</td>
+    <td class="${b.by === "System" ? "sys" : ""}">${b.by ?? '<span class="muted">—</span>'}</td>
+  </tr>`;
+}
+function dealerHtml(g) {
+  const d = DEALERS[g.key];
+  const L = g.rows.reduce((s, b) => s + b.l, 0);
+  const kgKnown = g.rows.filter((b) => b.kg !== null);
+  const KG = kgKnown.reduce((s, b) => s + b.kg, 0);
+  const kgTxt = kgKnown.length < g.rows.length ? (kgKnown.length ? fmt(KG) + "+ kg" : "— kg") : fmt(KG) + " kg";
+  const newest = g.rows.map((b) => b.days).filter((x) => x !== null);
+  const nb = newest.length ? Math.min(...newest) : null;
+  const nbSrc = g.rows.find((b) => b.days === nb)?.src === "approx" ? "~ " : "";
+  const allSel = S.state !== "none" && S.state !== "empty" && g.rows.every((b) => SELECTED.has(b.id));
+  const someSel = S.state !== "none" && S.state !== "empty" && !allSel && g.rows.some((b) => SELECTED.has(b.id));
+  return `<div class="dealer">
+      <input type="checkbox" ${allSel ? "checked" : ""} ${someSel ? 'data-ind="1"' : ""} aria-label="Select every held bill for ${d.name}">
+      <span class="name">${d.name}</span>${d.star ? '<span class="star" title="Key customer">★</span>' : ""}
+      <span class="area">${d.area}</span>
+      ${d.redir ? '<span class="redir">→ ship-to changed</span>' : ""}
+      <span class="fig"><b>${g.rows.length}</b> bill${g.rows.length === 1 ? "" : "s"} · <b>${fmt(L)}</b> L · <b>${kgTxt}</b> · newest held <b>${nbSrc}${heldLabel(nb)}</b></span>
+    </div>
+    <table>${COLS}${HEAD}<tbody>${g.rows.map(rowHtml).join("")}</tbody></table>`;
+}
+
+function render() {
+  const todayOn = S.today || S.state === "empty";
+  // "Today, empty" pretends nothing was held today.
+  const pool = S.state === "empty" ? D.filter((b) => !isToday(b)) : D;
+  const rows = todayOn ? pool.filter(isToday) : pool;
+  const todayN = pool.filter(isToday).length;
+
+  document.getElementById("tabN").textContent = pool.length;
+  document.getElementById("todayN").textContent = todayN;
+  document.getElementById("count").textContent = (todayOn ? `${rows.length} of ${pool.length} on hold` : `${pool.length} on hold`) + " · Local";
+  document.getElementById("todayNote").hidden = !todayOn;
+  setOn("segToday", todayOn ? "today" : "all");
+  setOn("segSort", S.oldest ? "oldest" : "recent");
+
+  const body = document.getElementById("body");
+  if (rows.length === 0) {
+    body.innerHTML = `<div class="empty"><div class="tick">✓</div><h4>Nothing put on hold today.</h4>
+      <p>Bills with a ~ approximate or unknown hold date are never counted as today.</p>
+      <p><a id="showAll">Show all ${pool.length} on hold</a></p></div>`;
+    document.getElementById("showAll").onclick = () => { S.today = false; if (S.state === "empty") S.state = "none"; syncSwitch(); render(); };
+  } else if (S.layout === "a") {
+    body.innerHTML = groupsOf(rows).map(dealerHtml).join("");
+  } else {
+    const order = S.oldest ? [...BANDS.slice(0, 4)].reverse().concat([BANDS[4]]) : BANDS;
+    body.innerHTML = order.map(([k, label]) => {
+      const rs = rows.filter((b) => bandOf(b.days) === k);
+      if (!rs.length) return "";
+      return `<div class="band">${label}<span>· ${rs.length} bill${rs.length === 1 ? "" : "s"}</span></div>` + groupsOf(rs).map(dealerHtml).join("");
+    }).join("");
+  }
+  body.querySelectorAll('input[data-ind="1"]').forEach((el) => (el.indeterminate = true));
+
+  // ── bottom bar ──
+  const bar = document.getElementById("bar");
+  const showBar = ["noslot", "slot", "picker"].includes(S.state);
+  body.classList.toggle("withbar", showBar);
+  if (!showBar) { bar.innerHTML = ""; return; }
+  const sel = D.filter((b) => SELECTED.has(b.id));
+  const L = sel.reduce((s, b) => s + b.l, 0), KG = sel.reduce((s, b) => s + (b.kg ?? 0), 0);
+  const routes = new Set(sel.map((b) => ROUTE[b.dealer])).size;
+  const arts = 24; // countArticles over the ticked tags: (8 D · 4 C) + (4 D) + (6 D · 2 B)
+  const hasSlot = S.state === "slot";
+  const calIcon = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>`;
+  bar.innerHTML = `<div class="bar">
+    <div class="left">
+      <div class="cnt"><b>${sel.length} selected</b><button class="clr" type="button">✕ Clear</button></div>
+      <div class="figs"><span><b>${arts}</b> articles</span><span><b>${routes}</b> route${routes === 1 ? "" : "s"}</span><span><b>${fmt(L)}</b> L</span><span><b>${fmt(KG)}</b> kg</span></div>
+    </div>
+    <div class="cta">
+      <div class="slotwrap">
+        <button class="btn btn2${S.state === "picker" ? " open" : ""}" type="button" id="slotBtn">${hasSlot ? `${calIcon} Fri 30 Oct · 16:00` : `${calIcon} Set slot`}</button>
+        ${hasSlot ? '<button class="slotx" type="button" title="Clear slot" aria-label="Clear slot">×</button>' : ""}
+        ${S.state === "picker" ? popHtml() : ""}
+      </div>
+      <div class="relwrap">
+        <span class="hint"></span>
+        <button class="btn btn1" type="button" ${hasSlot ? "" : "disabled"}>Release</button>
+        <span class="hint">${hasSlot ? "" : "Set a slot first"}</span>
+      </div>
+      <span class="divider"></span>
+      <button class="btn btn2 more" type="button" aria-label="More">···</button>
+    </div>
+  </div>`;
+  document.getElementById("slotBtn").onclick = () => { S.state = S.state === "picker" ? "noslot" : "picker"; syncSwitch(); render(); };
+  bar.querySelectorAll(".time").forEach((t) => (t.onclick = () => { S.state = "slot"; syncSwitch(); render(); }));
+  const x = bar.querySelector(".slotx"); if (x) x.onclick = () => { S.state = "noslot"; syncSwitch(); render(); };
+}
+function popHtml() {
+  // Drawn after the day "Fri 30" was tapped; the picker opens with NO day lit when no slot is set (FLOOR §4.6 honest highlight).
+  const days = [["Fri","30"],["Sat","31"],["Mon","2","Nov"],["Tue","3"],["Wed","4"]];
+  return `<div class="pop" data-slot-popover="open">
+    <h5>Day</h5>
+    <div class="days">${days.map(([w, d, m], i) => `<div class="day${i === 0 ? " on" : ""}">${w}<b>${d}</b>${m ? `<span class="m">${m}</span>` : ""}</div>`).join("")}</div>
+    <h5>Window</h5>
+    <div class="times">${["10:30","12:30","16:00","18:00"].map((t) => `<div class="time">${t}</div>`).join("")}</div>
+    <div class="popfoot">Tap a window to set it — no confirm.</div>
+  </div>`;
+}
+
+function setOn(id, v) { document.querySelectorAll(`#${id} button`).forEach((b) => b.classList.toggle("on", b.dataset.v === v)); }
+function syncSwitch() { setOn("swLayout", S.layout); setOn("swState", S.state); }
+document.querySelectorAll("#swLayout button").forEach((b) => (b.onclick = () => { S.layout = b.dataset.v; syncSwitch(); render(); }));
+document.querySelectorAll("#swState button").forEach((b) => (b.onclick = () => { S.state = b.dataset.v; if (S.state !== "empty") S.today = false; syncSwitch(); render(); }));
+document.querySelectorAll("#segToday button").forEach((b) => (b.onclick = () => { S.today = b.dataset.v === "today"; if (!S.today && S.state === "empty") S.state = "none"; syncSwitch(); render(); }));
+document.querySelectorAll("#segSort button").forEach((b) => (b.onclick = () => { S.oldest = b.dataset.v === "oldest"; render(); }));
+render();
+</script>
+</body>
+</html>
