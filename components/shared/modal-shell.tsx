@@ -54,6 +54,9 @@ export function ModalShell({
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape" && !busy) {
+        // An open in-modal list (SearchSelect with escOwner, 2026-10-31) owns this
+        // Esc — it closes the list; the NEXT Esc closes the modal.
+        if ((e.target as Element | null)?.closest?.('[data-esc-owner="true"]')) return;
         // Stop the key here so a page-level Esc owner (floor-page.tsx) does not
         // also close the panel underneath.
         e.stopPropagation();

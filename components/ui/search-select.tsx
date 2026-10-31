@@ -41,6 +41,18 @@ interface SearchSelectProps<T> {
   extraRow?: (query: string) => SearchSelectExtraRow | null;
   emptyText?: (query: string) => string;
   disabled?: boolean;
+  /** Extra classes on the search input — e.g. `text-[16px] sm:text-[14px]` so
+   *  iOS does not zoom on focus. REPLACES the default `text-[13px]` (two
+   *  font-size classes on one element would fight), so include a size. */
+  inputClassName?: string;
+  /** Inside a ModalShell (or any capture-phase Esc owner): while the list is
+   *  open the root carries `data-esc-owner="true"` (ModalShell skips such Esc
+   *  presses) and the input stops the Esc after closing the list. Off by
+   *  default — the trip drawers' own Esc behaviour stays exactly as it was. */
+  escOwner?: boolean;
+  /** On open, put the active row on `selectedKey` (scrolled into view) instead
+   *  of the first row. Off by default. */
+  openAtSelected?: boolean;
 }
 
 export const FIELD_FOCUS = "border-brand-500 ring-2 ring-brand-500/10";
@@ -60,6 +72,9 @@ export function SearchSelect<T>({
   extraRow,
   emptyText,
   disabled,
+  inputClassName,
+  escOwner = false,
+  openAtSelected = false,
 }: SearchSelectProps<T>) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -83,6 +98,15 @@ export function SearchSelect<T>({
     setQuery("");
     setActive(0);
     if (refocus) requestAnimationFrame(() => fieldRef.current?.focus());
+  }
+
+  function openList() {
+    if (openAtSelected && selectedKey != null) {
+      // Same row order the open list will draw: the empty query matches all.
+      const idx = items.filter((it) => matches(it, "")).findIndex((it) => getKey(it) === selectedKey);
+      setActive(idx >= 0 ? idx : 0);
+    }
+    setOpen(true);
   }
 
   function pick(row: Row | undefined) {
@@ -116,7 +140,7 @@ export function SearchSelect<T>({
   const clampedActive = Math.min(active, Math.max(rows.length - 1, 0));
 
   return (
-    <div ref={rootRef} className="relative">
+    <div ref={rootRef} className="relative" data-esc-owner={escOwner && open ? "true" : undefined}>
       {open ? (
         <div className={`flex h-[38px] items-center gap-2 rounded-lg border bg-white pl-3 pr-2.5 ${FIELD_FOCUS}`}>
           <input
@@ -140,12 +164,13 @@ export function SearchSelect<T>({
                 pick(rows[clampedActive]);
               } else if (e.key === "Escape") {
                 e.preventDefault();
+                if (escOwner) e.stopPropagation();
                 close(true);
               } else if (e.key === "Tab") {
                 close(false);
               }
             }}
-            className="min-w-0 flex-1 bg-transparent text-[13px] text-gray-900 outline-none placeholder:text-gray-400"
+            className={`min-w-0 flex-1 bg-transparent text-gray-900 outline-none placeholder:text-gray-400 ${inputClassName ?? "text-[13px]"}`}
           />
           <ChevronUp size={14} className="shrink-0 text-gray-400" />
         </div>
@@ -156,7 +181,7 @@ export function SearchSelect<T>({
             id={id}
             type="button"
             disabled={disabled}
-            onClick={() => setOpen(true)}
+            onClick={openList}
             className="flex h-[38px] w-full items-center gap-2 rounded-lg border border-gray-200 bg-white pl-3 pr-2.5 text-left text-[13px] outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/10 disabled:cursor-not-allowed disabled:bg-gray-50"
           >
             <span className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden whitespace-nowrap">

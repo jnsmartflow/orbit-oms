@@ -7,7 +7,9 @@
 //
 //   Current ship-to card + ↺ Reset to customer (disabled when nothing changed)
 //   Tabs: Search dealer (no upload) · Type name (name / As per challan, Area —
-//   REQUIRED, defaults to the customer's — and up to 3 challan copies)
+//   REQUIRED, a type-to-search AreaPicker since 2026-10-31 — and up to 3
+//   challan copies). Area starts at the bill's saved typed area, else empty.
+//   No customer default (removed 2026-10-20). Do not re-add.
 //   Scope line · Cancel / Save (gray-900, UI §13 — owner 2026-10-19)
 //
 // EVERYTHING COMMITS ON SAVE, in ONE multipart request to the desk's route
@@ -23,8 +25,9 @@
 // Client component: imports only pure lib/ship-to/copy.ts and the client
 // shrink helper — never lib/supabase.ts or a server lib.
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ModalButton, ModalShell } from "@/components/shared/modal-shell";
+import { AreaPicker, type AreaOption } from "@/components/shared/area-picker";
 import { smartTitleCase } from "@/lib/mail-orders/utils";
 import {
   AS_PER_CHALLAN,
@@ -61,13 +64,6 @@ interface DealerHit {
   area: string | null;
   route: string | null;
   deliveryType: string | null;
-}
-
-interface AreaOption {
-  id: number;
-  name: string;
-  deliveryType: string | null;
-  route: string | null;
 }
 
 interface CopyRow {
@@ -421,8 +417,6 @@ export function ShipToModal({
   const billedTo = current.billedToName ? smartTitleCase(current.billedToName) : null;
   const isTyped = current.typedText !== null;
 
-  const areaOptions = useMemo(() => areas ?? [], [areas]);
-
   // ── Partial-success view: saved, some bills refused ───────────────────────
   if (failedBills !== null) {
     return (
@@ -662,20 +656,7 @@ export function ShipToModal({
                   <label className="mb-1.5 mt-[18px] block text-[12px] font-semibold text-ink-600">
                     Area <span className="text-danger">*</span>
                   </label>
-                  <select
-                    value={areaId === "" ? "" : String(areaId)}
-                    disabled={busy || areas === null}
-                    onChange={(e) => setAreaId(e.target.value === "" ? "" : Number(e.target.value))}
-                    className="w-full rounded-[10px] border border-ink-100 bg-white px-3 py-[11px] text-[16px] outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/10 sm:text-[14px]"
-                  >
-                    <option value="">{areas === null ? "Loading areas…" : "Select area…"}</option>
-                    {areaOptions.map((a) => (
-                      <option key={a.id} value={a.id}>
-                        {a.name}
-                        {a.deliveryType ? ` · ${a.deliveryType}` : ""}
-                      </option>
-                    ))}
-                  </select>
+                  <AreaPicker areas={areas} value={areaId} onChange={setAreaId} disabled={busy || areas === null} />
                   <div className="mt-[5px] text-[11px] text-ink-400">{areaHint}</div>
                 </div>
               </div>
