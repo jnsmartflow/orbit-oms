@@ -234,6 +234,14 @@ model users {
   freightBillsAdded           freight_trip_bills[]     @relation("FreightTripBillAddedBy")
   freightBillsRemoved         freight_trip_bills[]     @relation("FreightTripBillRemovedBy")
   freightTripActivity         freight_trip_activity[]  @relation("FreightTripActivityActor")
+  // Stock audit (2026-11-02, Schema v27.78) — five FKs to `users` across the
+  // three tables, every one NAMED on both sides (the Mrn* convention: a link
+  // to an ACTOR is named). Models at the end of this file.
+  stockAuditsCreated          StockAudit[]             @relation("StockAuditCreatedBy")
+  stockAuditsClosed           StockAudit[]             @relation("StockAuditClosedBy")
+  stockAuditCounterOf         StockAuditCounter[]      @relation("StockAuditCounterUser")
+  stockAuditCountersAdded     StockAuditCounter[]      @relation("StockAuditCounterAddedBy")
+  stockAuditLinesCounted      StockAuditLine[]         @relation("StockAuditLineCountedBy")
   lineStatuses                mo_line_status[]
   // Multi-role back-relations
   userRoles                   user_roles[]             @relation("UserRoleAssignments")
@@ -4897,4 +4905,98 @@ model so_starred_dealers {
   starredAt      DateTime             @default(now()) @db.Timestamptz(6)
 
   @@unique([salesOfficerId, list, customerCode], map: "so_starred_dealers_so_list_code_key")
+}
+
+// ── Stock audit (2026-11-02, Schema v27.78) ──────────────────────────────────
+// sql/2026-11-02-v27.78-stock-audit.sql, RUN live 2026-11-02 (VERIFY clean:
+// 9/9/4 · 5/5/3 · 18/10/5 columns/constraints/indexes). Hand-mirrored — db
+// push/pull are banned (CORE §3). CORE §7.20 owns the schema facts.
+//
+// 🔴 THE SKU IS `material` (the SAP code) — NO relation to sku_master_v2 and
+// never a catalog row id (CORE §13, the id-space landmine). Description and
+// pack are snapshots taken at entry.
+//
+// 🔴 NO live_changes trigger on any of the three, on purpose — the second
+// documented exception after freight_* (CORE §13). The desk screen polls a marker.
+//
+// The CHECKs are not modelled (Prisma cannot); the live text is in CORE §7.20.
+// One live index is NOT modelled: stock_audit_lines_live_auditId_material_idx
+// (auditId, material) WHERE NOT "isRemoved" — a partial index, which Prisma 5
+// cannot express. It exists live; do not "add" it here.
+
+model StockAudit {
+  id          Int       @id @default(autoincrement())
+  seq         Int       @unique(map: "stock_audits_seq_key")
+  auditNumber String    @unique(map: "stock_audits_auditNumber_key")
+  // 'open' | 'closed' — lib/stock-audit/status.ts. Never reopened.
+  status      String    @default("open")
+  // ON DELETE RESTRICT live — Prisma's default for a REQUIRED relation.
+  createdById Int
+  createdBy   users     @relation("StockAuditCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  createdAt   DateTime  @default(now()) @db.Timestamptz(6)
+  closedAt    DateTime? @db.Timestamptz(6)
+  // ON DELETE SET NULL live.
+  closedById  Int?
+  closedBy    users?    @relation("StockAuditClosedBy", fields: [closedById], references: [id], onDelete: SetNull)
+  // Live: NOT NULL DEFAULT now(), no trigger — Prisma stamps every UPDATE.
+  updatedAt   DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+
+  counters StockAuditCounter[]
+  lines    StockAuditLine[]
+
+  @@index([status, createdAt(sort: Desc)], map: "stock_audits_status_createdAt_idx")
+  @@map("stock_audits")
+}
+
+model StockAuditCounter {
+  id        Int        @id @default(autoincrement())
+  // Structural parent — unnamed (single relation to stock_audits). CASCADE live.
+  auditId   Int
+  audit     StockAudit @relation(fields: [auditId], references: [id], onDelete: Cascade)
+  userId    Int
+  user      users      @relation("StockAuditCounterUser", fields: [userId], references: [id], onDelete: Restrict)
+  addedById Int?
+  addedBy   users?     @relation("StockAuditCounterAddedBy", fields: [addedById], references: [id], onDelete: SetNull)
+  addedAt   DateTime   @default(now()) @db.Timestamptz(6)
+
+  @@unique([auditId, userId], map: "stock_audit_counters_auditId_userId_key")
+  @@index([userId], map: "stock_audit_counters_userId_idx")
+  @@map("stock_audit_counters")
+}
+
+model StockAuditLine {
+  id             Int        @id @default(autoincrement())
+  // RESTRICT live — audits are never deleted.
+  auditId        Int
+  audit          StockAudit @relation(fields: [auditId], references: [id], onDelete: Restrict)
+  // Trimmed + upper-cased, never blank (chk_stock_audit_lines_material).
+  material       String
+  inCatalog      Boolean
+  // Required when inCatalog (chk_stock_audit_lines_catalog).
+  skuDescription String?
+  skuPack        String?
+  // 'pieces' | 'cartons' — lib/stock-audit/status.ts.
+  mode           String
+  stack          Int        @default(0)
+  rows           Int        @default(0)
+  depth          Int        @default(0)
+  // NULL in pieces mode, > 0 in cartons mode (chk_stock_audit_lines_carton).
+  pcsPerCarton   Int?
+  loose          Int        @default(0)
+  // = stack × rows × depth × (pcsPerCarton ?? 1) + loose, > 0 — enforced by
+  // chk_stock_audit_lines_total; computed by lib/stock-audit/calc.ts.
+  totalPcs       Int
+  countedById    Int
+  countedBy      users      @relation("StockAuditLineCountedBy", fields: [countedById], references: [id], onDelete: Restrict)
+  // Soft delete — removed ⇔ removedAt set (chk_stock_audit_lines_removed).
+  // Every total, summary, ledger, export and count filters isRemoved: false.
+  isRemoved      Boolean    @default(false)
+  removedAt      DateTime?  @db.Timestamptz(6)
+  createdAt      DateTime   @default(now()) @db.Timestamptz(6)
+  updatedAt      DateTime   @default(now()) @updatedAt @db.Timestamptz(6)
+
+  @@index([auditId, material], map: "stock_audit_lines_auditId_material_idx")
+  @@index([auditId, countedById, createdAt(sort: Desc)], map: "stock_audit_lines_auditId_countedById_createdAt_idx")
+  @@index([auditId, updatedAt(sort: Desc)], map: "stock_audit_lines_auditId_updatedAt_idx")
+  @@map("stock_audit_lines")
 }

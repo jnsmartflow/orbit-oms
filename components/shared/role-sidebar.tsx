@@ -9,6 +9,7 @@ import {
   ClipboardList, Layers, User, Zap, Upload,
   Truck, Warehouse, Users, Package, MapPin, FileText, Palette, BarChart2, LayoutDashboard, Mail,
   FlaskConical, Route, PackageCheck, Container, Undo2, LayoutGrid, ReceiptText,
+  Calculator, ClipboardCheck,
 } from "lucide-react";
 import { useRoleSidebar } from "./role-sidebar-provider";
 import type { NavItemConfig } from "@/lib/permissions";
@@ -90,6 +91,11 @@ export const ICON_MAP: Record<string, React.ComponentType<{ className?: string }
   // ⚠ NOT `Truck` (vehicles) or `Route` (trip_report, the NTS mirror, which six
   // users still see beside it): the same one-glyph-per-row rule as MRN / CI.
   trip_sheet:          ClipboardList,
+  // Stock audit (2026-11-02). One glyph per row: `Calculator` for the counter's
+  // phone screen (stack × rows × depth), `ClipboardCheck` for the desk audit.
+  // Neither is used by any other row.
+  stock_audit_count:   Calculator,
+  stock_audit_manage:  ClipboardCheck,
 };
 
 export const DEFAULT_ICON = User;

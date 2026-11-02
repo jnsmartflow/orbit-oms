@@ -113,6 +113,25 @@ export const PAGE_NAV_MAP: NavItemConfig[] = [
   // holds trip_sheet. ⚠ The row follows the trip_sheet tick only — the pages
   // also admit `floor` canView, but a floor-only user gets no menu row.
   { pageKey: "trip_sheet",         label: "Trip Sheets",   href: "/trip-sheets" },
+  // Stock audit (2026-11-02, Schema v27.78) — the physical stock count. Two
+  // keys, two screens: the counter's phone (/stock-count) and the desk
+  // (/stock-audit). A person may hold both.
+  //
+  // ⚠ THIS POSITION IS BEHAVIOUR, NOT COSMETICS — the same warning MRN's line
+  // carries. MobileShell's phone Home target is navItems[0]?.href and
+  // buildNavItems preserves this array's order, so an entry becomes Home for
+  // any person whose first GRANTED entry it displaces.
+  //
+  // Placed AFTER trip_sheet (indices 18 and 19), so it displaces nobody.
+  // VERIFIED 2026-11-02 by a read-only SELECT: ZERO user_page_access rows exist
+  // for either key (ACCESS_SOURCE = user), so for every non-superuser
+  // buildNavItems filters both out and navItems[0] is unchanged; an
+  // admin/superuser gets ALL_TRUE and keeps index 0 (operations_tinting). Once
+  // granted, the rows only become Home for someone whose every other granted
+  // entry sits after them — e.g. a counter with no other tick, which is wanted.
+  // Re-derive against the grants before moving these lines.
+  { pageKey: "stock_audit_count",  label: "Stock count",   href: "/stock-count" },
+  { pageKey: "stock_audit_manage", label: "Stock audit",   href: "/stock-audit" },
   { pageKey: "delivery_challans",  label: "Delivery Challans", href: "/tint/manager/challan" },
   { pageKey: "shade_master",       label: "Shade Master",      href: "/tint/manager/shades" },
   { pageKey: "sampling_library",   label: "Sampling Library",  href: "/tint/sampling-library" },
@@ -436,6 +455,21 @@ export type PageKey =
   // PAGE_NAV_MAP (→ /trip-sheets, after freight_trips) and ICON_MAP (ClipboardList)
   // since the phone list shipped (2026-10-09).
   | "trip_sheet"
+  // Stock count (2026-11-02, Schema v27.78) — the counter's PHONE screen
+  // (/stock-count, app/api/stock-count/*). canView is its ONLY meaning: open the
+  // screen, search SKUs, add / edit / remove OWN lines. 🔴 NOT ENOUGH ON ITS
+  // OWN — the person must ALSO be an assigned counter on the audit
+  // (stock_audit_counters), and the audit must be open; every route checks
+  // both server-side. Deliberately NOT in ACTION_PAGES (no Edit/Export cell).
+  // Blind count: no route under this key returns another person's lines.
+  // Granted per person on /admin/access — no seed, no grant SQL.
+  | "stock_audit_count"
+  // Stock audit (2026-11-02, Schema v27.78) — the DESK screen (/stock-audit,
+  // app/api/stock-audit/*). canView = the audit list, stats, SKU summary,
+  // ledger and progress; canEdit = new audit, edit counters, close;
+  // canExport = the XLS (the MRN/CI split: the report is a separate grant).
+  // NO count entry on this key — lines are written only by their counter.
+  | "stock_audit_manage"
   | "delivery_challans"
   | "shade_master"
   | "sampling_library"
@@ -515,6 +549,8 @@ const ALL_PAGE_KEYS: PageKey[] = [
   // board. Keep them visually apart in this list, never adjacent.
   "place_order", "place_order_ship_to", "place_order_challan", "challan_orders", "trip_report", "mail_orders", "billing_picking", "billing_print",
   "billing_telephonic", "billing_pick_delete", "mrn", "ci", "freight_trips", "trip_sheet",
+  // Stock audit (2026-11-02) — the phone screen, then the desk.
+  "stock_audit_count", "stock_audit_manage",
   // The six Billing action ticks, kept together and next to their host screen
   // for the same reason `billing_picking` is — they are controls INSIDE
   // /mail-orders, not routes of their own.
@@ -620,6 +656,11 @@ const ACTION_PAGES: Record<Exclude<ActionKey, "canView">, readonly PageKey[]> = 
     // Split load (2026-10-24) — POST app/api/floor/orders/[orderId]/load-split and
     // …/load-merge, on top of floor canEdit. Backed from day one.
     "floor_split_load",
+    // Stock audit desk (2026-11-02) — new audit, edit counters, close
+    // (app/api/stock-audit/*). Listed with the key, ahead of its routes, so
+    // /admin/access can grant it. ⚠ stock_audit_count is deliberately NOT here:
+    // its only meaning is canView (+ being an assigned counter).
+    "stock_audit_manage",
   ],
   // Two helper call sites — import/obd:3796 and sampling-library:253 — plus the
   // CSV import buttons on the four master-data screens, which read canImport
@@ -637,7 +678,9 @@ const ACTION_PAGES: Record<Exclude<ActionKey, "canView">, readonly PageKey[]> = 
   // app/reports/page.tsx and passed to TIReportContent. UI-only (the XLSX is
   // built in the browser from rows already fetched).
   // reports_trip_detail (2026-10-01): api/reports/trip-detail gates on canExport.
-  canExport: ["mrn", "reports_ti_report", "reports_trip_detail"],
+  // stock_audit_manage (2026-11-02): the per-SKU XLS,
+  // app/api/stock-audit/audits/[id]/export — listed ahead of the route.
+  canExport: ["mrn", "reports_ti_report", "reports_trip_detail", "stock_audit_manage"],
   // MRN ONLY: api/mrn/[mrnId]/delete:53. Every other delete path uses a role
   // check instead (§5).
   canDelete: ["mrn"],
@@ -672,7 +715,7 @@ export function isActionAvailable(pageKey: string, action: ActionKey): boolean {
 // ── Display metadata for the /admin/access screen ─────────────────────────────
 //
 // Friendly names come from PAGE_NAV_MAP wherever the key appears there. THIRTY-SIX
-// of the 60 ALL_PAGE_KEYS are not in it (counted 2026-10-24 — was "THIRTY-TWO of
+// of the 62 ALL_PAGE_KEYS are not in it (counted 2026-11-02 — the two stock audit keys ARE in it; 60 on 2026-10-24; was "THIRTY-TWO of
 // the 55", stale since before Split load: 35 of 59) and are labelled here instead: dashboard,
 // users, system_config, permissions, settings_hide, billing_picking,
 // billing_print, billing_telephonic, billing_pick_delete, the six billing action ticks, place_order_ship_to, the three
@@ -771,7 +814,7 @@ export function pageLabel(pageKey: string): string {
 }
 
 /**
- * The 60 keys grouped for display (counted 2026-10-24; said 55, stale at 59). Every key in ALL_PAGE_KEYS appears exactly
+ * The 62 keys grouped for display (counted 2026-11-02 — + the two stock audit keys; 60 on 2026-10-24; said 55, stale at 59). Every key in ALL_PAGE_KEYS appears exactly
  * once — ACCESS_SECTIONS is asserted against it by the access page, so adding a
  * key to ALL_PAGE_KEYS without adding it here is caught rather than silently
  * hiding a row.
@@ -785,7 +828,9 @@ export const ACCESS_SECTIONS: { label: string; keys: PageKey[] }[] = [
     // family reads as one block on /admin/access: the screen, its Picking tab,
     // then the six decisions the Orders tab allows.
     // floor_add_invoices and floor_split_load sit directly under their host screen, `floor`.
-    "picking", "floor", "floor_add_invoices", "floor_split_load", "mrn", "ci", "freight_trips", "trip_sheet", "mail_orders", "billing_picking",
+    // stock_audit_count / stock_audit_manage (2026-11-02) follow trip_sheet, as in ALL_PAGE_KEYS.
+    "picking", "floor", "floor_add_invoices", "floor_split_load", "mrn", "ci", "freight_trips", "trip_sheet",
+    "stock_audit_count", "stock_audit_manage", "mail_orders", "billing_picking",
     "billing_print", "billing_telephonic", "billing_pick_delete",
     "billing_hold", "billing_slot", "billing_urgent", "billing_ship_to",
     "billing_hand", "billing_ci",
