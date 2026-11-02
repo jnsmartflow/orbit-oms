@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Stock Audit</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.19.0/dist/tabler-icons.min.css">
+<style>
+:root{
+  --bg:#f6f5fb;--card:#ffffff;--ink:#1c1b22;--ink2:#5d5b68;--ink3:#9a98a6;
+  --line:#e6e4ee;--brand:#5b3fd1;--brand-ink:#ffffff;--tint:#eeeafd;--tint-ink:#3f2a9e;
+  --ok-bg:#e7f5ec;--ok:#1f7a45;--warn-bg:#fdf3dc;--warn:#8a5a00;--bad-bg:#fdecea;--bad:#b42318;--soft:#f3f2f8;--r:8px;
+}
+@media (prefers-color-scheme: dark){
+  :root{--bg:#121117;--card:#1c1b23;--ink:#f1f0f5;--ink2:#b3b1bf;--ink3:#7d7b89;
+  --line:#2e2c38;--brand:#8a72ff;--brand-ink:#0f0d18;--tint:#2a2346;--tint-ink:#c9bdff;
+  --ok-bg:#16301f;--ok:#7fd3a0;--warn-bg:#3a2c0c;--warn:#f0c46a;--bad-bg:#3a1714;--bad:#ff9b8f;--soft:#24232c;}
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:14px}
+button,input{font:inherit;color:var(--ink)}
+button{background:var(--card);border:1px solid var(--line);border-radius:var(--r);height:36px;padding:0 14px;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
+button:hover{background:var(--soft)}
+.pri{background:var(--brand);color:var(--brand-ink);border:none}
+.pri:hover{background:var(--brand);opacity:.92}
+input[type=text]{height:36px;border:1px solid var(--line);border-radius:var(--r);padding:0 12px;background:var(--card);outline:none;width:240px}
+input[type=text]:focus{border-color:var(--brand)}
+.top{height:56px;background:var(--card);border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;padding:0 20px}
+.top h1{font-size:17px;font-weight:600}
+.wrap{display:grid;grid-template-columns:260px 1fr;height:calc(100vh - 56px)}
+.side{background:var(--card);border-right:1px solid var(--line);overflow-y:auto}
+.au{padding:14px 16px;border-bottom:1px solid var(--line);cursor:pointer}
+.au:hover{background:var(--soft)}
+.au.sel{background:var(--tint)}
+.au .no{font-weight:600}
+.mut{color:var(--ink2);font-size:12px}
+.pill{display:inline-block;font-size:11px;padding:2px 8px;border-radius:20px;font-weight:600}
+.open{background:var(--ok-bg);color:var(--ok)}
+.closed{background:var(--soft);color:var(--ink2)}
+.main{overflow-y:auto;padding:20px 24px}
+.head{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px}
+.head h2{font-size:20px;font-weight:600}
+.book{display:flex;justify-content:space-between;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 14px;margin-bottom:14px}
+.book.none{border-style:dashed}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:18px}
+.stat{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+.stat .v{font-size:22px;font-weight:600;margin-top:2px}
+.tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin-bottom:14px}
+.tab{border:none;border-radius:0;background:none;height:40px;color:var(--ink2);border-bottom:2px solid transparent}
+.tab:hover{background:none;color:var(--ink)}
+.tab.on{color:var(--brand);border-bottom-color:var(--brand);font-weight:600}
+.bar{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;gap:10px;flex-wrap:wrap}
+.chips{display:flex;gap:6px}
+.chip{height:30px;padding:0 12px;font-size:13px;border-radius:20px}
+.chip.on{background:var(--tint);color:var(--tint-ink);border-color:var(--brand)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+table{width:100%;border-collapse:collapse}
+th{text-align:left;font-size:12px;color:var(--ink2);font-weight:600;padding:10px 14px;background:var(--soft);border-bottom:1px solid var(--line)}
+td{padding:10px 14px;border-bottom:1px solid var(--line)}
+tr.click{cursor:pointer}
+tr.click:hover td{background:var(--soft)}
+.r{text-align:right}
+.tot td{font-weight:600;background:var(--soft)}
+.neg{color:var(--bad);font-weight:600}
+.pos{color:var(--warn);font-weight:600}
+.zero{color:var(--ok);font-weight:600}
+.tag{font-size:11px;padding:2px 8px;border-radius:20px;font-weight:600}
+.t-nc{background:var(--warn-bg);color:var(--warn)}
+.t-nb{background:var(--bad-bg);color:var(--bad)}
+.shade{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center}
+.modal{background:var(--card);border-radius:12px;width:420px;padding:20px}
+.modal h3{font-size:16px;margin-bottom:14px}
+.chk{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)}
+.err{color:var(--bad);font-size:13px;min-height:18px;margin-top:6px}
+</style>
+</head>
+<body>
+<div class="top"><h1>Stock audit</h1><button class="pri" onclick="newAudit()"><i class="ti ti-plus"></i>New audit</button></div>
+<div class="wrap"><div class="side" id="side"></div><div class="main" id="main"></div></div>
+<div id="modal"></div>
+<script>
+/* Mockup data */
+const USERS=['Rakesh','Suresh','Mahesh','Vijay','Ajay','Deepak','Chandresh','Praveen'];
+const SKU={'5233221':['Weathershield Max White','20 L'],'5233418':['Weathershield Max White','1 L'],'5180044':['Velvet Touch Pearl Glo','4 L'],'5233412':['Promise Interior Base','10 L'],'5240010':['Supercover Primer','20 L'],'5190033':['Gloss Enamel Black','1 L']};
+const BOOK12={'5233221':190,'5233418':1925,'5180044':400,'5233412':30,'5190033':240};
+const L12=[
+ ['5233221','Rakesh','4 × 10 × 2',80,'10:12'],['5233221','Suresh','3 × 8 × 4 + 2',98,'10:40'],['5233221','Suresh','+ 8',8,'11:05'],
+ ['5233418','Mahesh','5 × 4 × 2 × 12 + 5',485,'10:20'],['5233418','Rakesh','6 × 5 × 4 × 12',1440,'11:30'],
+ ['5180044','Vijay','4 × 6 × 3 × 4',288,'10:50'],['5180044','Vijay','+ 52',52,'11:10'],
+ ['5240010','Ajay','2 × 3 × 2',12,'11:50']
+];
+let audits=[
+ {no:'SA-0012',st:'open',d:'1 Nov 2026, 9:00 AM',by:'Ajay',users:['Rakesh','Suresh','Mahesh','Vijay','Ajay'],lines:L12,book:{at:'1 Nov, 8:55 AM',by:'Ajay',m:BOOK12}},
+ {no:'SA-0011',st:'closed',d:'31 Oct 2026',by:'Ajay',users:['Rakesh','Vijay'],lines:L12.slice(0,3),book:null}
+];
+let sel=0,tab='sum',ledSku=null,q='',flt='all';
+const fmt=x=>x.toLocaleString('en-IN');
+const $=id=>document.getElementById(id);
+const sgn=x=>x>0?'+'+fmt(x):fmt(x);
+
+function side(){
+  $('side').innerHTML=audits.map((a,i)=>`<div class="au ${i===sel?'sel':''}" onclick="pickA(${i})">
+  <div style="display:flex;justify-content:space-between"><span class="no">${a.no}</span><span class="pill ${a.st}">${a.st==='open'?'Open':'Closed'}</span></div>
+  <div class="mut">${a.d}</div><div class="mut">${a.users.length} counters · ${a.lines.length} lines${a.book?' · book loaded':''}</div></div>`).join('');
+}
+function pickA(i){sel=i;tab='sum';ledSku=null;q='';flt='all';draw();}
+function counted(a){const m={};a.lines.forEach(l=>{m[l[0]]=m[l[0]]||{t:0,n:0};m[l[0]].t+=l[3];m[l[0]].n++;});return m;}
+function rows(a){
+  const c=counted(a),b=a.book?a.book.m:{};
+  const keys=[...new Set([...Object.keys(b),...Object.keys(c)])];
+  return keys.map(k=>{const ct=c[k]?c[k].t:0,bk=b[k];return {k,ct,n:c[k]?c[k].n:0,bk,v:bk===undefined?null:ct-bk,
+    st:!a.book?'':(bk===undefined?'nb':(!c[k]?'nc':''))};});
+}
+
+function draw(){
+  side();
+  const a=audits[sel],R=rows(a),hasB=!!a.book;
+  const tp=R.reduce((x,r)=>x+r.ct,0);
+  const active=new Set(a.lines.map(l=>l[1])).size;
+  const nc=R.filter(r=>r.st==='nc').length,nb=R.filter(r=>r.st==='nb').length,vr=R.filter(r=>r.v!==null&&r.v!==0&&r.st!=='nc').length;
+  $('main').innerHTML=`<div class="head"><div><h2>${a.no} <span class="pill ${a.st}" style="vertical-align:middle">${a.st==='open'?'Open':'Closed'}</span></h2>
+   <div class="mut" style="margin-top:4px">Started ${a.d} by ${a.by}</div></div>
+   <div style="display:flex;gap:8px">${a.st==='open'?`<button onclick="editUsers()"><i class="ti ti-users"></i>Counters</button><button onclick="closeA()"><i class="ti ti-lock"></i>Close audit</button>`:''}</div></div>
+  ${hasB?`<div class="book"><div><i class="ti ti-file-spreadsheet"></i> <b>Book stock loaded</b> <span class="mut">· ${Object.keys(a.book.m).length} SKUs · uploaded ${a.book.at} by ${a.book.by}</span></div><button onclick="upload()"><i class="ti ti-refresh"></i>Replace file</button></div>`
+   :`<div class="book none"><div><i class="ti ti-file-spreadsheet"></i> <b>No book stock yet.</b> <span class="mut">Upload the SAP stock file any time (before, during or after counting) to see variance.</span></div><button class="pri" onclick="upload()"><i class="ti ti-upload"></i>Upload SAP stock file</button></div>`}
+  <div class="stats">
+   <div class="stat"><div class="mut">SKUs counted</div><div class="v">${R.filter(r=>r.n).length}</div></div>
+   <div class="stat"><div class="mut">Total pieces counted</div><div class="v">${fmt(tp)}</div></div>
+   ${hasB?`<div class="stat"><div class="mut">SKUs with variance</div><div class="v" style="color:var(--bad)">${vr}</div></div>
+   <div class="stat"><div class="mut">Not counted yet</div><div class="v" style="color:var(--warn)">${nc}</div></div>`
+   :`<div class="stat"><div class="mut">Lines entered</div><div class="v">${a.lines.length}</div></div>
+   <div class="stat"><div class="mut">Counters active</div><div class="v">${active} / ${a.users.length}</div></div>`}</div>
+  <div class="tabs">
+   <button class="tab ${tab==='sum'?'on':''}" onclick="setT('sum')">SKU summary</button>
+   <button class="tab ${tab==='led'?'on':''}" onclick="setT('led')">Ledger</button>
+   <button class="tab ${tab==='prog'?'on':''}" onclick="setT('prog')">Progress</button></div>
+  <div id="body"></div>`;
+  ({sum,led,prog})[tab]();
+}
+function setT(t){tab=t;if(t!=='led')ledSku=null;draw();}
+function setF(f){flt=f;sum();}
+
+function sum(){
+  const a=audits[sel],hasB=!!a.book;
+  let R=rows(a).filter(r=>r.k.includes(q)||SKU[r.k][0].toLowerCase().includes(q.toLowerCase()));
+  if(flt==='var')R=R.filter(r=>r.v!==null&&r.v!==0&&r.st!=='nc');
+  if(flt==='nc')R=R.filter(r=>r.st==='nc');
+  if(flt==='nb')R=R.filter(r=>r.st==='nb');
+  const all=rows(a);
+  const cnt=f=>f==='all'?all.length:f==='var'?all.filter(r=>r.v!==null&&r.v!==0&&r.st!=='nc').length:all.filter(r=>r.st===f).length;
+  $('body').innerHTML=`<div class="bar"><div style="display:flex;gap:10px;align-items:center">
+   <input type="text" placeholder="Search SKU or name" value="${q}" oninput="q=this.value;sum();this.focus();this.setSelectionRange(this.value.length,this.value.length)">
+   ${hasB?`<div class="chips">${[['all','All'],['var','Variance'],['nc','Not counted'],['nb','Not in book']].map(([f,l])=>`<button class="chip ${flt===f?'on':''}" onclick="setF('${f}')">${l} (${cnt(f)})</button>`).join('')}</div>`:''}</div>
+   <button onclick="alert('Downloads .xlsx: SKU, Description, Pack, ${hasB?'Book, Counted, Variance, Status':'Total pcs, Lines'}')"><i class="ti ti-download"></i>Export XLS</button></div>
+  <div class="card"><table><tr><th>SKU</th><th>Description</th><th>Pack</th>${hasB?'<th class="r">Book</th>':''}<th class="r">Counted</th>${hasB?'<th class="r">Variance</th><th></th>':'<th class="r">Lines</th>'}</tr>
+  ${R.map(r=>`<tr class="click" onclick="ledSku='${r.k}';tab='led';draw()"><td>${r.k}</td><td>${SKU[r.k][0]}</td><td>${SKU[r.k][1]}</td>
+   ${hasB?`<td class="r">${r.bk===undefined?'—':fmt(r.bk)}</td>`:''}
+   <td class="r"><b>${fmt(r.ct)}</b></td>
+   ${hasB?`<td class="r">${r.v===null?'—':r.st==='nc'?'—':`<span class="${r.v<0?'neg':r.v>0?'pos':'zero'}">${r.v===0?'0':sgn(r.v)}</span>`}</td>
+   <td>${r.st==='nc'?'<span class="tag t-nc">Not counted yet</span>':r.st==='nb'?'<span class="tag t-nb">Not in book</span>':''}</td>`:`<td class="r">${r.n}</td>`}</tr>`).join('')||`<tr><td colspan="7" class="mut" style="text-align:center;padding:20px">Nothing in this view</td></tr>`}
+  </table></div><div class="mut" style="margin-top:8px">Click a row to open its ledger.${hasB?' Variance = Counted − Book. Live while the audit is open.':''}</div>`;
+}
+function led(){
+  const a=audits[sel],R=rows(a);
+  const k=ledSku||R[0].k, r=R.find(x=>x.k===k);
+  const ls=a.lines.filter(l=>l[0]===k);
+  $('body').innerHTML=`<div class="bar"><div style="display:flex;gap:10px;align-items:center">
+    <input type="text" placeholder="Type SKU code" value="${k}" onchange="if(SKU[this.value]){ledSku=this.value;led()}">
+    <span class="mut">${SKU[k][0]} · ${SKU[k][1]}</span></div>
+    ${a.book?`<div class="mut">Book <b>${r.bk===undefined?'—':fmt(r.bk)}</b> · Counted <b>${fmt(r.ct)}</b> · Variance ${r.v===null?'<b>Not in book</b>':`<span class="${r.v<0?'neg':r.v>0?'pos':'zero'}">${r.v===0?'0':sgn(r.v)}</span>`}</div>`:''}</div>
+  <div class="card"><table><tr><th>Counted by</th><th>Working</th><th class="r">Qty</th><th>Time</th></tr>
+  ${ls.map(l=>`<tr><td>${l[1]}</td><td>${l[2]}</td><td class="r">${fmt(l[3])}</td><td>${l[4]}</td></tr>`).join('')||'<tr><td colspan="4" class="mut" style="text-align:center;padding:20px">Nobody has counted this SKU yet</td></tr>'}
+  <tr class="tot"><td colspan="2">Total</td><td class="r">${fmt(ls.reduce((x,l)=>x+l[3],0))}</td><td></td></tr></table></div>`;
+}
+function prog(){
+  const a=audits[sel];
+  $('body').innerHTML=`<div class="card"><table><tr><th>Counter</th><th class="r">Lines</th><th class="r">Pieces</th><th>Last entry</th></tr>
+  ${a.users.map(u=>{const ls=a.lines.filter(l=>l[1]===u);return `<tr><td>${u}</td><td class="r">${ls.length}</td><td class="r">${fmt(ls.reduce((x,l)=>x+l[3],0))}</td><td>${ls.length?ls[ls.length-1][4]:'<span class="mut">No entries yet</span>'}</td></tr>`}).join('')}
+  </table></div>`;
+}
+function upload(){
+  const a=audits[sel];
+  a.book={at:'1 Nov, just now',by:'Ajay',m:a.book?a.book.m:{'5233221':100,'5233418':480,'5233412':12}};
+  flt='all';draw();
+}
+
+function newAudit(){userPicker('New audit','SA-0013',[],true);}
+function editUsers(){const a=audits[sel];userPicker('Counters for '+a.no,a.no,a.users,false);}
+function userPicker(title,no,picked,isNew){
+  $('modal').innerHTML=`<div class="shade"><div class="modal"><h3>${title}</h3>
+  ${isNew?`<div class="mut" style="margin-bottom:10px">Audit number <b>${no}</b> is assigned on create. You can upload the SAP stock file now or later.</div>`:''}
+  <div class="mut" style="margin-bottom:6px">Who counts in this audit</div>
+  <div style="max-height:280px;overflow-y:auto">${USERS.map(u=>`<label class="chk"><input type="checkbox" value="${u}" ${picked.includes(u)?'checked':''}>${u}</label>`).join('')}</div>
+  <div class="err" id="me"></div>
+  <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:10px"><button onclick="$('modal').innerHTML=''">Cancel</button>
+  <button class="pri" onclick="saveUsers('${no}',${isNew})">${isNew?'Create audit':'Save'}</button></div></div></div>`;
+}
+function saveUsers(no,isNew){
+  const us=[...document.querySelectorAll('.modal input:checked')].map(x=>x.value);
+  if(!us.length){$('me').textContent='Pick at least one counter';return;}
+  if(isNew){audits.unshift({no,st:'open',d:'1 Nov 2026, now',by:'Ajay',users:us,lines:[],book:null});sel=0;}
+  else audits[sel].users=us;
+  $('modal').innerHTML='';tab='sum';draw();
+}
+function closeA(){if(confirm('Close '+audits[sel].no+'? Counters can no longer add or edit.')){audits[sel].st='closed';draw();}}
+draw();
+</script>
+</body>
+</html>

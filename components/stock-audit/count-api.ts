@@ -53,7 +53,8 @@ export function friendlyError(e: CountError): string {
   }
 }
 
-async function call<T>(url: string, init?: RequestInit): Promise<CountResult<T>> {
+/** The shared fetch + error-code reader; the desk's audit-api.ts reuses it. */
+export async function call<T>(url: string, init?: RequestInit): Promise<CountResult<T>> {
   let res: Response;
   try {
     res = await fetch(url, { cache: "no-store", ...init });
