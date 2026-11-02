@@ -4,8 +4,9 @@
 // catalog matches, and the not-in-catalog confirm.
 //
 // Follows docs/mockups/stock-audit/stock-audit-mobile.html search(): "Enter SKU
-// code", the big centred box, result rows "code / description · pack", and the
-// green "Submitted …" message above the box after a save.
+// code", the big centred box, and the green "Submitted …" message above the box
+// after a save. Result rows are picking-style cards (2026-11-02): pack cell on
+// the left, mono code with the typed part tinted, description below.
 //
 // INSTANT, LOCAL SEARCH (2026-11-02): the shell downloads the whole SKU list
 // once (components/stock-audit/catalog-store.ts) and this box searches it on
@@ -41,6 +42,27 @@ interface Props {
 }
 
 const MIN_CHARS = SEARCH_MIN_CHARS;
+
+/** Drop the pack from the END of the description, but only on an exact
+ *  trailing match ("… WHITE 1L" + pack "1L" → "… WHITE"). Nothing else. */
+function descriptionWithoutPack(description: string, pack: string): string {
+  if (!pack) return description;
+  const tail = ` ${pack}`;
+  return description.endsWith(tail) ? description.slice(0, -tail.length) : description;
+}
+
+/** The code with the typed part tinted (the search matches it anywhere). */
+function HighlightedCode({ material, typed }: { material: string; typed: string }): React.JSX.Element {
+  const at = typed ? material.toUpperCase().indexOf(typed) : -1;
+  if (at < 0) return <>{material}</>;
+  return (
+    <>
+      {material.slice(0, at)}
+      <mark className="rounded-[3px] bg-warn-bg text-warn-text">{material.slice(at, at + typed.length)}</mark>
+      {material.slice(at + typed.length)}
+    </>
+  );
+}
 
 export function CountSearch({
   flash,
@@ -132,21 +154,30 @@ export function CountSearch({
       )}
 
       {hits.length > 0 && (
-        <ul className="mt-2">
+        <ul className="mt-3 space-y-2">
           {hits.map((h) => (
             <li key={h.material}>
+              {/* Picking-card look (picker-my-picks-board.tsx combined row):
+                  pack cell on the left, mono code over the description. */}
               <button
                 type="button"
                 onClick={() => pickHit(h)}
-                className="flex w-full items-center justify-between gap-2.5 border-b border-ink-100 py-3.5 text-left active:bg-ink-25"
+                className="flex w-full items-stretch overflow-hidden rounded-[14px] border border-ink-100 bg-white text-left active:bg-ink-25"
               >
-                <span className="min-w-0">
-                  <span className="block text-[15px] font-semibold tabular-nums text-ink-900">{h.material}</span>
-                  <span className="block truncate text-[12.5px] text-ink-500">
-                    {h.description} · {h.pack}
+                <span className="flex w-[72px] flex-none items-center justify-center border-r border-ink-100 bg-ink-25 px-1 py-3">
+                  <span className="text-center text-[17px] font-bold text-ink-700">{h.pack || "—"}</span>
+                </span>
+                <span className="min-w-0 flex-1 px-3 py-2.5">
+                  <span className="block truncate font-mono text-[17px] font-bold text-ink-900">
+                    <HighlightedCode material={h.material} typed={code} />
+                  </span>
+                  <span className="mt-0.5 block truncate text-[12.5px] text-ink-500">
+                    {descriptionWithoutPack(h.description, h.pack)}
                   </span>
                 </span>
-                <ChevronRight className="h-5 w-5 flex-none text-ink-400" aria-hidden="true" />
+                <span className="flex flex-none items-center pr-3">
+                  <ChevronRight className="h-5 w-5 text-ink-400" aria-hidden="true" />
+                </span>
               </button>
             </li>
           ))}
