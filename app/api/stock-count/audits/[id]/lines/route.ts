@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { loadAuditForCounter, parseId, readJson, saError, stockCountGate } from "@/lib/stock-audit/gate";
+import { loadAuditForCount, parseId, readJson, saError, stockCountGate } from "@/lib/stock-audit/gate";
 import { prepareLineWrite } from "@/lib/stock-audit/line-write";
 import { LINE_SELECT, getMyLines, toCountLine } from "@/lib/stock-audit/queries";
 
 export const dynamic = "force-dynamic";
 
 // /api/stock-count/audits/[id]/lines — the counter's own lines in one audit.
-// Gate: stock_audit_count canView AND an assigned counter on the audit.
+// Gate: stock_audit_count canView (open counting — no per-audit counter list).
 // Blind: only the session user's lines, never anyone else's or a total.
 
 /** GET — MY live lines, newest first. Works on a closed audit too (read-only). */
@@ -17,7 +17,7 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
   const auditId = parseId(params.id);
   if (auditId === null) return saError(400, "INVALID", "Invalid audit id");
 
-  const load = await loadAuditForCounter(auditId, gate.userId, { requireOpen: false });
+  const load = await loadAuditForCount(auditId, { requireOpen: false });
   if (!load.ok) return load.response;
 
   const lines = await getMyLines(auditId, gate.userId);
@@ -25,9 +25,10 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
 }
 
 /**
- * POST — add one line. Assigned AND audit open. Body: { material, mode, stack,
- * rows, depth, pcsPerCarton, loose, notInCatalog? }. The total is computed on
- * the server; a client total is ignored. 400 NOT_IN_CATALOG unless confirmed.
+ * POST — add one line. Audit open. Body: { material, mode, stack, rows, depth,
+ * pcsPerCarton, loose, clientTotal, notInCatalog? }. The total is computed on
+ * the server; a missing or different clientTotal → 400 TOTAL_MISMATCH.
+ * 400 NOT_IN_CATALOG unless confirmed.
  * Returns 201 { line }.
  */
 export async function POST(req: Request, { params }: { params: { id: string } }): Promise<NextResponse> {
@@ -36,7 +37,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   const auditId = parseId(params.id);
   if (auditId === null) return saError(400, "INVALID", "Invalid audit id");
 
-  const load = await loadAuditForCounter(auditId, gate.userId, { requireOpen: true });
+  const load = await loadAuditForCount(auditId, { requireOpen: true });
   if (!load.ok) return load.response;
 
   const body = await readJson(req);

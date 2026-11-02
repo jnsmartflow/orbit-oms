@@ -2,17 +2,17 @@
 // /api/stock-audit route uses (the freightGate pattern).
 //
 // Two keys, never mixed:
-//   stock_audit_count  — the counter's phone. canView is its ONLY meaning, and
-//                        it is NOT enough on its own: the person must also be an
-//                        assigned counter on the audit, and to write, the audit
-//                        must be open (loadAuditForCounter).
+//   stock_audit_count  — the counter's phone. canView is its ONLY meaning.
+//                        OPEN COUNTING (2026-11-02): no per-audit counter list —
+//                        anyone holding it counts in THE open audit; to write,
+//                        the audit must be open (loadAuditForCount).
 //   stock_audit_manage — the desk. canView reads, canEdit writes, canExport XLS.
 // checkAnyPermission carries the admin / superuser arms and the per-user ticks
 // (CORE §5). The user id comes from the session, never from a body.
 //
 // Every refusal is { error, code } — the screens branch on `code`:
 //   401 UNAUTHORIZED · 403 FORBIDDEN (no key) · 404 NOT_FOUND (unknown audit)
-//   403 NOT_ASSIGNED · 409 AUDIT_CLOSED · (routes add NOT_OWNER, INVALID, …)
+//   409 AUDIT_CLOSED · (routes add NOT_OWNER, INVALID, AUDIT_ALREADY_OPEN, …)
 //
 // (No SKU is read here. Every stock-audit line stores the SAP `material` and
 // never a sku_master / sku_master_v2 row id — CORE §13, the id-space landmine.)
@@ -85,40 +85,22 @@ async function findAudit(auditId: number): Promise<AuditRow | null> {
 }
 
 /**
- * For a COUNTER: the audit must exist (404), the user must be one of its
- * counters (403 NOT_ASSIGNED), and — when `requireOpen` — it must be open
- * (409 AUDIT_CLOSED). Not-assigned is checked BEFORE closed, so a stranger
- * learns nothing about an audit's state.
+ * 404 if the audit is unknown; 409 AUDIT_CLOSED when `requireOpen` and it is
+ * closed. The counter's routes (open counting — no assignment check; the
+ * session's stock_audit_count canView is the whole admission) and the desk's
+ * share it.
  */
-export async function loadAuditForCounter(
-  auditId: number,
-  userId: number,
-  opts: { requireOpen: boolean },
-): Promise<AuditLoad> {
+export async function loadAuditForCount(auditId: number, opts: { requireOpen: boolean }): Promise<AuditLoad> {
   const audit = await findAudit(auditId);
   if (!audit) return { ok: false, response: saError(404, "NOT_FOUND", "Audit not found") };
-  const counter = await prisma.stockAuditCounter.findUnique({
-    where: { auditId_userId: { auditId, userId } },
-    select: { id: true },
-  });
-  if (!counter) {
-    return { ok: false, response: saError(403, "NOT_ASSIGNED", "You are not a counter on this audit") };
-  }
   if (opts.requireOpen && audit.status !== STOCK_AUDIT_STATUS.open) {
     return { ok: false, response: saError(409, "AUDIT_CLOSED", "This audit is closed") };
   }
   return { ok: true, audit };
 }
 
-/** For the DESK: 404 if unknown; 409 AUDIT_CLOSED when `requireOpen` and closed. */
-export async function loadAuditForManager(auditId: number, opts: { requireOpen: boolean }): Promise<AuditLoad> {
-  const audit = await findAudit(auditId);
-  if (!audit) return { ok: false, response: saError(404, "NOT_FOUND", "Audit not found") };
-  if (opts.requireOpen && audit.status !== STOCK_AUDIT_STATUS.open) {
-    return { ok: false, response: saError(409, "AUDIT_CLOSED", "This audit is closed") };
-  }
-  return { ok: true, audit };
-}
+/** For the DESK — the same check as loadAuditForCount. */
+export const loadAuditForManager = loadAuditForCount;
 
 /** Read a JSON body; null on a malformed one (the route answers 400 INVALID). */
 export async function readJson(req: Request): Promise<Record<string, unknown> | null> {
@@ -130,14 +112,4 @@ export async function readJson(req: Request): Promise<Record<string, unknown> | 
   } catch {
     return null;
   }
-}
-
-/** A non-empty list of distinct positive integer ids, or null. */
-export function counterIdList(value: unknown, opts: { allowEmpty: boolean }): number[] | null {
-  if (!Array.isArray(value)) return null;
-  if (!value.every((n) => typeof n === "number" && Number.isSafeInteger(n) && n > 0)) return null;
-  const ids = Array.from(new Set(value as number[]));
-  if (ids.length === 0 && !opts.allowEmpty) return null;
-  if (ids.length > 200) return null;
-  return ids;
 }

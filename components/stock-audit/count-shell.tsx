@@ -1,8 +1,14 @@
 "use client";
 
 // components/stock-audit/count-shell.tsx — /stock-count, the counter's phone
-// screen. Owns: which audit is open, the Count | Submitted tabs, the
-// calculator (new line / edit), and the read-only states.
+// screen. Owns: THE open audit, the Count | Submitted tabs, the calculator
+// (new line / edit), the downloaded SKU list, and the read-only states.
+//
+// OPEN COUNTING (Smart Flow, 2026-11-02): there is no counter list and at most
+// one audit is open. Everyone holding Stock count counts in it, so the screen
+// opens it straight away — no picker. None open → "No audit is open right
+// now" + Check again. Closed under you → the closed banner + "Check for a new
+// audit".
 //
 // The CI pattern (components/ci/ci-shell.tsx, CLAUDE_UI §59.4/§59.5):
 //   • Phone — the two tabs are handed to RoleLayoutClient as `workflowTabs`,
@@ -10,15 +16,16 @@
 //     ModuleMobileHeader (grid icon / avatar → useMobileShell()).
 //   • The calculator sets `hideBar`, so Submit owns the thumb zone.
 //   • ≥768px the shared bar is `md:hidden` and never drawn, so the same two
-//     tabs render as a segmented control at the top of a centred 480px column
-//     — finding 5 of the phase-1 plan. The sidebar handles navigation there,
-//     and the Menu/You sheets (also md:hidden) are not used.
-//   • `workflowTabs` is passed ONLY while an audit is open. On the picker /
-//     empty state the default Home/Menu/You bar stands (omitting the prop, not
-//     `[]` — §59.2's landmine).
+//     tabs render as a segmented control at the top of a centred 480px column.
+//   • `workflowTabs` is passed ONLY while an audit is open. On the empty state
+//     the default Home/Menu/You bar stands (omitting the prop, not `[]` —
+//     §59.2's landmine).
 //
 // Behaviour, wording and flow follow docs/mockups/stock-audit/stock-audit-
-// mobile.html (home/openAudit/search/counter/submitted); its CSS is not used.
+// mobile.html (openAudit/search/counter/submitted); its CSS is not used.
+//
+// SKU LIST: downloaded once and searched locally (catalog-store.ts). Stored
+// copy shown at once; refreshed on every open and after a NOT_IN_CATALOG save.
 //
 // 🔴 Submitted (n) is the server's number: the lines are RE-READ after every
 // save, edit and removal. Never a local +1.
@@ -26,7 +33,7 @@
 // across counters, or an expected quantity — the API returns none.
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowLeft, ChevronRight, ClipboardList, ListChecks, Search } from "lucide-react";
+import { ClipboardList, ListChecks, Search } from "lucide-react";
 import { RoleLayoutClient } from "@/components/shared/role-layout-client";
 import { ModuleMobileHeader } from "@/components/shared/module-mobile-header";
 import { useMobileShell } from "@/components/shared/mobile-shell-context";
@@ -35,11 +42,12 @@ import type { WorkflowTab } from "@/components/shared/workflow-tab-bar";
 import type { NavItemConfig } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 import { COUNT_MODE } from "@/lib/stock-audit/status";
+import type { CatalogRow } from "@/lib/stock-audit/sku-search";
 import type { CountLine, MyAudit } from "@/lib/stock-audit/types";
 import {
   createLine,
-  fetchMyAudits,
   fetchMyLines,
+  fetchOpenAudit,
   fmtPcs,
   fmtStarted,
   friendlyError,
@@ -48,6 +56,7 @@ import {
   type CountError,
   type LineBody,
 } from "./count-api";
+import { readStoredCatalog, refreshCatalog } from "./catalog-store";
 import { CountCalculator, type CalcValues } from "./count-calculator";
 import { CountSearch, type PickedSku } from "./count-search";
 import { CountSubmitted } from "./count-submitted";
@@ -59,9 +68,6 @@ function isTabKey(v: string): v is TabKey {
 }
 
 type CalcState = { kind: "new"; sku: PickedSku } | { kind: "edit"; line: CountLine };
-
-/** Why the open audit is read-only, if it is. */
-type Lock = null | "closed" | "removed";
 
 interface ShellProps {
   role: RoleSidebarRole;
@@ -132,13 +138,16 @@ function StockCountScreen({
 }: ScreenProps): React.JSX.Element {
   const { openMenu, openYou } = useMobileShell();
 
-  const [audits, setAudits] = useState<MyAudit[] | null>(null);
-  const [auditsError, setAuditsError] = useState<string | null>(null);
-  const firstLoad = useRef(true);
+  /** loading → the first answer; "none" = no audit open. */
+  const [auditState, setAuditState] = useState<"loading" | "ready" | "none" | "error">("loading");
+  const [auditError, setAuditError] = useState<string | null>(null);
 
   const [lines, setLines] = useState<CountLine[] | null>(null);
   const [linesError, setLinesError] = useState<string | null>(null);
-  const [lock, setLock] = useState<Lock>(null);
+  const [closed, setClosed] = useState(false);
+
+  const [catalog, setCatalog] = useState<CatalogRow[] | null>(null);
+  const [catalogError, setCatalogError] = useState<string | null>(null);
 
   const [calc, setCalc] = useState<CalcState | null>(null);
   const [busy, setBusy] = useState(false);
@@ -151,15 +160,29 @@ function StockCountScreen({
   useEffect(() => setCalcOpen(calc !== null), [calc, setCalcOpen]);
   useEffect(() => setLineCount(lines === null ? undefined : lines.length), [lines, setLineCount]);
 
-  /** NOT_ASSIGNED / AUDIT_CLOSED turn the screen read-only. True if it was one. */
-  const applyLock = useCallback((e: CountError): boolean => {
-    if (e.code === "NOT_ASSIGNED") {
-      setLock("removed");
-      setCalc(null);
-      return true;
+  // ── SKU list: the stored copy at once, then ask the server if it is current.
+  const loadCatalog = useCallback(async (): Promise<void> => {
+    const r = await refreshCatalog();
+    if (r.ok) {
+      setCatalog(r.catalog.rows);
+      setCatalogError(null);
+    } else {
+      setCatalogError(
+        r.error.code === "NETWORK" ? "Couldn't download the SKU list — check signal" : friendlyError(r.error),
+      );
     }
+  }, []);
+
+  useEffect(() => {
+    const stored = readStoredCatalog();
+    if (stored) setCatalog(stored.rows);
+    void loadCatalog();
+  }, [loadCatalog]);
+
+  /** AUDIT_CLOSED turns the screen read-only. True if it was that. */
+  const applyLock = useCallback((e: CountError): boolean => {
     if (e.code === "AUDIT_CLOSED") {
-      setLock("closed");
+      setClosed(true);
       setCalc(null);
       return true;
     }
@@ -172,7 +195,7 @@ function StockCountScreen({
       if (r.ok) {
         setLines(r.data.lines);
         setLinesError(null);
-        if (r.data.audit.status !== "open") setLock("closed");
+        if (r.data.audit.status !== "open") setClosed(true);
         return;
       }
       if (!applyLock(r.error)) setLinesError(friendlyError(r.error));
@@ -180,49 +203,35 @@ function StockCountScreen({
     [applyLock],
   );
 
-  const openAudit = useCallback(
-    (a: MyAudit) => {
-      setAudit(a);
-      setTab("count");
-      setCalc(null);
-      setFlash(null);
-      setSaveError(null);
-      setLock(null);
-      setLines(null);
-      setLinesError(null);
-      setResetKey((k) => k + 1);
-      void loadLines(a.id);
-    },
-    [setAudit, setTab, loadLines],
-  );
-
-  const loadAudits = useCallback(async (): Promise<void> => {
-    const r = await fetchMyAudits();
+  const loadAudit = useCallback(async (): Promise<void> => {
+    setAuditState("loading");
+    const r = await fetchOpenAudit();
     if (!r.ok) {
-      setAuditsError(friendlyError(r.error));
+      setAuditError(friendlyError(r.error));
+      setAuditState("error");
       return;
     }
-    setAuditsError(null);
-    setAudits(r.data.audits);
-    // Exactly one → straight in, but only on arrival: a person who came BACK
-    // to the list is never bounced out of it again.
-    if (firstLoad.current && r.data.audits.length === 1) openAudit(r.data.audits[0]);
-    firstLoad.current = false;
-  }, [openAudit]);
+    setAuditError(null);
+    setTab("count");
+    setCalc(null);
+    setFlash(null);
+    setSaveError(null);
+    setClosed(false);
+    setLines(null);
+    setLinesError(null);
+    setResetKey((k) => k + 1);
+    setAudit(r.data.audit);
+    if (r.data.audit === null) {
+      setAuditState("none");
+      return;
+    }
+    setAuditState("ready");
+    void loadLines(r.data.audit.id);
+  }, [setAudit, setTab, loadLines]);
 
   useEffect(() => {
-    void loadAudits();
-  }, [loadAudits]);
-
-  function backToList(): void {
-    setAudit(null);
-    setCalc(null);
-    setLines(null);
-    setLock(null);
-    setFlash(null);
-    setAudits(null);
-    void loadAudits();
-  }
+    void loadAudit();
+  }, [loadAudit]);
 
   function changeTab(t: TabKey): void {
     setTab(t);
@@ -254,7 +263,7 @@ function StockCountScreen({
     setCalc({ kind: "edit", line });
   }
 
-  async function save(values: CalcValues): Promise<void> {
+  async function save(values: CalcValues, shownTotal: number): Promise<void> {
     if (!audit || calc === null) return;
     const isCartons = values.mode === COUNT_MODE.cartons;
     const material = calc.kind === "new" ? calc.sku.material : calc.line.material;
@@ -267,6 +276,7 @@ function StockCountScreen({
       depth: values.depth,
       pcsPerCarton: isCartons ? values.pcsPerCarton : null,
       loose: values.loose,
+      clientTotal: shownTotal,
       ...(inCatalog ? {} : { notInCatalog: true }),
     };
     setBusy(true);
@@ -274,9 +284,22 @@ function StockCountScreen({
     const r = calc.kind === "new" ? await createLine(audit.id, body) : await updateLine(calc.line.id, body);
     setBusy(false);
     if (!r.ok) {
-      // Lock codes close the calculator and show the banner; everything else
-      // keeps it open with what they typed (network, invalid …).
-      if (!applyLock(r.error)) setSaveError(friendlyError(r.error));
+      if (applyLock(r.error)) return;
+      if (r.error.code === "NOT_IN_CATALOG") {
+        // Our list was stale — the code left the catalogue since it was
+        // downloaded. Refresh the list, and turn this line into a
+        // "Not in catalog" one: Submit again is the counter's confirm.
+        void loadCatalog();
+        if (calc.kind === "new") {
+          setCalc({ kind: "new", sku: { ...calc.sku, inCatalog: false, description: null, pack: null } });
+        } else {
+          setCalc({ kind: "edit", line: { ...calc.line, inCatalog: false, skuDescription: null, skuPack: null } });
+        }
+        setSaveError(`${material} is no longer in the SKU catalog — tap ${calc.kind === "new" ? "Submit" : "Update"} again to count it as “Not in catalog”`);
+        return;
+      }
+      // Everything else keeps the calculator open with what they typed.
+      setSaveError(friendlyError(r.error));
       return;
     }
     const wasEdit = calc.kind === "edit";
@@ -304,24 +327,14 @@ function StockCountScreen({
     return true;
   }
 
-  const readOnly = lock !== null;
-  const multi = (audits?.length ?? 0) > 1;
-
   // ── Body ───────────────────────────────────────────────────────────────────
   let body: React.ReactNode;
   if (!audit) {
-    body = <AuditPicker audits={audits} error={auditsError} onOpen={openAudit} onRetry={() => void loadAudits()} />;
-  } else if (lock === "removed") {
-    body = (
-      <div className="px-4 py-10 text-center">
-        <p className="text-[15px] font-semibold text-ink-900">You&apos;ve been taken off this audit</p>
-        <p className="mt-1 text-[13px] text-ink-500">Your counts are kept. Ask your supervisor if this is a mistake.</p>
-        <button type="button" onClick={backToList} className="mt-4 text-[15px] font-semibold text-brand-700">
-          Back to my audits
-        </button>
-      </div>
-    );
+    body = <NoAudit state={auditState} error={auditError} onRetry={() => void loadAudit()} />;
   } else if (calc !== null) {
+    // A saved loose-only line (0/0/0) re-opens with the three boxes blank — the
+    // same line under the blank rule. Any other saved number shows as typed.
+    const looseOnly = calc.kind === "edit" && calc.line.stack === 0 && calc.line.depth === 0 && calc.line.rows === 0;
     const initial: CalcValues =
       calc.kind === "new"
         ? {
@@ -334,9 +347,9 @@ function StockCountScreen({
           }
         : {
             mode: calc.line.mode,
-            stack: String(calc.line.stack),
-            rows: String(calc.line.rows),
-            depth: String(calc.line.depth),
+            stack: looseOnly ? "" : String(calc.line.stack),
+            rows: looseOnly ? "" : String(calc.line.rows),
+            depth: looseOnly ? "" : String(calc.line.depth),
             pcsPerCarton: calc.line.pcsPerCarton !== null ? String(calc.line.pcsPerCarton) : "",
             loose: String(calc.line.loose),
           };
@@ -358,7 +371,7 @@ function StockCountScreen({
         submitLabel={calc.kind === "new" ? "Submit" : "Update"}
         busy={busy}
         error={saveError}
-        onSubmit={(v) => void save(v)}
+        onSubmit={(v, total) => void save(v, total)}
         onCancel={() => {
           const wasEdit = calc.kind === "edit";
           setCalc(null);
@@ -374,7 +387,7 @@ function StockCountScreen({
         lines={lines}
         loadError={linesError}
         flash={flash}
-        readOnly={readOnly}
+        readOnly={closed}
         removing={removing}
         removeError={removeError}
         onEdit={edit}
@@ -383,7 +396,17 @@ function StockCountScreen({
       />
     );
   } else {
-    body = <CountSearch flash={flash} readOnly={readOnly} resetKey={resetKey} onPick={pick} />;
+    body = (
+      <CountSearch
+        flash={flash}
+        readOnly={closed}
+        resetKey={resetKey}
+        catalog={catalog}
+        catalogError={catalogError}
+        onRetryCatalog={() => void loadCatalog()}
+        onPick={pick}
+      />
+    );
   }
 
   const title = audit ? audit.auditNumber : "Stock count";
@@ -412,20 +435,8 @@ function StockCountScreen({
           {subtitle && <p className="text-[12.5px] text-ink-500">{subtitle}</p>}
         </div>
 
-        {/* Back to the list — only when there is a list to go back to. */}
-        {audit && multi && calc === null && lock !== "removed" && (
-          <button
-            type="button"
-            onClick={backToList}
-            className="flex flex-none items-center gap-1.5 px-4 pt-3 text-[14px] font-semibold text-brand-700"
-          >
-            <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-            My audits
-          </button>
-        )}
-
         {/* ≥768px: the segmented Count | Submitted (n). The phone uses the bottom bar. */}
-        {audit && calc === null && lock !== "removed" && (
+        {audit && calc === null && (
           <div className="hidden flex-none gap-1 px-4 pt-3 md:flex" role="tablist" aria-label="Stock count">
             {TAB_KEYS.map((k) => (
               <button
@@ -445,9 +456,12 @@ function StockCountScreen({
           </div>
         )}
 
-        {lock === "closed" && (
+        {audit && closed && (
           <div role="status" className="mx-4 mt-3 flex-none rounded-[10px] bg-warn-bg px-3 py-2.5 text-[14px] text-warn-text">
-            This audit is closed — counts are locked
+            This audit is closed — counts are locked.{" "}
+            <button type="button" onClick={() => void loadAudit()} className="font-semibold underline">
+              Check for a new audit
+            </button>
           </div>
         )}
 
@@ -457,18 +471,16 @@ function StockCountScreen({
   );
 }
 
-function AuditPicker({
-  audits,
+function NoAudit({
+  state,
   error,
-  onOpen,
   onRetry,
 }: {
-  audits: MyAudit[] | null;
+  state: "loading" | "ready" | "none" | "error";
   error: string | null;
-  onOpen: (a: MyAudit) => void;
   onRetry: () => void;
 }): React.JSX.Element {
-  if (error) {
+  if (state === "error") {
     return (
       <div className="px-4 py-10 text-center">
         <p className="text-[14px] text-danger-text">{error}</p>
@@ -478,42 +490,15 @@ function AuditPicker({
       </div>
     );
   }
-  if (audits === null) return <p className="px-4 py-10 text-center text-[14px] text-ink-400">Loading…</p>;
-  if (audits.length === 0) {
-    return (
-      <div className="flex flex-col items-center px-8 py-14 text-center">
-        <ClipboardList className="mb-3 h-12 w-12 text-ink-200" strokeWidth={1.5} aria-hidden="true" />
-        <p className="text-[16px] font-semibold text-ink-700">No open audit assigned to you</p>
-        <p className="mt-1 text-[13px] text-ink-500">Ask your supervisor to add you to an audit.</p>
-        <button type="button" onClick={onRetry} className="mt-4 text-[14px] font-semibold text-brand-700">
-          Check again
-        </button>
-      </div>
-    );
-  }
+  if (state !== "none") return <p className="px-4 py-10 text-center text-[14px] text-ink-400">Loading…</p>;
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto px-4 pt-4">
-      <div className="mb-1 text-[13px] text-ink-500">Your open audits</div>
-      <ul>
-        {audits.map((a) => (
-          <li key={a.id}>
-            <button
-              type="button"
-              onClick={() => onOpen(a)}
-              className="flex w-full items-center justify-between gap-2.5 border-b border-ink-100 py-3.5 text-left active:bg-ink-25"
-            >
-              <span>
-                <span className="block text-[15px] font-semibold text-ink-900">{a.auditNumber}</span>
-                <span className="block text-[12.5px] text-ink-500">
-                  {fmtStarted(a.createdAt)} · {a.myLines} {a.myLines === 1 ? "line" : "lines"} by you
-                </span>
-              </span>
-              <ChevronRight className="h-5 w-5 flex-none text-ink-400" aria-hidden="true" />
-            </button>
-          </li>
-        ))}
-      </ul>
-      <p className="mt-3.5 text-[12px] text-ink-400">Only audits you&apos;re assigned to show here.</p>
+    <div className="flex flex-col items-center px-8 py-14 text-center">
+      <ClipboardList className="mb-3 h-12 w-12 text-ink-200" strokeWidth={1.5} aria-hidden="true" />
+      <p className="text-[16px] font-semibold text-ink-700">No audit is open right now</p>
+      <p className="mt-1 text-[13px] text-ink-500">When your supervisor starts one, it opens here.</p>
+      <button type="button" onClick={onRetry} className="mt-4 text-[14px] font-semibold text-brand-700">
+        Check again
+      </button>
     </div>
   );
 }

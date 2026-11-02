@@ -6,9 +6,9 @@
 // that) — the Submitted count is the server's number, never a local +1.
 
 import type {
+  CatalogResponse,
   CountLine,
   MyAudit,
-  SkuHit,
   StockAuditErrorBody,
   StockAuditErrorCode,
 } from "@/lib/stock-audit/types";
@@ -28,12 +28,12 @@ export type CountResult<T> = { ok: true; data: T } | { ok: false; error: CountEr
 /** Plain English for every code the screen can meet (brief §6). */
 export function friendlyError(e: CountError): string {
   switch (e.code) {
-    case "NOT_ASSIGNED":
-      return "You've been taken off this audit";
     case "AUDIT_CLOSED":
       return "This audit is closed — counts are locked";
     case "NOT_IN_CATALOG":
       return "That code is not in the SKU catalog";
+    case "TOTAL_MISMATCH":
+      return "The app was updated — reopen the screen";
     case "INVALID":
       return e.message || "Check the numbers and try again";
     case "NETWORK":
@@ -80,7 +80,8 @@ export async function call<T>(url: string, init?: RequestInit): Promise<CountRes
   };
 }
 
-export function fetchMyAudits(): Promise<CountResult<{ audits: MyAudit[] }>> {
+/** THE open audit, or null (open counting — at most one is open). */
+export function fetchOpenAudit(): Promise<CountResult<{ audit: MyAudit | null }>> {
   return call("/api/stock-count/audits");
 }
 
@@ -90,12 +91,14 @@ export function fetchMyLines(
   return call(`/api/stock-count/audits/${auditId}/lines`);
 }
 
-export function searchSkus(q: string, signal?: AbortSignal): Promise<CountResult<{ skus: SkuHit[] }>> {
-  return call(`/api/stock-count/skus?q=${encodeURIComponent(q)}`, { signal });
+/** The whole searchable SKU list — or "unchanged" when `have` is current. */
+export function fetchCatalog(have: string | null): Promise<CountResult<CatalogResponse>> {
+  return call(`/api/stock-count/catalog${have ? `?have=${encodeURIComponent(have)}` : ""}`);
 }
 
 /** What the calculator sends. Numbers as typed (strings); the server validates
- *  and computes the total itself. */
+ *  and computes the total itself, and refuses the line (TOTAL_MISMATCH) unless
+ *  `clientTotal` — the total the phone showed — equals its own. */
 export interface LineBody {
   material: string;
   mode: CountMode;
@@ -104,6 +107,7 @@ export interface LineBody {
   depth: string;
   pcsPerCarton: string | null;
   loose: string;
+  clientTotal: number;
   notInCatalog?: boolean;
 }
 

@@ -7,17 +7,18 @@
 // code", the big centred box, result rows "code / description · pack", and the
 // green "Submitted …" message above the box after a save.
 //
-// Search rules are the server's (GET /api/stock-count/skus): from 4 characters,
-// the code CONTAINED anywhere in the material, max 20. Debounced 250 ms, and
-// only the newest answer is applied (an older, slower reply never overwrites it).
+// INSTANT, LOCAL SEARCH (2026-11-02): the shell downloads the whole SKU list
+// once (components/stock-audit/catalog-store.ts) and this box searches it on
+// every keystroke with lib/stock-audit/sku-search.ts searchCatalog — from 4
+// characters, the code CONTAINED anywhere in the material, isPrimary first,
+// max 20. No server call per keystroke; the server still checks the code on save.
 //
 // BLIND: catalog data only — no quantity of any kind is shown here.
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronRight } from "lucide-react";
 import { MOBILE_NAV_CLEARANCE } from "@/components/shared/mobile-shell";
-import type { SkuHit } from "@/lib/stock-audit/types";
-import { friendlyError, searchSkus } from "./count-api";
+import { SEARCH_MIN_CHARS, searchCatalog, type CatalogRow, type SkuHit } from "@/lib/stock-audit/sku-search";
 import type { CalcSku } from "./count-calculator";
 import type { CountMode } from "@/lib/stock-audit/status";
 
@@ -31,26 +32,32 @@ interface Props {
   readOnly: boolean;
   /** Bumped by the shell after a save, to clear + refocus the box. */
   resetKey: number;
+  /** The downloaded SKU list; null until the first copy is in hand. */
+  catalog: CatalogRow[] | null;
+  /** Why the list could not be downloaded (shown only while there is no copy). */
+  catalogError: string | null;
+  onRetryCatalog: () => void;
   onPick: (sku: PickedSku) => void;
 }
 
-const MIN_CHARS = 4;
-const DEBOUNCE_MS = 250;
+const MIN_CHARS = SEARCH_MIN_CHARS;
 
-export function CountSearch({ flash, readOnly, resetKey, onPick }: Props): React.JSX.Element {
+export function CountSearch({
+  flash,
+  readOnly,
+  resetKey,
+  catalog,
+  catalogError,
+  onRetryCatalog,
+  onPick,
+}: Props): React.JSX.Element {
   const [q, setQ] = useState("");
-  const [hits, setHits] = useState<SkuHit[]>([]);
-  const [state, setState] = useState<"idle" | "loading" | "done" | "error">("idle");
-  const [error, setError] = useState<string | null>(null);
   const [confirmCode, setConfirmCode] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
-  const seq = useRef(0);
 
   // Clear + focus on mount and after every save (resetKey).
   useEffect(() => {
     setQ("");
-    setHits([]);
-    setState("idle");
     setConfirmCode(null);
     if (!readOnly) {
       const t = setTimeout(() => inputRef.current?.focus(), 50);
@@ -61,33 +68,8 @@ export function CountSearch({ flash, readOnly, resetKey, onPick }: Props): React
 
   const code = q.trim().toUpperCase();
 
-  useEffect(() => {
-    if (code.length < MIN_CHARS) {
-      setHits([]);
-      setState("idle");
-      return;
-    }
-    const mine = ++seq.current;
-    const ctrl = new AbortController();
-    setState("loading");
-    const t = setTimeout(async () => {
-      const r = await searchSkus(code, ctrl.signal);
-      if (mine !== seq.current) return; // a newer search is in flight
-      if (r.ok) {
-        setHits(r.data.skus);
-        setState("done");
-        setError(null);
-      } else if (!ctrl.signal.aborted) {
-        setHits([]);
-        setState("error");
-        setError(r.error.code === "NETWORK" ? "Search failed — check signal" : friendlyError(r.error));
-      }
-    }, DEBOUNCE_MS);
-    return () => {
-      clearTimeout(t);
-      ctrl.abort();
-    };
-  }, [code]);
+  const hits: SkuHit[] = useMemo(() => (catalog ? searchCatalog(catalog, code) : []), [catalog, code]);
+  const searched = catalog !== null && code.length >= MIN_CHARS;
 
   function pickHit(h: SkuHit): void {
     onPick({
@@ -105,7 +87,7 @@ export function CountSearch({ flash, readOnly, resetKey, onPick }: Props): React
     onPick({ material, description: null, pack: null, inCatalog: false, piecesPerCarton: null, defaultMode: "pieces" });
   }
 
-  const noMatch = state === "done" && hits.length === 0;
+  const noMatch = searched && hits.length === 0;
   // A free-typed code must still be a code the server accepts.
   const codeOk = /^[A-Z0-9][A-Z0-9-]{0,39}$/.test(code);
 
@@ -137,8 +119,17 @@ export function CountSearch({ flash, readOnly, resetKey, onPick }: Props): React
       {code.length > 0 && code.length < MIN_CHARS && (
         <p className="mt-2 text-[13px] text-ink-400">Type at least {MIN_CHARS} digits</p>
       )}
-      {state === "loading" && <p className="mt-3 text-[13px] text-ink-400">Searching…</p>}
-      {state === "error" && error && <p className="mt-3 text-[13px] text-danger-text">{error}</p>}
+      {catalog === null && !catalogError && code.length >= MIN_CHARS && (
+        <p className="mt-3 text-[13px] text-ink-400">Loading the SKU list…</p>
+      )}
+      {catalog === null && catalogError && (
+        <p className="mt-3 text-[13px] text-danger-text">
+          {catalogError}{" "}
+          <button type="button" onClick={onRetryCatalog} className="font-semibold text-brand-700">
+            Try again
+          </button>
+        </p>
+      )}
 
       {hits.length > 0 && (
         <ul className="mt-2">

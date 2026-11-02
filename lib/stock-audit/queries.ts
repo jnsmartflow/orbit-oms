@@ -16,39 +16,32 @@
 // isRemoved: false. The ONE exception is getAuditMarker, which must see a
 // removal move (its count and MAX(updatedAt) include removed rows on purpose).
 //
-// 🔴 BLIND COUNT. The counter-side reads (getMyOpenAudits, getMyLines) are
+// 🔴 BLIND COUNT. The counter-side reads (getOpenAudit, getMyLines) are
 // always narrowed to the session user's own rows. Nothing a counter can call
 // returns another person's lines, a cross-counter total, or an expected qty.
 //
 // Sequential awaits, never prisma.$transaction (CORE §3).
 
 import { prisma } from "@/lib/prisma";
-import { checkAnyPermissionForUser } from "@/lib/permissions";
-import { effectiveRoleSlugs } from "@/lib/access/role-baseline";
 import { formatPack } from "@/lib/place-order/pack";
 import { formatWorking } from "./calc";
-import { COUNT_MODE, STOCK_AUDIT_STATUS, type CountMode, type StockAuditStatus } from "./status";
+import { STOCK_AUDIT_STATUS, type CountMode, type StockAuditStatus } from "./status";
+import { TAGGED_CODE } from "./sku-search";
 // 🔴 `import type` — load-bearing (the lib/ci/queries.ts rule). A plain import
 // would pull the `xlsx` bundle into every stock-audit route's module graph.
 import type { StockAuditRegisterRow } from "./workbook";
 import type {
-  AssignableUser,
   AuditDetail,
   AuditListItem,
   AuditMarker,
   CountLine,
   CounterProgress,
   MyAudit,
-  SkuHit,
   SkuLedger,
   SkuSummaryRow,
 } from "./types";
 
 // ── Material + catalog ────────────────────────────────────────────────────────
-
-/** A tagged duplicate ("12345-…") — excluded from search and resolution; all 19
- *  live ones have a plain twin (Smart Flow, 2026-11-02). */
-const TAGGED_CODE = /^[0-9]+-/;
 
 /** Trimmed + upper-cased — the shape chk_stock_audit_lines_material demands. */
 export function normaliseMaterial(raw: unknown): string | null {
@@ -74,30 +67,6 @@ export async function resolveCatalogMaterial(
   const description = row.description.trim();
   if (description === "") return null; // chk_stock_audit_lines_catalog would refuse it
   return { description, pack: formatPack(row.packCode, row.unit) };
-}
-
-/** SKU search: q CONTAINED in material, active, untagged, isPrimary first, ≤ 20. */
-export async function searchSkus(q: string): Promise<SkuHit[]> {
-  const rows = await prisma.sku_master_v2.findMany({
-    where: { isActive: true, material: { contains: q } },
-    orderBy: [{ isPrimary: "desc" }, { material: "asc" }],
-    // Over-fetch so dropping tagged codes (≤ 19 exist) never starves the 20.
-    take: 60,
-    select: { material: true, description: true, packCode: true, unit: true, piecesPerCarton: true },
-  });
-  return rows
-    .filter((r) => !TAGGED_CODE.test(r.material))
-    .slice(0, 20)
-    .map((r) => {
-      const ppc = typeof r.piecesPerCarton === "number" && r.piecesPerCarton > 0 ? r.piecesPerCarton : null;
-      return {
-        material: r.material,
-        description: r.description,
-        pack: formatPack(r.packCode, r.unit),
-        piecesPerCarton: ppc,
-        defaultMode: ppc !== null ? COUNT_MODE.cartons : COUNT_MODE.pieces,
-      };
-    });
 }
 
 // ── Lines → wire ─────────────────────────────────────────────────────────────
@@ -174,28 +143,26 @@ export { LINE_SELECT };
 
 // ── Counter reads (always narrowed to the session user) ─────────────────────
 
-export async function getMyOpenAudits(userId: number): Promise<MyAudit[]> {
-  const rows = await prisma.stockAuditCounter.findMany({
-    where: { userId, audit: { status: STOCK_AUDIT_STATUS.open } },
-    select: { audit: { select: { id: true, auditNumber: true, createdAt: true } } },
-    orderBy: { audit: { createdAt: "desc" } },
+/**
+ * THE open audit (open counting — at most one is open; newest first if a race
+ * ever left two), with MY live line count. null when none is open.
+ */
+export async function getOpenAudit(userId: number): Promise<MyAudit | null> {
+  const audit = await prisma.stockAudit.findFirst({
+    where: { status: STOCK_AUDIT_STATUS.open },
+    orderBy: { createdAt: "desc" },
+    select: { id: true, auditNumber: true, createdAt: true },
   });
-  const ids = rows.map((r) => r.audit.id);
-  const counts =
-    ids.length > 0
-      ? await prisma.stockAuditLine.groupBy({
-          by: ["auditId"],
-          where: { auditId: { in: ids }, countedById: userId, isRemoved: false },
-          _count: { _all: true },
-        })
-      : [];
-  const byAudit = new Map(counts.map((c) => [c.auditId, c._count._all]));
-  return rows.map((r) => ({
-    id: r.audit.id,
-    auditNumber: r.audit.auditNumber,
-    createdAt: r.audit.createdAt.toISOString(),
-    myLines: byAudit.get(r.audit.id) ?? 0,
-  }));
+  if (!audit) return null;
+  const myLines = await prisma.stockAuditLine.count({
+    where: { auditId: audit.id, countedById: userId, isRemoved: false },
+  });
+  return {
+    id: audit.id,
+    auditNumber: audit.auditNumber,
+    createdAt: audit.createdAt.toISOString(),
+    myLines,
+  };
 }
 
 /** MY live lines in one audit, newest first. */
@@ -221,19 +188,25 @@ export async function getAuditList(): Promise<AuditListItem[]> {
       createdAt: true,
       closedAt: true,
       createdBy: { select: { name: true } },
-      _count: { select: { counters: true } },
     },
   });
   const ids = audits.map((a) => a.id);
-  const lineCounts =
+  // One row per (audit, person) with live lines → lines per audit AND people
+  // who counted, in one query.
+  const perPerson =
     ids.length > 0
       ? await prisma.stockAuditLine.groupBy({
-          by: ["auditId"],
+          by: ["auditId", "countedById"],
           where: { auditId: { in: ids }, isRemoved: false },
           _count: { _all: true },
         })
       : [];
-  const byAudit = new Map(lineCounts.map((c) => [c.auditId, c._count._all]));
+  const byAudit = new Map<number, number>();
+  const people = new Map<number, number>();
+  for (const c of perPerson) {
+    byAudit.set(c.auditId, (byAudit.get(c.auditId) ?? 0) + c._count._all);
+    people.set(c.auditId, (people.get(c.auditId) ?? 0) + 1);
+  }
   return audits.map((a) => ({
     id: a.id,
     auditNumber: a.auditNumber,
@@ -241,12 +214,12 @@ export async function getAuditList(): Promise<AuditListItem[]> {
     createdAt: a.createdAt.toISOString(),
     closedAt: a.closedAt ? a.closedAt.toISOString() : null,
     createdByName: a.createdBy.name,
-    counters: a._count.counters,
+    counted: people.get(a.id) ?? 0,
     lines: byAudit.get(a.id) ?? 0,
   }));
 }
 
-/** Header + stats + SKU summary (optionally filtered by q) + per-counter progress. */
+/** Header + stats + SKU summary (optionally filtered by q) + per-person progress. */
 export async function getAuditDetail(auditId: number, q: string | null): Promise<AuditDetail | null> {
   const audit = await prisma.stockAudit.findUnique({
     where: { id: auditId },
@@ -262,10 +235,6 @@ export async function getAuditDetail(auditId: number, q: string | null): Promise
   });
   if (!audit) return null;
 
-  const counters = await prisma.stockAuditCounter.findMany({
-    where: { auditId },
-    select: { userId: true, user: { select: { name: true } } },
-  });
   const lines = await prisma.stockAuditLine.findMany({
     where: { auditId, isRemoved: false },
     select: {
@@ -310,16 +279,13 @@ export async function getAuditDetail(auditId: number, q: string | null): Promise
     );
   }
 
-  // Progress — every assigned counter, plus anyone taken off who still has lines.
+  // Progress — one row per person with live lines (open counting: no list).
   const progress = new Map<number, CounterProgress>();
-  for (const c of counters) {
-    progress.set(c.userId, { userId: c.userId, name: c.user.name, assigned: true, lines: 0, pieces: 0, lastEntryAt: null });
-  }
   const lastAt = new Map<number, number>();
   for (const l of lines) {
     let p = progress.get(l.countedById);
     if (!p) {
-      p = { userId: l.countedById, name: "", assigned: false, lines: 0, pieces: 0, lastEntryAt: null };
+      p = { userId: l.countedById, name: "", lines: 0, pieces: 0, lastEntryAt: null };
       progress.set(l.countedById, p);
     }
     p.lines += 1;
@@ -327,9 +293,9 @@ export async function getAuditDetail(auditId: number, q: string | null): Promise
     const t = Math.max(l.createdAt.getTime(), l.updatedAt.getTime());
     if (t > (lastAt.get(l.countedById) ?? 0)) lastAt.set(l.countedById, t);
   }
-  const unnamed = Array.from(progress.values()).filter((p) => !p.assigned).map((p) => p.userId);
-  if (unnamed.length > 0) {
-    const users = await prisma.users.findMany({ where: { id: { in: unnamed } }, select: { id: true, name: true } });
+  const personIds = Array.from(progress.keys());
+  if (personIds.length > 0) {
+    const users = await prisma.users.findMany({ where: { id: { in: personIds } }, select: { id: true, name: true } });
     for (const u of users) {
       const p = progress.get(u.id);
       if (p) p.name = u.name;
@@ -339,12 +305,7 @@ export async function getAuditDetail(auditId: number, q: string | null): Promise
     const p = progress.get(uid);
     if (p) p.lastEntryAt = new Date(t).toISOString();
   }
-  const progressRows = Array.from(progress.values()).sort(
-    (a, b) => Number(b.assigned) - Number(a.assigned) || a.name.localeCompare(b.name),
-  );
-
-  const assignedIds = new Set(counters.map((c) => c.userId));
-  const activeAssigned = new Set(lines.map((l) => l.countedById).filter((id) => assignedIds.has(id)));
+  const progressRows = Array.from(progress.values()).sort((a, b) => a.name.localeCompare(b.name));
 
   return {
     audit: {
@@ -360,8 +321,7 @@ export async function getAuditDetail(auditId: number, q: string | null): Promise
       skus: skuMap.size,
       pieces: lines.reduce((s, l) => s + l.totalPcs, 0),
       lines: lines.length,
-      countersActive: activeAssigned.size,
-      counters: counters.length,
+      countersActive: progress.size,
     },
     skus,
     progress: progressRows,
@@ -420,11 +380,10 @@ export async function getSkuLedger(auditId: number, material: string): Promise<S
 
 /**
  * The desk's cheap change marker { count, latest }.
- *   count  = live lines + assigned counters — an add or a removal moves it, and
- *            so does taking a counter off (no timestamp would).
+ *   count  = live lines — an add or a removal moves it.
  *   latest = MAX of every line's updatedAt (⚠ REMOVED lines included, on
- *            purpose — the soft delete stamps updatedAt), the newest counter's
- *            addedAt, and the audit row's updatedAt (close).
+ *            purpose — the soft delete stamps updatedAt) and the audit row's
+ *            updatedAt (close).
  * An edit moves `latest`; nothing the screen shows can change without one of
  * the two moving.
  */
@@ -436,16 +395,11 @@ export async function getAuditMarker(auditId: number): Promise<AuditMarker | nul
     _max: { updatedAt: true },
   });
   const liveLines = await prisma.stockAuditLine.count({ where: { auditId, isRemoved: false } });
-  const counters = await prisma.stockAuditCounter.aggregate({
-    where: { auditId },
-    _count: { _all: true },
-    _max: { addedAt: true },
-  });
-  const stamps = [audit.updatedAt, allLines._max.updatedAt, counters._max.addedAt]
+  const stamps = [audit.updatedAt, allLines._max.updatedAt]
     .filter((d): d is Date => d !== null)
     .map((d) => d.getTime());
   return {
-    count: liveLines + counters._count._all,
+    count: liveLines,
     latest: stamps.length > 0 ? new Date(Math.max(...stamps)).toISOString() : null,
   };
 }
@@ -476,37 +430,4 @@ export async function getRegisterRows(auditId: number): Promise<StockAuditRegist
     }
   }
   return Array.from(map.values()).sort((a, b) => a.material.localeCompare(b.material));
-}
-
-// ── Who may be assigned as a counter ─────────────────────────────────────────
-
-/**
- * Active users who would pass `stock_audit_count` canView — asked through
- * checkAnyPermissionForUser, the SAME resolver body checkAnyPermission runs
- * (admin role → superuser flag → user_page_access in user mode, or the role
- * path). Never a hand-rolled permission query. One call per active user,
- * sequential (≈40 users; each is a single indexed read, or a notebook hit).
- */
-export async function getAssignableUsers(): Promise<AssignableUser[]> {
-  const users = await prisma.users.findMany({
-    where: { isActive: true },
-    orderBy: { name: "asc" },
-    select: {
-      id: true,
-      name: true,
-      isSuperuser: true,
-      role: { select: { name: true } },
-      userRoles: { select: { role: { select: { name: true } } } },
-    },
-  });
-  const out: AssignableUser[] = [];
-  for (const u of users) {
-    const ok = await checkAnyPermissionForUser(
-      { userId: u.id, roleSlugs: effectiveRoleSlugs(u), isSuperuser: u.isSuperuser },
-      "stock_audit_count",
-      "canView",
-    );
-    if (ok) out.push({ id: u.id, name: u.name });
-  }
-  return out;
 }

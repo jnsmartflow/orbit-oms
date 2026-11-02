@@ -1,7 +1,7 @@
 "use client";
 
 // components/stock-audit/audit-tables.tsx — the desk's three tables: SKU
-// summary, one SKU's ledger, per-counter progress.
+// summary, one SKU's ledger, per-person progress (everyone with live lines).
 //
 // CLAUDE_UI §27 fixed table standard: table-layout fixed, a <colgroup> of
 // percentage widths, 32px header / 36px rows, 10px uppercase header, 11px data,
@@ -148,14 +148,11 @@ export function ProgressTable({ rows }: { rows: CounterProgress[] }): React.JSX.
       }
     >
       {rows.length === 0 ? (
-        <EmptyRow cols={4} text="No counters on this audit" />
+        <EmptyRow cols={4} text="No counts yet" />
       ) : (
         rows.map((r) => (
           <tr key={r.userId}>
-            <td className={cn(TD, "font-medium text-ink-900")}>
-              {r.name || `User ${r.userId}`}
-              {!r.assigned && <span className="ml-1.5 text-[10px] text-ink-400">(removed)</span>}
-            </td>
+            <td className={cn(TD, "font-medium text-ink-900")}>{r.name || `User ${r.userId}`}</td>
             <td className={cn(TD, NUM)}>{r.lines}</td>
             <td className={cn(TD, NUM, "text-ink-900")}>{fmtPcs(r.pieces)}</td>
             <td className={cn(TD, r.lastEntryAt ? "" : "text-ink-400")}>

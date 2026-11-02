@@ -8,6 +8,7 @@
 // split: lib/ci/workbook.ts keeps CiRegisterRow beside its only consumer).
 
 import type { CountMode, StockAuditStatus } from "./status";
+import type { CatalogRow } from "./sku-search";
 
 /** Machine-readable error codes every stock-audit route may answer with. */
 export type StockAuditErrorCode =
@@ -15,11 +16,11 @@ export type StockAuditErrorCode =
   | "FORBIDDEN"
   | "INVALID"
   | "NOT_FOUND"
-  | "NOT_ASSIGNED"
   | "AUDIT_CLOSED"
+  | "AUDIT_ALREADY_OPEN"
   | "NOT_OWNER"
   | "NOT_IN_CATALOG"
-  | "NOT_ASSIGNABLE"
+  | "TOTAL_MISMATCH"
   | "TRY_AGAIN";
 
 /** Every non-2xx body: a human message + the code the screen branches on. */
@@ -32,7 +33,8 @@ export interface StockAuditErrorBody {
 
 // ── Counter (phone) ──────────────────────────────────────────────────────────
 
-/** GET /api/stock-count/audits — an open audit I am assigned to. */
+/** GET /api/stock-count/audits — THE open audit (open counting: at most one
+ *  is open, and everyone holding stock_audit_count counts in it). */
 export interface MyAudit {
   id: number;
   auditNumber: string;
@@ -41,16 +43,11 @@ export interface MyAudit {
   myLines: number;
 }
 
-/** GET /api/stock-count/skus — one catalog match. */
-export interface SkuHit {
-  material: string;
-  description: string;
-  pack: string;
-  /** null unless the catalog's piecesPerCarton > 0. */
-  piecesPerCarton: number | null;
-  /** 'cartons' when piecesPerCarton > 0, else 'pieces' (Smart Flow carton rule). */
-  defaultMode: CountMode;
-}
+/** GET /api/stock-count/catalog — the phone's whole searchable list
+ *  (rows: lib/stock-audit/sku-search.ts CatalogRow). */
+export type CatalogResponse =
+  | { version: string; unchanged: true }
+  | { version: string; skus: CatalogRow[] };
 
 /** One of MY lines — every working field, plus the formatted working. */
 export interface CountLine {
@@ -83,9 +80,17 @@ export interface AuditListItem {
   createdAt: string;
   closedAt: string | null;
   createdByName: string;
-  counters: number;
+  /** People with at least one live line in it. */
+  counted: number;
   /** Live lines only. */
   lines: number;
+}
+
+/** GET /api/stock-audit/audits. */
+export interface AuditListResponse {
+  audits: AuditListItem[];
+  /** What "New audit" would create next (the confirm text) — a preview, not a reservation. */
+  nextAuditNumber: string;
 }
 
 export interface AuditHeader {
@@ -103,10 +108,8 @@ export interface AuditStats {
   skus: number;
   pieces: number;
   lines: number;
-  /** Assigned counters with at least one live line … */
+  /** People with at least one live line. */
   countersActive: number;
-  /** … out of all assigned counters. */
-  counters: number;
 }
 
 /** SKU summary row (all counters merged). */
@@ -119,12 +122,10 @@ export interface SkuSummaryRow {
   lines: number;
 }
 
-/** Progress row — one per assigned counter, plus anyone taken off the audit
- *  who still has live lines (assigned: false). */
+/** Progress row — one per person with live lines (open counting: no list). */
 export interface CounterProgress {
   userId: number;
   name: string;
-  assigned: boolean;
   lines: number;
   pieces: number;
   lastEntryAt: string | null;
@@ -165,10 +166,4 @@ export interface SkuLedger {
 export interface AuditMarker {
   count: number;
   latest: string | null;
-}
-
-/** GET /api/stock-audit/users — someone who may be made a counter. */
-export interface AssignableUser {
-  id: number;
-  name: string;
 }

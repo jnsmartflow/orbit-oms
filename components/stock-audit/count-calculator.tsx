@@ -1,14 +1,21 @@
 "use client";
 
-// components/stock-audit/count-calculator.tsx — the stack × rows × depth
-// (× pcs/carton) + loose calculator, for a NEW line and for an EDIT.
+// components/stock-audit/count-calculator.tsx — the Stack × Depth × Rows
+// (× Pcs/carton) + Loose calculator, for a NEW line and for an EDIT.
+//
+// BLANK FACTORS (2026-11-02): a blank Stack / Depth / Rows counts as 1 unless
+// all three are blank (then the line is loose only). A blank box shows a grey
+// "1" placeholder whenever that rule would make it 1, so the counter sees it
+// before Submit. Pcs/carton never defaults. The total shows as soon as any box
+// has a value (previewLine). The phone sends the total it SHOWED as
+// clientTotal; the server refuses a mismatch (TOTAL_MISMATCH).
 //
 // 🔴 THE MATHS IS lib/stock-audit/calc.ts — the SAME validateLineInput /
 // formatWorking / computeTotal the server runs. The live total shown above
 // Submit is never computed any other way, and the server recomputes it anyway.
 //
 // Layout follows docs/mockups/stock-audit/stock-audit-mobile.html (counter()):
-// code + description · pack, Pieces | Cartons, Stack × Rows × Depth on one
+// code + description · pack, Pieces | Cartons, Stack × Depth × Rows on one
 // line, [× Pcs / carton] + Loose pcs on the next, the working + big total,
 // then Submit (or Update) and Cancel.
 //
@@ -22,7 +29,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { useKeyboardOpen } from "@/lib/hooks/use-keyboard-open";
-import { computeTotal, formatWorking, validateLineInput, type LineField } from "@/lib/stock-audit/calc";
+import { previewLine, validateLineInput, type LineField } from "@/lib/stock-audit/calc";
 import { COUNT_MODE, type CountMode } from "@/lib/stock-audit/status";
 import { fmtPcs } from "./count-api";
 
@@ -54,7 +61,8 @@ interface Props {
   busy: boolean;
   /** A save error to show above the buttons (network, closed …). */
   error: string | null;
-  onSubmit: (values: CalcValues) => void;
+  /** total = the number shown to the counter (sent as clientTotal). */
+  onSubmit: (values: CalcValues, total: number) => void;
   onCancel: () => void;
 }
 
@@ -62,6 +70,7 @@ function NumBox({
   id,
   label,
   value,
+  placeholder,
   error,
   inputRef,
   onChange,
@@ -71,6 +80,7 @@ function NumBox({
   id: string;
   label: string;
   value: string;
+  placeholder: string;
   error: boolean;
   inputRef: (el: HTMLInputElement | null) => void;
   onChange: (v: string) => void;
@@ -90,6 +100,7 @@ function NumBox({
         autoComplete="off"
         enterKeyHint={last ? "done" : "next"}
         value={value}
+        placeholder={placeholder}
         onChange={(e) => onChange(e.target.value.replace(/[^0-9]/g, "").slice(0, 10))}
         onKeyDown={(e) => {
           if (e.key === "Enter") {
@@ -99,7 +110,7 @@ function NumBox({
         }}
         className={cn(
           // 24px: well above the 16px iOS zoom threshold.
-          "h-14 w-full rounded-[10px] border bg-white text-center text-[24px] tabular-nums text-ink-900 outline-none",
+          "h-14 w-full rounded-[10px] border bg-white text-center text-[24px] tabular-nums text-ink-900 outline-none placeholder:text-ink-400",
           "focus:border-brand-600 focus:ring-2 focus:ring-brand-100",
           error ? "border-danger" : "border-ink-100",
         )}
@@ -126,8 +137,8 @@ export function CountCalculator({ sku, initial, submitLabel, busy, error, onSubm
 
   const isCartons = v.mode === COUNT_MODE.cartons;
   const order: NumField[] = isCartons
-    ? ["stack", "rows", "depth", "pcsPerCarton", "loose"]
-    : ["stack", "rows", "depth", "loose"];
+    ? ["stack", "depth", "rows", "pcsPerCarton", "loose"]
+    : ["stack", "depth", "rows", "loose"];
 
   const result = useMemo(
     () =>
@@ -143,19 +154,22 @@ export function CountCalculator({ sku, initial, submitLabel, busy, error, onSubm
     [v, isCartons],
   );
 
-  // The live working shows even while invalid: blanks read as 0, exactly as
-  // the server reads them.
-  const n = (s: string) => (s === "" ? 0 : Number(s));
-  const preview = {
+  // The live working + total show even while invalid, with the SAME blank rule
+  // the server applies (calc.ts previewLine).
+  const preview = previewLine({
     mode: v.mode,
-    stack: n(v.stack),
-    rows: n(v.rows),
-    depth: n(v.depth),
-    pcsPerCarton: isCartons ? (v.pcsPerCarton === "" ? null : n(v.pcsPerCarton)) : null,
-    loose: n(v.loose),
-  };
-  const working = result.ok ? formatWorking(result.working) : formatWorking(preview);
-  const total = result.ok ? computeTotal(result.working) : null;
+    stack: v.stack,
+    depth: v.depth,
+    rows: v.rows,
+    pcsPerCarton: isCartons ? v.pcsPerCarton : null,
+    loose: v.loose,
+  });
+  const working = preview.total === null ? "—" : preview.working;
+  const total = result.ok ? result.totalPcs : preview.total;
+  // A blank factor shows a grey "1" while another factor has a value — that is
+  // exactly when it will be saved as 1.
+  const anyFactor = v.stack !== "" || v.depth !== "" || v.rows !== "";
+  const factorPlaceholder = anyFactor ? "1" : "";
 
   const fieldErrors = new Map<LineField, string>();
   if (!result.ok && touched) for (const e of result.errors) if (!fieldErrors.has(e.field)) fieldErrors.set(e.field, e.message);
@@ -180,7 +194,7 @@ export function CountCalculator({ sku, initial, submitLabel, busy, error, onSubm
   function submit(): void {
     setTouched(true);
     if (!result.ok || busy) return;
-    onSubmit({ ...v, pcsPerCarton: isCartons ? v.pcsPerCarton : "" });
+    onSubmit({ ...v, pcsPerCarton: isCartons ? v.pcsPerCarton : "" }, result.totalPcs);
   }
 
   function enterFrom(field: NumField): void {
@@ -195,6 +209,7 @@ export function CountCalculator({ sku, initial, submitLabel, busy, error, onSubm
       id={`sc-${field}`}
       label={label}
       value={v[field]}
+      placeholder={field === "stack" || field === "depth" || field === "rows" ? factorPlaceholder : ""}
       error={fieldErrors.has(field)}
       inputRef={(el) => {
         refs.current[field] = el;
@@ -264,9 +279,9 @@ export function CountCalculator({ sku, initial, submitLabel, busy, error, onSubm
         <div className="flex items-start gap-1.5">
           {box("stack", "Stack")}
           <Op>×</Op>
-          {box("rows", "Rows")}
-          <Op>×</Op>
           {box("depth", "Depth")}
+          <Op>×</Op>
+          {box("rows", "Rows")}
         </div>
         <div className="mt-2.5 flex items-start gap-1.5">
           {isCartons && (

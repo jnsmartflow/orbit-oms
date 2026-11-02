@@ -11,11 +11,17 @@
 //           exception like /floor or /freight-trips). Its Row-1 search IS the
 //           SKU summary search; Row-2 right carries "New audit".
 //   rail:   every audit, open first then newest (the API's order).
-//   main:   audit header + Counters / Close · four stat cards · SKU summary |
-//           Ledger | Progress.
+//   main:   audit header + Close · four stat cards · SKU summary | Ledger |
+//           Progress.
+//
+// OPEN COUNTING (Smart Flow, 2026-11-02): no counter list. At most ONE audit
+// is open; everyone holding Stock count counts in it. "New audit" is one click
+// + a confirm, and is disabled while an audit is open (the server refuses with
+// 409 AUDIT_ALREADY_OPEN on its own too). Progress lists everyone with live
+// lines; "Counters active" is a plain number.
 //
 // Permissions are read ONCE on the server (app/(stock-audit)/stock-audit/
-// page.tsx) and passed in: canEdit draws New audit / Counters / Close,
+// page.tsx) and passed in: canEdit draws New audit / Close,
 // canExport draws Export XLS. They only decide what is DRAWN — every
 // /api/stock-audit route re-checks.
 //
@@ -25,12 +31,12 @@
 // change refetches the audit, the open ledger and the rail.
 //
 // Violet budget (UI §59.9 on the desk too): "New audit" is the one primary
-// fill in view. Counters / Close / Export are neutral outline buttons; the
+// fill in view. Close / Export are neutral outline buttons; the
 // rail selection is slate.
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { Download, Lock, Plus, Users } from "lucide-react";
+import { Download, Lock, Plus } from "lucide-react";
 import { UniversalHeader } from "@/components/universal-header";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { usePickingMarker } from "@/lib/hooks/use-picking-marker";
@@ -45,16 +51,14 @@ import {
   fetchAudits,
   fetchLedger,
   fmtDateTime,
-  saveCounters,
 } from "./audit-api";
 import { LedgerTable, NotInCatalogTag, ProgressTable, SkuSummaryTable } from "./audit-tables";
-import { fmtPcs, type CountError } from "./count-api";
-import { CountersDialog } from "./counters-dialog";
+import { fmtPcs } from "./count-api";
 
 const POLL_MS = 15_000;
 
 type Tab = "summary" | "ledger" | "progress";
-type DialogKind = null | "new" | "counters" | "close";
+type DialogKind = null | "new" | "close";
 
 const TABS: { key: Tab; label: string }[] = [
   { key: "summary", label: "SKU summary" },
@@ -67,6 +71,7 @@ const OUTLINE_BTN =
 
 export function StockAuditPage({ canEdit, canExport }: { canEdit: boolean; canExport: boolean }): React.JSX.Element {
   const [audits, setAudits] = useState<AuditListItem[] | null>(null);
+  const [nextAuditNumber, setNextAuditNumber] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [detail, setDetail] = useState<AuditDetail | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
@@ -79,6 +84,8 @@ export function StockAuditPage({ canEdit, canExport }: { canEdit: boolean; canEx
   const [dialog, setDialog] = useState<DialogKind>(null);
   const [closing, setClosing] = useState(false);
   const [closeError, setCloseError] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
 
   // ── Loads ──────────────────────────────────────────────────────────────────
   const loadAudits = useCallback(async (): Promise<AuditListItem[] | null> => {
@@ -88,6 +95,7 @@ export function StockAuditPage({ canEdit, canExport }: { canEdit: boolean; canEx
       return null;
     }
     setAudits(r.data.audits);
+    setNextAuditNumber(r.data.nextAuditNumber);
     return r.data.audits;
   }, []);
 
@@ -149,24 +157,21 @@ export function StockAuditPage({ canEdit, canExport }: { canEdit: boolean; canEx
   }, [selectedId, tab, ledgerTarget, loadDetail, loadLedger, loadAudits]);
 
   // ── Actions ────────────────────────────────────────────────────────────────
-  async function onCreate(counterIds: number[]): Promise<CountError | null> {
-    const r = await createAudit(counterIds);
-    if (!r.ok) return r.error;
+  async function onCreate(): Promise<void> {
+    setCreating(true);
+    setCreateError(null);
+    const r = await createAudit();
+    setCreating(false);
+    if (!r.ok) {
+      setCreateError(deskError(r.error));
+      // Someone else may have just started one — show it.
+      if (r.error.code === "AUDIT_ALREADY_OPEN") await loadAudits();
+      return;
+    }
     setDialog(null);
-    toast.success(`${r.data.audit.auditNumber} created`);
+    toast.success(`${r.data.audit.auditNumber} started`);
     await loadAudits();
     setSelectedId(r.data.audit.id);
-    return null;
-  }
-
-  async function onSaveCounters(counterIds: number[]): Promise<CountError | null> {
-    if (selectedId === null) return null;
-    const r = await saveCounters(selectedId, counterIds);
-    if (!r.ok) return r.error;
-    setDialog(null);
-    toast.success("Counters saved");
-    await refreshAll();
-    return null;
   }
 
   async function onClose(): Promise<void> {
@@ -192,6 +197,7 @@ export function StockAuditPage({ canEdit, canExport }: { canEdit: boolean; canEx
   const audit = detail?.audit ?? null;
   const isOpen = audit?.status === "open";
   const openCount = audits?.filter((a) => a.status === "open").length ?? 0;
+  const openAudit = audits?.find((a) => a.status === "open") ?? null;
 
   const needle = q.trim().toUpperCase();
   const skuRows = useMemo(() => {
@@ -199,11 +205,6 @@ export function StockAuditPage({ canEdit, canExport }: { canEdit: boolean; canEx
     if (needle === "") return rows;
     return rows.filter((r) => r.material.includes(needle) || (r.description ?? "").toUpperCase().includes(needle));
   }, [detail, needle]);
-
-  const currentCounters = useMemo(
-    () => (detail?.progress ?? []).filter((p) => p.assigned).map((p) => ({ userId: p.userId, name: p.name })),
-    [detail],
-  );
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-ink-50">
@@ -221,8 +222,13 @@ export function StockAuditPage({ canEdit, canExport }: { canEdit: boolean; canEx
           canEdit ? (
             <button
               type="button"
-              onClick={() => setDialog("new")}
-              className="inline-flex h-7 items-center gap-1 rounded-md bg-brand-600 px-3 text-[12px] font-semibold text-white hover:bg-brand-700"
+              onClick={() => {
+                setCreateError(null);
+                setDialog("new");
+              }}
+              disabled={audits === null || openAudit !== null}
+              title={openAudit ? `${openAudit.auditNumber} is open — close it before starting a new audit` : undefined}
+              className="inline-flex h-7 items-center gap-1 rounded-md bg-brand-600 px-3 text-[12px] font-semibold text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:bg-ink-100 disabled:text-ink-400"
             >
               <Plus className="h-3.5 w-3.5" aria-hidden="true" />
               New audit
@@ -257,7 +263,7 @@ export function StockAuditPage({ canEdit, canExport }: { canEdit: boolean; canEx
               </div>
               <div className="text-[12px] text-ink-500">{fmtDateTime(a.createdAt)}</div>
               <div className="text-[12px] text-ink-500">
-                {a.counters} {a.counters === 1 ? "counter" : "counters"} · {a.lines} {a.lines === 1 ? "line" : "lines"}
+                {a.counted} counted · {a.lines} {a.lines === 1 ? "line" : "lines"}
               </div>
             </button>
           ))}
@@ -293,10 +299,6 @@ export function StockAuditPage({ canEdit, canExport }: { canEdit: boolean; canEx
                 </div>
                 {canEdit && isOpen && (
                   <div className="flex gap-2">
-                    <button type="button" className={OUTLINE_BTN} onClick={() => setDialog("counters")}>
-                      <Users className="h-4 w-4" aria-hidden="true" />
-                      Counters
-                    </button>
                     <button
                       type="button"
                       className={OUTLINE_BTN}
@@ -317,7 +319,7 @@ export function StockAuditPage({ canEdit, canExport }: { canEdit: boolean; canEx
                 <Stat label="SKUs counted" value={fmtPcs(detail.stats.skus)} />
                 <Stat label="Total pieces" value={fmtPcs(detail.stats.pieces)} />
                 <Stat label="Lines entered" value={fmtPcs(detail.stats.lines)} />
-                <Stat label="Counters active" value={`${detail.stats.countersActive} / ${detail.stats.counters}`} />
+                <Stat label="Counters active" value={fmtPcs(detail.stats.countersActive)} />
               </div>
 
               {/* Tabs — NAV bucket: ink-900 label + brand-600 underline. */}
@@ -402,14 +404,32 @@ export function StockAuditPage({ canEdit, canExport }: { canEdit: boolean; canEx
         </main>
       </div>
 
-      <CountersDialog
-        open={dialog === "new" || dialog === "counters"}
-        mode={dialog === "counters" ? "edit" : "new"}
-        auditNumber={audit?.auditNumber}
-        current={dialog === "counters" ? currentCounters : []}
-        onSave={dialog === "counters" ? onSaveCounters : onCreate}
-        onClose={() => setDialog(null)}
-      />
+      <Dialog open={dialog === "new"} onOpenChange={(o) => !o && !creating && setDialog(null)}>
+        <DialogContent className="max-w-[420px]">
+          <DialogHeader>
+            <DialogTitle className="text-[16px] font-semibold text-ink-900">
+              Start {nextAuditNumber ?? "a new audit"}?
+            </DialogTitle>
+            <DialogDescription className="text-[13px] text-ink-600">
+              Everyone with Stock count access can count in it.
+            </DialogDescription>
+          </DialogHeader>
+          {createError && <p className="text-[13px] text-danger-text">{createError}</p>}
+          <DialogFooter className="gap-2">
+            <button type="button" className={OUTLINE_BTN} onClick={() => setDialog(null)} disabled={creating}>
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => void onCreate()}
+              disabled={creating}
+              className="inline-flex h-9 items-center rounded-md bg-brand-600 px-4 text-[13px] font-semibold text-white hover:bg-brand-700 disabled:opacity-50"
+            >
+              {creating ? "Starting…" : "Start audit"}
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={dialog === "close"} onOpenChange={(o) => !o && !closing && setDialog(null)}>
         <DialogContent className="max-w-[420px]">

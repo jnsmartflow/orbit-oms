@@ -8,8 +8,11 @@
 // sku_master_v2 row id: the two tables give the same code different ids
 // (CORE §13, the id-space landmine). There is no FK to the catalog.
 //
-// 🔴 THE TOTAL IS COMPUTED HERE, ON THE SERVER, with calc.ts computeTotal. Any
-// total the client sends is ignored. chk_stock_audit_lines_total is the
+// 🔴 THE TOTAL IS COMPUTED HERE, ON THE SERVER, with calc.ts computeTotal —
+// it is always the one saved. The phone also sends `clientTotal` (what it
+// showed the counter); a missing or different one is refused with 400
+// TOTAL_MISMATCH (calc.ts clientTotalMatches), so a phone running an older page
+// can never save a number nobody saw. chk_stock_audit_lines_total is the
 // database's copy of the same rule.
 //
 // Not in catalog: refused with 400 NOT_IN_CATALOG unless the body carries
@@ -17,7 +20,7 @@
 // inCatalog = false and description / pack are NULL (Smart Flow, 2026-11-02).
 
 import type { NextResponse } from "next/server";
-import { computeTotal, validateLineInput } from "./calc";
+import { clientTotalMatches, computeTotal, validateLineInput } from "./calc";
 import { saError } from "./gate";
 import { normaliseMaterial, resolveCatalogMaterial } from "./queries";
 import type { CountMode } from "./status";
@@ -64,6 +67,14 @@ export async function prepareLineWrite(body: Record<string, unknown>): Promise<L
     };
   }
 
+  const totalPcs = computeTotal(v.working);
+  if (!clientTotalMatches(body.clientTotal, totalPcs)) {
+    return {
+      ok: false,
+      response: saError(400, "TOTAL_MISMATCH", "The app was updated — reopen the screen"),
+    };
+  }
+
   if (body.notInCatalog !== undefined && typeof body.notInCatalog !== "boolean") {
     return { ok: false, response: saError(400, "INVALID", "notInCatalog must be true or false") };
   }
@@ -89,8 +100,8 @@ export async function prepareLineWrite(body: Record<string, unknown>): Promise<L
       depth: v.working.depth,
       pcsPerCarton: v.working.pcsPerCarton,
       loose: v.working.loose,
-      // Server-side, never the client's.
-      totalPcs: computeTotal(v.working),
+      // Server-side (checked equal to the client's above).
+      totalPcs,
     },
   };
 }

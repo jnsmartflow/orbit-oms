@@ -234,13 +234,11 @@ model users {
   freightBillsAdded           freight_trip_bills[]     @relation("FreightTripBillAddedBy")
   freightBillsRemoved         freight_trip_bills[]     @relation("FreightTripBillRemovedBy")
   freightTripActivity         freight_trip_activity[]  @relation("FreightTripActivityActor")
-  // Stock audit (2026-11-02, Schema v27.78) — five FKs to `users` across the
-  // three tables, every one NAMED on both sides (the Mrn* convention: a link
-  // to an ACTOR is named). Models at the end of this file.
+  // Stock audit (2026-11-02, Schema v27.78) — three FKs to `users` across the
+  // two modelled tables, every one NAMED on both sides (the Mrn* convention: a
+  // link to an ACTOR is named). Models at the end of this file.
   stockAuditsCreated          StockAudit[]             @relation("StockAuditCreatedBy")
   stockAuditsClosed           StockAudit[]             @relation("StockAuditClosedBy")
-  stockAuditCounterOf         StockAuditCounter[]      @relation("StockAuditCounterUser")
-  stockAuditCountersAdded     StockAuditCounter[]      @relation("StockAuditCounterAddedBy")
   stockAuditLinesCounted      StockAuditLine[]         @relation("StockAuditLineCountedBy")
   lineStatuses                mo_line_status[]
   // Multi-role back-relations
@@ -4923,6 +4921,11 @@ model so_starred_dealers {
 // One live index is NOT modelled: stock_audit_lines_live_auditId_material_idx
 // (auditId, material) WHERE NOT "isRemoved" — a partial index, which Prisma 5
 // cannot express. It exists live; do not "add" it here.
+//
+// ⚠ stock_audit_counters (also v27.78) is NO LONGER MODELLED — open counting
+// (2026-11-02) dropped the per-audit counter list from the code. The table
+// still exists live until Smart Flow runs the v27.79 drop SQL; nothing reads
+// or writes it.
 
 model StockAudit {
   id          Int       @id @default(autoincrement())
@@ -4941,27 +4944,10 @@ model StockAudit {
   // Live: NOT NULL DEFAULT now(), no trigger — Prisma stamps every UPDATE.
   updatedAt   DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
 
-  counters StockAuditCounter[]
-  lines    StockAuditLine[]
+  lines StockAuditLine[]
 
   @@index([status, createdAt(sort: Desc)], map: "stock_audits_status_createdAt_idx")
   @@map("stock_audits")
-}
-
-model StockAuditCounter {
-  id        Int        @id @default(autoincrement())
-  // Structural parent — unnamed (single relation to stock_audits). CASCADE live.
-  auditId   Int
-  audit     StockAudit @relation(fields: [auditId], references: [id], onDelete: Cascade)
-  userId    Int
-  user      users      @relation("StockAuditCounterUser", fields: [userId], references: [id], onDelete: Restrict)
-  addedById Int?
-  addedBy   users?     @relation("StockAuditCounterAddedBy", fields: [addedById], references: [id], onDelete: SetNull)
-  addedAt   DateTime   @default(now()) @db.Timestamptz(6)
-
-  @@unique([auditId, userId], map: "stock_audit_counters_auditId_userId_key")
-  @@index([userId], map: "stock_audit_counters_userId_idx")
-  @@map("stock_audit_counters")
 }
 
 model StockAuditLine {

@@ -32,9 +32,9 @@ export const viewport: Viewport = {
 // which a server layout cannot supply.
 //
 // Gate: stock_audit_count canView (admin / superuser arms via
-// checkAnyPermission). Holding the key is NOT enough to count — the API also
-// requires the person to be an assigned counter on an open audit; the screen
-// shows "No open audit assigned to you" otherwise. The page gate stops the
+// checkAnyPermission). Open counting: holding the key is enough to count in THE
+// open audit (at most one is open); with none open the screen says "No audit is
+// open right now". The page gate stops the
 // SCREEN; app/api/stock-count/* stop the DATA. Neither replaces the other.
 //
 // ONE face at every width, never branched on role or viewport: ≥768px the

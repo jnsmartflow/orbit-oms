@@ -457,10 +457,10 @@ export type PageKey =
   | "trip_sheet"
   // Stock count (2026-11-02, Schema v27.78) — the counter's PHONE screen
   // (/stock-count, app/api/stock-count/*). canView is its ONLY meaning: open the
-  // screen, search SKUs, add / edit / remove OWN lines. 🔴 NOT ENOUGH ON ITS
-  // OWN — the person must ALSO be an assigned counter on the audit
-  // (stock_audit_counters), and the audit must be open; every route checks
-  // both server-side. Deliberately NOT in ACTION_PAGES (no Edit/Export cell).
+  // screen, search SKUs, add / edit / remove OWN lines. OPEN COUNTING: anyone
+  // holding it may count in THE open audit (at most one is open at a time) —
+  // there is no per-audit counter list; to write, the audit must be open, and
+  // every route checks that server-side. Deliberately NOT in ACTION_PAGES.
   // Blind count: no route under this key returns another person's lines.
   // Granted per person on /admin/access — no seed, no grant SQL.
   | "stock_audit_count"
@@ -1105,50 +1105,7 @@ export async function checkAnyPermission(
   if (roleSlugs.includes("admin")) return true;
   if (roleSlugs.length === 0) return false;
 
-  return anyPermissionAfterRoleArm(roleSlugs, await sessionAccess(), pageKey, action);
-}
-
-/**
- * checkAnyPermission for SOMEONE ELSE — the same arms, in the same order, over
- * the same body (anyPermissionAfterRoleArm), with the subject's id / roles /
- * superuser flag passed IN instead of read from the session.
- *
- * Added 2026-11-02 for the stock audit desk's "who may be assigned as a
- * counter" list (GET /api/stock-audit/users), which must ask "would THIS person
- * pass stock_audit_count canView?" about every active user. The five resolvers
- * above cannot answer that — they answer about the logged-in user only (see
- * getRolePermissionsForRoles' header). Never use this to gate a request: a
- * request is gated on its OWN session with checkAnyPermission.
- *
- * `roleSlugs` must be the subject's effective slugs exactly as sign-in builds
- * them (lib/access/role-baseline.ts effectiveRoleSlugs).
- */
-export async function checkAnyPermissionForUser(
-  subject: { userId: number; roleSlugs: string[]; isSuperuser: boolean },
-  pageKey: PageKey,
-  action: ActionKey,
-): Promise<boolean> {
-  if (subject.roleSlugs.includes("admin")) return true;
-  if (subject.roleSlugs.length === 0) return false;
-  return anyPermissionAfterRoleArm(
-    subject.roleSlugs,
-    { userId: subject.userId, isSuperuser: subject.isSuperuser },
-    pageKey,
-    action,
-  );
-}
-
-/**
- * The body of checkAnyPermission after its admin-role arm, factored out
- * (2026-11-02) so checkAnyPermissionForUser runs the identical resolver rather
- * than a copy that can drift. Behaviour of checkAnyPermission is unchanged.
- */
-async function anyPermissionAfterRoleArm(
-  roleSlugs: string[],
-  access: SessionAccess,
-  pageKey: PageKey,
-  action: ActionKey,
-): Promise<boolean> {
+  const access = await sessionAccess();
   if (access.isSuperuser) return true;   // flag arm
 
   const userId = await userModeId(access);

@@ -1,43 +1,52 @@
 import { NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { counterIdList, readJson, saError, stockAuditGate } from "@/lib/stock-audit/gate";
-import { allocateAuditNumberWithRetry, isAuditNumberCollision } from "@/lib/stock-audit/number";
-import { getAssignableUsers, getAuditList } from "@/lib/stock-audit/queries";
+import { saError, stockAuditGate } from "@/lib/stock-audit/gate";
+import { allocateAuditNumber, allocateAuditNumberWithRetry, isAuditNumberCollision } from "@/lib/stock-audit/number";
+import { getAuditList } from "@/lib/stock-audit/queries";
 import { STOCK_AUDIT_STATUS } from "@/lib/stock-audit/status";
+import type { AuditListResponse } from "@/lib/stock-audit/types";
 
 export const dynamic = "force-dynamic";
 
 // /api/stock-audit/audits — the desk's audit list and "New audit".
+//
+// OPEN COUNTING (Smart Flow, 2026-11-02): no counter list, and at most ONE
+// audit is open at a time — everyone holding stock_audit_count counts in it.
 
-/** GET — every audit, open first then newest. Gate: stock_audit_manage canView. */
+/** GET — every audit, open first then newest, plus the number "New audit"
+ *  would take next (the confirm text). Gate: stock_audit_manage canView. */
 export async function GET(): Promise<NextResponse> {
   const gate = await stockAuditGate("canView");
   if (!gate.ok) return gate.response;
   const audits = await getAuditList();
-  return NextResponse.json({ audits }, { headers: { "Cache-Control": "no-store" } });
+  const next = await allocateAuditNumber(); // a preview only — nothing is reserved
+  const body: AuditListResponse = { audits, nextAuditNumber: next.auditNumber };
+  return NextResponse.json(body, { headers: { "Cache-Control": "no-store" } });
 }
 
 /**
- * POST — { counterIds: number[] } (at least one). Gate: stock_audit_manage
- * canEdit. Every counter must be assignable (active + would pass
- * stock_audit_count canView) → else 400 NOT_ASSIGNABLE. Allocates SA-number
- * (lib/stock-audit/number.ts, retry once), inserts the audit, then the
- * counters ONE BY ONE — sequential awaits, never $transaction (CORE §3).
+ * POST — no body. Gate: stock_audit_manage canEdit. While any audit is open →
+ * 409 AUDIT_ALREADY_OPEN. Otherwise allocates the SA-number
+ * (lib/stock-audit/number.ts, retry once) and inserts the audit — nothing else.
  * Returns 201 { audit: { id, auditNumber } }.
+ *
+ * ⚠ The open check here is an app check: two clicks in the same instant can
+ * both pass it. The database rule allowing only one open audit (a partial
+ * unique index) comes with the v27.79 SQL; once it exists, the losing insert
+ * fails with P2002 on THAT index — not a number collision — and is answered
+ * with the same 409 below.
  */
-export async function POST(req: Request): Promise<NextResponse> {
+export async function POST(): Promise<NextResponse> {
   const gate = await stockAuditGate("canEdit");
   if (!gate.ok) return gate.response;
 
-  const body = await readJson(req);
-  if (body === null) return saError(400, "INVALID", "Invalid JSON body");
-  const counterIds = counterIdList(body.counterIds, { allowEmpty: false });
-  if (counterIds === null) return saError(400, "INVALID", "Pick at least one counter");
-
-  const assignable = new Set((await getAssignableUsers()).map((u) => u.id));
-  const bad = counterIds.filter((id) => !assignable.has(id));
-  if (bad.length > 0) {
-    return saError(400, "NOT_ASSIGNABLE", `Not assignable as a counter (needs an active user with Stock count): ${bad.join(", ")}`);
+  const open = await prisma.stockAudit.findFirst({
+    where: { status: STOCK_AUDIT_STATUS.open },
+    select: { auditNumber: true },
+  });
+  if (open) {
+    return saError(409, "AUDIT_ALREADY_OPEN", `${open.auditNumber} is still open — close it before starting a new audit`);
   }
 
   let audit: { id: number; auditNumber: string };
@@ -55,13 +64,10 @@ export async function POST(req: Request): Promise<NextResponse> {
     );
   } catch (err) {
     if (isAuditNumberCollision(err)) return saError(409, "TRY_AGAIN", "Another audit was created at the same moment — please try again");
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+      return saError(409, "AUDIT_ALREADY_OPEN", "Another audit was just started — only one can be open at a time");
+    }
     throw err;
-  }
-
-  // One by one. A failure part-way leaves an open audit with fewer counters,
-  // which the desk can fix with Edit counters — never a half-numbered audit.
-  for (const userId of counterIds) {
-    await prisma.stockAuditCounter.create({ data: { auditId: audit.id, userId, addedById: gate.userId } });
   }
 
   return NextResponse.json({ audit }, { status: 201 });

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { loadAuditForCounter, parseId, readJson, saError, stockCountGate } from "@/lib/stock-audit/gate";
+import { loadAuditForCount, parseId, readJson, saError, stockCountGate } from "@/lib/stock-audit/gate";
 import { prepareLineWrite } from "@/lib/stock-audit/line-write";
 import { LINE_SELECT, toCountLine } from "@/lib/stock-audit/queries";
 
@@ -8,8 +8,8 @@ export const dynamic = "force-dynamic";
 
 // /api/stock-count/lines/[lineId] — edit or remove ONE of my lines.
 // Checked in order: stock_audit_count canView · the line exists and is not
-// removed (404 NOT_FOUND) · it is MINE (403 NOT_OWNER) · I am STILL an assigned
-// counter (403 NOT_ASSIGNED) · the audit is open (409 AUDIT_CLOSED).
+// removed (404 NOT_FOUND) · it is MINE (403 NOT_OWNER) · the audit is open
+// (409 AUDIT_CLOSED).
 
 type Owned = { ok: true; lineId: number } | { ok: false; response: NextResponse };
 
@@ -24,7 +24,7 @@ async function loadOwnedLine(raw: string, userId: number): Promise<Owned> {
   if (line.countedById !== userId) {
     return { ok: false, response: saError(403, "NOT_OWNER", "Only the person who counted this line can change it") };
   }
-  const load = await loadAuditForCounter(line.auditId, userId, { requireOpen: true });
+  const load = await loadAuditForCount(line.auditId, { requireOpen: true });
   if (!load.ok) return { ok: false, response: load.response };
   return { ok: true, lineId };
 }

@@ -2,13 +2,13 @@
 // and its plain-English errors. Client-only; reuses count-api.ts's fetch
 // wrapper (same { error, code } reading, same signed-out detection).
 
-import type { AssignableUser, AuditDetail, AuditListItem, SkuLedger } from "@/lib/stock-audit/types";
+import type { AuditDetail, AuditListResponse, SkuLedger } from "@/lib/stock-audit/types";
 import { call, type CountError, type CountResult } from "./count-api";
 
 export function deskError(e: CountError): string {
   switch (e.code) {
-    case "NOT_ASSIGNABLE":
-      return "Someone you picked can't be a counter — they need an active login with Stock count access.";
+    case "AUDIT_ALREADY_OPEN":
+      return e.message || "An audit is already open — close it before starting a new one.";
     case "TRY_AGAIN":
       return "Another audit was created at the same moment — please try again.";
     case "INVALID":
@@ -28,9 +28,7 @@ export function deskError(e: CountError): string {
   }
 }
 
-const JSON_HEADERS = { "Content-Type": "application/json" };
-
-export function fetchAudits(): Promise<CountResult<{ audits: AuditListItem[] }>> {
+export function fetchAudits(): Promise<CountResult<AuditListResponse>> {
   return call("/api/stock-audit/audits");
 }
 
@@ -42,27 +40,10 @@ export function fetchLedger(id: number, material: string): Promise<CountResult<S
   return call(`/api/stock-audit/audits/${id}/ledger?material=${encodeURIComponent(material)}`);
 }
 
-export function fetchAssignableUsers(): Promise<CountResult<{ users: AssignableUser[] }>> {
-  return call("/api/stock-audit/users");
-}
-
-export function createAudit(counterIds: number[]): Promise<CountResult<{ audit: { id: number; auditNumber: string } }>> {
-  return call("/api/stock-audit/audits", {
-    method: "POST",
-    headers: JSON_HEADERS,
-    body: JSON.stringify({ counterIds }),
-  });
-}
-
-export function saveCounters(
-  id: number,
-  counterIds: number[],
-): Promise<CountResult<{ counters: { userId: number; name: string }[] }>> {
-  return call(`/api/stock-audit/audits/${id}/counters`, {
-    method: "PUT",
-    headers: JSON_HEADERS,
-    body: JSON.stringify({ counterIds }),
-  });
+/** Start a new audit — no body (open counting: no counter list). 409
+ *  AUDIT_ALREADY_OPEN while one is open. */
+export function createAudit(): Promise<CountResult<{ audit: { id: number; auditNumber: string } }>> {
+  return call("/api/stock-audit/audits", { method: "POST" });
 }
 
 export function closeAudit(id: number): Promise<CountResult<{ ok: true; closedAt: string }>> {
