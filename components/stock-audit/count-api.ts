@@ -12,7 +12,6 @@ import type {
   StockAuditErrorBody,
   StockAuditErrorCode,
 } from "@/lib/stock-audit/types";
-import type { CountMode } from "@/lib/stock-audit/status";
 
 /** API codes plus the two the browser itself can produce. */
 export type CountErrorCode = StockAuditErrorCode | "NETWORK" | "UNKNOWN";
@@ -32,8 +31,6 @@ export function friendlyError(e: CountError): string {
       return "This audit is closed — counts are locked";
     case "NOT_IN_CATALOG":
       return "That code is not in the SKU catalog";
-    case "TOTAL_MISMATCH":
-      return "The app was updated — reopen the screen";
     case "INVALID":
       return e.message || "Check the numbers and try again";
     case "NETWORK":
@@ -96,18 +93,11 @@ export function fetchCatalog(have: string | null): Promise<CountResult<CatalogRe
   return call(`/api/stock-count/catalog${have ? `?have=${encodeURIComponent(have)}` : ""}`);
 }
 
-/** What the calculator sends. Numbers as typed (strings); the server validates
- *  and computes the total itself, and refuses the line (TOTAL_MISMATCH) unless
- *  `clientTotal` — the total the phone showed — equals its own. */
+/** What the qty entry sends (v27.79). qty as typed — a string of digits,
+ *  always pieces; the server validates it again (calc.ts validateQty). */
 export interface LineBody {
   material: string;
-  mode: CountMode;
-  stack: string;
-  rows: string;
-  depth: string;
-  pcsPerCarton: string | null;
-  loose: string;
-  clientTotal: number;
+  qty: string;
   notInCatalog?: boolean;
 }
 

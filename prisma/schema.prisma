@@ -4914,7 +4914,7 @@ model so_starred_dealers {
 // never a catalog row id (CORE §13, the id-space landmine). Description and
 // pack are snapshots taken at entry.
 //
-// 🔴 NO live_changes trigger on any of the three, on purpose — the second
+// 🔴 NO live_changes trigger on any stock_audit table, on purpose — the second
 // documented exception after freight_* (CORE §13). The desk screen polls a marker.
 //
 // The CHECKs are not modelled (Prisma cannot); the live text is in CORE §7.20.
@@ -4922,10 +4922,13 @@ model so_starred_dealers {
 // (auditId, material) WHERE NOT "isRemoved" — a partial index, which Prisma 5
 // cannot express. It exists live; do not "add" it here.
 //
-// ⚠ stock_audit_counters (also v27.78) is NO LONGER MODELLED — open counting
-// (2026-11-02) dropped the per-audit counter list from the code. The table
-// still exists live until Smart Flow runs the v27.79 drop SQL; nothing reads
-// or writes it.
+// stock_audit_counters (v27.78) was DROPPED in v27.79
+// (sql/2026-11-03-v27.79-stock-audit-simplify.sql) — open counting, no
+// per-audit counter list.
+//
+// v27.79 also: stock_audit_lines keeps ONE number, "qty" (renamed from
+// totalPcs; mode / stack / rows / depth / pcsPerCarton / loose dropped), and
+// stock_audits gains the one-open-audit index (see StockAudit below).
 
 model StockAudit {
   id          Int       @id @default(autoincrement())
@@ -4947,6 +4950,11 @@ model StockAudit {
   lines StockAuditLine[]
 
   @@index([status, createdAt(sort: Desc)], map: "stock_audits_status_createdAt_idx")
+  // NOT modelled (Prisma cannot express a partial index): the live
+  // stock_audits_one_open_key — UNIQUE ("status") WHERE "status" = 'open'
+  // (v27.79). At most ONE audit is open; a second open INSERT fails with P2002,
+  // which POST /api/stock-audit/audits answers as 409 AUDIT_ALREADY_OPEN.
+  // It exists live; do not "add" it here.
   @@map("stock_audits")
 }
 
@@ -4961,17 +4969,10 @@ model StockAuditLine {
   // Required when inCatalog (chk_stock_audit_lines_catalog).
   skuDescription String?
   skuPack        String?
-  // 'pieces' | 'cartons' — lib/stock-audit/status.ts.
-  mode           String
-  stack          Int        @default(0)
-  rows           Int        @default(0)
-  depth          Int        @default(0)
-  // NULL in pieces mode, > 0 in cartons mode (chk_stock_audit_lines_carton).
-  pcsPerCarton   Int?
-  loose          Int        @default(0)
-  // = stack × rows × depth × (pcsPerCarton ?? 1) + loose, > 0 — enforced by
-  // chk_stock_audit_lines_total; computed by lib/stock-audit/calc.ts.
-  totalPcs       Int
+  // Pieces, ALWAYS — the one number the counter types (v27.79). > 0, enforced
+  // by chk_stock_audit_lines_qty; validated by lib/stock-audit/calc.ts
+  // validateQty.
+  qty            Int
   countedById    Int
   countedBy      users      @relation("StockAuditLineCountedBy", fields: [countedById], references: [id], onDelete: Restrict)
   // Soft delete — removed ⇔ removedAt set (chk_stock_audit_lines_removed).

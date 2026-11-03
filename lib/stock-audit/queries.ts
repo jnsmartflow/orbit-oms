@@ -24,8 +24,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { formatPack } from "@/lib/place-order/pack";
-import { formatWorking } from "./calc";
-import { STOCK_AUDIT_STATUS, type CountMode, type StockAuditStatus } from "./status";
+import { STOCK_AUDIT_STATUS, type StockAuditStatus } from "./status";
 import { TAGGED_CODE } from "./sku-search";
 // 🔴 `import type` — load-bearing (the lib/ci/queries.ts rule). A plain import
 // would pull the `xlsx` bundle into every stock-audit route's module graph.
@@ -78,13 +77,7 @@ const LINE_SELECT = {
   inCatalog: true,
   skuDescription: true,
   skuPack: true,
-  mode: true,
-  stack: true,
-  rows: true,
-  depth: true,
-  pcsPerCarton: true,
-  loose: true,
-  totalPcs: true,
+  qty: true,
   createdAt: true,
   updatedAt: true,
 } as const;
@@ -96,27 +89,10 @@ type LineRow = {
   inCatalog: boolean;
   skuDescription: string | null;
   skuPack: string | null;
-  mode: string;
-  stack: number;
-  rows: number;
-  depth: number;
-  pcsPerCarton: number | null;
-  loose: number;
-  totalPcs: number;
+  qty: number;
   createdAt: Date;
   updatedAt: Date;
 };
-
-function workingOf(r: { mode: string; stack: number; rows: number; depth: number; pcsPerCarton: number | null; loose: number }): string {
-  return formatWorking({
-    mode: r.mode as CountMode,
-    stack: r.stack,
-    rows: r.rows,
-    depth: r.depth,
-    pcsPerCarton: r.pcsPerCarton,
-    loose: r.loose,
-  });
-}
 
 export function toCountLine(r: LineRow): CountLine {
   return {
@@ -126,14 +102,7 @@ export function toCountLine(r: LineRow): CountLine {
     inCatalog: r.inCatalog,
     skuDescription: r.skuDescription,
     skuPack: r.skuPack,
-    mode: r.mode as CountMode,
-    stack: r.stack,
-    rows: r.rows,
-    depth: r.depth,
-    pcsPerCarton: r.pcsPerCarton,
-    loose: r.loose,
-    totalPcs: r.totalPcs,
-    working: workingOf(r),
+    qty: r.qty,
     createdAt: r.createdAt.toISOString(),
     updatedAt: r.updatedAt.toISOString(),
   };
@@ -242,7 +211,7 @@ export async function getAuditDetail(auditId: number, q: string | null): Promise
       inCatalog: true,
       skuDescription: true,
       skuPack: true,
-      totalPcs: true,
+      qty: true,
       countedById: true,
       createdAt: true,
       updatedAt: true,
@@ -260,11 +229,11 @@ export async function getAuditDetail(auditId: number, q: string | null): Promise
         description: l.skuDescription,
         pack: l.skuPack,
         inCatalog: l.inCatalog,
-        totalPcs: l.totalPcs,
+        qty: l.qty,
         lines: 1,
       });
     } else {
-      row.totalPcs += l.totalPcs;
+      row.qty += l.qty;
       row.lines += 1;
       if (l.skuDescription !== null) row.description = l.skuDescription;
       if (l.skuPack !== null) row.pack = l.skuPack;
@@ -289,7 +258,7 @@ export async function getAuditDetail(auditId: number, q: string | null): Promise
       progress.set(l.countedById, p);
     }
     p.lines += 1;
-    p.pieces += l.totalPcs;
+    p.pieces += l.qty;
     const t = Math.max(l.createdAt.getTime(), l.updatedAt.getTime());
     if (t > (lastAt.get(l.countedById) ?? 0)) lastAt.set(l.countedById, t);
   }
@@ -319,7 +288,7 @@ export async function getAuditDetail(auditId: number, q: string | null): Promise
     },
     stats: {
       skus: skuMap.size,
-      pieces: lines.reduce((s, l) => s + l.totalPcs, 0),
+      pieces: lines.reduce((s, l) => s + l.qty, 0),
       lines: lines.length,
       countersActive: progress.size,
     },
@@ -338,13 +307,7 @@ export async function getSkuLedger(auditId: number, material: string): Promise<S
       inCatalog: true,
       skuDescription: true,
       skuPack: true,
-      mode: true,
-      stack: true,
-      rows: true,
-      depth: true,
-      pcsPerCarton: true,
-      loose: true,
-      totalPcs: true,
+      qty: true,
       countedById: true,
       countedBy: { select: { name: true } },
       createdAt: true,
@@ -368,13 +331,11 @@ export async function getSkuLedger(auditId: number, material: string): Promise<S
       lineId: r.id,
       countedById: r.countedById,
       countedByName: r.countedBy.name,
-      mode: r.mode as CountMode,
-      working: workingOf(r),
-      totalPcs: r.totalPcs,
+      qty: r.qty,
       createdAt: r.createdAt.toISOString(),
       updatedAt: r.updatedAt.toISOString(),
     })),
-    totalPcs: rows.reduce((s, r) => s + r.totalPcs, 0),
+    qty: rows.reduce((s, r) => s + r.qty, 0),
   };
 }
 
@@ -409,7 +370,7 @@ export async function getRegisterRows(auditId: number): Promise<StockAuditRegist
   const lines = await prisma.stockAuditLine.findMany({
     where: { auditId, isRemoved: false },
     orderBy: { createdAt: "asc" },
-    select: { material: true, skuDescription: true, skuPack: true, totalPcs: true },
+    select: { material: true, skuDescription: true, skuPack: true, qty: true },
   });
   const map = new Map<string, StockAuditRegisterRow>();
   for (const l of lines) {
@@ -419,11 +380,11 @@ export async function getRegisterRows(auditId: number): Promise<StockAuditRegist
         material: l.material,
         description: l.skuDescription,
         pack: l.skuPack,
-        totalPcs: l.totalPcs,
+        qty: l.qty,
         lines: 1,
       });
     } else {
-      row.totalPcs += l.totalPcs;
+      row.qty += l.qty;
       row.lines += 1;
       if (l.skuDescription !== null) row.description = l.skuDescription;
       if (l.skuPack !== null) row.pack = l.skuPack;

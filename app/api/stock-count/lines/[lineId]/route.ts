@@ -29,7 +29,9 @@ async function loadOwnedLine(raw: string, userId: number): Promise<Owned> {
   return { ok: true, lineId };
 }
 
-/** PATCH — replace the line's SKU and working (same body and rules as POST). Returns { line }. */
+/** PATCH — replace the line's SKU and qty (same body { material, qty,
+ *  notInCatalog? } and rules as POST). The phone sends the line's own
+ *  material, so its Edit changes the qty only. Returns { line }. */
 export async function PATCH(req: Request, { params }: { params: { lineId: string } }): Promise<NextResponse> {
   const gate = await stockCountGate();
   if (!gate.ok) return gate.response;

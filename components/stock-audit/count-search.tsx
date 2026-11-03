@@ -21,11 +21,8 @@ import { ChevronRight } from "lucide-react";
 import { MOBILE_NAV_CLEARANCE } from "@/components/shared/mobile-shell";
 import { SEARCH_MIN_CHARS, searchCatalog, type CatalogRow, type SkuHit } from "@/lib/stock-audit/sku-search";
 import type { CalcSku } from "./count-calculator";
-import type { CountMode } from "@/lib/stock-audit/status";
 
-export interface PickedSku extends CalcSku {
-  defaultMode: CountMode;
-}
+export type PickedSku = CalcSku;
 
 interface Props {
   /** "Submitted 5233221 · 965 pcs" — shown above the box, cleared by the shell. */
@@ -99,14 +96,12 @@ export function CountSearch({
       description: h.description,
       pack: h.pack,
       inCatalog: true,
-      piecesPerCarton: h.piecesPerCarton,
-      defaultMode: h.defaultMode,
     });
   }
 
   function pickUncatalogued(material: string): void {
     setConfirmCode(null);
-    onPick({ material, description: null, pack: null, inCatalog: false, piecesPerCarton: null, defaultMode: "pieces" });
+    onPick({ material, description: null, pack: null, inCatalog: false });
   }
 
   const noMatch = searched && hits.length === 0;

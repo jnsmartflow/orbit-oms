@@ -7,7 +7,7 @@
 // The workbook's row shape is NOT here — it never crosses the wire (the CI
 // split: lib/ci/workbook.ts keeps CiRegisterRow beside its only consumer).
 
-import type { CountMode, StockAuditStatus } from "./status";
+import type { StockAuditStatus } from "./status";
 import type { CatalogRow } from "./sku-search";
 
 /** Machine-readable error codes every stock-audit route may answer with. */
@@ -20,14 +20,13 @@ export type StockAuditErrorCode =
   | "AUDIT_ALREADY_OPEN"
   | "NOT_OWNER"
   | "NOT_IN_CATALOG"
-  | "TOTAL_MISMATCH"
   | "TRY_AGAIN";
 
 /** Every non-2xx body: a human message + the code the screen branches on. */
 export interface StockAuditErrorBody {
   error: string;
   code: StockAuditErrorCode;
-  /** INVALID from validateLineInput: one entry per bad field. */
+  /** INVALID: one entry per bad field (material, qty). */
   fields?: { field: string; message: string }[];
 }
 
@@ -49,7 +48,7 @@ export type CatalogResponse =
   | { version: string; unchanged: true }
   | { version: string; skus: CatalogRow[] };
 
-/** One of MY lines — every working field, plus the formatted working. */
+/** One of MY lines. qty is always pieces (v27.79 — one number, no working). */
 export interface CountLine {
   id: number;
   auditId: number;
@@ -57,15 +56,7 @@ export interface CountLine {
   inCatalog: boolean;
   skuDescription: string | null;
   skuPack: string | null;
-  mode: CountMode;
-  stack: number;
-  rows: number;
-  depth: number;
-  pcsPerCarton: number | null;
-  loose: number;
-  totalPcs: number;
-  /** formatWorking() — "4 × 10 × 2 × 12 + 5". */
-  working: string;
+  qty: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -118,7 +109,8 @@ export interface SkuSummaryRow {
   description: string | null;
   pack: string | null;
   inCatalog: boolean;
-  totalPcs: number;
+  /** Sum of the live lines' qty. The desk labels it "Total pcs". */
+  qty: number;
   lines: number;
 }
 
@@ -145,9 +137,7 @@ export interface LedgerRow {
   lineId: number;
   countedById: number;
   countedByName: string;
-  mode: CountMode;
-  working: string;
-  totalPcs: number;
+  qty: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -159,7 +149,8 @@ export interface SkuLedger {
   pack: string | null;
   inCatalog: boolean;
   rows: LedgerRow[];
-  totalPcs: number;
+  /** Sum of the rows' qty. */
+  qty: number;
 }
 
 /** GET /api/stock-audit/audits/[id]/marker. */

@@ -8,35 +8,27 @@
 // sku_master_v2 row id: the two tables give the same code different ids
 // (CORE §13, the id-space landmine). There is no FK to the catalog.
 //
-// 🔴 THE TOTAL IS COMPUTED HERE, ON THE SERVER, with calc.ts computeTotal —
-// it is always the one saved. The phone also sends `clientTotal` (what it
-// showed the counter); a missing or different one is refused with 400
-// TOTAL_MISMATCH (calc.ts clientTotalMatches), so a phone running an older page
-// can never save a number nobody saw. chk_stock_audit_lines_total is the
-// database's copy of the same rule.
+// BODY (v27.79, Smart Flow 2026-11-03): { material, qty, notInCatalog? }.
+// ONE number, always pieces — no calculator, no mode, no working. The qty is
+// validated here with calc.ts validateQty (whole number, 1…int4 max) and saved
+// exactly as typed; chk_stock_audit_lines_qty ("qty" > 0) is the database's
+// copy of the same rule. Any other key in the body is ignored.
 //
 // Not in catalog: refused with 400 NOT_IN_CATALOG unless the body carries
 // notInCatalog: true (the phone asks the counter to confirm first) — then
 // inCatalog = false and description / pack are NULL (Smart Flow, 2026-11-02).
 
 import type { NextResponse } from "next/server";
-import { clientTotalMatches, computeTotal, validateLineInput } from "./calc";
+import { validateQty } from "./calc";
 import { saError } from "./gate";
 import { normaliseMaterial, resolveCatalogMaterial } from "./queries";
-import type { CountMode } from "./status";
 
 export interface LineWriteData {
   material: string;
   inCatalog: boolean;
   skuDescription: string | null;
   skuPack: string | null;
-  mode: CountMode;
-  stack: number;
-  rows: number;
-  depth: number;
-  pcsPerCarton: number | null;
-  loose: number;
-  totalPcs: number;
+  qty: number;
 }
 
 export type LineWrite = { ok: true; data: LineWriteData } | { ok: false; response: NextResponse };
@@ -52,26 +44,11 @@ export async function prepareLineWrite(body: Record<string, unknown>): Promise<L
     };
   }
 
-  const v = validateLineInput({
-    mode: body.mode,
-    stack: body.stack,
-    rows: body.rows,
-    depth: body.depth,
-    pcsPerCarton: body.pcsPerCarton,
-    loose: body.loose,
-  });
+  const v = validateQty(body.qty);
   if (!v.ok) {
     return {
       ok: false,
-      response: saError(400, "INVALID", v.errors.map((e) => e.message).join(" · "), { fields: v.errors }),
-    };
-  }
-
-  const totalPcs = computeTotal(v.working);
-  if (!clientTotalMatches(body.clientTotal, totalPcs)) {
-    return {
-      ok: false,
-      response: saError(400, "TOTAL_MISMATCH", "The app was updated — reopen the screen"),
+      response: saError(400, "INVALID", v.message, { fields: [{ field: "qty", message: v.message }] }),
     };
   }
 
@@ -94,14 +71,7 @@ export async function prepareLineWrite(body: Record<string, unknown>): Promise<L
       inCatalog: catalog !== null,
       skuDescription: catalog?.description ?? null,
       skuPack: catalog?.pack ?? null,
-      mode: v.working.mode,
-      stack: v.working.stack,
-      rows: v.working.rows,
-      depth: v.working.depth,
-      pcsPerCarton: v.working.pcsPerCarton,
-      loose: v.working.loose,
-      // Server-side (checked equal to the client's above).
-      totalPcs,
+      qty: v.qty,
     },
   };
 }

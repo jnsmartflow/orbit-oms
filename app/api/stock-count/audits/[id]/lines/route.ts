@@ -25,10 +25,10 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
 }
 
 /**
- * POST — add one line. Audit open. Body: { material, mode, stack, rows, depth,
- * pcsPerCarton, loose, clientTotal, notInCatalog? }. The total is computed on
- * the server; a missing or different clientTotal → 400 TOTAL_MISMATCH.
- * 400 NOT_IN_CATALOG unless confirmed.
+ * POST — add one line. Audit open. Body: { material, qty, notInCatalog? } —
+ * qty is ONE whole number of pieces, 1…int4 max (lib/stock-audit/calc.ts
+ * validateQty; v27.79). 400 INVALID on a bad code or qty; 400 NOT_IN_CATALOG
+ * unless confirmed.
  * Returns 201 { line }.
  */
 export async function POST(req: Request, { params }: { params: { id: string } }): Promise<NextResponse> {

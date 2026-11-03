@@ -31,7 +31,8 @@ export interface StockAuditRegisterRow {
   material: string;
   description: string | null;
   pack: string | null;
-  totalPcs: number;
+  /** Sum of the live lines' qty (always pieces) — the "Total pcs" column. */
+  qty: number;
   lines: number;
 }
 
@@ -57,7 +58,7 @@ export function buildStockAuditWorkbook(rows: readonly StockAuditRegisterRow[]):
   for (const r of rows) {
     // material is a JS string, so aoa_to_sheet writes a TEXT cell — a
     // digits-only code keeps its leading zero (01033071). Never Number() it.
-    sheet.push([r.material, r.description, r.pack, r.totalPcs, r.lines]);
+    sheet.push([r.material, r.description, r.pack, r.qty, r.lines]);
   }
   const ws = XLSX.utils.aoa_to_sheet(sheet);
   ws["!cols"] = COLUMNS.map((c) => ({ wch: c.width }));

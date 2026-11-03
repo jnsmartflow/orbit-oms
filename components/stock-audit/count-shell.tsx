@@ -1,8 +1,9 @@
 "use client";
 
 // components/stock-audit/count-shell.tsx — /stock-count, the counter's phone
-// screen. Owns: THE open audit, the Count | Submitted tabs, the calculator
-// (new line / edit), the downloaded SKU list, and the read-only states.
+// screen. Owns: THE open audit, the Count | Submitted tabs, the one-box qty
+// entry (new line / edit — v27.79: ONE number, always pieces), the downloaded
+// SKU list, and the read-only states.
 //
 // OPEN COUNTING (Smart Flow, 2026-11-02): there is no counter list and at most
 // one audit is open. Everyone holding Stock count counts in it, so the screen
@@ -14,7 +15,7 @@
 //   • Phone — the two tabs are handed to RoleLayoutClient as `workflowTabs`,
 //     which REPLACE the shared Home/Menu/You bar. Menu + You move to
 //     ModuleMobileHeader (grid icon / avatar → useMobileShell()).
-//   • The calculator sets `hideBar`, so Submit owns the thumb zone.
+//   • The qty entry sets `hideBar`, so Submit owns the thumb zone.
 //   • ≥768px the shared bar is `md:hidden` and never drawn, so the same two
 //     tabs render as a segmented control at the top of a centred 480px column.
 //   • `workflowTabs` is passed ONLY while an audit is open. On the empty state
@@ -41,7 +42,6 @@ import type { RoleSidebarRole } from "@/components/shared/role-sidebar";
 import type { WorkflowTab } from "@/components/shared/workflow-tab-bar";
 import type { NavItemConfig } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
-import { COUNT_MODE } from "@/lib/stock-audit/status";
 import type { CatalogRow } from "@/lib/stock-audit/sku-search";
 import type { CountLine, MyAudit } from "@/lib/stock-audit/types";
 import {
@@ -57,7 +57,7 @@ import {
   type LineBody,
 } from "./count-api";
 import { readStoredCatalog, refreshCatalog } from "./catalog-store";
-import { CountCalculator, type CalcValues } from "./count-calculator";
+import { CountCalculator } from "./count-calculator";
 import { CountSearch, type PickedSku } from "./count-search";
 import { CountSubmitted } from "./count-submitted";
 
@@ -263,20 +263,14 @@ function StockCountScreen({
     setCalc({ kind: "edit", line });
   }
 
-  async function save(values: CalcValues, shownTotal: number): Promise<void> {
+  async function save(qty: string): Promise<void> {
     if (!audit || calc === null) return;
-    const isCartons = values.mode === COUNT_MODE.cartons;
     const material = calc.kind === "new" ? calc.sku.material : calc.line.material;
     const inCatalog = calc.kind === "new" ? calc.sku.inCatalog : calc.line.inCatalog;
     const body: LineBody = {
+      // An edit sends the line's own material — Edit changes the qty only.
       material,
-      mode: values.mode,
-      stack: values.stack,
-      rows: values.rows,
-      depth: values.depth,
-      pcsPerCarton: isCartons ? values.pcsPerCarton : null,
-      loose: values.loose,
-      clientTotal: shownTotal,
+      qty,
       ...(inCatalog ? {} : { notInCatalog: true }),
     };
     setBusy(true);
@@ -298,12 +292,12 @@ function StockCountScreen({
         setSaveError(`${material} is no longer in the SKU catalog — tap ${calc.kind === "new" ? "Submit" : "Update"} again to count it as “Not in catalog”`);
         return;
       }
-      // Everything else keeps the calculator open with what they typed.
+      // Everything else keeps the entry open with what they typed.
       setSaveError(friendlyError(r.error));
       return;
     }
     const wasEdit = calc.kind === "edit";
-    setFlash(`${wasEdit ? "Updated" : "Submitted"} ${r.data.line.material} · ${fmtPcs(r.data.line.totalPcs)} pcs`);
+    setFlash(`${wasEdit ? "Updated" : "Submitted"} ${r.data.line.material} · ${fmtPcs(r.data.line.qty)} pcs`);
     setCalc(null);
     setTab(wasEdit ? "submitted" : "count");
     lastTab.current = wasEdit ? "submitted" : "count";
@@ -322,7 +316,7 @@ function StockCountScreen({
       setRemoveError(friendlyError(r.error));
       return false;
     }
-    setFlash(`Removed ${line.material} · ${fmtPcs(line.totalPcs)} pcs`);
+    setFlash(`Removed ${line.material} · ${fmtPcs(line.qty)} pcs`);
     await loadLines(audit.id);
     return true;
   }
@@ -332,27 +326,6 @@ function StockCountScreen({
   if (!audit) {
     body = <NoAudit state={auditState} error={auditError} onRetry={() => void loadAudit()} />;
   } else if (calc !== null) {
-    // A saved loose-only line (0/0/0) re-opens with the three boxes blank — the
-    // same line under the blank rule. Any other saved number shows as typed.
-    const looseOnly = calc.kind === "edit" && calc.line.stack === 0 && calc.line.depth === 0 && calc.line.rows === 0;
-    const initial: CalcValues =
-      calc.kind === "new"
-        ? {
-            mode: calc.sku.defaultMode,
-            stack: "",
-            rows: "",
-            depth: "",
-            pcsPerCarton: calc.sku.piecesPerCarton !== null ? String(calc.sku.piecesPerCarton) : "",
-            loose: "",
-          }
-        : {
-            mode: calc.line.mode,
-            stack: looseOnly ? "" : String(calc.line.stack),
-            rows: looseOnly ? "" : String(calc.line.rows),
-            depth: looseOnly ? "" : String(calc.line.depth),
-            pcsPerCarton: calc.line.pcsPerCarton !== null ? String(calc.line.pcsPerCarton) : "",
-            loose: String(calc.line.loose),
-          };
     body = (
       <CountCalculator
         key={calc.kind === "new" ? `new-${calc.sku.material}` : `edit-${calc.line.id}`}
@@ -364,14 +337,13 @@ function StockCountScreen({
                 description: calc.line.skuDescription,
                 pack: calc.line.skuPack,
                 inCatalog: calc.line.inCatalog,
-                piecesPerCarton: calc.line.pcsPerCarton,
               }
         }
-        initial={initial}
+        initialQty={calc.kind === "new" ? "" : String(calc.line.qty)}
         submitLabel={calc.kind === "new" ? "Submit" : "Update"}
         busy={busy}
         error={saveError}
-        onSubmit={(v, total) => void save(v, total)}
+        onSubmit={(qty) => void save(qty)}
         onCancel={() => {
           const wasEdit = calc.kind === "edit";
           setCalc(null);

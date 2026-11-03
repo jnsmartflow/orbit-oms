@@ -9,8 +9,9 @@
 // stale section number; §27 is the standard.)
 //
 // PHASE 1 HAS NO BOOK STOCK: no Book / Variance columns, no status tags beyond
-// "Not in catalog". The `working` string is the API's (calc.ts formatWorking) —
-// never rebuilt here, so phone, ledger and export cannot disagree.
+// "Not in catalog". v27.79 (2026-11-03): a line is ONE qty, always pieces —
+// the ledger is Counted by · Qty · Time (no Working column). The SKU summary
+// keeps its "Total pcs" label; the field behind it is `qty`.
 
 import { cn } from "@/lib/utils";
 import type { CounterProgress, SkuLedger, SkuSummaryRow } from "@/lib/stock-audit/types";
@@ -89,7 +90,7 @@ export function SkuSummaryTable({
             </td>
             <td className={cn(TD, "font-medium text-ink-900")}>{r.description ?? "—"}</td>
             <td className={TD}>{r.pack ?? "—"}</td>
-            <td className={cn(TD, NUM, "font-semibold text-ink-900")}>{fmtPcs(r.totalPcs)}</td>
+            <td className={cn(TD, NUM, "font-semibold text-ink-900")}>{fmtPcs(r.qty)}</td>
             <td className={cn(TD, NUM)}>{r.lines}</td>
           </tr>
         ))
@@ -101,33 +102,29 @@ export function SkuSummaryTable({
 export function LedgerTable({ ledger }: { ledger: SkuLedger }): React.JSX.Element {
   return (
     <Table
-      widths={["26%", "38%", "14%", "22%"]}
+      widths={["46%", "22%", "32%"]}
       head={
         <tr>
           <th className={TH}>Counted by</th>
-          <th className={TH}>Working</th>
           <th className={cn(TH, "text-right")}>Qty</th>
           <th className={TH}>Time</th>
         </tr>
       }
     >
       {ledger.rows.length === 0 ? (
-        <EmptyRow cols={4} text="Nobody has counted this SKU yet" />
+        <EmptyRow cols={3} text="Nobody has counted this SKU yet" />
       ) : (
         ledger.rows.map((r) => (
           <tr key={r.lineId}>
             <td className={cn(TD, "font-medium text-ink-900")}>{r.countedByName}</td>
-            <td className={cn(TD, "tabular-nums")}>{r.working}</td>
-            <td className={cn(TD, NUM, "text-ink-900")}>{fmtPcs(r.totalPcs)}</td>
+            <td className={cn(TD, NUM, "text-ink-900")}>{fmtPcs(r.qty)}</td>
             <td className={cn(TD, "text-ink-400")}>{fmtDateTime(r.updatedAt)}</td>
           </tr>
         ))
       )}
       <tr className="bg-ink-25">
-        <td className={cn(TD, "font-semibold text-ink-900")} colSpan={2}>
-          Total
-        </td>
-        <td className={cn(TD, NUM, "font-semibold text-ink-900")}>{fmtPcs(ledger.totalPcs)}</td>
+        <td className={cn(TD, "font-semibold text-ink-900")}>Total</td>
+        <td className={cn(TD, NUM, "font-semibold text-ink-900")}>{fmtPcs(ledger.qty)}</td>
         <td className={TD} />
       </tr>
     </Table>

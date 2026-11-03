@@ -4,14 +4,14 @@
 // lines in this audit, newest first, each with Edit and Remove.
 //
 // Follows docs/mockups/stock-audit/stock-audit-mobile.html submitted():
-// "Your entries in SA-…", rows "{code} · {total} pcs" / description · pack /
-// working · time, the Edit icon, and "Nothing submitted yet." Remove is NOT in
-// the mockup — it is Smart Flow's soft-delete decision (2026-11-02) and sits
-// beside Edit behind a confirm sheet.
+// "Your entries in SA-…", rows "{code} · {qty} pcs" / description · pack /
+// time, the Edit icon, and "Nothing submitted yet." Remove is NOT in the
+// mockup — it is Smart Flow's soft-delete decision (2026-11-02) and sits
+// beside Edit behind a confirm sheet. v27.79 (2026-11-03): no working line —
+// a line is ONE qty, always pieces; Edit changes the qty only.
 //
 // BLIND: these are the session user's own lines only (the API never returns
-// anyone else's). The working string comes from the server, which builds it
-// with calc.ts formatWorking — the same one the desk ledger shows.
+// anyone else's).
 
 import { useState } from "react";
 import { Pencil, Trash2 } from "lucide-react";
@@ -77,14 +77,12 @@ export function CountSubmitted({
             <li key={l.id} className="flex items-center justify-between gap-2.5 border-b border-ink-100 py-3.5">
               <div className="min-w-0">
                 <div className="text-[15px] font-semibold tabular-nums text-ink-900">
-                  {l.material} · {fmtPcs(l.totalPcs)} pcs
+                  {l.material} · {fmtPcs(l.qty)} pcs
                 </div>
                 <div className="truncate text-[12.5px] text-ink-500">
                   {l.inCatalog ? `${l.skuDescription ?? ""}${l.skuPack ? ` · ${l.skuPack}` : ""}` : "Not in catalog"}
                 </div>
-                <div className="text-[12px] tabular-nums text-ink-400">
-                  {l.working} · {fmtTime(l.updatedAt)}
-                </div>
+                <div className="text-[12px] tabular-nums text-ink-400">{fmtTime(l.updatedAt)}</div>
               </div>
               {!readOnly && (
                 <div className="flex flex-none gap-1">
@@ -128,7 +126,7 @@ export function CountSubmitted({
               Remove this count?
             </h2>
             <p className="mt-1.5 text-[14px] tabular-nums text-ink-600">
-              {confirm.material} · {fmtPcs(confirm.totalPcs)} pcs ({confirm.working})
+              {confirm.material} · {fmtPcs(confirm.qty)} pcs
             </p>
             {removeError && <p className="mt-2 text-[14px] text-danger-text">{removeError}</p>}
             <div className="mt-4 flex gap-2.5">

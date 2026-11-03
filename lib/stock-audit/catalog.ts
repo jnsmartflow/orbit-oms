@@ -30,13 +30,12 @@ export async function buildCatalog(): Promise<CatalogPayload> {
   const skus = await prisma.sku_master_v2.findMany({
     where: { isActive: true },
     orderBy: [{ isPrimary: "desc" }, { material: "asc" }],
-    select: { material: true, description: true, packCode: true, unit: true, piecesPerCarton: true, isPrimary: true },
+    select: { material: true, description: true, packCode: true, unit: true, isPrimary: true },
   });
   const rows: CatalogRow[] = [];
   for (const s of skus) {
     if (TAGGED_CODE.test(s.material)) continue;
-    const ppc = typeof s.piecesPerCarton === "number" && s.piecesPerCarton > 0 ? s.piecesPerCarton : null;
-    rows.push([s.material, s.description, formatPack(s.packCode, s.unit), ppc, s.isPrimary ? 1 : 0]);
+    rows.push([s.material, s.description, formatPack(s.packCode, s.unit), s.isPrimary ? 1 : 0]);
   }
   const version = createHash("sha1").update(JSON.stringify(rows)).digest("hex").slice(0, 16);
   return { version, rows };

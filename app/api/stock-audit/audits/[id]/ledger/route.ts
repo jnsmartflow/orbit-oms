@@ -5,7 +5,7 @@ import { getSkuLedger, normaliseMaterial } from "@/lib/stock-audit/queries";
 export const dynamic = "force-dynamic";
 
 // GET /api/stock-audit/audits/[id]/ledger?material= — every live line of one
-// SKU: who counted it, the working (calc.ts formatWorking), qty, time, + total.
+// SKU: who counted it, the qty (pieces), time, + the total.
 // Gate: stock_audit_manage canView. Keyed on `material` only (CORE §13).
 export async function GET(req: Request, { params }: { params: { id: string } }): Promise<NextResponse> {
   const gate = await stockAuditGate("canView");

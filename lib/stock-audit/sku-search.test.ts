@@ -8,10 +8,10 @@ import assert from "node:assert/strict";
 import { SEARCH_MAX_HITS, isCatalogRow, searchCatalog, type CatalogRow } from "./sku-search";
 
 const ROWS: CatalogRow[] = [
-  ["IN01033071", "Velvet Touch 1L", "1 L", 12, 0],
-  ["01033071", "Velvet Touch 1L", "1 L", null, 1],
-  ["5233221", "Promise Int 4L", "4 L", 4, 1],
-  ["12345-01033071", "Tagged twin", "1 L", null, 1],
+  ["IN01033071", "Velvet Touch 1L", "1 L", 0],
+  ["01033071", "Velvet Touch 1L", "1 L", 1],
+  ["5233221", "Promise Int 4L", "4 L", 1],
+  ["12345-01033071", "Tagged twin", "1 L", 1],
 ];
 
 test("below 4 characters → nothing", () => {
@@ -25,21 +25,19 @@ test("contained anywhere, trimmed + upper-cased, isPrimary first, tagged exclude
   assert.equal(searchCatalog(ROWS, "in0103").length, 1);
 });
 
-test("carton rule: defaultMode cartons only when piecesPerCarton > 0", () => {
-  const [h] = searchCatalog(ROWS, "5233221");
-  assert.equal(h.piecesPerCarton, 4);
-  assert.equal(h.defaultMode, "cartons");
-  assert.equal(searchCatalog(ROWS, "01033071")[0].defaultMode, "pieces");
+test("a hit is material, description and pack only (v2 row, no carton size)", () => {
+  assert.deepEqual(searchCatalog(ROWS, "5233221"), [{ material: "5233221", description: "Promise Int 4L", pack: "4 L" }]);
 });
 
 test("at most 20 hits", () => {
-  const many: CatalogRow[] = Array.from({ length: 50 }, (_, i) => [`99990${String(i).padStart(2, "0")}`, "x", "1 L", null, 0]);
+  const many: CatalogRow[] = Array.from({ length: 50 }, (_, i) => [`99990${String(i).padStart(2, "0")}`, "x", "1 L", 0]);
   assert.equal(searchCatalog(many, "9999").length, SEARCH_MAX_HITS);
 });
 
 test("isCatalogRow refuses malformed stored rows", () => {
   assert.equal(isCatalogRow(ROWS[0]), true);
-  assert.equal(isCatalogRow(["A", "b", "c", 0, 1]), false); // carton size must be > 0 or null
-  assert.equal(isCatalogRow(["A", "b", "c", null]), false);
+  assert.equal(isCatalogRow(["A", "b", "c", 12, 1]), false); // the v1 5-slot row is refused
+  assert.equal(isCatalogRow(["A", "b", "c", 2]), false); // isPrimary is 0 or 1
+  assert.equal(isCatalogRow(["A", "b", "c"]), false);
   assert.equal(isCatalogRow({ material: "A" }), false);
 });
