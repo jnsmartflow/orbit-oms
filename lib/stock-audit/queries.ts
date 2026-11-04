@@ -80,6 +80,8 @@ const LINE_SELECT = {
   skuDescription: true,
   skuPack: true,
   qty: true,
+  clientId: true,
+  countedAt: true,
   createdAt: true,
   updatedAt: true,
 } as const;
@@ -92,6 +94,8 @@ type LineRow = {
   skuDescription: string | null;
   skuPack: string | null;
   qty: number;
+  clientId: string | null;
+  countedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -105,6 +109,8 @@ export function toCountLine(r: LineRow): CountLine {
     skuDescription: r.skuDescription,
     skuPack: r.skuPack,
     qty: r.qty,
+    clientId: r.clientId,
+    countedAt: r.countedAt ? r.countedAt.toISOString() : null,
     createdAt: r.createdAt.toISOString(),
     updatedAt: r.updatedAt.toISOString(),
   };
@@ -312,6 +318,7 @@ export async function getSkuLedger(auditId: number, material: string): Promise<S
       qty: true,
       countedById: true,
       countedBy: { select: { name: true } },
+      countedAt: true,
       createdAt: true,
       updatedAt: true,
     },
@@ -334,6 +341,7 @@ export async function getSkuLedger(auditId: number, material: string): Promise<S
       countedById: r.countedById,
       countedByName: r.countedBy.name,
       qty: r.qty,
+      countedAt: r.countedAt ? r.countedAt.toISOString() : null,
       createdAt: r.createdAt.toISOString(),
       updatedAt: r.updatedAt.toISOString(),
     })),

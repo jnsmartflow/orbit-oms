@@ -2,8 +2,15 @@
 // and the one place their error codes become plain English.
 //
 // Client-only and pure fetch: never imports Prisma, the workbook or any
-// server module. Every write re-reads the server afterwards (the shell does
-// that) — the Submitted count is the server's number, never a local +1.
+// server module.
+//
+// OFFLINE QUEUE (v27.80, Smart Flow 2026-11-04): a NEW count is no longer
+// posted from Submit — it is saved on the phone and sent by the queue's sender
+// (use-count-queue.ts), with a clientId, the userId assertion and the phone's
+// countedAt. So the Submitted (n) badge is now, ON PURPOSE, a LOCAL number:
+// server lines + queued entries the server does not hold yet
+// (lib/stock-audit/queue-core.ts submittedCount). Edit / Remove of a SENT line
+// still go straight to PATCH / DELETE and need signal.
 
 import type {
   CatalogResponse,
@@ -45,19 +52,30 @@ export function friendlyError(e: CountError): string {
       return "You don't have access to Stock count";
     case "TRY_AGAIN":
       return "Please try again";
+    case "CLIENT_ID_CONFLICT":
+      return "This count clashes with another saved count — remove it and count again";
+    case "WRONG_USER":
+      return "These counts belong to someone else — sign in as the person who counted them";
     default:
       return e.message || "Something went wrong — please try again";
   }
 }
 
 /** The shared fetch + error-code reader; the desk's audit-api.ts reuses it. */
-export async function call<T>(url: string, init?: RequestInit): Promise<CountResult<T>> {
+export async function call<T>(url: string, init?: RequestInit, timeoutMs?: number): Promise<CountResult<T>> {
   let res: Response;
+  // A timeout is a NETWORK failure: on one bar of signal (or a captive portal)
+  // a fetch can hang for a minute. Safe for the queue — its POST carries a
+  // clientId, so a send that did land is answered as a replay on the retry.
+  const ctl = timeoutMs !== undefined && typeof AbortController !== "undefined" ? new AbortController() : null;
+  const timer = ctl ? setTimeout(() => ctl.abort(), timeoutMs) : null;
   try {
-    res = await fetch(url, { cache: "no-store", ...init });
+    res = await fetch(url, { cache: "no-store", ...init, ...(ctl ? { signal: ctl.signal } : {}) });
   } catch {
+    if (timer) clearTimeout(timer);
     return { ok: false, error: { code: "NETWORK", message: "" } };
   }
+  if (timer) clearTimeout(timer);
   // Middleware sends a signed-out request to /login (a 307 fetch follows),
   // so the answer is an HTML page, not our JSON.
   if (res.redirected && new URL(res.url).pathname.startsWith("/login")) {
@@ -101,26 +119,42 @@ export interface LineBody {
   notInCatalog?: boolean;
 }
 
+/** A NEW line (v27.80): plus the phone's per-entry id, the signed-in user's id
+ *  (an assertion the server checks, never the actor) and the Submit time. */
+export interface NewLineBody extends LineBody {
+  clientId: string;
+  userId: number;
+  countedAt: string;
+}
+
+/** The queue's send timeout. */
+export const SEND_TIMEOUT_MS = 15_000;
+
 const JSON_HEADERS = { "Content-Type": "application/json" };
 
-export function createLine(auditId: number, body: LineBody): Promise<CountResult<{ line: CountLine }>> {
-  return call(`/api/stock-count/audits/${auditId}/lines`, {
-    method: "POST",
-    headers: JSON_HEADERS,
-    body: JSON.stringify(body),
-  });
+/** 201 for a new line, 200 { replayed: true } when the server already held
+ *  this clientId — the same success to the phone. */
+export function createLine(
+  auditId: number,
+  body: NewLineBody,
+): Promise<CountResult<{ line: CountLine; replayed?: boolean }>> {
+  return call(
+    `/api/stock-count/audits/${auditId}/lines`,
+    { method: "POST", headers: JSON_HEADERS, body: JSON.stringify(body) },
+    SEND_TIMEOUT_MS,
+  );
 }
 
 export function updateLine(lineId: number, body: LineBody): Promise<CountResult<{ line: CountLine }>> {
-  return call(`/api/stock-count/lines/${lineId}`, {
-    method: "PATCH",
-    headers: JSON_HEADERS,
-    body: JSON.stringify(body),
-  });
+  return call(
+    `/api/stock-count/lines/${lineId}`,
+    { method: "PATCH", headers: JSON_HEADERS, body: JSON.stringify(body) },
+    SEND_TIMEOUT_MS,
+  );
 }
 
 export function removeLine(lineId: number): Promise<CountResult<{ ok: true; lineId: number }>> {
-  return call(`/api/stock-count/lines/${lineId}`, { method: "DELETE" });
+  return call(`/api/stock-count/lines/${lineId}`, { method: "DELETE" }, SEND_TIMEOUT_MS);
 }
 
 // ── Formatting shared by the three panes ─────────────────────────────────────

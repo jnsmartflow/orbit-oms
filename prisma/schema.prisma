@@ -4973,6 +4973,12 @@ model StockAuditLine {
   // by chk_stock_audit_lines_qty; validated by lib/stock-audit/calc.ts
   // validateQty.
   qty            Int
+  // v27.80 — the phone's per-entry id (offline queue). A repeat POST with the
+  // same id returns the existing line. NULL on rows saved before v27.80.
+  clientId       String?    @unique(map: "stock_audit_lines_clientId_key") @db.Uuid
+  // v27.80 — the phone's clock at Submit. No CHECK (phone clocks can be off);
+  // NULL on old rows — the desk falls back to createdAt.
+  countedAt      DateTime?  @db.Timestamptz(6)
   countedById    Int
   countedBy      users      @relation("StockAuditLineCountedBy", fields: [countedById], references: [id], onDelete: Restrict)
   // Soft delete — removed ⇔ removedAt set (chk_stock_audit_lines_removed).

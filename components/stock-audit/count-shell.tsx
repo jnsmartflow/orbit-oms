@@ -28,12 +28,22 @@
 // SKU LIST: downloaded once and searched locally (catalog-store.ts). Stored
 // copy shown at once; refreshed on every open and after a NOT_IN_CATALOG save.
 //
-// 🔴 Submitted (n) is the server's number: the lines are RE-READ after every
-// save, edit and removal. Never a local +1.
+// OFFLINE QUEUE (v27.80, Smart Flow 2026-11-04): Submit saves a NEW count ON
+// THE PHONE first (use-count-queue.ts) and returns the counter to Count at
+// once — no waiting on the network; a background sender posts it, with a
+// clientId so a retry never makes a second line. Edit / Remove of an entry
+// still on the phone change only the phone copy. Edit / Remove of a SENT line
+// stay PATCH / DELETE and need signal (offline queuing of those: a later step,
+// Smart Flow decision 3). The last open audit and my last lines are cached
+// (count-queue-store.ts), so a weak-signal open goes straight to Count.
+// 🔴 Submitted (n) is now, ON PURPOSE, a LOCAL number — this reverses the
+// v27.79 rule "the server's number, never a local +1": server lines + queued
+// entries the server does not hold yet (queue-core.ts submittedCount). The
+// lines are still re-read after every sent batch, edit and removal.
 // 🔴 BLIND COUNT: nothing here can show another person's lines, a total
 // across counters, or an expected quantity — the API returns none.
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ClipboardList, ListChecks, Search } from "lucide-react";
 import { RoleLayoutClient } from "@/components/shared/role-layout-client";
 import { ModuleMobileHeader } from "@/components/shared/module-mobile-header";
@@ -44,6 +54,9 @@ import type { NavItemConfig } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 import type { CatalogRow } from "@/lib/stock-audit/sku-search";
 import type { CountLine, MyAudit } from "@/lib/stock-audit/types";
+import { validateQty } from "@/lib/stock-audit/calc";
+import { newClientId } from "@/lib/stock-audit/client-id";
+import { submittedCount } from "@/lib/stock-audit/queue-core";
 import {
   createLine,
   fetchMyLines,
@@ -57,6 +70,9 @@ import {
   type LineBody,
 } from "./count-api";
 import { readStoredCatalog, refreshCatalog } from "./catalog-store";
+import { readCachedAudit, readSentLines, writeCachedAudit, writeSentLines } from "./count-queue-store";
+import { CountSyncBanner } from "./count-sync-banner";
+import { useCountQueue, type ShownEntry } from "./use-count-queue";
 import { CountCalculator } from "./count-calculator";
 import { CountSearch, type PickedSku } from "./count-search";
 import { CountSubmitted } from "./count-submitted";
@@ -67,9 +83,15 @@ function isTabKey(v: string): v is TabKey {
   return (TAB_KEYS as readonly string[]).includes(v);
 }
 
-type CalcState = { kind: "new"; sku: PickedSku } | { kind: "edit"; line: CountLine };
+type CalcState =
+  | { kind: "new"; sku: PickedSku }
+  | { kind: "edit"; line: CountLine }
+  /** An entry still on the phone — Update rewrites the phone copy only. */
+  | { kind: "editQueued"; auditId: number; entry: ShownEntry };
 
 interface ShellProps {
+  /** session.user.id — scopes the phone's queue to the signed-in person. */
+  userId: number;
   role: RoleSidebarRole;
   userName: string;
   userInitials: string;
@@ -105,6 +127,7 @@ export function StockCountShell(props: ShellProps): React.JSX.Element {
       hideBar={calcOpen}
     >
       <StockCountScreen
+        userId={props.userId}
         userInitials={props.userInitials}
         audit={audit}
         setAudit={setAudit}
@@ -118,6 +141,7 @@ export function StockCountShell(props: ShellProps): React.JSX.Element {
 }
 
 interface ScreenProps {
+  userId: number;
   userInitials: string;
   audit: MyAudit | null;
   setAudit: (a: MyAudit | null) => void;
@@ -128,6 +152,7 @@ interface ScreenProps {
 }
 
 function StockCountScreen({
+  userId,
   userInitials,
   audit,
   setAudit,
@@ -144,6 +169,10 @@ function StockCountScreen({
 
   const [lines, setLines] = useState<CountLine[] | null>(null);
   const [linesError, setLinesError] = useState<string | null>(null);
+  /** The lines shown are the phone's last copy (GET failed on the network). */
+  const [offlineCopy, setOfflineCopy] = useState(false);
+  /** Storage refused a save — this one went straight to the server. */
+  const [onlineOnlyNote, setOnlineOnlyNote] = useState<string | null>(null);
   const [closed, setClosed] = useState(false);
 
   const [catalog, setCatalog] = useState<CatalogRow[] | null>(null);
@@ -158,7 +187,6 @@ function StockCountScreen({
   const [removeError, setRemoveError] = useState<string | null>(null);
 
   useEffect(() => setCalcOpen(calc !== null), [calc, setCalcOpen]);
-  useEffect(() => setLineCount(lines === null ? undefined : lines.length), [lines, setLineCount]);
 
   // ── SKU list: the stored copy at once, then ask the server if it is current.
   const loadCatalog = useCallback(async (): Promise<void> => {
@@ -189,27 +217,55 @@ function StockCountScreen({
     return false;
   }, []);
 
+  // The queue's reconcile lives in a ref: the queue hook is created below,
+  // and loadLines must not change identity when it re-renders.
+  const reconcileRef = useRef<(auditId: number, lines: CountLine[]) => void>(() => undefined);
+
   const loadLines = useCallback(
     async (auditId: number): Promise<void> => {
       const r = await fetchMyLines(auditId);
       if (r.ok) {
         setLines(r.data.lines);
         setLinesError(null);
+        setOfflineCopy(false);
+        writeSentLines(userId, auditId, r.data.lines);
+        // Drop queued entries the server already holds (a lost reply).
+        reconcileRef.current(auditId, r.data.lines);
         if (r.data.audit.status !== "open") setClosed(true);
         return;
       }
-      if (!applyLock(r.error)) setLinesError(friendlyError(r.error));
+      if (applyLock(r.error)) return;
+      if (r.error.code === "NETWORK") {
+        const cached = readSentLines(userId, auditId);
+        if (cached) {
+          setLines((cur) => cur ?? cached);
+          setOfflineCopy(true);
+          setLinesError(null);
+          return;
+        }
+      }
+      setLinesError(friendlyError(r.error));
     },
-    [applyLock],
+    [applyLock, userId],
   );
 
   const loadAudit = useCallback(async (): Promise<void> => {
     setAuditState("loading");
     const r = await fetchOpenAudit();
-    if (!r.ok) {
-      setAuditError(friendlyError(r.error));
-      setAuditState("error");
-      return;
+    let open: MyAudit | null;
+    if (r.ok) {
+      open = r.data.audit;
+      writeCachedAudit(userId, open);
+    } else {
+      // Weak signal: open the last audit this phone saw, so counting goes on.
+      // The queue's sends find out if it has closed meanwhile (AUDIT_CLOSED).
+      const cached = r.error.code === "NETWORK" ? readCachedAudit(userId) : null;
+      if (!cached) {
+        setAuditError(friendlyError(r.error));
+        setAuditState("error");
+        return;
+      }
+      open = cached;
     }
     setAuditError(null);
     setTab("count");
@@ -219,15 +275,46 @@ function StockCountScreen({
     setClosed(false);
     setLines(null);
     setLinesError(null);
+    setOfflineCopy(false);
     setResetKey((k) => k + 1);
-    setAudit(r.data.audit);
-    if (r.data.audit === null) {
+    setAudit(open);
+    if (open === null) {
       setAuditState("none");
       return;
     }
     setAuditState("ready");
-    void loadLines(r.data.audit.id);
-  }, [setAudit, setTab, loadLines]);
+    void loadLines(open.id);
+  }, [setAudit, setTab, loadLines, userId]);
+
+  // ── The offline queue ──────────────────────────────────────────────────────
+  const auditIdRef = useRef<number | null>(null);
+  auditIdRef.current = audit?.id ?? null;
+  const queueAudit = useMemo(
+    () => (audit ? { id: audit.id, auditNumber: audit.auditNumber } : null),
+    [audit],
+  );
+  const queue = useCountQueue({
+    userId,
+    audit: queueAudit,
+    onSent: (aId, line) => {
+      if (aId !== auditIdRef.current) return;
+      // Show it as Sent at once; the re-read after the batch confirms it.
+      setLines((cur) => (cur === null ? cur : cur.some((l) => l.id === line.id) ? cur : [line, ...cur]));
+    },
+    onDrained: (aId) => {
+      if (aId === auditIdRef.current) void loadLines(aId);
+    },
+    onAuditClosed: (aId) => {
+      if (aId === auditIdRef.current) setClosed(true);
+    },
+    onNotInCatalog: () => void loadCatalog(),
+  });
+  reconcileRef.current = queue.reconcile;
+
+  useEffect(
+    () => setLineCount(lines === null && queue.entries.length === 0 ? undefined : submittedCount(queue.entries, lines)),
+    [lines, queue.entries, setLineCount],
+  );
 
   useEffect(() => {
     void loadAudit();
@@ -263,8 +350,54 @@ function StockCountScreen({
     setCalc({ kind: "edit", line });
   }
 
+  function editQueued(entry: ShownEntry): void {
+    if (!audit) return;
+    setFlash(null);
+    setSaveError(null);
+    setCalc({ kind: "editQueued", auditId: audit.id, entry });
+  }
+
+  /** After a save: flash, close the entry, back to the right tab. */
+  function finishSave(text: string, toTab: TabKey): void {
+    setFlash(text);
+    setCalc(null);
+    setTab(toTab);
+    lastTab.current = toTab;
+    setResetKey((k) => k + 1);
+  }
+
   async function save(qty: string): Promise<void> {
     if (!audit || calc === null) return;
+    const v = validateQty(qty);
+    if (!v.ok) return; // the entry box only enables Submit for a good qty
+
+    // An entry still on the phone: rewrite its copy (same clientId), no network.
+    if (calc.kind === "editQueued") {
+      queue.edit(calc.auditId, calc.entry.clientId, v.qty);
+      finishSave(`Updated ${calc.entry.material} · ${fmtPcs(v.qty)} pcs`, "submitted");
+      return;
+    }
+
+    // A NEW count: save it on the phone and go straight back to Count.
+    if (calc.kind === "new") {
+      const sku = calc.sku;
+      const queued = queue.enqueue({
+        material: sku.material,
+        qty: v.qty,
+        inCatalog: sku.inCatalog,
+        skuDescription: sku.description,
+        skuPack: sku.pack,
+      });
+      if (queued) {
+        setOnlineOnlyNote(null);
+        finishSave(`Saved · ${sku.material} · ${fmtPcs(v.qty)} pcs`, "count");
+        return;
+      }
+      // Storage full / private mode: today's direct save (still with a
+      // clientId, so a retry of this one is safe too).
+      setOnlineOnlyNote("Phone storage full — saving online only");
+    }
+
     const material = calc.kind === "new" ? calc.sku.material : calc.line.material;
     const inCatalog = calc.kind === "new" ? calc.sku.inCatalog : calc.line.inCatalog;
     const body: LineBody = {
@@ -275,7 +408,10 @@ function StockCountScreen({
     };
     setBusy(true);
     setSaveError(null);
-    const r = calc.kind === "new" ? await createLine(audit.id, body) : await updateLine(calc.line.id, body);
+    const r =
+      calc.kind === "new"
+        ? await createLine(audit.id, { ...body, clientId: newClientId(), userId, countedAt: new Date().toISOString() })
+        : await updateLine(calc.line.id, body);
     setBusy(false);
     if (!r.ok) {
       if (applyLock(r.error)) return;
@@ -297,11 +433,10 @@ function StockCountScreen({
       return;
     }
     const wasEdit = calc.kind === "edit";
-    setFlash(`${wasEdit ? "Updated" : "Submitted"} ${r.data.line.material} · ${fmtPcs(r.data.line.qty)} pcs`);
-    setCalc(null);
-    setTab(wasEdit ? "submitted" : "count");
-    lastTab.current = wasEdit ? "submitted" : "count";
-    setResetKey((k) => k + 1);
+    finishSave(
+      `${wasEdit ? "Updated" : "Submitted"} ${r.data.line.material} · ${fmtPcs(r.data.line.qty)} pcs`,
+      wasEdit ? "submitted" : "count",
+    );
     await loadLines(audit.id);
   }
 
@@ -328,24 +463,39 @@ function StockCountScreen({
   } else if (calc !== null) {
     body = (
       <CountCalculator
-        key={calc.kind === "new" ? `new-${calc.sku.material}` : `edit-${calc.line.id}`}
+        key={
+          calc.kind === "new"
+            ? `new-${calc.sku.material}`
+            : calc.kind === "edit"
+              ? `edit-${calc.line.id}`
+              : `queued-${calc.entry.clientId}`
+        }
         sku={
           calc.kind === "new"
             ? calc.sku
-            : {
-                material: calc.line.material,
-                description: calc.line.skuDescription,
-                pack: calc.line.skuPack,
-                inCatalog: calc.line.inCatalog,
-              }
+            : calc.kind === "edit"
+              ? {
+                  material: calc.line.material,
+                  description: calc.line.skuDescription,
+                  pack: calc.line.skuPack,
+                  inCatalog: calc.line.inCatalog,
+                }
+              : {
+                  material: calc.entry.material,
+                  description: calc.entry.skuDescription,
+                  pack: calc.entry.skuPack,
+                  inCatalog: calc.entry.inCatalog,
+                }
         }
-        initialQty={calc.kind === "new" ? "" : String(calc.line.qty)}
+        initialQty={
+          calc.kind === "new" ? "" : calc.kind === "edit" ? String(calc.line.qty) : String(calc.entry.qty)
+        }
         submitLabel={calc.kind === "new" ? "Submit" : "Update"}
         busy={busy}
         error={saveError}
         onSubmit={(qty) => void save(qty)}
         onCancel={() => {
-          const wasEdit = calc.kind === "edit";
+          const wasEdit = calc.kind !== "new";
           setCalc(null);
           setSaveError(null);
           if (wasEdit) setTab("submitted");
@@ -355,15 +505,26 @@ function StockCountScreen({
   } else if (tab === "submitted") {
     body = (
       <CountSubmitted
+        auditId={audit.id}
         auditNumber={audit.auditNumber}
         lines={lines}
         loadError={linesError}
+        offlineCopy={offlineCopy}
         flash={flash}
         readOnly={closed}
+        queued={queue.entries}
+        older={queue.older}
         removing={removing}
         removeError={removeError}
         onEdit={edit}
         onRemove={remove}
+        onEditQueued={editQueued}
+        onRemoveQueued={(aId, e) => {
+          queue.remove(aId, e.clientId);
+          setFlash(`${e.fail?.kind === "closed" ? "Discarded" : "Removed"} ${e.material} · ${fmtPcs(e.qty)} pcs`);
+        }}
+        onRetryQueued={(aId, e) => queue.retry(aId, e.clientId)}
+        onConfirmNotInCatalog={(aId, e) => queue.retry(aId, e.clientId, true)}
         onRetry={() => void loadLines(audit.id)}
       />
     );
@@ -435,6 +596,11 @@ function StockCountScreen({
               Check for a new audit
             </button>
           </div>
+        )}
+
+        <CountSyncBanner banner={queue.banner} />
+        {onlineOnlyNote && calc === null && (
+          <p className="mx-4 mt-2 flex-none text-[13px] text-warn-text">{onlineOnlyNote}</p>
         )}
 
         {body}

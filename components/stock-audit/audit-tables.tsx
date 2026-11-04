@@ -118,7 +118,9 @@ export function LedgerTable({ ledger }: { ledger: SkuLedger }): React.JSX.Elemen
           <tr key={r.lineId}>
             <td className={cn(TD, "font-medium text-ink-900")}>{r.countedByName}</td>
             <td className={cn(TD, NUM, "text-ink-900")}>{fmtPcs(r.qty)}</td>
-            <td className={cn(TD, "text-ink-400")}>{fmtDateTime(r.updatedAt)}</td>
+            {/* v27.80: the phone's count time (an offline entry can arrive
+                later); lines saved before v27.80 fall back to createdAt. */}
+            <td className={cn(TD, "text-ink-400")}>{fmtDateTime(r.countedAt ?? r.createdAt)}</td>
           </tr>
         ))
       )}

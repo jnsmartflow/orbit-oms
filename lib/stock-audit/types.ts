@@ -20,7 +20,11 @@ export type StockAuditErrorCode =
   | "AUDIT_ALREADY_OPEN"
   | "NOT_OWNER"
   | "NOT_IN_CATALOG"
-  | "TRY_AGAIN";
+  | "TRY_AGAIN"
+  /** v27.80: a clientId already used by someone else's line / another audit. */
+  | "CLIENT_ID_CONFLICT"
+  /** v27.80: the body's userId is not the session user (an old tab). */
+  | "WRONG_USER";
 
 /** Every non-2xx body: a human message + the code the screen branches on. */
 export interface StockAuditErrorBody {
@@ -57,6 +61,10 @@ export interface CountLine {
   skuDescription: string | null;
   skuPack: string | null;
   qty: number;
+  /** v27.80 — the phone's per-entry id; null on lines saved before v27.80. */
+  clientId: string | null;
+  /** v27.80 — the phone's clock at Submit (display only); null on old lines. */
+  countedAt: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -138,6 +146,9 @@ export interface LedgerRow {
   countedById: number;
   countedByName: string;
   qty: number;
+  /** v27.80 — the phone's clock at Submit; null on old lines. The ledger's
+   *  Time column shows countedAt ?? createdAt. */
+  countedAt: string | null;
   createdAt: string;
   updatedAt: string;
 }

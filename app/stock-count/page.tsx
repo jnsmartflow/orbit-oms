@@ -68,10 +68,15 @@ export default async function StockCountPage() {
   });
 
   const userName = session.user.name ?? "User";
+  // Scopes the phone's offline queue (localStorage) to this person, so a
+  // different user on the same phone never sees or sends their counts.
+  const userId = Number(session.user.id);
+  if (!Number.isInteger(userId) || userId <= 0) redirect("/unauthorized");
 
   return (
     <RoleSidebarProvider>
       <StockCountShell
+        userId={userId}
         // Same cast app/ci/page.tsx and app/mrn/page.tsx make: not every
         // primary role is in the RoleSidebarRole union.
         role={primaryRole as RoleSidebarRole}

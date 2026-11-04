@@ -4,7 +4,9 @@
 -- list, at most one open audit.
 --
 -- Planned Schema v27.79 (CORE's header and §7 chain read v27.78 on 2026-11-03 —
--- sql/2026-11-02-v27.78-stock-audit.sql). ⚠ NOT RUN. The version is minted only
+-- sql/2026-11-02-v27.78-stock-audit.sql).
+-- RUN 2026-11-03 — read-back clean (lines + pcs unchanged: yes; 12 · 7 · 5 and 9 · 9 · 5)
+-- The version is minted only
 -- after the owner runs this file and the read-back (section 6) comes back with
 -- no MISSING and no STILL-PRESENT row. Prisma is hand-edited to match, never
 -- `db push` / `db pull` (CORE §3).
