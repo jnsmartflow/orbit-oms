@@ -6,7 +6,10 @@
 // Follows docs/mockups/stock-audit/stock-audit-mobile.html search(): "Enter SKU
 // code", the big centred box, and the green "Submitted …" message above the box
 // after a save. Result rows are picking-style cards (2026-11-02): pack cell on
-// the left, mono code with the typed part tinted, description below.
+// the left, mono code with the typed part tinted, description below. An
+// INACTIVE sku_master_v2 row (offered since 2026-11-04 — old stock can still be
+// on the floor) carries a small grey "Inactive" tag after the code; active
+// cards are unchanged.
 //
 // INSTANT, LOCAL SEARCH (2026-11-02): the shell downloads the whole SKU list
 // once (components/stock-audit/catalog-store.ts) and this box searches it on
@@ -163,9 +166,20 @@ export function CountSearch({
                   <span className="text-center text-[17px] font-bold text-ink-700">{h.pack || "—"}</span>
                 </span>
                 <span className="min-w-0 flex-1 px-3 py-2.5">
-                  <span className="block truncate font-mono text-[17px] font-bold text-ink-900">
-                    <HighlightedCode material={h.material} typed={code} />
-                  </span>
+                  {h.active ? (
+                    <span className="block truncate font-mono text-[17px] font-bold text-ink-900">
+                      <HighlightedCode material={h.material} typed={code} />
+                    </span>
+                  ) : (
+                    <span className="flex min-w-0 items-center gap-2">
+                      <span className="min-w-0 truncate font-mono text-[17px] font-bold text-ink-900">
+                        <HighlightedCode material={h.material} typed={code} />
+                      </span>
+                      <span className="flex-none rounded-[6px] bg-ink-100 px-1.5 py-0.5 text-[11px] font-semibold text-ink-500">
+                        Inactive
+                      </span>
+                    </span>
+                  )}
                   <span className="mt-0.5 block truncate text-[12.5px] text-ink-500">
                     {descriptionWithoutPack(h.description, h.pack)}
                   </span>

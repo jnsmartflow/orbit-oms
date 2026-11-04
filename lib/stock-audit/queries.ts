@@ -52,7 +52,7 @@ export function normaliseMaterial(raw: unknown): string | null {
   return m;
 }
 
-/** Catalog snapshot for one material, or null when it is not an active,
+/** Catalog snapshot for one material, or null when it is not a
  *  untagged catalog code. Matches on `material` ONLY. */
 export async function resolveCatalogMaterial(
   material: string,
@@ -60,9 +60,11 @@ export async function resolveCatalogMaterial(
   if (TAGGED_CODE.test(material)) return null;
   const row = await prisma.sku_master_v2.findUnique({
     where: { material },
-    select: { description: true, packCode: true, unit: true, isActive: true },
+    // No isActive check (Smart Flow, 2026-11-04): an inactive code can still be
+    // on the floor, and a count of it is a catalogued line with its snapshot.
+    select: { description: true, packCode: true, unit: true },
   });
-  if (!row || !row.isActive) return null;
+  if (!row) return null;
   const description = row.description.trim();
   if (description === "") return null; // chk_stock_audit_lines_catalog would refuse it
   return { description, pack: formatPack(row.packCode, row.unit) };

@@ -2,10 +2,12 @@
 // Client-only. Downloaded once, kept in localStorage, searched locally
 // (lib/stock-audit/sku-search.ts) — no server call per keystroke.
 //
-// Storage: localStorage key `stock_count_catalog_v2` = { version, fetchedAt,
-// rows } (~90 KB of text for ~1,700 rows). v2 (2026-11-03): rows lost the
-// carton-size slot (qty is always pieces); a stored v1 copy is simply never
-// read again — the 4-slot isCatalogRow would refuse its 5-slot rows anyway. Not a `po2_*` key and unrelated to
+// Storage: localStorage key `stock_count_catalog_v3` = { version, fetchedAt,
+// rows } (~120 KB of text for ~2,100 rows). v2 (2026-11-03): rows lost the
+// carton-size slot (qty is always pieces). v3 (2026-11-04): rows gained an
+// isActive slot and inactive SKUs are shipped too; a stored v2 copy is simply
+// never read again under the new key (and isCatalogRow refuses its 4-slot
+// rows anyway). Not a `po2_*` key and unrelated to
 // /po2. EVERY read and write is wrapped: private mode, a full quota or blocked
 // site data must never break the screen — the list then lives in memory for
 // the session (`memory` below) and is re-downloaded on the next open.
@@ -21,7 +23,7 @@
 import { isCatalogRow, type CatalogRow } from "@/lib/stock-audit/sku-search";
 import { fetchCatalog, type CountError } from "./count-api";
 
-const STORAGE_KEY = "stock_count_catalog_v2";
+const STORAGE_KEY = "stock_count_catalog_v3";
 
 export interface StoredCatalog {
   version: string;

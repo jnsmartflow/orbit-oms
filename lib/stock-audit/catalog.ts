@@ -12,7 +12,7 @@
 // change to what the phone would search changes the version — and nothing
 // else does.
 //
-// Cost: one indexed findMany of ~1,700 rows + one sha1, per screen open. The
+// Cost: one findMany of ~2,100 rows + one sha1, per screen open. The
 // phone sends ?have=<version> and gets a ~60-byte "unchanged" when it is current.
 
 import { createHash } from "node:crypto";
@@ -25,17 +25,19 @@ export interface CatalogPayload {
   rows: CatalogRow[];
 }
 
-/** Active, untagged catalogue rows, isPrimary first then material — the search order. */
+/** EVERY untagged catalogue row, active AND inactive (Smart Flow, 2026-11-04 —
+ *  inactive stock can still be on the floor), active first, then isPrimary
+ *  first, then material — the search order. The isActive flag rides slot 5, so
+ *  it is inside the hash: flipping a row's isActive changes the version. */
 export async function buildCatalog(): Promise<CatalogPayload> {
   const skus = await prisma.sku_master_v2.findMany({
-    where: { isActive: true },
-    orderBy: [{ isPrimary: "desc" }, { material: "asc" }],
-    select: { material: true, description: true, packCode: true, unit: true, isPrimary: true },
+    orderBy: [{ isActive: "desc" }, { isPrimary: "desc" }, { material: "asc" }],
+    select: { material: true, description: true, packCode: true, unit: true, isPrimary: true, isActive: true },
   });
   const rows: CatalogRow[] = [];
   for (const s of skus) {
     if (TAGGED_CODE.test(s.material)) continue;
-    rows.push([s.material, s.description, formatPack(s.packCode, s.unit), s.isPrimary ? 1 : 0]);
+    rows.push([s.material, s.description, formatPack(s.packCode, s.unit), s.isPrimary ? 1 : 0, s.isActive ? 1 : 0]);
   }
   const version = createHash("sha1").update(JSON.stringify(rows)).digest("hex").slice(0, 16);
   return { version, rows };
