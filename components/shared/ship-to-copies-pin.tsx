@@ -19,7 +19,16 @@ interface CopyRow {
   contentType: string;
 }
 
-export function ShipToCopiesPin({ orderId, count }: { orderId: number; count: number }) {
+export function ShipToCopiesPin({
+  orderId,
+  count,
+  orderInvoiceId,
+}: {
+  orderId: number;
+  count: number;
+  /** v27.81 — ONE PART of a split bill: its own copies, plus the bill's while it inherits. */
+  orderInvoiceId?: number;
+}) {
   const [open, setOpen] = useState(false);
   const [rows, setRows] = useState<CopyRow[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -37,7 +46,8 @@ export function ShipToCopiesPin({ orderId, count }: { orderId: number; count: nu
   if (count <= 0) return null;
 
   async function load(): Promise<CopyRow[]> {
-    const res = await fetch(`/api/ship-to/copies?orderId=${orderId}`, { cache: "no-store" });
+    const part = orderInvoiceId !== undefined ? `&orderInvoiceId=${orderInvoiceId}` : "";
+    const res = await fetch(`/api/ship-to/copies?orderId=${orderId}${part}`, { cache: "no-store" });
     const body = (await res.json().catch(() => null)) as { copies?: CopyRow[]; error?: string } | null;
     if (!res.ok) throw new Error(body?.error ?? "Could not load the copies");
     return body?.copies ?? [];

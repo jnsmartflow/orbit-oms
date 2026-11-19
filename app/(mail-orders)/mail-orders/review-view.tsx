@@ -2360,6 +2360,10 @@ export function ReviewView({
                   }}
                   customerAreaId={order.customerAreaId ?? null}
                   onSaved={() => onBillingActionSaved?.()}
+                  // v27.81 — split bills whose parts kept their own ship-to (rule 3).
+                  onKeptParts={(n) =>
+                    showCopyToast(`Ship-to saved · ${n} ${n === 1 ? "part keeps its" : "parts keep their"} own ship-to`, "customer")
+                  }
                 />
               ) : undefined
             }

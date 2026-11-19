@@ -585,6 +585,10 @@ function PanelBody({
   // two guarded regions. That is the whole zero-write proof, and it is one
   // grep — keep it that way.
   const readOnly = source === "history";
+  // PER-PART SHIP-TO (v27.81, the switch-on): which ship-to the modal edits —
+  // the BILL (today's flow, the only one on an unsplit bill), ONE PART (the
+  // panel is scoped to a row of a split OBD), or ALL PARTS (owner Q1).
+  const [shipToMode, setShipToMode] = useState<"bill" | "part" | "all">("bill");
   // ── A PAST DAY, FOR A FLOOR EDITOR (owner D1/D2, 2026-10-24) ──────────────
   // The action row comes back with ONE live control, Ship-to — it can move a
   // bill on a past day's trip to its right stop. Hold, Cancel / Raise CI and
@@ -682,6 +686,13 @@ function PanelBody({
   // The Change ship-to button below still edits the BILL (orderId), unchanged.
   const scopedPart = scope ? (d.parts ?? []).find((p) => p.rowId === scope.id) ?? null : null;
   const ownPart = scopedPart !== null && scopedPart.own ? scopedPart : null;
+  // A split OBD (2+ invoice rows) — the only bill with parts to edit apart.
+  const splitParts = (d.parts ?? []).length;
+  const isSplitBill = splitParts >= 2;
+  // Part mode: scoped to one row of a split OBD. The part's own label.
+  const partMode = isSplitBill && scope !== null && scopedPart !== null;
+  const partLabel = scope ? `part ${scopeK} of ${invoiceRows.length}${scope.invoiceNo ? ` · ${scope.invoiceNo}` : ""}` : "";
+  const billShipToName = d.shipToText ?? d.shipToName;
   const hv = ownPart
     ? {
         shipToText: ownPart.shipToText,
@@ -839,7 +850,7 @@ function PanelBody({
               {(d.billToName ?? d.customerName) && (
                 <span className="text-gray-500">· billed to {d.billToName ?? d.customerName}</span>
               )}
-              <ShipToCopiesPin orderId={d.orderId} count={hv.copyCount} />
+              <ShipToCopiesPin orderId={d.orderId} count={hv.copyCount} orderInvoiceId={partMode && scope ? scope.id : undefined} />
             </div>
           </>
         ) : (
@@ -919,7 +930,7 @@ function PanelBody({
               a refusal (on a trip, a Billing copy) is shown in the modal. It is
               portalled at z-[120], above this z-[110] panel, and its Esc stops
               at the modal. After a save: board reload + this panel's refetch. */}
-          {shipToOpen && (
+          {shipToOpen && (shipToMode !== "part" || !partMode || scopedPart === null) && (
             <ShipToModal
               desk="floor"
               ownerId={d.orderId}
@@ -937,6 +948,34 @@ function PanelBody({
               }}
               customerAreaId={d.customerAreaId}
               trip={trip}
+              // v27.81 — "Apply to all parts" (owner Q1); null = today's bill save.
+              allParts={shipToMode === "all" && isSplitBill ? { n: splitParts } : null}
+              onClose={() => setShipToOpen(false)}
+              onSaved={() => void run(() => actions.onShipToSaved())}
+            />
+          )}
+          {/* v27.81 — PART MODE: THIS part's ship-to, saved to the part's own
+              route (it decides on / off trip itself — no trip preview). "Same
+              as the bill" shows only when the part has its own. */}
+          {shipToOpen && shipToMode === "part" && partMode && scopedPart !== null && scope !== null && (
+            <ShipToModal
+              desk="floor"
+              ownerId={d.orderId}
+              refLabel={`OBD ${d.obdNumber}`}
+              current={{
+                name: scopedPart.shipToText ?? scopedPart.shipToName,
+                code: scopedPart.shipToText !== null ? null : scopedPart.shipToCode,
+                area: scopedPart.shipToText !== null ? scopedPart.typedAreaName : scopedPart.area,
+                deliveryType: scopedPart.shipToText !== null ? scopedPart.typedAreaDeliveryType : scopedPart.deliveryType,
+                isChanged: scopedPart.isShipToOverride || scopedPart.shipToText !== null,
+                typedText: scopedPart.shipToText,
+                // FloorDetailPart carries no typed area id: the Area is picked again.
+                typedAreaId: ownPart !== null ? null : d.shipToAreaId,
+                billedToName: d.billToName ?? d.customerName,
+                billedToCode: d.billToCode ?? d.customerCode,
+              }}
+              customerAreaId={d.customerAreaId}
+              part={{ rowId: scope.id, label: partLabel, inheritName: ownPart !== null ? billShipToName : null }}
               onClose={() => setShipToOpen(false)}
               onSaved={() => void run(() => actions.onShipToSaved())}
             />
@@ -1003,7 +1042,12 @@ function PanelBody({
               ship-to modal (mounted at the top of this row). */}
           <button
             type="button"
-            onClick={() => setShipToOpen(true)}
+            onClick={() => {
+              // v27.81 — scoped to a part of a split OBD → that part; else the bill.
+              setShipToMode(partMode ? "part" : "bill");
+              setShipToOpen(true);
+            }}
+            title={partMode ? `Change the ship-to of ${partLabel} only` : undefined}
             className={
               source === "floor" || pastDay
                 ? "inline-flex h-[34px] items-center gap-1.5 whitespace-nowrap rounded-md border border-brand-600 bg-brand-600 px-3.5 text-[12px] font-semibold text-white hover:bg-brand-700"
@@ -1018,6 +1062,22 @@ function PanelBody({
             )}
             Ship-to
           </button>
+          {/* v27.81 — "Apply to all parts" (owner Q1): split OBDs only, beside
+              Ship-to; one ship-to for the bill, every part's own cleared. An
+              unsplit bill never shows it. */}
+          {isSplitBill && (
+            <button
+              type="button"
+              onClick={() => {
+                setShipToMode("all");
+                setShipToOpen(true);
+              }}
+              title={`This sets one ship-to for all ${splitParts} parts and clears each part's own ship-to.`}
+              className="inline-flex h-[34px] items-center whitespace-nowrap rounded-md border border-gray-300 bg-white px-3.5 text-[12px] font-medium text-gray-700 hover:border-gray-400 hover:bg-gray-50"
+            >
+              All parts
+            </button>
+          )}
 
           {/* PAST DAY (2026-10-24): the bill's own actions, drawn grey and inert
               — no handler is attached, so nothing here can write. */}

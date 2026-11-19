@@ -152,5 +152,8 @@ export async function POST(req: Request): Promise<NextResponse> {
     ordersUpdated: result.updated.length,
     copiesAdded: rec.ids,
     copiesRemoved,
+    // v27.81 — per bill, how many of its parts kept their OWN ship-to (rule 3);
+    // the modal sums them for the pencil's toast. [] when none (every save today).
+    keptParts: result.keptParts,
   });
 }

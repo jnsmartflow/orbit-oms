@@ -33,6 +33,11 @@ export const dynamic = "force-dynamic";
 //   · multipart/form-data — the shared ship-to modal: orderId + the fields of
 //     lib/ship-to/parse-form.ts (mode dealer | typed | reset, text,
 //     asPerChallan, areaId, files, removeCopyIds).
+//     + allParts=1 (v27.81, owner Q1 "Apply to all parts"): the bill's ship-to
+//     AND every part set back to "same as the bill" (setShipTo allParts — its
+//     on-a-trip refusal then counts every row). Absent = today's save: parts
+//     with their own ship-to keep it (rule 3), and the answer says how many
+//     (keptParts).
 //
 // Deliberately NOT a copy of PATCH /api/support/orders/[id]: that route carried
 // four unrelated fields, a dispatch_change_queue side effect, and a
@@ -117,9 +122,15 @@ async function saveFromModal(req: Request, changedById: number): Promise<NextRes
   const parsed = await parseShipToForm(form);
   if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: parsed.status });
   const r = parsed.req;
+  // v27.81 — "Apply to all parts" (owner Q1). Only the literal "1" turns it on.
+  const allPartsRaw = form.get("allParts");
+  if (allPartsRaw !== null && allPartsRaw !== "1") {
+    return NextResponse.json({ error: 'allParts must be "1" when sent' }, { status: 400 });
+  }
+  const allParts = allPartsRaw === "1";
 
   // Refuse a bill on a trip BEFORE anything is uploaded (setShipTo re-checks).
-  const loaded = await loadShipToBill(orderId);
+  const loaded = await loadShipToBill(orderId, { allParts });
   if (!loaded.ok) return NextResponse.json({ error: loaded.error }, { status: loaded.status });
   const bill = loaded.order;
 
@@ -176,7 +187,7 @@ async function saveFromModal(req: Request, changedById: number): Promise<NextRes
 
   let result: ShipToResult;
   try {
-    result = await setShipTo({ orderId, target, changedById });
+    result = await setShipTo({ orderId, target, changedById, allParts });
   } catch (err) {
     console.error(`[floor/ship-to] save failed for order ${orderId}:`, err);
     result = { ok: false, status: 500, error: "The ship-to could not be saved. Please try again." };
@@ -203,5 +214,8 @@ async function saveFromModal(req: Request, changedById: number): Promise<NextRes
     changed: result.changed,
     copiesAdded: rec.ids,
     copiesRemoved,
+    // v27.81 — parts that kept their own ship-to, and (allParts) how many were reset.
+    keptParts: result.keptParts ?? 0,
+    ...(result.partsReset !== undefined ? { partsReset: result.partsReset } : {}),
   });
 }

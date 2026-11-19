@@ -29,12 +29,15 @@ export function BillingShipToPencil({
   current,
   customerAreaId,
   onSaved,
+  onKeptParts,
 }: {
   moOrderId: number;
   soNumber: string | null;
   current: ShipToCurrent;
   customerAreaId: number | null;
   onSaved: () => void;
+  /** v27.81 — after a save where N parts kept their own ship-to (N > 0). */
+  onKeptParts?: (n: number) => void;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -59,7 +62,10 @@ export function BillingShipToPencil({
           customerAreaId={customerAreaId}
           searchUrl="/api/billing/ship-to-search"
           onClose={() => setOpen(false)}
-          onSaved={onSaved}
+          onSaved={(info) => {
+            onSaved();
+            if (info && info.keptParts > 0) onKeptParts?.(info.keptParts);
+          }}
         />
       )}
     </span>

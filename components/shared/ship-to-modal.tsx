@@ -22,6 +22,16 @@
 // required, 3 copies, 4 MB, who may remove what) — this screen is the
 // convenience, the route is the lock.
 //
+// PER-PART SHIP-TO (v27.81, owner 2026-11-19 — the switch-on). Two more Floor
+// modes, both OFF unless the caller passes them, so a bill save is unchanged:
+//   · PART (`part`): ONE row of a split OBD. Saves to
+//     POST /api/floor/order-invoices/[rowId]/ship-to — that route decides on /
+//     off trip by itself and has NO dry run, so the trip preview is not asked.
+//     Adds "Same as the bill (…)" (mode=inherit) when the part has its own.
+//   · ALL PARTS (`allParts`, owner Q1): POST /api/floor/ship-to with
+//     allParts=1 — one ship-to for the bill, every part's own cleared.
+// The server's refusals show in the error line, verbatim.
+//
 // Client component: imports only pure lib/ship-to/copy.ts and the client
 // shrink helper — never lib/supabase.ts or a server lib.
 
@@ -130,6 +140,8 @@ export function ShipToModal({
   current,
   searchUrl,
   trip = null,
+  part = null,
+  allParts = null,
   onClose,
   onSaved,
 }: {
@@ -149,24 +161,42 @@ export function ShipToModal({
   /** Floor only: the trip the bill is on. Set → the save goes to that trip's
    *  ship-to route and a preview line shows the stop it lands on. */
   trip?: { tripId: number; tripNumber: string } | null;
+  /**
+   * Floor only, v27.81 — PART MODE: one invoice row of a split OBD. `label`
+   * names it in the title; `inheritName` (the BILL's ship-to name) is set only
+   * when the part has its OWN ship-to — it draws "Same as the bill (…)".
+   */
+  part?: { rowId: number; label: string; inheritName: string | null } | null;
+  /** Floor only, v27.81 — "Apply to all parts" (owner Q1): `n` = the bill's parts. */
+  allParts?: { n: number } | null;
   onClose: () => void;
-  /** After a save landed — the caller reloads. */
-  onSaved: () => void;
+  /** After a save landed — the caller reloads. `keptParts` (v27.81): how many
+   *  parts kept their own ship-to (Billing's toast); 0 / absent = none. */
+  onSaved: (info?: { keptParts: number }) => void;
 }): React.JSX.Element {
   const ownOwner: ShipToCopyOwner = desk;
-  const onTrip = desk === "floor" && trip !== null;
+  const partMode = desk === "floor" && part !== null;
+  const allMode = desk === "floor" && !partMode && allParts !== null;
+  // The trip route (and its dry run) is the BILL's path only: a part's route
+  // decides on / off trip itself, and allParts goes to the bill route.
+  const onTrip = desk === "floor" && trip !== null && !partMode && !allMode;
   const saveUrl =
     desk === "billing"
       ? "/api/billing/mail-order/ship-to"
-      : onTrip
-        ? `/api/floor/trips/${trip.tripId}/ship-to`
-        : "/api/floor/ship-to";
+      : partMode
+        ? `/api/floor/order-invoices/${part.rowId}/ship-to`
+        : onTrip
+          ? `/api/floor/trips/${trip!.tripId}/ship-to`
+          : "/api/floor/ship-to";
   const idField = desk === "billing" ? "moOrderId" : "orderId";
   const search = searchUrl ?? (desk === "billing" ? "/api/billing/ship-to-search" : "/api/floor/ship-to-search");
 
   const startTyped = current.typedText !== null;
   const [tab, setTab] = useState<"dealer" | "typed">(startTyped ? "typed" : "dealer");
   const [resetPending, setResetPending] = useState(false);
+  // v27.81 — "Same as the bill": the part drops its own ship-to (mode=inherit).
+  const [inheritPending, setInheritPending] = useState(false);
+  const canInherit = partMode && part.inheritName !== null;
 
   // ── Search dealer ─────────────────────────────────────────────────────────
   const [q, setQ] = useState("");
@@ -245,7 +275,9 @@ export function ShipToModal({
     let cancelled = false;
     void (async () => {
       try {
-        const res = await fetch(`/api/ship-to/copies?${idField}=${ownerId}`, { cache: "no-store" });
+        // PART MODE: the part's own copies, plus the bill's while it inherits.
+        const partQ = partMode ? `&orderInvoiceId=${part.rowId}` : "";
+        const res = await fetch(`/api/ship-to/copies?${idField}=${ownerId}${partQ}`, { cache: "no-store" });
         const body = (await res.json().catch(() => null)) as { copies?: CopyRow[] } | null;
         if (!cancelled) setCopies(res.ok ? (body?.copies ?? []) : []);
       } catch {
@@ -257,7 +289,8 @@ export function ShipToModal({
     return () => {
       cancelled = true;
     };
-  }, [idField, ownerId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [idField, ownerId, part?.rowId]);
 
   const keptCopies = copies.filter((c) => !removeIds.includes(c.id));
   const ownActive = keptCopies.filter((c) => c.owner === ownOwner).length + newFiles.length;
@@ -297,6 +330,7 @@ export function ShipToModal({
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [failedBills, setFailedBills] = useState<FailedBill[] | null>(null);
+  const savedInfo = useRef<{ keptParts: number } | undefined>(undefined);
 
   const typedReady =
     (asPerChallan || text.trim() !== "") &&
@@ -360,7 +394,7 @@ export function ShipToModal({
     !busy &&
     !preparing &&
     previewErr === null &&
-    (resetPending || (tab === "dealer" ? picked !== null : typedReady));
+    (inheritPending || resetPending || (tab === "dealer" ? picked !== null : typedReady));
 
   async function save() {
     if (!canSave) return;
@@ -368,7 +402,11 @@ export function ShipToModal({
     setErr(null);
     const form = new FormData();
     form.append(idField, String(ownerId));
-    if (resetPending) {
+    // v27.81 — Apply to all parts (owner Q1); absent on every other save.
+    if (allMode) form.append("allParts", "1");
+    if (inheritPending) {
+      form.append("mode", "inherit");
+    } else if (resetPending) {
       form.append("mode", "reset");
     } else if (tab === "dealer" && picked) {
       form.append("mode", "dealer");
@@ -383,18 +421,26 @@ export function ShipToModal({
     }
     try {
       const res = await fetch(saveUrl, { method: "POST", body: form });
-      const body = (await res.json().catch(() => null)) as { error?: string; failed?: FailedBill[] } | null;
+      const body = (await res.json().catch(() => null)) as {
+        error?: string;
+        failed?: FailedBill[];
+        keptParts?: number | Array<{ parts: number }>;
+      } | null;
       if (!res.ok) {
         setErr(body?.error ?? `Save failed (HTTP ${res.status})`);
         return;
       }
+      // Billing returns one entry per bill whose parts kept their own; Floor a number.
+      const kept = body?.keptParts;
+      const info = { keptParts: Array.isArray(kept) ? kept.reduce((s, k) => s + k.parts, 0) : (kept ?? 0) };
+      savedInfo.current = info;
       const failed = body?.failed ?? [];
       if (failed.length > 0) {
         // Saved, but some bills were refused — say which before closing.
         setFailedBills(failed);
         return;
       }
-      onSaved();
+      onSaved(info);
       onClose();
     } catch {
       setErr("Network error — nothing was confirmed. Check the ship-to and try again.");
@@ -406,9 +452,14 @@ export function ShipToModal({
   const scopeLine =
     desk === "billing" ? (
       <>Applies to <b>all bills of this SO</b>, including ones that import later.</>
+    ) : partMode ? (
+      <>Applies to <b>this part only</b> — the bill&apos;s other parts keep their ship-to.</>
+    ) : allMode ? (
+      <>This sets one ship-to for all {allParts.n} parts and clears each part&apos;s own ship-to.</>
     ) : (
       <>Applies to <b>this bill only</b>.</>
     );
+  const title = partMode ? `Ship-to for ${part.label}` : allMode ? `Ship-to for all ${allParts.n} parts` : "Change ship-to";
 
   const areaHint = asPerChallan
     ? "Pick the area from the challan. Decides route tab + trip stop."
@@ -425,14 +476,14 @@ export function ShipToModal({
         titleRef={refLabel}
         size="lg"
         onClose={() => {
-          onSaved();
+          onSaved(savedInfo.current);
           onClose();
         }}
         footer={
           <ModalButton
             tone="confirm"
             onClick={() => {
-              onSaved();
+              onSaved(savedInfo.current);
               onClose();
             }}
           >
@@ -457,7 +508,7 @@ export function ShipToModal({
 
   return (
     <ModalShell
-      title="Change ship-to"
+      title={title}
       titleRef={refLabel}
       size="lg"
       busy={busy}
@@ -518,7 +569,7 @@ export function ShipToModal({
         </div>
         <button
           type="button"
-          disabled={!current.isChanged || busy || resetPending}
+          disabled={!current.isChanged || busy || resetPending || inheritPending}
           onClick={() => {
             setResetPending(true);
             setErr(null);
@@ -529,7 +580,38 @@ export function ShipToModal({
         </button>
       </div>
 
-      {resetPending ? (
+      {/* v27.81 — PART MODE, the part has its own: "Same as the bill". */}
+      {canInherit && !resetPending && (
+        inheritPending ? (
+          <div className="mt-[18px] rounded-[10px] border border-ink-100 bg-white px-4 py-3.5 text-[13px] text-ink-700">
+            On <b>Save</b>, this part goes back to the bill&apos;s ship-to: <b>{part.inheritName}</b>. Its own challan
+            copies are hidden (the files are kept).
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => setInheritPending(false)}
+              className="ml-2 font-semibold text-brand-700 hover:underline disabled:opacity-40"
+            >
+              Undo
+            </button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => {
+              setInheritPending(true);
+              setErr(null);
+            }}
+            className="mt-[18px] flex w-full items-center gap-2 rounded-[10px] border border-ink-100 bg-white px-4 py-3 text-left text-[13px] text-ink-700 hover:bg-ink-25 disabled:opacity-45"
+          >
+            <span className="font-semibold text-ink-900">Same as the bill</span>
+            <span className="min-w-0 truncate text-ink-600">({part.inheritName})</span>
+          </button>
+        )
+      )}
+
+      {inheritPending ? null : resetPending ? (
         <div className="mt-[18px] rounded-[10px] border border-ink-100 bg-white px-4 py-3.5 text-[13px] text-ink-700">
           On <b>Save</b>, the ship-to goes back to {billedTo ? <b>{billedTo}</b> : "the customer"}. Any challan copies are
           hidden (the files are kept).

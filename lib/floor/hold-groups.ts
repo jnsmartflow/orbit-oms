@@ -17,6 +17,7 @@
 
 import { compareHoldRows } from "@/lib/floor/sort";
 import { holdAgeDays } from "@/lib/floor/hold-log";
+import { narrowToInvoiceIds, type FloorInvoiceRow } from "@/lib/floor/invoice-rows";
 import type { FloorHoldRow } from "@/lib/floor/types";
 
 /**
@@ -37,9 +38,44 @@ export interface HoldDealerGroup {
   rows: FloorHoldRow[];
 }
 
+/**
+ * PER-PART SHIP-TO (v27.81, owner rule 4) — the division-blocks rule
+ * (lib/floor/division-blocks.ts expandByShop) for the On hold tab. A split OBD
+ * whose HELD parts (its drawn invoiceRows) go to TWO OR MORE shops becomes one
+ * row PER SHOP, narrowed to that shop's parts (narrowToInvoiceIds — its litres
+ * / kg are theirs) and keyed / named by that part's ship-to, so it sits in
+ * each shop's dealer group. Every other row comes back as the SAME object —
+ * with every part inheriting (all live data) the list is exactly the input.
+ * The OBD stays the unit of selection: each copy ticks only its own invoices
+ * (holdKeysOf → inv:<id>), so no key repeats.
+ */
+export function expandHoldByShop(rows: readonly FloorHoldRow[]): FloorHoldRow[] {
+  return rows.flatMap((r) => {
+    const byShop = new Map<string, FloorInvoiceRow[]>();
+    for (const inv of r.invoiceRows) {
+      const list = byShop.get(inv.shipTo.stopKey) ?? [];
+      list.push(inv);
+      byShop.set(inv.shipTo.stopKey, list);
+    }
+    if (byShop.size < 2) return [r];
+    return Array.from(byShop.values()).map((invs): FloorHoldRow => {
+      const s = invs[0].shipTo;
+      return {
+        ...narrowToInvoiceIds(r, invs.map((i) => i.id)),
+        stopKey: s.stopKey,
+        dealerName: s.dealerName,
+        isShipToOverride: s.isShipToOverride,
+        area: s.area,
+        deliveryType: s.deliveryType,
+      };
+    });
+  });
+}
+
 export function groupHoldByDealer(rows: readonly FloorHoldRow[]): HoldDealerGroup[] {
   const byKey = new Map<string, FloorHoldRow[]>();
-  for (const row of rows) {
+  // v27.81 — a held split OBD going to two shops sits in BOTH shops' groups.
+  for (const row of expandHoldByShop(rows)) {
     const key = row.stopKey ?? `o:${row.orderId}`;
     const list = byKey.get(key);
     if (list) list.push(row);
