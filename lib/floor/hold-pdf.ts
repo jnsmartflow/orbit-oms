@@ -61,7 +61,9 @@ export function buildHoldPdf(rows: FloorHoldRow[], scope: string, now: Date): Ho
       return {
         obdNumber: r.obdNumber,
         orderDate: fmtDateTime(r.obdDateTime),
-        shipTo: r.dealerName,
+        // v27.81 — the hold list stays per OBD: its ship-to, plus "2 shops"
+        // when its parts go to 2+ shops (rule 6; never today).
+        shipTo: r.shopCount !== undefined && r.shopCount > 1 ? `${r.dealerName} · ${r.shopCount} shops` : r.dealerName,
         route: r.route ?? "—",
         heldSince: r.heldSinceSource === "approx" ? `~ ${label}` : label,
       };

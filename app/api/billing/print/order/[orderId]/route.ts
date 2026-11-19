@@ -7,15 +7,15 @@ import { isBillOnSentTrip, loadPrintTrips } from "@/lib/billing/print";
 export const dynamic = "force-dynamic";
 
 /**
- * GET /api/billing/print/order/[orderId]?tripId=[&dropSeq=] — one bill for the
- * Print tab's detail panel (Billing Print v2, 2026-10-05).
+ * GET /api/billing/print/order/[orderId]?tripId=[&tripDropId=][&dropSeq=] — one
+ * bill for the Print tab's detail panel (Billing Print v2, 2026-10-05).
  *
- * `dropSeq` (per-part ship-to, v27.81): one bill may be a Print LINE at two
- * stops of the trip (its parts go to two shops); the line's stop number picks
- * THAT line — its shop, invoices and copy state. Omitted, or no line at that
- * stop (the stops closed up since the list was read), → the bill's first line,
- * exactly as before. dropSeq rather than the stop id because PrintBillRow
- * carries dropSeq; it is unique within a trip.
+ * THE LINE (per-part ship-to, v27.81): one bill may be a Print LINE at two
+ * stops of the trip (its parts go to two shops). `tripDropId` (the stop id,
+ * PrintBillRow.tripDropId) picks THAT line — its shop, invoices and copy
+ * state; it survives the stops closing up. `dropSeq` is the older fallback
+ * (unique within a trip, but renumbered when a stop is removed). Neither, or
+ * no line there, → the bill's first line, exactly as before.
  *
  * Answer: `{ detail, bill, trip }`
  *   detail — the bill, its active lines and its CONFIRMED pick findings, from
@@ -64,12 +64,18 @@ export async function GET(
   if (!detail) return NextResponse.json({ error: "Order not found" }, { status: 404 });
 
   const [trip] = await loadPrintTrips([tripId]);
+  const stopParam = search.get("tripDropId");
+  const stopId = stopParam !== null ? Number(stopParam) : null;
+  if (stopId !== null && (!Number.isInteger(stopId) || stopId <= 0)) {
+    return NextResponse.json({ error: "Invalid tripDropId" }, { status: 400 });
+  }
   const dropSeqParam = search.get("dropSeq");
   const dropSeq = dropSeqParam !== null ? Number(dropSeqParam) : null;
   if (dropSeq !== null && (!Number.isInteger(dropSeq) || dropSeq <= 0)) {
     return NextResponse.json({ error: "Invalid dropSeq" }, { status: 400 });
   }
   const bill =
+    (stopId !== null ? trip?.rows.find((r) => r.orderId === orderId && r.tripDropId === stopId) : undefined) ??
     (dropSeq !== null ? trip?.rows.find((r) => r.orderId === orderId && r.dropSeq === dropSeq) : undefined) ??
     trip?.rows.find((r) => r.orderId === orderId) ??
     null;

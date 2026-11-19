@@ -154,6 +154,9 @@ export interface PrintBillRow {
   shipToName: string | null;
   routeName: string | null;
   dropSeq: number;
+  /** v27.81 — THIS line's stop (trip_drops.id). One bill may be a line at two
+   *  stops of a trip (per-part ship-to); the detail route opens a line by it. */
+  tripDropId: number;
   litres: number;
   /** SAP GIFTS (lib/orders/gift.ts): `litres` above is shown as stored but left
    *  out of the trip total. Still a bill and a stop — counted, copied. */
@@ -589,6 +592,7 @@ export async function loadPrintTrips(tripIds: number[]): Promise<PrintTrip[]> {
         shipToName: shipToNameOf(o),
         routeName: drop.routeName,
         dropSeq: drop.dropSeq,
+        tripDropId: drop.id,
         litres: litresOn(o),
         invoices: lines,
         isGift: isGiftBill(o.materialType),

@@ -27,7 +27,7 @@ import { useState } from "react";
 import { Building2 } from "lucide-react";
 import { FloorSkeleton } from "./floor-skeleton";
 // TINT / BASE — one owner for the word (components/picking/card-atoms.tsx).
-import { ColourWorkBadge } from "@/components/picking/card-atoms";
+import { ColourWorkBadge, ShopsChip } from "@/components/picking/card-atoms";
 import { HandBadge } from "@/components/shared/hand-badge";
 import { SampleBadge } from "@/components/shared/sample-badge";
 import { ChallanBadge } from "@/components/shared/challan-badge";
@@ -334,6 +334,13 @@ export function CancelledTab({
                         </span>
                       )}
                       <span className="text-[11.5px] font-medium text-[#111827]">{row.dealerName}</span>
+                      {/* v27.81 — cancel is per OBD: the OBD's ship-to, plus "2 shops"
+                          when its parts go to 2+ shops (nothing today). */}
+                      {row.shopCount !== undefined && row.shopCount > 1 && (
+                        <span className="ml-1.5 inline-block align-[-1px]">
+                          <ShopsChip count={row.shopCount} />
+                        </span>
+                      )}
                       {row.isKeyCustomer && <span className="ml-1.5 text-[#f59e0b]">★</span>}
                       {isSite && <Building2 size={12} className="ml-1 inline-block align-[-1px] text-[#475569]" />}
                       {row.colourWork !== null && (

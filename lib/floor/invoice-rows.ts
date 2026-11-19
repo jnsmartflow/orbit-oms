@@ -32,8 +32,46 @@ import { parseArticleTag } from "@/lib/article-tag-parse";
 import { isStickerLine, loadLines } from "@/lib/orders/sticker";
 import { ARTICLE_WORD_ABBR } from "@/lib/floor/format";
 
-/** One invoice of a SPLIT OBD, as the board row carries it. */
-export interface FloorInvoiceRow {
+/**
+ * PER-PART SHIP-TO (Schema v27.81, owner 2026-11-19 — plan §D.1): where THIS
+ * invoice row goes. Built on the SERVER (lib/floor/queries.ts floorShipTo over
+ * lib/ship-to/effective.ts effectiveShipTo(order, part)) — the SAME function
+ * that builds the OBD row's own fields, so a part that INHERITS (every part at
+ * v27.81) carries exactly the OBD row's values with own = false.
+ */
+export interface InvoiceShipTo {
+  /** true = the part's OWN ship-to; false = inherited from the OBD. */
+  own: boolean;
+  /** The block / row title — FloorPartyFields.dealerName's rule. */
+  dealerName: string;
+  /** Dealer redirect OR typed ship-to — never the bare flag. */
+  isShipToOverride: boolean;
+  /** The redirect target's name, or the typed text — the "→ {target}" line. */
+  shipToOverrideName: string | null;
+  /** Area name (the typed area when typed, else the dealer's). */
+  area: string | null;
+  deliveryType: string | null;
+  /** computeDropKey(effectiveDropInput(order, part)) — this part's STOP. Equality only. */
+  stopKey: string;
+}
+
+/** What a drawn row shows as its ship-to: a part's InvoiceShipTo, or the OBD
+ *  row's own fields (shipOf). stopKey null when the row carries none. */
+export type DrawShip = Omit<InvoiceShipTo, "stopKey"> & { stopKey: string | null };
+
+/** One invoice of a SPLIT OBD, as the board row carries it — the facts plus
+ *  its ship-to (v27.81). */
+export interface FloorInvoiceRow extends InvoiceRowFacts {
+  /** v27.81 — REQUIRED: every board / hold / cancelled feed fills it. */
+  shipTo: InvoiceShipTo;
+}
+
+/**
+ * The FACTS of one invoice row (buildInvoiceRows / lib/order-invoices/
+ * invoice-load.ts): everything but the ship-to, which needs the order and is
+ * added by the Floor feeds. Trip, Print and report readers use these facts.
+ */
+export interface InvoiceRowFacts {
   /** order_invoices.id — the row identity (draw key `inv:<id>`). */
   id: number;
   seq: number;
@@ -138,7 +176,7 @@ export function buildInvoiceRows(input: {
   activeLines: InvoiceLineFacts[];
   obdKg: number | null;
   unitKgBySku?: ReadonlyMap<string, number>;
-}): FloorInvoiceRow[] {
+}): InvoiceRowFacts[] {
   const rows = input.rows.slice().sort((a, b) => a.seq - b.seq);
   if (rows.length < 2) return [];
 
@@ -245,7 +283,7 @@ export interface PlaceLoad {
   invoices: number;
 }
 
-type PlaceRow = Pick<FloorInvoiceRow, "tripDropId" | "litres" | "kg" | "kgExact" | "tins">;
+type PlaceRow = Pick<InvoiceRowFacts, "tripDropId" | "litres" | "kg" | "kgExact" | "tins">;
 
 /**
  * The load of the invoices that are in a place — `inPlace(tripDropId)` says
@@ -452,8 +490,8 @@ export function hasLoadGroup(rows: ReadonlyArray<Pick<FloorInvoiceRow, "loadRoot
  * where the rest are (awayChipOf).
  */
 type Narrowable = {
-  invoiceRows: FloorInvoiceRow[];
-  invoiceRowsAll?: FloorInvoiceRow[];
+  invoiceRows: InvoiceRowFacts[];
+  invoiceRowsAll?: InvoiceRowFacts[];
   volumeLitres: number | null;
   weightKg: number | null;
 };
@@ -494,7 +532,7 @@ export function narrowToInvoiceIds<T extends Narrowable>(row: T, ids: readonly n
   return narrowWhere(row, (r) => set.has(r.id));
 }
 
-function narrowWhere<T extends Narrowable>(row: T, keep: (r: FloorInvoiceRow) => boolean): T {
+function narrowWhere<T extends Narrowable>(row: T, keep: (r: InvoiceRowFacts) => boolean): T {
   const load = loadWhere(row.invoiceRows ?? [], keep);
   if (load === null) return row;
   // ⚠ Narrowing an already-narrowed row keeps the OBD's ORIGINAL full list.
@@ -513,7 +551,8 @@ function narrowWhere<T extends Narrowable>(row: T, keep: (r: FloorInvoiceRow) =>
 // AMBER bar and a chip naming the invoices this list does not show — "2 on
 // L-02" in To plan, "2 in To plan" on a trip stop, "1 on L-05" beside it. All
 // in one place → null, and the bar stays the `pair` token. A place is To plan
-// or ONE trip (an OBD's rows on a trip share one stop — trip-bills.ts).
+// or ONE trip (keyed by trip: since v27.81 a part with its own ship-to may sit
+// at a second stop of the same trip — still one place here).
 
 /** The chip for the invoices of `all` that are not in `drawn`, or null when none are away. */
 export function awayChipOf(
@@ -661,6 +700,14 @@ export interface InvoiceDrawRow<T> {
   /** Split load: this row's place in its load group ("part k of n"); null when
    *  the row is not in one. */
   load: { k: number; n: number } | null;
+  /**
+   * PER-PART SHIP-TO (v27.81, plan §D.2): what THIS drawn row shows as its
+   * ship-to — the invoice's own (invoice.shipTo) on an invoice row, else the
+   * OBD row's (shipOf). EVERY ship-to draw site reads this, never row.*; the
+   * parent row stays shared for everything else (sort, live-merge, selection).
+   * On an inheriting part it equals shipOf(row) field for field, own = false.
+   */
+  ship: DrawShip;
 }
 
 type Drawable = {
@@ -668,7 +715,28 @@ type Drawable = {
   invoiceRows?: FloorInvoiceRow[];
   invoiceRowsAll?: FloorInvoiceRow[];
   redelivery?: { id: number } | null;
+  // The OBD row's own ship-to fields (shipOf). Hold rows carry no
+  // shipToOverrideName, and stopKey only with the Floor extras.
+  dealerName?: string;
+  isShipToOverride?: boolean;
+  shipToOverrideName?: string | null;
+  area?: string | null;
+  deliveryType?: string | null;
+  stopKey?: string;
 };
+
+/** The OBD row's own ship-to as a DrawShip (own = false). */
+export function shipOf(row: Omit<Drawable, "orderId">): DrawShip {
+  return {
+    own: false,
+    dealerName: row.dealerName ?? "",
+    isShipToOverride: row.isShipToOverride ?? false,
+    shipToOverrideName: row.shipToOverrideName ?? null,
+    area: row.area ?? null,
+    deliveryType: row.deliveryType ?? null,
+    stopKey: row.stopKey ?? null,
+  };
+}
 
 /**
  * An OBD row → the rows to draw. A split OBD gives one per invoice (seq order);
@@ -685,7 +753,7 @@ export function drawRowsOf<T extends Drawable>(row: T): InvoiceDrawRow<T>[] {
   const all = row.redelivery ? [] : row.invoiceRowsAll ?? row.invoiceRows ?? [];
   if (all.length < 2) {
     const key = row.redelivery ? `rd:${row.redelivery.id}` : String(row.orderId);
-    return [{ key, row, invoice: null, k: 1, n: 1, first: true, last: true, chip: null, load: null }];
+    return [{ key, row, invoice: null, k: 1, n: 1, first: true, last: true, chip: null, load: null, ship: shipOf(row) }];
   }
   // Split load: papers by seq, each followed by its parts. With no load row
   // drawOrderOf hands back the SAME array, and every value is as before.
@@ -710,6 +778,8 @@ export function drawRowsOf<T extends Drawable>(row: T): InvoiceDrawRow<T>[] {
       last: i === inv.length - 1,
       chip: paperN > 1 ? { k: paperK, n: paperN } : null,
       load: place !== undefined && place.n > 1 ? { k: place.k, n: place.n } : null,
+      // v27.81 — the part's own ship-to (equal to the OBD's while it inherits).
+      ship: invoice.shipTo,
     };
   });
 }

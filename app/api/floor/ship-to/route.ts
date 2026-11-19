@@ -136,10 +136,12 @@ async function saveFromModal(req: Request, changedById: number): Promise<NextRes
   const removeCopyIds = r.mode === "typed" ? r.removeCopyIds : [];
   if (r.mode === "typed") {
     // Only this bill's own copies — a Billing (SO) copy is view-only here.
-    const notMine = await checkRemovable(removeCopyIds, "floor", orderId);
+    // v27.81 — the OBD's OWN copies (orderInvoiceId NULL): a part's copies are
+    // the part's, removed and capped through its own route.
+    const notMine = await checkRemovable(removeCopyIds, "floor", orderId, null);
     if (notMine !== null) return NextResponse.json({ error: notMine.error }, { status: notMine.status });
 
-    const ownAfter = (await countActiveOwnCopies("floor", orderId)) - removeCopyIds.length + files.length;
+    const ownAfter = (await countActiveOwnCopies("floor", orderId, null)) - removeCopyIds.length + files.length;
     if (ownAfter > MAX_ACTIVE_COPIES) {
       return NextResponse.json(
         { error: `At most ${MAX_ACTIVE_COPIES} copies per bill — remove one before adding another.` },

@@ -633,6 +633,10 @@ export interface FloorHoldRow extends FloorPartyFields {
   invoiceRows: FloorInvoiceRow[];
   /** Every invoice of the OBD when invoiceRows is narrowed — k/n, the away chip. */
   invoiceRowsAll?: FloorInvoiceRow[];
+  /** PER-PART SHIP-TO (v27.81, owner rule 6): how many shops the OBD's parts
+   *  go to — PRESENT ONLY WHEN 2 OR MORE (getFloorHold). The Hold table and
+   *  the hold PDF say "2 shops"; the freight pool rides the same field. */
+  shopCount?: number;
   // ── Floor's On hold tab ONLY (2026-10-30, dealer groups) — set by
   // getFloorHold's `floorExtras` option, which only /api/floor/hold and the
   // live row patches (lib/floor/rows.ts) pass. ABSENT for Freight Trips and the
@@ -688,6 +692,9 @@ export interface FloorCancelledRow extends FloorPartyFields {
   /** How many SAP invoices the OBD carries (1 = unsplit) — "n invoices" on the
    *  ONE row a split OBD keeps here (Add invoices Phase 4). */
   invoiceCount: number;
+  /** PER-PART SHIP-TO (v27.81, rule 6): cancel is per OBD, so the row keeps
+   *  the OBD's ship-to and says "2 shops" — PRESENT ONLY WHEN 2 OR MORE. */
+  shopCount?: number;
   /** 6.3 (2026-10-19) — a SPLIT OBD with PER-INVOICE CIs (not cancelled): its
    *  CI'd invoices (narrowed; every one in invoiceRowsAll) and one line each,
    *  drawn one row per invoice (cancelled-tab.tsx). Absent on every other row. */
@@ -869,6 +876,27 @@ export interface FloorTintPause {
   at: string;
 }
 
+/** One invoice row of a split OBD in the detail payload (FloorDetail.parts). */
+export interface FloorDetailPart {
+  /** order_invoices.id / seq. */
+  rowId: number;
+  seq: number;
+  /** true = the part's OWN ship-to; false = it inherits the bill's (every part today). */
+  own: boolean;
+  /** FloorDetail's own fields, for THIS part — equal to the bill's when it inherits. */
+  shipToName: string;
+  shipToCode: string | null;
+  isShipToOverride: boolean;
+  shipToText: string | null;
+  typedAreaName: string | null;
+  typedAreaDeliveryType: string | null;
+  area: string | null;
+  deliveryType: string | null;
+  /** Copies this part shows: its own, plus the bill's (own + Billing) ONLY
+   *  while it inherits. */
+  copyCount: number;
+}
+
 export interface FloorDetail {
   orderId: number;
   obdNumber: string;
@@ -960,8 +988,16 @@ export interface FloorDetail {
   /** The bill's own dealer's area — the ship-to modal's default area. */
   customerAreaId: number | null;
   /** Active challan copies this bill shows: its own + the SO's Billing copies
-   *  still visible by the one rule (lib/ship-to/copies-server.ts). */
+   *  still visible by the one rule (lib/ship-to/copies-server.ts). Since
+   *  v27.81 "its own" = the OBD's own (orderInvoiceId NULL); a part's own
+   *  copies are counted on the part (parts[].copyCount). */
   shipToCopyCount: number;
+  /**
+   * PER-PART SHIP-TO (v27.81, plan §D.1) — each invoice row of a SPLIT OBD
+   * (2+ rows), seq order, with its EFFECTIVE ship-to; [] on an unsplit bill.
+   * The panel scoped to a part shows that part's ship-to when it has its own.
+   */
+  parts: FloorDetailPart[];
 
   // Details — Reference
   soNumber: string | null;

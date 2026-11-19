@@ -50,7 +50,7 @@ import { formatArticleTag } from "@/lib/floor/format";
 // panel's "Invoice date" reads) is used inside InvoiceLines.
 import { InvoiceCountChip, InvoiceLines, LoadPartChip, ObdDateLine, fmtDateTime } from "./bill-ref-cells";
 // ONE FLOOR ROW PER INVOICE (Add invoices Phase 4 commit 2) — the draw rule.
-import { articleShareText, awayChipOf, drawRowsOf, goneChipOf, paperCountOf, type InvoiceDrawRow } from "@/lib/floor/invoice-rows";
+import { articleShareText, awayChipOf, drawRowsOf, goneChipOf, paperCountOf, shipOf, type InvoiceDrawRow } from "@/lib/floor/invoice-rows";
 // TINT / BASE -- one owner for the word, shared with both picking boards. The
 // pinks it paints are copied FROM this module's neighbour status-pill.tsx.
 import { ColourWorkBadge } from "@/components/picking/card-atoms";
@@ -131,6 +131,22 @@ export function shipMarkers(row: { smu: string | null; isShipToOverride: boolean
     isSite: row.smu !== null && PROJECT_SMUS.has(row.smu) && !row.isShipToOverride,
     isRedirect: row.isShipToOverride,
   };
+}
+
+/**
+ * PER-PART SHIP-TO (v27.81, plan §D.2) — the tiny "own" mark beside a drawn
+ * invoice row's ship-to when THAT part has its own ship-to (own = true), so a
+ * part's change and a change inherited from the bill never look alike. Floor's
+ * ship-to violet (brand-800), text only — no new token. Renders nothing on an
+ * inheriting part, which is every part today. Exported for the Hold table.
+ */
+export function OwnShipToMark({ own }: { own: boolean }) {
+  if (!own) return null;
+  return (
+    <span className="ml-1.5 align-[1px] text-[9.5px] font-bold uppercase tracking-[0.04em] text-brand-800" title="This part has its own ship-to">
+      own
+    </span>
+  );
 }
 
 /** A row has something for the DC column: a tint delivery challan, or a typed
@@ -1195,7 +1211,11 @@ export function FloorTable({
     // row.orderId — that id belongs to the bill's FIRST trip (deskKeyOf).
     const rd = row.redelivery ?? null;
     const selKey = deskKeyOf(row);
-    const { isSite, isRedirect } = shipInfo(row);
+    // v27.81 — THIS drawn row's ship-to: the part's own on an invoice row,
+    // else the OBD row's (draw.ship / shipOf). Every ship-to read below uses
+    // `ship`, never row.* — identical on every row whose parts inherit.
+    const ship = draw?.ship ?? shipOf(row);
+    const { isSite, isRedirect } = shipInfo({ ...row, isShipToOverride: ship.isShipToOverride });
     const billedTo = shipToBlock && billedToFor ? billedToFor(row) : null;
     // THE TRIP TAG (2026-09-09), built once: beside the number on every row,
     // or on the date line of an ORB row (2026-10-07, M2) — see the OBD cell.
@@ -1855,8 +1875,9 @@ export function FloorTable({
             </span>
           )}
           <span className="text-[11.5px] font-medium text-[#111827]">
-            {row.dealerName}
+            {ship.dealerName}
           </span>
+          <OwnShipToMark own={ship.own} />
           {/* ★ amber and ⚡ red now render exactly as on an ordinary row — the
               soft variant has no fill to eat them, which is why the ⚡ can
               still carry Urgent on a Same-SO row (see the colour ruling in
@@ -1933,16 +1954,16 @@ export function FloorTable({
             <div
               className="overflow-hidden text-ellipsis whitespace-nowrap text-[11px] text-brand-800"
               title={
-                row.customerName && row.shipToOverrideName
-                  ? `${row.customerName} → ship to ${row.shipToOverrideName}`
+                row.customerName && ship.shipToOverrideName
+                  ? `${row.customerName} → ship to ${ship.shipToOverrideName}`
                   : undefined
               }
             >
-              {row.customerName && row.shipToOverrideName ? (
+              {row.customerName && ship.shipToOverrideName ? (
                 <>
                   {row.customerName}
                   <span className="mx-1 opacity-60">→</span>
-                  <b className="font-semibold">{row.shipToOverrideName}</b>
+                  <b className="font-semibold">{ship.shipToOverrideName}</b>
                 </>
               ) : (
                 "→ ship-to changed"

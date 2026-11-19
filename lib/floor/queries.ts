@@ -69,7 +69,16 @@ import { HAS_ROW_OFF_TRIP_WHERE, onTripsWhere } from "@/lib/order-invoices/trip-
 import { computeDropKey } from "@/lib/trips/drop-key";
 import { isGiftBill } from "@/lib/orders/gift";
 import { dealerDisplayName } from "@/lib/orders/dealer-name";
-import { deskShipToName, effectiveArea, isRedirected, isTypedShipTo } from "@/lib/ship-to/effective";
+import {
+  deskShipToName,
+  effectiveArea,
+  effectiveDropInput,
+  effectiveShipTo,
+  isRedirected,
+  isTypedShipTo,
+  type PartShipToCols,
+} from "@/lib/ship-to/effective";
+import { loadOwnPartShipTos, loadShopCounts } from "@/lib/order-invoices/part-ship-to-read";
 import { copyCountsForBills } from "@/lib/ship-to/copies-server";
 import {
   HOLD_LOG_NOTES,
@@ -103,7 +112,14 @@ import { resolveSoNames } from "@/lib/sales-officer/resolve";
 import { divisionOf } from "./division-blocks";
 // One invoice, several OBDs (2026-10-08) — pure, no prisma.
 import { buildPartnerMap, partnersOf, type InvoicePartner } from "./invoice-pairs";
-import { addedInvoiceNosOf, narrowToHeld, narrowToInvoiceIds, type FloorInvoiceRow } from "./invoice-rows";
+import {
+  addedInvoiceNosOf,
+  narrowToHeld,
+  narrowToInvoiceIds,
+  type FloorInvoiceRow,
+  type InvoiceRowFacts,
+  type InvoiceShipTo,
+} from "./invoice-rows";
 import { loadSplitInvoiceRows } from "@/lib/order-invoices/invoice-load";
 import { INVOICE_SOURCE } from "@/lib/order-invoices/source";
 
@@ -398,7 +414,7 @@ const FLOOR_AREA_SELECT = {
 } as const;
 type FloorArea = Prisma.area_masterGetPayload<{ select: typeof FLOOR_AREA_SELECT }>;
 
-const FLOOR_DEALER_SELECT = {
+export const FLOOR_DEALER_SELECT = {
   id: true,
   customerName: true,
   isKeyCustomer: true,
@@ -436,9 +452,18 @@ async function typedAreasById(
  *   isShipToOverride   dealer id OR typed text — never the bare flag
  *   shipToOverrideName the redirect target's name, or the typed text — the
  *                "{dealer} → {target}" line
+ *
+ * PER-PART SHIP-TO (v27.81, plan §D.1): the SAME function builds a PART of a
+ * split OBD — pass the part's own columns (null / omitted = the OBD's, rule 1)
+ * and the master rows of the parts' own dealers. It reads the four ship-to
+ * columns ONLY through effectiveShipTo, so an inheriting part (every part
+ * today) gets exactly the OBD row's values. A part's own dealer redirect names
+ * that dealer; a reset (FALSE) or a typed part falls back to the bill's own
+ * customer as the dealer, exactly as an OBD with no redirect does.
  */
 function floorShipTo(
   order: {
+    shipToOverride?: boolean | null;
     shipToText: string | null;
     shipToAreaId: number | null;
     shipToOverrideCustomerId: number | null;
@@ -447,22 +472,131 @@ function floorShipTo(
     shipToOverrideCustomer: FloorDealer | null;
   },
   typedAreas: Map<number, FloorArea>,
+  part: PartShipToCols | null = null,
+  partDealers: ReadonlyMap<number, FloorDealer> = new Map(),
 ) {
-  const dealer = order.shipToOverrideCustomer ?? order.customer;
-  const typed = isTypedShipTo(order);
+  const eff = effectiveShipTo(
+    {
+      shipToOverride: order.shipToOverride ?? null,
+      shipToOverrideCustomerId: order.shipToOverrideCustomerId,
+      shipToText: order.shipToText,
+      shipToAreaId: order.shipToAreaId,
+    },
+    part,
+  );
+  // The redirect target's master row: the OBD's relation while inheriting,
+  // else the part's own dealer (none for a reset or a typed part).
+  const target = !eff.own
+    ? order.shipToOverrideCustomer
+    : eff.shipToOverrideCustomerId !== null
+      ? (partDealers.get(eff.shipToOverrideCustomerId) ?? null)
+      : null;
+  const dealer = target ?? order.customer;
+  const typed = isTypedShipTo(eff);
   const area = effectiveArea(
-    order,
-    order.shipToAreaId !== null ? (typedAreas.get(order.shipToAreaId) ?? null) : null,
+    eff,
+    eff.shipToAreaId !== null ? (typedAreas.get(eff.shipToAreaId) ?? null) : null,
     dealer?.area ?? null,
   );
   return {
+    own: eff.own,
     dealer,
     area,
     deliveryType: area?.deliveryType?.name ?? null,
-    dealerName: deskShipToName(order, { effectiveDealer: dealer?.customerName, sap: order.shipToCustomerName }),
-    isShipToOverride: isRedirected(order),
-    shipToOverrideName: typed ? (order.shipToText as string) : (order.shipToOverrideCustomer?.customerName ?? null),
+    dealerName: deskShipToName(eff, { effectiveDealer: dealer?.customerName, sap: order.shipToCustomerName }),
+    isShipToOverride: isRedirected(eff),
+    shipToOverrideName: typed ? (eff.shipToText as string) : (target?.customerName ?? null),
   };
+}
+
+/** The order facts floorShipTo and the part's stop key read. */
+type FloorShipOrder = Parameters<typeof floorShipTo>[0] & {
+  id: number;
+  customerId: number | null;
+  shipToCustomerId: string;
+};
+
+/**
+ * PER-PART SHIP-TO (v27.81, plan §D.1) — the split OBDs' invoice rows with
+ * each row's InvoiceShipTo, built by floorShipTo over the row's own columns.
+ * Reads: ONE for the rows with their OWN ship-to (loadOwnPartShipTos; none
+ * when no OBD is split); then, only when a part has one, its dealers' master
+ * rows and any typed area not already loaded. With every part inheriting —
+ * all live data — the first read returns nothing and every row gets the OBD
+ * row's own values (own = false). SELECT-only, sequential.
+ */
+async function withPartShipTo(
+  orders: readonly FloorShipOrder[],
+  facts: ReadonlyMap<number, InvoiceRowFacts[]>,
+  typedAreas: Map<number, FloorArea>,
+): Promise<Map<number, FloorInvoiceRow[]>> {
+  const out = new Map<number, FloorInvoiceRow[]>();
+  if (facts.size === 0) return out;
+  const own = await loadOwnPartShipTos(Array.from(facts.keys()));
+  const ownCols = Array.from(own.values());
+  const dealerIds = Array.from(
+    new Set(ownCols.map((p) => p.shipToOverrideCustomerId).filter((id): id is number => id !== null)),
+  );
+  const partDealers = new Map<number, FloorDealer>(
+    dealerIds.length > 0
+      ? (
+          await prisma.delivery_point_master.findMany({ where: { id: { in: dealerIds } }, select: FLOOR_DEALER_SELECT })
+        ).map((d) => [d.id, d] as [number, FloorDealer])
+      : [],
+  );
+  const areaIds = Array.from(
+    new Set(
+      ownCols
+        .filter((p) => isTypedShipTo(p) && p.shipToAreaId !== null && !typedAreas.has(p.shipToAreaId))
+        .map((p) => p.shipToAreaId as number),
+    ),
+  );
+  const areas = new Map(typedAreas);
+  if (areaIds.length > 0) {
+    for (const { id, ...a } of await prisma.area_master.findMany({ where: { id: { in: areaIds } }, select: { id: true, ...FLOOR_AREA_SELECT } })) {
+      areas.set(id, a);
+    }
+  }
+  const byId = new Map(orders.map((o) => [o.id, o]));
+  facts.forEach((rows, orderId) => {
+    const order = byId.get(orderId);
+    if (!order) return;
+    out.set(
+      orderId,
+      rows.map((r) => {
+        return { ...r, shipTo: floorInvoiceShipTo(order, areas, own.get(r.id) ?? null, partDealers) };
+      }),
+    );
+  });
+  return out;
+}
+
+/** One invoice row's InvoiceShipTo — floorShipTo over the part's own columns
+ *  (null = inherits), plus the part's stop key. Exported for the read-only
+ *  dry run; withPartShipTo above is its one caller in the app. */
+export function floorInvoiceShipTo(
+  order: FloorShipOrder,
+  typedAreas: Map<number, FloorArea>,
+  part: PartShipToCols | null,
+  partDealers: ReadonlyMap<number, FloorDealer>,
+): InvoiceShipTo {
+  const s = floorShipTo(order, typedAreas, part, partDealers);
+  return {
+    own: s.own,
+    dealerName: s.dealerName,
+    isShipToOverride: s.isShipToOverride,
+    shipToOverrideName: s.shipToOverrideName,
+    area: s.area?.name ?? null,
+    deliveryType: s.deliveryType,
+    stopKey: computeDropKey(effectiveDropInput(order, part)),
+  };
+}
+
+/** Rule 6 — { shopCount } when an OBD's parts go to 2+ shops (distinct part
+ *  stop keys), else nothing, so every payload today keeps its exact keys. */
+function shopCountField(rows: readonly FloorInvoiceRow[] | undefined): { shopCount?: number } {
+  const n = new Set((rows ?? []).map((r) => r.shipTo.stopKey)).size;
+  return n > 1 ? { shopCount: n } : {};
 }
 
 // ── Date helpers (IST, UTC-midnight anchored — same basis as picking/queue) ──
@@ -654,7 +788,8 @@ export async function billToByObd(obdNumbers: string[]): Promise<Map<string, str
 export async function getBoardInvoiceRows(
   orders: Array<{ id: number; obdNumber: string }>,
   kgByOrder: ReadonlyMap<number, number | null>,
-): Promise<Map<number, FloorInvoiceRow[]>> {
+): Promise<Map<number, InvoiceRowFacts[]>> {
+  // v27.81: FACTS only — getFloorBoard adds each row's ship-to (withPartShipTo).
   // Phase 5 commit 1 (2026-10-13): the read moved to lib/order-invoices/
   // invoice-load.ts so the board and every trip total share it; each row now
   // also carries its own trip stop.
@@ -1312,8 +1447,8 @@ export async function getFloorBoard(
   // order_invoices / order_invoice_lines triggers (parent "orderId") are what
   // make the feed fetch that patch. Skipped with the partners for the Tint
   // Manager Base feed, which never reads it.
-  const invoiceRowMap = opts.skipInvoicePartners
-    ? new Map<number, FloorInvoiceRow[]>()
+  const invoiceFactMap = opts.skipInvoicePartners
+    ? new Map<number, InvoiceRowFacts[]>()
     : await getBoardInvoiceRows(
         orders,
         new Map(orders.map((o) => [o.id, o.querySnapshot?.totalWeight ?? null])),
@@ -1418,6 +1553,8 @@ export async function getFloorBoard(
   // no bill on the page is typed.
   const typedAreas = await typedAreasById(orders);
   const copyCounts = await copyCountsForBills(orders);
+  // v27.81 — each split OBD's invoice rows with their own ship-to.
+  const invoiceRowMap = await withPartShipTo(orders, invoiceFactMap, typedAreas);
 
   let rows: FloorBoardRow[] = [];
   for (const order of orders) {
@@ -1596,6 +1733,8 @@ export async function getFloorBoard(
       // reads addedInvoiceNos until commit 2 draws one row per invoice.
       invoiceRows: invoiceRowMap.get(order.id) ?? [],
       addedInvoiceNos: addedInvoiceNosOf(invoiceRowMap.get(order.id) ?? []),
+      // v27.81 rule 6 — "2 shops" (absent below 2: every row today).
+      ...shopCountField(invoiceRowMap.get(order.id)),
       // SEARCH ONLY — never displayed (owner decision 2026-09-29; FloorBoardRow).
       soNumber: order.soNumber ?? null,
       // Whose bill it is — map lookup only; the reads ran once above.
@@ -1882,13 +2021,13 @@ export async function getFloorHold(
   // 6.1 — a SPLIT OBD's invoices (one index-only read when none is split), and
   // the names of whoever held them. Its row carries the HELD ones (one drawn
   // row per held invoice, components/floor/hold-table.tsx); unsplit: [].
-  const splitRows = await loadSplitInvoiceRows(
+  const splitFacts = await loadSplitInvoiceRows(
     orders,
     new Map(orders.map((o) => [o.id, o.querySnapshot?.totalWeight ?? null] as const)),
   );
   const rowHolderIds = Array.from(
     new Set(
-      Array.from(splitRows.values())
+      Array.from(splitFacts.values())
         .flat()
         .map((r) => r.heldById)
         .filter((id): id is number => typeof id === "number"),
@@ -1902,6 +2041,8 @@ export async function getFloorHold(
 
   // Typed ship-to areas (step 7A) — no read when none is typed.
   const typedAreas = await typedAreasById(orders);
+  // v27.81 — each split OBD's invoice rows with their own ship-to.
+  const splitRows = await withPartShipTo(orders, splitFacts, typedAreas);
 
   // Floor's On hold tab only (opts.floorExtras): whose bill it is — the
   // board's own helper, the same rule and the same batched reads.
@@ -2000,6 +2141,8 @@ export async function getFloorHold(
       heldByName: latestHeld ? latestHeld.heldByName : heldByName,
       invoiceCount: invoiceCounts.get(order.id) ?? 1,
       invoiceRows: perInvoice ? all : [],
+      // v27.81 rule 6 — "2 shops" over ALL its invoices (absent below 2).
+      ...shopCountField(splitRows.get(order.id)),
       ...(salesOfficers
         ? {
             stopKey: computeDropKey(order),
@@ -2216,16 +2359,21 @@ export async function getFloorCancelled(
   const invoiceCounts = await getInvoiceCounts(orders.map((o) => o.id));
   // 6.3 — the invoices of the OBDs with a per-invoice CI (no read when none).
   const ciSplitOrders = orders.filter((o) => invCisByOrder.has(o.id));
-  const ciSplitRows =
+  const ciSplitFacts =
     ciSplitOrders.length > 0
       ? await loadSplitInvoiceRows(
           ciSplitOrders,
           new Map(ciSplitOrders.map((o) => [o.id, o.querySnapshot?.totalWeight ?? null] as const)),
         )
-      : new Map<number, FloorInvoiceRow[]>();
+      : new Map<number, InvoiceRowFacts[]>();
 
   // Typed ship-to areas (step 7A) — no read when none is typed.
   const typedAreas = await typedAreasById(orders);
+  // v27.81 — the CI'd split OBDs' invoice rows with their own ship-to, and the
+  // "2 shops" count of every cancelled row (cancel is per OBD: the row keeps
+  // the OBD's ship-to, plan §D.2). ONE read for the count; none on an empty list.
+  const ciSplitRows = await withPartShipTo(orders, ciSplitFacts, typedAreas);
+  const shopCounts = await loadShopCounts(orders);
 
   const rows: FloorCancelledRow[] = [];
   for (const order of orders) {
@@ -2277,6 +2425,7 @@ export async function getFloorCancelled(
       soNumber: order.soNumber ?? null,
       dealerInMaster: dealer != null,
       invoiceCount: invoiceCounts.get(order.id) ?? 1,
+      ...((shopCounts.get(order.id) ?? 1) > 1 ? { shopCount: shopCounts.get(order.id) } : {}),
     };
 
     if (ci !== null) {

@@ -305,7 +305,7 @@ export function BillingPrintTab({
   // The open LINE (v27.81): one OBD may be a line at two stops of a trip
   // (per-part ship-to), so a line is (orderId, dropSeq) — dropSeq is unique
   // within a trip (trip_drops' unique (tripId, dropSeq)).
-  const [openBill, setOpenBill] = useState<{ orderId: number; dropSeq: number } | null>(null);
+  const [openBill, setOpenBill] = useState<{ orderId: number; dropSeq: number; tripDropId: number } | null>(null);
   const openBillId = openBill?.orderId ?? null;
   const [busy, setBusy] = useState(false);
   const [copiedFlash, setCopiedFlash] = useState(false);
@@ -733,7 +733,7 @@ export function BillingPrintTab({
                         index={i + 1}
                         nowMs={nowMs}
                         open={openBill?.orderId === r.orderId && openBill.dropSeq === r.dropSeq}
-                        onOpen={() => setOpenBill({ orderId: r.orderId, dropSeq: r.dropSeq })}
+                        onOpen={() => setOpenBill({ orderId: r.orderId, dropSeq: r.dropSeq, tripDropId: r.tripDropId })}
                       />
                     ))}
                   </tbody>
@@ -750,6 +750,7 @@ export function BillingPrintTab({
           orderId={openBillId}
           tripId={selected.id}
           dropSeq={openBill?.dropSeq}
+          tripDropId={openBill?.tripDropId}
           canEdit={canEdit}
           onClose={() => setOpenBill(null)}
           onMarkedDone={() => {

@@ -96,10 +96,12 @@ export async function copyCountsForBills(
   const typed = bills.filter((b) => b.shipToText !== null && b.shipToOverrideCustomerId === null);
   if (typed.length === 0) return out;
 
-  // 1. Each bill's own (Floor) copies.
+  // 1. Each bill's own (Floor) copies — the OBD's OWN only (orderInvoiceId
+  // NULL, v27.81): each owner counts its own, and a part's copies belong to the
+  // part (FloorDetail.parts). 0 part copies live, so the count is unchanged.
   const own = await prisma.ship_to_copies.groupBy({
     by: ["orderId"],
-    where: { orderId: { in: typed.map((b) => b.id) }, removedAt: null },
+    where: { orderId: { in: typed.map((b) => b.id) }, orderInvoiceId: null, removedAt: null },
     _count: { _all: true },
   });
   for (const g of own) if (g.orderId !== null) out.set(g.orderId, g._count._all);

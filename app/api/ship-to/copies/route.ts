@@ -17,6 +17,11 @@ export const dynamic = "force-dynamic";
  *   ?orderId   — FLOOR's view: the bill's own copies, plus the SO's Billing
  *                copies that still show on this bill (the one visibility rule,
  *                lib/ship-to/copies-server.ts billingCopiesVisibleWhere).
+ *                Since v27.81 "the bill's own" = the OBD's own (orderInvoiceId
+ *                NULL) — 0 part copies live, so the list is unchanged.
+ *   &orderInvoiceId — (v27.81, per-part ship-to) ONE PART of that bill: the
+ *                part's own copies, plus the bill's (own + Billing) ONLY while
+ *                the part inherits (its shipToOverride is NULL).
  *
  * Each copy: { id, owner: "billing" | "floor", contentType, sizeBytes,
  * createdAt, uploadedByName, canRemove }. `canRemove` answers for THIS caller
@@ -79,18 +84,43 @@ export async function GET(req: Request): Promise<NextResponse> {
     return NextResponse.json({ copies: rows.map((r) => shape(r, "billing", canRemove)) });
   }
 
+  // v27.81 — optional: one part of the bill (must be that bill's row).
+  const rawPart = searchParams.get("orderInvoiceId");
+  const partId = rawPart === null ? null : positiveIntParam(rawPart);
+  if (rawPart !== null && partId === null) {
+    return NextResponse.json({ error: "orderInvoiceId must be a positive integer" }, { status: 400 });
+  }
+  const part =
+    partId === null
+      ? null
+      : await prisma.order_invoices.findFirst({ where: { id: partId, orderId: orderId! }, select: { id: true, shipToOverride: true } });
+  if (partId !== null && part === null) return NextResponse.json({ error: "Invoice row not found on this bill" }, { status: 404 });
+  const partInherits = part === null || part.shipToOverride === null;
+
   const bill = await prisma.orders.findFirst({
     where: { id: orderId!, isRemoved: false },
     select: { soNumber: true, shipToOverrideCustomerId: true, shipToText: true, shipToAreaId: true },
   });
   if (!bill) return NextResponse.json({ error: "Order not found" }, { status: 404 });
 
-  const own = await prisma.ship_to_copies.findMany({
-    where: activeOwnCopiesWhere("floor", orderId!),
-    select: COPY_SELECT,
-    orderBy: { id: "asc" },
-  });
-  const billingWhere = billingCopiesVisibleWhere(bill);
+  // The OBD's own copies — shown on the bill, and on a part only while it inherits.
+  const own = partInherits
+    ? await prisma.ship_to_copies.findMany({
+        where: activeOwnCopiesWhere("floor", orderId!, null),
+        select: COPY_SELECT,
+        orderBy: { id: "asc" },
+      })
+    : [];
+  // A part's own copies (none unless a part is asked for).
+  const partOwn =
+    part !== null
+      ? await prisma.ship_to_copies.findMany({
+          where: activeOwnCopiesWhere("floor", orderId!, part.id),
+          select: COPY_SELECT,
+          orderBy: { id: "asc" },
+        })
+      : [];
+  const billingWhere = partInherits ? billingCopiesVisibleWhere(bill) : null;
   const billing =
     billingWhere === null
       ? []
@@ -98,6 +128,10 @@ export async function GET(req: Request): Promise<NextResponse> {
   const canRemoveOwn = await checkAnyPermission(roles, "floor", "canEdit");
 
   return NextResponse.json({
-    copies: [...billing.map((r) => shape(r, "billing", false)), ...own.map((r) => shape(r, "floor", canRemoveOwn))],
+    copies: [
+      ...billing.map((r) => shape(r, "billing", false)),
+      ...own.map((r) => shape(r, "floor", canRemoveOwn)),
+      ...partOwn.map((r) => shape(r, "floor", canRemoveOwn)),
+    ],
   });
 }

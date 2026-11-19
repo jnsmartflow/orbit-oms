@@ -23,6 +23,7 @@
 // never reach this module (they keep their own list under the route section).
 
 import { keepPairsAdjacent, sortFloorRows } from "@/lib/floor/sort";
+import { narrowToInvoiceIds, type FloorInvoiceRow } from "@/lib/floor/invoice-rows";
 import type { FloorBoardRow } from "@/lib/floor/types";
 
 export type DivisionKey = "70" | "77" | "74" | "other";
@@ -114,6 +115,42 @@ function buildBlock(key: string, rows: FloorBoardRow[], isSite: (r: FloorBoardRo
 }
 
 /**
+ * PER-PART SHIP-TO (v27.81, owner rule 4 — plan §D.3). A split OBD whose
+ * shown parts go to TWO OR MORE shops (distinct invoice shipTo.stopKey)
+ * becomes one row PER SHOP, each NARROWED to that shop's parts
+ * (narrowToInvoiceIds — its litres / kg are theirs), titled and keyed by that
+ * part's ship-to. Every other row comes back as the SAME object, so with every
+ * part inheriting (all live data) the list is exactly the input.
+ *
+ * ⚠ The OBD stays the unit of sort, live-merge and selection: the copies share
+ * its orderId, and each draws only its own invoices (inv:<id> keys), so no key
+ * repeats. isKeyCustomer / route stay the OBD's (InvoiceShipTo carries neither).
+ */
+export function expandByShop(rows: readonly FloorBoardRow[]): FloorBoardRow[] {
+  return rows.flatMap((r) => {
+    const byShop = new Map<string, FloorInvoiceRow[]>();
+    for (const inv of r.invoiceRows) {
+      const list = byShop.get(inv.shipTo.stopKey) ?? [];
+      list.push(inv);
+      byShop.set(inv.shipTo.stopKey, list);
+    }
+    if (byShop.size < 2) return [r];
+    return Array.from(byShop.values()).map((invs): FloorBoardRow => {
+      const s = invs[0].shipTo;
+      return {
+        ...narrowToInvoiceIds(r, invs.map((i) => i.id)),
+        stopKey: s.stopKey,
+        dealerName: s.dealerName,
+        isShipToOverride: s.isShipToOverride,
+        shipToOverrideName: s.shipToOverrideName,
+        area: s.area,
+        deliveryType: s.deliveryType,
+      };
+    });
+  });
+}
+
+/**
  * The bands for one route section's DUE, non-Hand rows. Bands with no bill are
  * left out; blocks A–Z by name (the stop key breaks a tie, so the order never
  * flickers between refreshes).
@@ -123,8 +160,10 @@ export function buildDivisionBands(
   isSite: (r: FloorBoardRow) => boolean,
 ): DivisionBand[] {
   const bands: DivisionBand[] = [];
+  // v27.81 — a split OBD going to two shops sits in BOTH shops' blocks.
+  const shopRows = expandByShop(rows);
   for (const key of DIVISION_ORDER) {
-    const inBand = rows.filter((r) => divisionOf(r) === key);
+    const inBand = shopRows.filter((r) => divisionOf(r) === key);
     if (inBand.length === 0) continue;
     const byStop = new Map<string, FloorBoardRow[]>();
     for (const r of inBand) {

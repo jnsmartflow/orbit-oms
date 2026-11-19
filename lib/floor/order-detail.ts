@@ -19,8 +19,10 @@ import { getColourWorkByOrder } from "@/lib/picking/colour-work-query";
 // The Sales Officer — the board's own resolver, so the row and the panel agree.
 import { salesOfficerByOrder } from "@/lib/floor/queries";
 import { countActiveOwnCopies, countBillingCopiesVisible } from "@/lib/ship-to/copies-server";
+import { effectiveShipTo } from "@/lib/ship-to/effective";
+import { PART_SHIP_TO_SELECT } from "@/lib/order-invoices/part-ship-to-read";
 import { getOpenTintPauses, isPausedTintCandidate } from "@/lib/floor/tint-pause";
-import type { FloorDetail, FloorActivityEntry, FloorDetailLine, FloorDetailTint } from "@/lib/floor/types";
+import type { FloorDetail, FloorActivityEntry, FloorDetailLine, FloorDetailPart, FloorDetailTint } from "@/lib/floor/types";
 import { isStickerSku } from "@/lib/orders/sticker";
 
 const PROJECT_SMUS = new Set(["Retail Offtake", "Decorative Projects"]);
@@ -202,8 +204,37 @@ export async function getOrderDetail(orderId: number): Promise<FloorDetail | nul
   // Billing copies still visible by THE rule (lib/ship-to/copies-server.ts).
   // The own count is one read on the orderId index; the Billing count reads
   // nothing unless the bill has a typed ship-to. On click only, like the tint block.
-  const ownCopies = await countActiveOwnCopies("floor", order.id);
+  // v27.81 — the OBD's OWN copies (orderInvoiceId NULL): each owner counts
+  // its own; a part's copies are counted on the part below. 0 part copies live.
+  const ownCopies = await countActiveOwnCopies("floor", order.id, null);
   const billingCopies = await countBillingCopiesVisible(order);
+
+  // ── PER-PART SHIP-TO (v27.81, plan §D.1) ──────────────────────────────────
+  // Each invoice row of a SPLIT OBD with its effective ship-to (effectiveShipTo:
+  // the part's own columns, else the bill's). ONE read of the rows (with their
+  // own dealer and typed area); ONE more for the parts' own copies, only on a
+  // split bill. An unsplit bill → parts [].
+  const partRows = await prisma.order_invoices.findMany({
+    where: { orderId: order.id },
+    orderBy: { seq: "asc" },
+    select: {
+      id: true,
+      seq: true,
+      ...PART_SHIP_TO_SELECT,
+      shipToOverrideCustomer: { select: DEALER_SELECT },
+      shipToArea: { select: { name: true, deliveryType: { select: { name: true } } } },
+    },
+  });
+  const partCopyCounts = new Map<number, number>();
+  if (partRows.length >= 2) {
+    for (const g of await prisma.ship_to_copies.groupBy({
+      by: ["orderInvoiceId"],
+      where: { orderId: order.id, orderInvoiceId: { not: null }, removedAt: null },
+      _count: { _all: true },
+    })) {
+      if (g.orderInvoiceId !== null) partCopyCounts.set(g.orderInvoiceId, g._count._all);
+    }
+  }
 
   const tint: FloorDetailTint | null =
     order.orderType === "tint"
@@ -222,6 +253,49 @@ export async function getOrderDetail(orderId: number): Promise<FloorDetail | nul
           pause: tintPause,
         }
       : null;
+
+  const billCopies = ownCopies + billingCopies;
+  const parts: FloorDetailPart[] =
+    partRows.length < 2
+      ? []
+      : partRows.map((r) => {
+          const eff = effectiveShipTo(order, r);
+          const partOwn = partCopyCounts.get(r.id) ?? 0;
+          if (!eff.own) {
+            // Inherits — the bill's own values, exactly as the header shows them.
+            return {
+              rowId: r.id,
+              seq: r.seq,
+              own: false,
+              shipToName: dealer?.customerName ?? order.shipToCustomerName ?? "(Unmatched)",
+              shipToCode: dealer?.customerCode ?? order.shipToCustomerId ?? null,
+              isShipToOverride: order.shipToOverrideCustomerId !== null,
+              shipToText: order.shipToText,
+              typedAreaName: order.shipToArea?.name ?? null,
+              typedAreaDeliveryType: order.shipToArea?.deliveryType?.name ?? null,
+              area: dealer?.area?.name ?? null,
+              deliveryType: dealer?.area?.deliveryType?.name ?? null,
+              copyCount: partOwn + billCopies,
+            };
+          }
+          // Its OWN ship-to: its dealer redirect, else the bill's own customer
+          // (a reset or a typed part), by the header's own rules.
+          const partDealer = (eff.shipToOverrideCustomerId !== null ? r.shipToOverrideCustomer : null) ?? order.customer;
+          return {
+            rowId: r.id,
+            seq: r.seq,
+            own: true,
+            shipToName: partDealer?.customerName ?? order.shipToCustomerName ?? "(Unmatched)",
+            shipToCode: partDealer?.customerCode ?? order.shipToCustomerId ?? null,
+            isShipToOverride: eff.shipToOverrideCustomerId !== null,
+            shipToText: eff.shipToText,
+            typedAreaName: r.shipToArea?.name ?? null,
+            typedAreaDeliveryType: r.shipToArea?.deliveryType?.name ?? null,
+            area: partDealer?.area?.name ?? null,
+            deliveryType: partDealer?.area?.deliveryType?.name ?? null,
+            copyCount: partOwn,
+          };
+        });
 
   const detail: FloorDetail = {
     orderId: order.id,
@@ -283,7 +357,8 @@ export async function getOrderDetail(orderId: number): Promise<FloorDetail | nul
     typedAreaName: order.shipToArea?.name ?? null,
     typedAreaDeliveryType: order.shipToArea?.deliveryType?.name ?? null,
     customerAreaId: order.customer?.areaId ?? null,
-    shipToCopyCount: ownCopies + billingCopies,
+    shipToCopyCount: billCopies,
+    parts,
 
     soNumber: order.soNumber,
     salesOfficerName: salesOfficer?.name ?? null,

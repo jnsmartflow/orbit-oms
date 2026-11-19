@@ -9,7 +9,8 @@ import { findBillsByNumber, invoiceRowMatches, type BillLookupTerm } from "@/lib
 import { tripsOnDeskWhere, TRIP_CANCELLED } from "@/lib/trips/live-trips";
 import { parseTripDate } from "@/lib/trips/queries";
 import { getFloorCancelled } from "@/lib/floor/queries";
-import { deskShipToName } from "@/lib/ship-to/effective";
+import { deskShipToName, effectiveShipTo } from "@/lib/ship-to/effective";
+import { PART_SHIP_TO_SELECT } from "@/lib/order-invoices/part-ship-to-read";
 import { getTodayIST } from "@/lib/dates";
 import type { FloorCancelledRow, FloorSearchHit, FloorSearchPart, FloorSearchTarget } from "@/lib/floor/types";
 import { matchedInvoiceTargetOf, partTargetOf } from "@/lib/floor/search";
@@ -39,6 +40,10 @@ export async function getFloorSearchHits(term: BillLookupTerm): Promise<FloorSea
     shipToCustomerName: true,
     // A typed ship-to (v27.73, step 7A) names the hit like the board row does.
     shipToText: true,
+    // v27.81 — effectiveShipTo's OBD side, for a hit on a part.
+    shipToOverride: true,
+    shipToOverrideCustomerId: true,
+    shipToAreaId: true,
     customer: { select: { customerName: true } },
     shipToOverrideCustomer: { select: { customerName: true } },
     // "Which trip is this bill on" — the DERIVED stop (lowest-seq invoice row),
@@ -110,6 +115,9 @@ export async function getFloorSearchHits(term: BillLookupTerm): Promise<FloorSea
             id: true,
             isHeld: true,
             tripDrop: { select: { trip: { select: { id: true, tripNumber: true, tripDate: true, status: true } } } },
+            // v27.81 — the matched part's OWN ship-to (NULL = inherits the bill's).
+            ...PART_SHIP_TO_SELECT,
+            shipToOverrideCustomer: { select: { customerName: true } },
           },
         })
       : [];
@@ -198,10 +206,19 @@ export async function getFloorSearchHits(term: BillLookupTerm): Promise<FloorSea
       invoiceNo: b.invoiceNo,
       matchedInvoiceSeq: invoiceMatches.get(b.id)?.[0]?.seq ?? null,
       soNumber: b.soNumber,
-      dealer: deskShipToName(b, {
-        effectiveDealer: b.shipToOverrideCustomer?.customerName ?? b.customer?.customerName,
-        sap: b.shipToCustomerName,
-      }),
+      // v27.81 — a hit on a PART with its own ship-to names THAT part's shop
+      // (effectiveShipTo); every other hit — every hit today — the bill's, as before.
+      dealer: (() => {
+        const eff = effectiveShipTo(b, m ?? null);
+        if (!eff.own || !m) {
+          return deskShipToName(b, {
+            effectiveDealer: b.shipToOverrideCustomer?.customerName ?? b.customer?.customerName,
+            sap: b.shipToCustomerName,
+          });
+        }
+        const partDealer = eff.shipToOverrideCustomerId !== null ? m.shipToOverrideCustomer?.customerName : null;
+        return deskShipToName(eff, { effectiveDealer: partDealer ?? b.customer?.customerName, sap: b.shipToCustomerName });
+      })(),
       workflowStage: b.workflowStage,
       dispatchStatus: b.dispatchStatus,
       target,

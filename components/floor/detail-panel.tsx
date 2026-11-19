@@ -33,6 +33,7 @@ import type { DispatchWindow } from "@/components/floor/dispatch-slot-picker";
 import { SlotPickerButton } from "@/components/floor/slot-picker-button";
 import { ShipToModal } from "@/components/shared/ship-to-modal";
 import { ShipToCopiesPin } from "@/components/shared/ship-to-copies-pin";
+import { OwnShipToMark } from "./floor-table";
 import { TINT_ROOM_REFUSAL } from "@/lib/floor/off-floor";
 import { DetailItems } from "./detail-items";
 // The Items tab's old "Invoices" section (detail-invoices.tsx, c7fef916) is no
@@ -675,6 +676,29 @@ function PanelBody({
   // THE SCOPED INVOICE's Items: only its lines (by raw line id), its tins and
   // litres; "lines changed in SAP" when the split no longer matches SAP's lines.
   const scopedInvoice = scope && splitView ? splitView.invoices.find((i) => i.seq === scope.seq) ?? null : null;
+  // PER-PART SHIP-TO (v27.81, READ side only): the panel scoped to a part shows
+  // THAT part's ship-to when it has its OWN (d.parts, lib/floor/order-detail.ts);
+  // an inheriting part — every part today — shows the bill's, exactly as before.
+  // The Change ship-to button below still edits the BILL (orderId), unchanged.
+  const scopedPart = scope ? (d.parts ?? []).find((p) => p.rowId === scope.id) ?? null : null;
+  const ownPart = scopedPart !== null && scopedPart.own ? scopedPart : null;
+  const hv = ownPart
+    ? {
+        shipToText: ownPart.shipToText,
+        shipToName: ownPart.shipToName,
+        shipToCode: ownPart.shipToCode,
+        typedAreaName: ownPart.typedAreaName,
+        typedAreaDeliveryType: ownPart.typedAreaDeliveryType,
+        copyCount: ownPart.copyCount,
+      }
+    : {
+        shipToText: d.shipToText,
+        shipToName: d.shipToName,
+        shipToCode: d.shipToCode,
+        typedAreaName: d.typedAreaName,
+        typedAreaDeliveryType: d.typedAreaDeliveryType,
+        copyCount: scopedPart?.copyCount ?? d.shipToCopyCount,
+      };
   const scopedItems: { lines: FloorDetailLine[]; missing: number } | null = scopedInvoice
     ? scopeItems(d.lines, scopedInvoice.lines)
     : null;
@@ -793,7 +817,7 @@ function PanelBody({
             <span className="text-[11px] tabular-nums text-gray-400">{fmtDateTime(d.obdDateTime)}</span>
           </div>
         )}
-        {d.shipToText !== null ? (
+        {hv.shipToText !== null ? (
           // TYPED SHIP-TO (v27.73, 2026-10-19) — the desk may show "As per
           // challan" as the name (design §5). No code: it is not a dealer. The
           // second line carries Floor's own ship-to-changed wording (the
@@ -801,20 +825,21 @@ function PanelBody({
           // billed to, and the violet 📎 when copies show on this bill.
           <>
             <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1">
-              <span className="text-[16px] font-bold text-gray-900">{d.shipToText}</span>
+              <span className="text-[16px] font-bold text-gray-900">{hv.shipToText}</span>
+              <OwnShipToMark own={ownPart !== null} />
             </div>
             <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-[11.5px]">
               <span className="text-brand-800">→ ship-to changed</span>
-              {d.typedAreaName && (
+              {hv.typedAreaName && (
                 <span className="text-gray-500">
-                  · {d.typedAreaName}
-                  {d.typedAreaDeliveryType ? ` · ${d.typedAreaDeliveryType}` : ""}
+                  · {hv.typedAreaName}
+                  {hv.typedAreaDeliveryType ? ` · ${hv.typedAreaDeliveryType}` : ""}
                 </span>
               )}
               {(d.billToName ?? d.customerName) && (
                 <span className="text-gray-500">· billed to {d.billToName ?? d.customerName}</span>
               )}
-              <ShipToCopiesPin orderId={d.orderId} count={d.shipToCopyCount} />
+              <ShipToCopiesPin orderId={d.orderId} count={hv.copyCount} />
             </div>
           </>
         ) : (
@@ -822,15 +847,16 @@ function PanelBody({
             <span
               className={"text-[16px] font-bold " + "text-gray-900"}
             >
-              {d.shipToName}
+              {hv.shipToName}
             </span>
-            {d.shipToCode && (
+            {hv.shipToCode && (
               <span
                 className={"font-mono text-[11.5px] " + "text-gray-400"}
               >
-                {d.shipToCode}
+                {hv.shipToCode}
               </span>
             )}
+            <OwnShipToMark own={ownPart !== null} />
           </div>
         )}
         {/* Tags carry treatment facts only (design §10.2): status, key, urgent, site, tint.

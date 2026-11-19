@@ -23,7 +23,7 @@
 // An OBD absent from the map is not split: callers use the OBD's own totals.
 
 import { prisma } from "../prisma";
-import { buildInvoiceRows, hasLoadGroup, loadRowArticles, loadRowArticleTags, type FloorInvoiceRow } from "../floor/invoice-rows";
+import { buildInvoiceRows, hasLoadGroup, loadRowArticles, loadRowArticleTags, type InvoiceRowFacts } from "../floor/invoice-rows";
 import { learnedKgPerUnit } from "./kg-per-unit";
 
 /**
@@ -33,8 +33,8 @@ import { learnedKgPerUnit } from "./kg-per-unit";
 export async function loadSplitInvoiceRows(
   orders: ReadonlyArray<{ id: number; obdNumber: string }>,
   kgByOrder: ReadonlyMap<number, number | null>,
-): Promise<Map<number, FloorInvoiceRow[]>> {
-  const map = new Map<number, FloorInvoiceRow[]>();
+): Promise<Map<number, InvoiceRowFacts[]>> {
+  const map = new Map<number, InvoiceRowFacts[]>();
   if (orders.length === 0) return map;
   const typed = await prisma.order_invoices.findMany({
     where: { orderId: { in: Array.from(new Set(orders.map((o) => o.id))) }, seq: { gt: 1 } },
@@ -160,7 +160,7 @@ export async function loadSplitInvoiceRows(
  */
 export async function loadPartArticles(
   orders: ReadonlyArray<{ id: number; obdNumber: string }>,
-  splitRows: ReadonlyMap<number, FloorInvoiceRow[]>,
+  splitRows: ReadonlyMap<number, InvoiceRowFacts[]>,
   totalArticleByOrder: ReadonlyMap<number, number | null>,
 ): Promise<Map<number, Map<number, number>>> {
   const out = new Map<number, Map<number, number>>();

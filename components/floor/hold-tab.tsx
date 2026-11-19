@@ -33,7 +33,7 @@ import { HoldBar } from "./hold-bar";
 import { HoldTable, type HoldColumn } from "./hold-table";
 import { shipMarkers } from "./floor-table";
 import { formatLitres, formatWeightKg, sumLitres, sumWeightKg } from "./status-pill";
-import { narrowToInvoiceIds } from "@/lib/floor/invoice-rows";
+import { drawRowsOf, narrowToInvoiceIds } from "@/lib/floor/invoice-rows";
 import {
   holdKeysOf,
   holdUnits,
@@ -357,7 +357,9 @@ function DealerHeader({
   const someOn = !allOn && rows.some((r) => holdKeysOf(r).some((k) => selection.has(k)));
   const isKeyCustomer = rows.some((r) => r.isKeyCustomer);
   const isSite = rows.some((r) => shipMarkers(r).isSite);
-  const isRedirect = rows.some((r) => r.isShipToOverride);
+  // v27.81 — any DRAWN row's ship-to (a held part with its own redirect counts);
+  // equal to rows.some(r => r.isShipToOverride) while every part inherits.
+  const isRedirect = rows.some((r) => drawRowsOf(r).some((d) => d.ship.isShipToOverride));
   // Billed to — said once when every site bill names the same bill-to.
   const billedTos = new Set(rows.filter((r) => shipMarkers(r).isSite).map((r) => r.billToName ?? ""));
   const billedTo = isSite && billedTos.size === 1 ? Array.from(billedTos)[0] || null : null;

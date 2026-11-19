@@ -6,7 +6,14 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { addedInvoiceNosOf, articleShareText, awayChipOf, buildInvoiceRows, drawRows, drawRowsOf, goneChipOf, hasLoadGroup, loadPlaceArticles, loadRowArticles, loadRowArticleTags, loadTripsOf, narrowToInvoiceIds, narrowToPlace, paperCountOf, placeLoad, type FloorInvoiceRow, type InvoiceLineFacts, type InvoiceRowSource } from "./invoice-rows";
+import { addedInvoiceNosOf, articleShareText, awayChipOf, buildInvoiceRows as buildFacts, drawRows, drawRowsOf, goneChipOf, hasLoadGroup, loadPlaceArticles, loadRowArticles, loadRowArticleTags, loadTripsOf, narrowToInvoiceIds, narrowToPlace, paperCountOf, placeLoad, type FloorInvoiceRow, type InvoiceLineFacts, type InvoiceRowSource } from "./invoice-rows";
+
+// v27.81 fixtures: FloorInvoiceRow carries a REQUIRED shipTo (the server adds it,
+// lib/floor/queries.ts withPartShipTo). Every fixture row here INHERITS — the
+// OBD's own values, own = false — which is all live data at v27.81.
+const INHERIT_SHIP = { own: false, dealerName: "Dealer", isShipToOverride: false, shipToOverrideName: null, area: null, deliveryType: null, stopKey: "c:1" };
+const buildInvoiceRows = (input: Parameters<typeof buildFacts>[0]): FloorInvoiceRow[] =>
+  buildFacts(input).map((r) => ({ ...r, shipTo: INHERIT_SHIP }));
 
 const LINES: InvoiceLineFacts[] = [
   { rawLineItemId: 62850, lineId: 1, skuCodeRaw: "5880380", unitQty: 13, volumeLine: 260, totalWeight: null },
@@ -421,4 +428,16 @@ test("Floor article fields: buildInvoiceRows never sets them — unsplit / 18648
     assert.equal("articles" in r, false);
     assert.equal("articleTagText" in r, false);
   }
+});
+
+test("v27.81 draw.ship: the part's own shipTo on an invoice row, the OBD row's own fields otherwise", () => {
+  const own = { ...INHERIT_SHIP, own: true, dealerName: "National Hardware Paints", isShipToOverride: true, shipToOverrideName: "National Hardware Paints", stopKey: "c:2375" };
+  const rows = buildInvoiceRows({ rows: ROWS.slice(0, 2), activeLines: LINES, obdKg: 1357 });
+  const split = drawRowsOf({ orderId: 1, dealerName: "Dealer", isShipToOverride: false, stopKey: "c:1", invoiceRows: [rows[0], { ...rows[1], shipTo: own }] });
+  assert.deepEqual(split.map((d) => [d.ship.own, d.ship.dealerName, d.ship.stopKey]), [
+    [false, "Dealer", "c:1"],
+    [true, "National Hardware Paints", "c:2375"],
+  ]);
+  const plain = drawRowsOf({ orderId: 2, dealerName: "Plain", isShipToOverride: true, shipToOverrideName: "X", invoiceRows: [] });
+  assert.deepEqual(plain[0].ship, { own: false, dealerName: "Plain", isShipToOverride: true, shipToOverrideName: "X", area: null, deliveryType: null, stopKey: null });
 });

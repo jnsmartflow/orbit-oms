@@ -24,15 +24,15 @@
 // heldSince — the real hold moment, "~" when approximated from the arrival date.
 
 import { Building2 } from "lucide-react";
-import { ColourWorkBadge } from "@/components/picking/card-atoms";
+import { ColourWorkBadge, ShopsChip } from "@/components/picking/card-atoms";
 import { HandBadge } from "@/components/shared/hand-badge";
 import { SampleBadge } from "@/components/shared/sample-badge";
 import { ChallanBadge } from "@/components/shared/challan-badge";
 import { ObdBadge } from "@/components/shared/obd-badge";
-import { blockTags, shipMarkers, shortTripNumber, SEARCH_HIT_ROW_CLS } from "./floor-table";
+import { blockTags, OwnShipToMark, shipMarkers, shortTripNumber, SEARCH_HIT_ROW_CLS } from "./floor-table";
 import { InvoiceLines, LoadPartChip, ObdDateLine } from "./bill-ref-cells";
 import { PairPlaceChip, pairBarBorderCls, type PairBarKind } from "./pair-cells";
-import { awayChipOf, drawRowsOf, type FloorInvoiceRow } from "@/lib/floor/invoice-rows";
+import { awayChipOf, drawRowsOf, type DrawShip, type FloorInvoiceRow } from "@/lib/floor/invoice-rows";
 import { formatLitres, formatWeightKg } from "./status-pill";
 import { formatArticleTag } from "@/lib/floor/format";
 import { loadKg, loadLitres } from "@/lib/orders/gift";
@@ -137,6 +137,8 @@ type InvoicePart = {
   /** Split load (Phase 4 batch 2): this row's share of SAP's article tag —
    *  FloorInvoiceRow.articleTagText; absent off a load group. */
   articleTagText?: string;
+  /** v27.81 — this part has its OWN ship-to (draw.ship.own): the "own" mark. */
+  own: boolean;
 };
 
 function Cell({
@@ -203,6 +205,15 @@ function Cell({
             </span>
           )}
           <span className="text-[11.5px] font-medium text-[#111827]">{row.dealerName}</span>
+          {/* v27.81 — a drawn part with its own ship-to; on an OBD row, "2 shops"
+              when its parts go to 2+ shops (the freight pool too). Both render
+              nothing today. */}
+          {part && <OwnShipToMark own={part.own} />}
+          {!part && row.shopCount !== undefined && row.shopCount > 1 && (
+            <span className="ml-1.5 inline-block align-[-1px]">
+              <ShopsChip count={row.shopCount} />
+            </span>
+          )}
           {row.isKeyCustomer && <span className="ml-1.5 text-[#f59e0b]">★</span>}
           {row.priorityLevel === 1 && <span className="ml-1 text-[#ef4444]">⚡</span>}
           {isSite && <Building2 size={12} className="ml-1 inline-block align-[-1px] text-[#475569]" />}
@@ -331,10 +342,16 @@ function Cell({
 }
 
 /** A drawn invoice row's cells read the INVOICE's own number, date, litres,
- *  kg and hold (6.1) — everything else is the OBD's. */
-function invoiceCellRow(row: FloorHoldRow, inv: FloorInvoiceRow): FloorHoldRow {
+ *  kg and hold (6.1) — and, since v27.81, its own SHIP-TO (draw.ship: name,
+ *  redirect, area, type — equal to the OBD's while the part inherits).
+ *  Everything else is the OBD's. */
+function invoiceCellRow(row: FloorHoldRow, inv: FloorInvoiceRow, ship: DrawShip): FloorHoldRow {
   return {
     ...row,
+    dealerName: ship.dealerName,
+    isShipToOverride: ship.isShipToOverride,
+    area: ship.area,
+    deliveryType: ship.deliveryType,
     invoiceNo: inv.invoiceNo,
     invoiceDate: inv.invoiceDate,
     volumeLitres: inv.litres,
@@ -414,7 +431,7 @@ export function HoldTable({
       key: d.key,
       tick: invKey(d.invoice!.id),
       row,
-      cellRow: invoiceCellRow(row, d.invoice!),
+      cellRow: invoiceCellRow(row, d.invoice!, d.ship),
       part: {
         k: d.k,
         n: d.n,
@@ -422,6 +439,7 @@ export function HoldTable({
         load: d.load,
         away,
         first: d.first,
+        own: d.ship.own,
         ...(d.invoice!.articleTagText !== undefined ? { articleTagText: d.invoice!.articleTagText } : {}),
       },
       seq: d.invoice!.seq,
