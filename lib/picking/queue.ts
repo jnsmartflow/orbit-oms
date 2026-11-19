@@ -721,8 +721,7 @@ export async function getPickingQueue(
   // rows (lib/order-invoices/part-ship-to-read.ts loadShopCounts); none for an
   // empty board. Absent = one shop. A post-fetch enrichment like the lookups
   // around it: no term in buildPickingWhere, so the marker is untouched.
-  // ⚠ shopCount is not on PickingQueueRow (lib/picking/types.ts, out of this
-  // batch): it rides each row as an extra field the card reads optionally.
+  // PickingQueueRow.shopCount (lib/picking/types.ts) — present only when 2+.
   const shopCountById = await loadShopCounts(orders);
 
   // ── Same-SO detection — ONE bounded groupBy ───────────────────────────────
@@ -831,7 +830,7 @@ export async function getPickingQueue(
   // was it checked", this answers "when was it due".
   const anchorMs = dateOnly.getTime();
 
-  const rows: Array<PickingQueueRow & { shopCount?: number }> = orders.map((order) => {
+  const rows: PickingQueueRow[] = orders.map((order) => {
     // Override first, plain customer second — byte-for-byte the old
     // `order.shipToOverrideCustomer ?? order.customer`, resolved through the
     // batched Map instead of two hydrated relations. See the block comment on

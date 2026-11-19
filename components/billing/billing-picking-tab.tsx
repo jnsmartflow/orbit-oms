@@ -40,6 +40,8 @@ import {
 import { getTodayIST } from "@/lib/dates";
 import { smartTitleCase } from "@/lib/mail-orders/utils";
 import { BillingOrderDetailPanel } from "@/components/billing/billing-order-detail-panel";
+// The picking card's "2 shops" chip (per-part ship-to, v27.81) — reused, never copied.
+import { ShopsChip } from "@/components/picking/card-atoms";
 import { useBillingLiveTick, useBillingShownIds } from "@/components/billing/billing-live";
 import { billingFlags, type BillingPickingList, type BillingPendingRow, type BillingDoneRow } from "@/lib/billing/types";
 
@@ -696,6 +698,13 @@ function PendingRow({
             className="ml-1.5 rounded border border-amber-200 bg-amber-50 px-1 py-px text-[9px] font-bold text-amber-700"
           >
             ⚑
+          </span>
+        )}
+        {/* Per-part ship-to (v27.81, rule 6): the bill's parts go to 2+ shops.
+            Renders nothing below 2 — every row today. */}
+        {row.shopCount !== undefined && row.shopCount > 1 && (
+          <span className="ml-1.5 inline-block align-middle">
+            <ShopsChip count={row.shopCount} />
           </span>
         )}
       </td>

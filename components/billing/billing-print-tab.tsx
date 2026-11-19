@@ -302,7 +302,11 @@ export function BillingPrintTab({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<number | null>(null);
-  const [openBillId, setOpenBillId] = useState<number | null>(null);
+  // The open LINE (v27.81): one OBD may be a line at two stops of a trip
+  // (per-part ship-to), so a line is (orderId, dropSeq) — dropSeq is unique
+  // within a trip (trip_drops' unique (tripId, dropSeq)).
+  const [openBill, setOpenBill] = useState<{ orderId: number; dropSeq: number } | null>(null);
+  const openBillId = openBill?.orderId ?? null;
   const [busy, setBusy] = useState(false);
   const [copiedFlash, setCopiedFlash] = useState(false);
   const [invFlash, setInvFlash] = useState(false);
@@ -374,7 +378,7 @@ export function BillingPrintTab({
   // The panel belongs to the selected trip; changing trip closes it.
   const selectedTripId = selected?.id ?? null;
   useEffect(() => {
-    setOpenBillId(null);
+    setOpenBill(null);
   }, [selectedTripId]);
 
   const showDone = !!selected && canEdit && selected.canDone;
@@ -724,12 +728,12 @@ export function BillingPrintTab({
                   <tbody>
                     {selected.rows.map((r, i) => (
                       <BillRow
-                        key={r.orderId}
+                        key={`${r.orderId}:${r.dropSeq}`}
                         row={r}
                         index={i + 1}
                         nowMs={nowMs}
-                        open={openBillId === r.orderId}
-                        onOpen={() => setOpenBillId(r.orderId)}
+                        open={openBill?.orderId === r.orderId && openBill.dropSeq === r.dropSeq}
+                        onOpen={() => setOpenBill({ orderId: r.orderId, dropSeq: r.dropSeq })}
                       />
                     ))}
                   </tbody>
@@ -745,10 +749,11 @@ export function BillingPrintTab({
           mode="print"
           orderId={openBillId}
           tripId={selected.id}
+          dropSeq={openBill?.dropSeq}
           canEdit={canEdit}
-          onClose={() => setOpenBillId(null)}
+          onClose={() => setOpenBill(null)}
           onMarkedDone={() => {
-            setOpenBillId(null);
+            setOpenBill(null);
             void load();
           }}
           onPrintRecorded={() => void load()}

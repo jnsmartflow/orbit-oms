@@ -279,6 +279,15 @@ export interface PickingQueueRow {
   // supervisors may find a bill in Due now that its own date says is not due
   // yet, and needs to see whose call that was. null when never released.
   earlyReleasedByName: string | null;
+  /**
+   * PER-PART SHIP-TO (v27.81, owner rule 6): how many shops this bill's parts
+   * go to — PRESENT ONLY WHEN 2 OR MORE (lib/picking/queue.ts, from
+   * lib/order-invoices/part-ship-to-read.ts loadShopCounts). Still one card
+   * per OBD; the card draws a "2 shops" chip (components/picking/card-atoms.tsx
+   * ShopsChip). Absent on every bill whose parts all inherit — all of them
+   * today — so the payload is unchanged.
+   */
+  shopCount?: number;
 }
 
 export type SortRule = {

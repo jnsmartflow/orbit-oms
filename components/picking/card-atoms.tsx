@@ -518,8 +518,7 @@ export function CardShelf({
   onViewItems,
   trailing = null,
 }: {
-  /** shopCount (v27.81) rides the queue row as an optional extra field. */
-  row: PickingQueueRow & { shopCount?: number };
+  row: PickingQueueRow;
   /** Chip labels, rendered verbatim. OMIT for the family chips + "+N unlisted". */
   chips?: readonly string[];
   muted?: boolean;

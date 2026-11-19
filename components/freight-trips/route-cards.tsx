@@ -32,6 +32,8 @@ import { loadKg, loadLitres } from "@/lib/orders/gift";
 import { scopeTypes } from "@/lib/floor/scope";
 import type { FloorRouteClub, FloorScope } from "@/lib/floor/types";
 import type { FreightPoolRow } from "@/lib/freight-trips/pool";
+// The picking card's "2 shops" chip (per-part ship-to, v27.81, owner Q7) — reused, never copied.
+import { ShopsChip } from "@/components/picking/card-atoms";
 
 /** Route 20 "No Route" is no route; route 25 "TEST R" is hidden (Floor's rule). */
 const NO_ROUTE_IDS: readonly number[] = [20];
@@ -368,6 +370,8 @@ export function HeldCardGrid({
                 <span className="flex w-full items-baseline gap-2">
                   <span className="min-w-0 truncate text-[13px] font-semibold text-ink-900">{r.dealerName}</span>
                   <span className="whitespace-nowrap font-mono text-[12px] text-ink-400">{r.obdNumber}</span>
+                  {/* Q7: a paper trip stays per OBD; its parts' shops are only tagged. */}
+                  <ShopsChip count={r.shopCount} />
                   <span className="ml-auto whitespace-nowrap text-[12px] font-semibold text-warn-text">{hasNoRoute(r) ? "No route" : "No delivery type"}</span>
                 </span>
               </button>

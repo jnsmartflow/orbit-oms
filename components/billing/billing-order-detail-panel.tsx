@@ -112,6 +112,9 @@ interface PrintPanelProps {
   orderId: number;
   /** The trip the bill was opened from — the print route is fenced to it. */
   tripId: number;
+  /** The LINE's stop number on that trip (v27.81 per-part ship-to: one bill may
+   *  be a line at two stops). Omitted → the bill's first line, as before. */
+  dropSeq?: number;
   /** `billing_print`/canEdit. FALSE hides every button that RECORDS (CLAUDE_UI §10). */
   canEdit?: boolean;
   onClose: () => void;
@@ -519,7 +522,7 @@ function hhmmIst(iso: string | null): string {
   });
 }
 
-function PrintDetailPanel({ orderId, tripId, canEdit = false, onClose, onPrintRecorded }: PrintPanelProps) {
+function PrintDetailPanel({ orderId, tripId, dropSeq, canEdit = false, onClose, onPrintRecorded }: PrintPanelProps) {
   const [data, setData] = useState<PrintDetailPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -534,7 +537,8 @@ function PrintDetailPanel({ orderId, tripId, canEdit = false, onClose, onPrintRe
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${PRINT_DETAIL_URL}/${orderId}?tripId=${tripId}`, { cache: "no-store" });
+      const stop = dropSeq !== undefined ? `&dropSeq=${dropSeq}` : "";
+      const res = await fetch(`${PRINT_DETAIL_URL}/${orderId}?tripId=${tripId}${stop}`, { cache: "no-store" });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setData((await res.json()) as PrintDetailPayload);
     } catch (e) {
@@ -543,7 +547,7 @@ function PrintDetailPanel({ orderId, tripId, canEdit = false, onClose, onPrintRe
     } finally {
       setLoading(false);
     }
-  }, [orderId, tripId]);
+  }, [orderId, tripId, dropSeq]);
 
   useEffect(() => {
     void fetchDetail();

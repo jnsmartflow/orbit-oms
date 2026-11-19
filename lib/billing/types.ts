@@ -65,6 +65,12 @@ export interface BillingPendingRow {
    * affordance, it does not enforce anything.
    */
   hasFinding: boolean;
+  /**
+   * PER-PART SHIP-TO (v27.81, owner rule 6): how many shops this bill's parts
+   * go to — PRESENT ONLY WHEN 2 OR MORE (the route's loadShopCounts). The row
+   * stays one per OBD with the OBD's own ship-to and draws a "2 shops" chip.
+   */
+  shopCount?: number;
 }
 
 export interface BillingDoneRow {

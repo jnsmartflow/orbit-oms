@@ -413,7 +413,14 @@ export function loadRowArticleTags(input: {
  * The TRIPS a load-split bill's rows ride, in seq order of their first row:
  * one entry per trip, with that trip's stop and the rows on it. `tripOfDrop`
  * names a stop's trip (null / undefined = not a trip the caller reports).
- * An OBD's rows on one trip share one stop (trip-bills.ts), so dropId is it.
+ * `dropId` is the stop of the entry's LOWEST-seq row on that trip, and
+ * `rowIds` are ALL its rows on the trip, whatever stop they sit at.
+ * ⚠ Since per-part ship-to (v27.81, owner 2026-11-19, rule 4) an OBD's rows on
+ * one trip may sit at TWO stops — a part with its own ship-to goes to its own
+ * shop's stop — so this is per TRIP, not per stop. A caller that needs each
+ * stop reads placeOnStops (lib/order-invoices/trip-read.ts); the freight
+ * report moved there in ecfebf6b. While every part inherits, one trip = one
+ * stop and the two agree.
  */
 export function loadTripsOf(
   rows: ReadonlyArray<Pick<FloorInvoiceRow, "id" | "seq" | "tripDropId">>,
