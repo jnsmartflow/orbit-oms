@@ -28,6 +28,12 @@
 //   once per trip, on its lowest-seq row's stop) → trip_drops.tripId, not
 //   isRemoved, not cancelled.
 //   HELD bills COUNT — they are on the truck plan (owner).
+//   PER-PART SHIP-TO (v27.81, batch 5): read per (OBD, STOP) — placeOnStops —
+//   so a part with its own ship-to at a second stop of the trip counts as a
+//   stop (Dealer count), adds its own area, type and changed-ship-to name, and
+//   only its own litres / kg. While every part inherits this is each OBD once
+//   per trip, exactly as before. Orbit-side only: the NTS MIRROR (trip_report,
+//   lib/trip-report/*) never reads Orbit's ship-to and is not touched.
 //
 // ── REMARKS — the name of every CHANGED ship-to (owner, 2026-10-09) ─────────
 //   A master redirect (shipToOverrideCustomerId set AND not SAP's own point —
@@ -41,7 +47,9 @@
 //   still uses the area rule; such a bill falls back to its site / bill-to area.
 
 import { prisma } from "@/lib/prisma";
-import { onStopsWhere, placeOnTrips, stopRowsSelect } from "@/lib/order-invoices/trip-read";
+import { onStopsWhere, placeOnStops, stopRowsSelect } from "@/lib/order-invoices/trip-read";
+import { loadOwnPartShipTos, stopPart } from "@/lib/order-invoices/part-ship-to-read";
+import { effectiveDropInput, isTypedShipTo } from "@/lib/ship-to/effective";
 import { loadSplitInvoiceRows } from "@/lib/order-invoices/invoice-load";
 import { hasLoadGroup, placeLoad } from "@/lib/floor/invoice-rows";
 import { isGiftBill, loadKg, loadLitres } from "@/lib/orders/gift";
@@ -174,7 +182,7 @@ export async function getNtsTripsRows(params: NtsTripsParams): Promise<NtsTripRo
   const tripIdByDrop = new Map(drops.map((d) => [d.id, d.tripId]));
   const dropIds = drops.map((d) => d.id);
   const orders = drops.length
-    ? placeOnTrips(
+    ? placeOnStops(
         await prisma.orders.findMany({
           where: {
             ...onStopsWhere(dropIds),
@@ -207,22 +215,31 @@ export async function getNtsTripsRows(params: NtsTripsParams): Promise<NtsTripRo
   const allIds = orders.map((o) => o.id);
   const snapByOrder = await loadSnapshots(allIds);
   const billToByObd = await loadBillToByObd(orders.map((o) => o.obdNumber));
-  const custById = await loadCustomers(
-    Array.from(
-      new Set(
-        orders.flatMap((o) => [o.customerId, o.shipToOverrideCustomerId]).filter((id): id is number => id !== null),
-      ),
-    ),
-  );
-  const billToAreaByCode = await loadBillToAreas(billToByObd);
   // Split load (Phase 4 batch 1, 2026-10-25): a bill whose truck PARTS ride
   // different trips adds only the part on THIS trip (placeLoad). Every other
   // bill — Add invoices included — keeps its whole litres / kg. Index-only and
-  // empty when no bill here is split.
+  // empty when no bill here is split. (Read before the customers since v27.81:
+  // a part's own dealer is one of them.)
   const splitRows = await loadSplitInvoiceRows(
     orders,
     new Map(orders.map((o) => [o.id, snapByOrder.get(o.id)?.totalWeight ?? null] as const)),
   );
+  // v27.81 — the part on each entry's stop (none read when no bill is split;
+  // an empty map while every part inherits). effOf = the bill as THAT stop
+  // sees it, through effectiveDropInput — never the raw columns.
+  const ownShipTo = await loadOwnPartShipTos(Array.from(splitRows.keys()));
+  const effOf = (o: (typeof orders)[number]) => effectiveDropInput(o, stopPart(o.rowIds, ownShipTo));
+  // An OBD with 2+ stops on one trip (only an own part ship-to does that).
+  const stopsOnTrip = new Map<string, number>();
+  for (const o of orders) stopsOnTrip.set(`${o.id}:${o.tripId}`, (stopsOnTrip.get(`${o.id}:${o.tripId}`) ?? 0) + 1);
+  const custById = await loadCustomers(
+    Array.from(
+      new Set(
+        orders.flatMap((o) => [o.customerId, effOf(o).shipToOverrideCustomerId]).filter((id): id is number => id !== null),
+      ),
+    ),
+  );
+  const billToAreaByCode = await loadBillToAreas(billToByObd);
 
   // ── 4. Typed ship-to names for free-text redirects ───────────────────────
   const freeTextSos = Array.from(
@@ -277,7 +294,11 @@ export async function getNtsTripsRows(params: NtsTripsParams): Promise<NtsTripRo
     const gift = isGiftBill(o.materialType);
     const whole = billQuantities(snapByOrder.get(o.id), o);
     const loadRows = splitRows.get(o.id);
-    const part = loadRows && hasLoadGroup(loadRows) ? placeLoad(loadRows, (d) => d !== null && tripIdByDrop.get(d) === tripId) : null;
+    // A load-split part: its rows on THIS stop (= on this trip while one stop
+    // per trip). v27.81: any split OBD at 2+ stops of this trip adds each
+    // stop's own rows, so the bill is never added twice.
+    const atSeveral = (stopsOnTrip.get(`${o.id}:${o.tripId}`) ?? 0) > 1;
+    const part = loadRows && (hasLoadGroup(loadRows) || atSeveral) ? placeLoad(loadRows, (d) => d === o.tripDropId) : null;
     const { kg, litres } = part ? { kg: part.kg, litres: part.litres } : whole;
     acc.litres += loadLitres(litres, gift);
     acc.kg += loadKg(kg, gift) ?? 0;
@@ -293,9 +314,11 @@ export async function getNtsTripsRows(params: NtsTripsParams): Promise<NtsTripRo
       shipToType: sapShipTo?.customerType?.name ?? sapShipTo?.premisesType?.name ?? null,
       smu: o.smu,
     });
+    const eff = effOf(o);
+    const own = stopPart(o.rowIds, ownShipTo) !== null;
     const redirect =
-      o.shipToOverrideCustomerId !== null && o.shipToOverrideCustomerId !== o.customerId
-        ? custById.get(o.shipToOverrideCustomerId)
+      eff.shipToOverrideCustomerId !== null && eff.shipToOverrideCustomerId !== o.customerId
+        ? custById.get(eff.shipToOverrideCustomerId)
         : undefined;
     const area = resolveDeliveryArea({
       otherDelAreaName: redirect?.area.name ?? null,
@@ -305,7 +328,7 @@ export async function getNtsTripsRows(params: NtsTripsParams): Promise<NtsTripRo
     if (area !== "") acc.places.add(area.toUpperCase());
 
     // The bill's own delivery type: effective point → area → type.
-    const eid = effectiveCustomerId(o);
+    const eid = effectiveCustomerId(eff);
     const dt = eid !== null ? custById.get(eid)?.area.deliveryType : undefined;
     if (dt) {
       acc.types.set(dt.name, dt.id);
@@ -317,8 +340,14 @@ export async function getNtsTripsRows(params: NtsTripsParams): Promise<NtsTripRo
     // dealer or a transporter godown alike.
     const redirectName = blank(redirect?.customerName);
     if (redirectName !== null && !acc.remarks.includes(redirectName)) acc.remarks.push(redirectName);
-    // Legacy free-text redirects (no override point) print the typed name.
-    if (o.shipToOverride && o.shipToOverrideCustomerId === null) {
+    // A PART's own typed ship-to (v27.81) prints its text as typed.
+    if (own && isTypedShipTo(eff)) {
+      const typed = blank(eff.shipToText);
+      if (typed !== null && !acc.remarks.includes(typed)) acc.remarks.push(typed);
+    }
+    // Legacy free-text redirects (no override point) print the typed name —
+    // a bill-level fact, so only on a line that goes by the bill's ship-to.
+    if (!own && o.shipToOverride && o.shipToOverrideCustomerId === null) {
       const so = blank(o.soNumber);
       for (const name of so !== null ? (typedNamesBySo.get(so) ?? []) : []) {
         if (!acc.remarks.includes(name)) acc.remarks.push(name);

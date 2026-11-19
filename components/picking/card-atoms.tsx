@@ -427,6 +427,26 @@ export function ShipToChangedTag({ onRed = false }: { onRed?: boolean }): React.
   );
 }
 
+// "2 SHOPS" (per-part ship-to, v27.81, owner rule 6, 2026-11-19) — still ONE
+// card per OBD, but its parts go to different shops (shopCount from
+// lib/picking/queue.ts, read only for OBDs with 2+ invoice rows). Floor's
+// ship-to violet (brand-800, the ShipToChangedTag colour) on the shelf's own
+// chip shape — no new colour (CLAUDE_UI). Renders nothing below 2, so every
+// card today is unchanged. Leads the chip row in CardShelf, so both boards
+// (picking-board-mobile, picker-my-picks-board) show it with no change of
+// their own.
+export function ShopsChip({ count, onRed = false }: { count: number | undefined; onRed?: boolean }): React.JSX.Element | null {
+  if (count === undefined || count < 2) return null;
+  return (
+    <span
+      className={`shrink-0 whitespace-nowrap text-[10.5px] font-semibold rounded-[7px] py-[3px] px-[8px] ${onRed ? "" : "text-brand-800 bg-brand-50"}`}
+      style={onRed ? { color: DUP_SO_MUTED, background: DUP_SO_WASH } : undefined}
+    >
+      {count} shops
+    </span>
+  );
+}
+
 // Rich-card shelf — the DIVIDER + the grey band + CHIPS, plus one optional
 // right-hand slot. Both boards render this; the band colour, the divider and
 // the fade gradient exist here and nowhere else.
@@ -498,7 +518,8 @@ export function CardShelf({
   onViewItems,
   trailing = null,
 }: {
-  row: PickingQueueRow;
+  /** shopCount (v27.81) rides the queue row as an optional extra field. */
+  row: PickingQueueRow & { shopCount?: number };
   /** Chip labels, rendered verbatim. OMIT for the family chips + "+N unlisted". */
   chips?: readonly string[];
   muted?: boolean;
@@ -512,7 +533,8 @@ export function CardShelf({
   // fall back to families.
   const ownChips = chips !== undefined;
   const labels: readonly string[] = chips ?? row.families;
-  const hasStrip = labels.length > 0 || (!ownChips && row.unresolvedLineCount > 0);
+  const shops = row.shopCount !== undefined && row.shopCount > 1;
+  const hasStrip = labels.length > 0 || (!ownChips && row.unresolvedLineCount > 0) || shops;
   if (!hasStrip && !showViewItems && trailing === null) return null;
   const bandBg = onRed ? DUP_SO_BAND : "#f6f8fa";
   return (
@@ -529,6 +551,7 @@ export function CardShelf({
               construction (a Set upstream) but a caller-supplied list can
               legitimately repeat a value ("2 Drum, 2 Drum"). Same rendered
               markup either way — these are static text spans with no state. */}
+          <ShopsChip count={row.shopCount} onRed={onRed} />
           {labels.map((label, i) => (
             <FamilyChip key={`${i}-${label}`} label={label} muted={muted} onRed={onRed} />
           ))}

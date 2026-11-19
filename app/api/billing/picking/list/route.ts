@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { getISTDayRange } from "@/lib/dates";
 import { getHideExclusion } from "@/lib/hide/visibility";
 import { isRedirected } from "@/lib/ship-to/effective";
+import { loadShopCounts } from "@/lib/order-invoices/part-ship-to-read";
 import {
   buildBillingPendingWhere,
   buildBillingInvoicedInfoWhere,
@@ -141,6 +142,11 @@ export async function GET(req: Request): Promise<NextResponse> {
       shipToOverrideCustomerId: true,
       // A typed ship-to (v27.73) also raises the ⚑ (step 7C); the name stays as today.
       shipToText: true,
+      // v27.81 — the "2 shops" count's drop-key inputs (loadShopCounts).
+      customerId: true,
+      shipToOverride: true,
+      shipToCustomerId: true,
+      shipToAreaId: true,
       shipToOverrideCustomer: { select: { customerName: true } },
       dispatchTargetDate: true,
       dispatchWindow: { select: { id: true, windowTime: true, label: true } },
@@ -191,6 +197,15 @@ export async function GET(req: Request): Promise<NextResponse> {
         });
   const shortageOrderIds = new Set(confirmedFindingRows.map((f) => f.orderId));
 
+  // ── "2 shops" (per-part ship-to, v27.81, owner rule 6) ─────────────────────
+  // The tab stays ONE ROW PER OBD with the OBD's own ship-to; a bill whose parts
+  // go to different shops also carries shopCount. ONE batched read that returns
+  // rows only for OBDs with 2+ invoice rows (lib/order-invoices/
+  // part-ship-to-read.ts); none on an empty list. PENDING ROWS ONLY, like
+  // hasConfirmedShortage — the Done arms are untouched. The field is ABSENT
+  // below 2 shops, so every row today is byte-identical.
+  const shopCountById = await loadShopCounts(pendingRows);
+
   const pending = pendingRows.map((o) => ({
     id: o.id,
     obdNumber: o.obdNumber,
@@ -215,6 +230,7 @@ export async function GET(req: Request): Promise<NextResponse> {
     // the same "two surfaces must never disagree" rule §23.4.1 states for the
     // list flag and the detail panel.
     hasFinding: shortageOrderIds.has(o.id),
+    ...((shopCountById.get(o.id) ?? 1) > 1 ? { shopCount: shopCountById.get(o.id) } : {}),
   }));
 
   // ── Done (a) — MARKED: invoiced by the operator, in the selected IST day. ─

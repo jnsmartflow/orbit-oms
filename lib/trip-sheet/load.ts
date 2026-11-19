@@ -21,6 +21,12 @@
 //   - totals / stop numbers → ./totals.ts summariseStops (shared with filterSheet);
 //   - the share chips → ./share-groups.ts (v27.71).
 //
+// PER-PART SHIP-TO (v27.81, batch 5): one line per (OBD, STOP) through
+// placeOnStops; a line's ship-to facts (code, site, typed, As per challan) are
+// its stop's part's (lib/order-invoices/part-ship-to-read.ts stopPart →
+// effectiveDropInput); litres / kg / articles / numbers are that stop's rows.
+// Identical to before while every part inherits.
+//
 // QUERY COUNT. The sheet core (loadSheetCore) is a fixed number of batched reads
 // for ANY number of trips: drops, own bills, re-delivery rows, re-delivered
 // bills, snapshots, bill-to, delivery points, pick assignments, user names, and
@@ -32,12 +38,13 @@ import { prisma } from "@/lib/prisma";
 import { getTodayIST } from "@/lib/dates";
 import { getTripsForDate, parseTripDate, type TripSummary } from "@/lib/trips/queries";
 import { effectiveCustomerId } from "@/lib/trips/drop-key";
-import { isAsPerChallanBill, isTypedShipTo } from "@/lib/ship-to/effective";
+import { effectiveDropInput, isAsPerChallanBill, isTypedShipTo } from "@/lib/ship-to/effective";
 import { tripMixLabel } from "@/lib/floor/scope";
 import { salesOfficerByOrder } from "@/lib/floor/queries";
 import { billQuantities, isSiteDelivery, loadBillToByObd, loadSnapshots } from "@/lib/reports/bill-facts";
 import { isGiftBill } from "@/lib/orders/gift";
-import { onStopsWhere, placeOnTrips, stopRowsSelect } from "@/lib/order-invoices/trip-read";
+import { onStopsWhere, placeOnStops, stopRowsSelect } from "@/lib/order-invoices/trip-read";
+import { loadOwnPartShipTos, stopPart } from "@/lib/order-invoices/part-ship-to-read";
 import { loadPartArticles, loadSplitInvoiceRows } from "@/lib/order-invoices/invoice-load";
 import { RECORD_OBD_SELECT, recordObdOf } from "@/lib/order-invoices/links";
 import { invoicesLoad, loadPlaceArticles, placeLoad } from "@/lib/floor/invoice-rows";
@@ -74,6 +81,8 @@ const BILL_SELECT = {
   grossWeight: true,
   volume: true,
   customerId: true,
+  // v27.81 — effectiveDropInput reads it (NULL = false on the OBD side).
+  shipToOverride: true,
   shipToOverrideCustomerId: true,
   shipToCustomerId: true,
   // The typed ship-to (v27.73) — computeDropKey's t: branch needs both.
@@ -95,6 +104,7 @@ type BillRow = {
   grossWeight: number | null;
   volume: number | null;
   customerId: number | null;
+  shipToOverride: boolean | null;
   shipToOverrideCustomerId: number | null;
   shipToCustomerId: string;
   shipToText: string | null;
@@ -175,12 +185,15 @@ async function loadSheetCore(trips: CoreTrip[]): Promise<Map<number, SheetCore>>
   const dropById = new Map(drops.map((d) => [d.id, d]));
 
   // 2. The trips' own bills — removed out here, held out below. THROUGH THE
-  // INVOICE ROWS (v27.66, lib/order-invoices/trip-read.ts): each OBD once per
-  // trip, on the stop of its lowest-seq row there. The count stays per OBD; a
-  // split OBD's quantities are its invoices on this trip (step 5, below).
+  // INVOICE ROWS (v27.66, lib/order-invoices/trip-read.ts): one entry per
+  // (OBD, STOP) since v27.81 (placeOnStops) — a split OBD whose parts go to two
+  // shops is a line at EACH stop, with that stop's rows only (owner rule 4).
+  // While every part inherits (all live data) an OBD sits at one stop per trip
+  // and this is exactly the old placeOnTrips list (trip-read.test.ts). A split
+  // OBD's quantities are its invoices on this stop (step 5, below).
   const dropIds = drops.map((d) => d.id);
-  const own: Array<BillRow & { tripDropId: number }> = drops.length
-    ? placeOnTrips(
+  const own: Array<BillRow & { tripDropId: number; rowIds: number[] }> = drops.length
+    ? placeOnStops(
         await prisma.orders.findMany({
           where: { ...onStopsWhere(dropIds), isRemoved: false },
           select: { ...BILL_SELECT, invoices: stopRowsSelect(dropIds) },
@@ -209,16 +222,24 @@ async function loadSheetCore(trips: CoreTrip[]): Promise<Map<number, SheetCore>>
   const redelOrderById = new Map(redelOrders.map((o) => [o.id, o]));
 
   // Every bill that can appear, keyed to the stop it rides on THIS trip. A
-  // re-delivery carries the invoice rows it names (`rowIds`, P5-5).
-  const placed: Array<{ order: BillRow; dropId: number; redel: boolean; rowIds: number[] | null }> = [];
+  // re-delivery carries the invoice rows it names (`rowIds`, P5-5); an own
+  // bill carries the rows of it on THIS stop (`stopRowIds`, v27.81) — the
+  // part whose ship-to the line goes by.
+  const placed: Array<{
+    order: BillRow;
+    dropId: number;
+    redel: boolean;
+    rowIds: number[] | null;
+    stopRowIds: number[] | null;
+  }> = [];
   for (const o of own) {
     if (o.dispatchStatus === HOLD) continue;
-    placed.push({ order: o, dropId: o.tripDropId, redel: false, rowIds: null });
+    placed.push({ order: o, dropId: o.tripDropId, redel: false, rowIds: null, stopRowIds: o.rowIds });
   }
   for (const g of groupRedeliveries(redelRows)) {
     const o = redelOrderById.get(g.first.orderId);
     if (!o || o.dispatchStatus === HOLD) continue;
-    placed.push({ order: o, dropId: g.first.tripDropId, redel: true, rowIds: g.rowIds });
+    placed.push({ order: o, dropId: g.first.tripDropId, redel: true, rowIds: g.rowIds, stopRowIds: g.rowIds });
   }
   const uniqueOrders = Array.from(new Map(placed.map((p) => [p.order.id, p.order])).values());
   const orderIds = uniqueOrders.map((o) => o.id);
@@ -241,9 +262,16 @@ async function loadSheetCore(trips: CoreTrip[]): Promise<Map<number, SheetCore>>
   );
   const billToByObd = await loadBillToByObd(uniqueOrders.map((o) => o.obdNumber));
 
+  // 6b. PER-PART SHIP-TO (v27.81): the rows of a split OBD that have their OWN
+  // ship-to — none read when no bill here is split, and an empty map while
+  // every part inherits. Each line goes by its stop's part (stopPart), through
+  // effectiveDropInput — never the raw columns.
+  const ownShipTo = await loadOwnPartShipTos(Array.from(splitRows.keys()));
+  const effOf = (p: (typeof placed)[number]) => effectiveDropInput(p.order, stopPart(p.stopRowIds, ownShipTo));
+
   // 7. The effective delivery points: code (shipToChanged) and type (isSite).
   const pointIds = Array.from(
-    new Set(uniqueOrders.map((o) => effectiveCustomerId(o)).filter((id): id is number => id !== null)),
+    new Set(placed.map((p) => effectiveCustomerId(effOf(p))).filter((id): id is number => id !== null)),
   );
   const points = pointIds.length
     ? await prisma.delivery_point_master.findMany({
@@ -303,14 +331,18 @@ async function loadSheetCore(trips: CoreTrip[]): Promise<Map<number, SheetCore>>
     const drop = dropById.get(p.dropId);
     if (!drop) continue;
     const o = p.order;
+    // v27.81 — the bill as THIS stop sees it (its part's effective ship-to).
+    const eff = effOf(p);
     const whole = billQuantities(snapByOrder.get(o.id), o);
     const rows = splitRows.get(o.id);
+    // An own bill: its rows on THIS STOP (v27.81, rule 4 — was "on this trip",
+    // the same rows while an OBD sits at one stop per trip).
     const inPlace = (r: { id: number; tripDropId: number | null }) =>
-      p.rowIds !== null ? p.rowIds.includes(r.id) : r.tripDropId !== null && dropById.get(r.tripDropId)?.tripId === drop.tripId;
+      p.rowIds !== null ? p.rowIds.includes(r.id) : r.tripDropId === drop.id;
     const load = rows
       ? p.rowIds !== null
         ? invoicesLoad(rows, p.rowIds)
-        : placeLoad(rows, (d) => d !== null && dropById.get(d)?.tripId === drop.tripId)
+        : placeLoad(rows, (d) => d === drop.id)
       : null;
     const q = load ? { ...whole, litres: load.litres, kg: load.kg } : whole;
     // A SPLIT bill's number is ITS invoices here, seq order (P5-5) — not
@@ -327,7 +359,7 @@ async function loadSheetCore(trips: CoreTrip[]): Promise<Map<number, SheetCore>>
     const partArts = shares && rows ? loadPlaceArticles(shares, rows.filter(inPlace).map((r) => r.id)) : null;
     const billTo = billToByObd.get(o.obdNumber);
     const billToCode = blank(billTo?.code);
-    const eid = effectiveCustomerId(o);
+    const eid = effectiveCustomerId(eff);
     const deliveryCode = blank(eid !== null ? codeByPointId.get(eid) : null) ?? blank(o.shipToCustomerId);
     const directLoaded = o.directLoadedAt !== null;
     const checkerId = a?.checkedById ?? (directLoaded ? o.directLoadedById : null);
@@ -348,8 +380,8 @@ async function loadSheetCore(trips: CoreTrip[]): Promise<Map<number, SheetCore>>
       // a typed bill's effective point is its own dealer, so the codes match
       // and alone would never say it.
       shipToChanged:
-        (billToCode !== null && deliveryCode !== null && billToCode !== deliveryCode) || isTypedShipTo(o),
-      asPerChallan: isAsPerChallanBill(o),
+        (billToCode !== null && deliveryCode !== null && billToCode !== deliveryCode) || isTypedShipTo(eff),
+      asPerChallan: isAsPerChallanBill(eff),
       billToName: blank(billTo?.name),
       soName,
       soId: so?.salesOfficerId ?? null,

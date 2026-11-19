@@ -47,9 +47,11 @@ import { parseCancelNote } from "@/lib/floor/off-floor";
 import { CANCEL_REASON_LABELS } from "@/lib/picking/cancel-reasons";
 import type { PickDeleteKind } from "@/lib/billing/pick-delete-types";
 import { parseReportDate } from "@/lib/reports/trip-detail-data";
-import { obdStopIds, onStopsWhere } from "@/lib/order-invoices/trip-read";
+import { obdStopIds, onStopsWhere, placeOnStops } from "@/lib/order-invoices/trip-read";
+import { loadOwnPartShipTos, stopPart } from "@/lib/order-invoices/part-ship-to-read";
+import { effectiveDropInput } from "@/lib/ship-to/effective";
 import { loadPartArticles, loadSplitInvoiceRows } from "@/lib/order-invoices/invoice-load";
-import { hasLoadGroup, loadPlaceArticles, loadTripsOf, placeLoad } from "@/lib/floor/invoice-rows";
+import { hasLoadGroup, loadPlaceArticles, placeLoad } from "@/lib/floor/invoice-rows";
 import { hhmmss } from "@/lib/reports/trip-detail-old-workbook";
 import {
   billQuantities,
@@ -137,6 +139,8 @@ const ORDER_SELECT = {
   id: true,
   obdNumber: true,
   customerId: true,
+  // v27.81 — effectiveDropInput's OBD side (a part may override it).
+  shipToOverride: true,
   shipToOverrideCustomerId: true,
   shipToCustomerId: true,
   shipToCustomerName: true,
@@ -355,6 +359,27 @@ export async function getFreightReportRows(params: FreightReportParams): Promise
     new Map(floorOrders.map((o) => [o.id, snapByOrder.get(o.id)?.totalArticle ?? null] as const)),
   );
 
+  // ── 8. PER-PART SHIP-TO (v27.81, owner 2026-11-19 — batch 5) ──────────────
+  // A FLOOR row goes by the ship-to of the part on its stop (stopPart →
+  // effectiveDropInput): the effective point, the redirect, the bill's type.
+  // Word rows and FREIGHT rows stay per OBD (freight paper trips are per OBD,
+  // owner Q7 — per-part freight rows are deferred). No read when no Floor bill
+  // is split; an empty map, and so no change anywhere, while every part
+  // inherits. A part's own dealer joins custById in one more read, only when
+  // one is not already loaded.
+  const ownShipTo = await loadOwnPartShipTos(Array.from(splitRows.keys()));
+  const partCustIds = Array.from(
+    new Set(
+      Array.from(ownShipTo.values())
+        .map((p) => p.shipToOverrideCustomerId)
+        .filter((id): id is number => id !== null && !custById.has(id)),
+    ),
+  );
+  if (partCustIds.length > 0) {
+    for (const [id, c] of Array.from((await loadCustomers(partCustIds)).entries())) custById.set(id, c);
+  }
+  const tripIdOfDrop = new Map(drops.map((d) => [d.id, d.tripId] as const));
+
   // ── Assemble ─────────────────────────────────────────────────────────────
   type Built = FreightReportRow & {
     /** Whole-trip totals key — "F:<id>" / "T:<id>"; null for a word row. */
@@ -370,12 +395,25 @@ export async function getFreightReportRows(params: FreightReportParams): Promise
 
   for (const o of orders) {
     // The FLOOR stops this bill gives a row for: its obdStopIds stop, or — a
-    // load-split bill — each period trip its parts ride (rowIds = that part).
+    // load-split bill — each period STOP its parts ride (rowIds = that part).
+    // v27.81 (rule 4): per STOP through placeOnStops — a part with its own
+    // ship-to sits at its own stop, so one trip can carry two rows of one
+    // OBD; while every part inherits this is one entry per trip, exactly the
+    // old per-trip list. Every other bill stays one row at obdStopIds — plus,
+    // only when parts of it sit at OTHER stops of that same trip (own
+    // ship-tos), a row for each of those stops, each with its own load.
     const loadRows = splitRows.get(o.id);
+    const floorBill = o.workflowStage !== STAGE_CANCELLED && !freightTripIdByOrder.has(o.id);
+    const stopsHere = floorBill && loadRows ? placeOnStops([{ invoices: loadRows }], tripIdOfDrop) : [];
+    const obdStop = stopByOrder.get(o.id) ?? null;
+    const obdTrip = obdStop !== null ? tripIdOfDrop.get(obdStop) : undefined;
+    const sameTrip = stopsHere.filter((e) => e.tripId === obdTrip);
     const floorStops: Array<{ stop: number | null; rowIds: number[] | null }> =
-      o.workflowStage !== STAGE_CANCELLED && !freightTripIdByOrder.has(o.id) && loadRows && hasLoadGroup(loadRows)
-        ? loadTripsOf(loadRows, (d) => dropById.get(d)?.tripId).map((p) => ({ stop: p.dropId, rowIds: p.rowIds }))
-        : [{ stop: stopByOrder.get(o.id) ?? null, rowIds: null }];
+      loadRows && hasLoadGroup(loadRows) && floorBill
+        ? stopsHere.map((e) => ({ stop: e.tripDropId, rowIds: e.rowIds }))
+        : sameTrip.length > 1
+          ? sameTrip.map((e) => ({ stop: e.tripDropId, rowIds: e.rowIds }))
+          : [{ stop: obdStop, rowIds: null }];
     for (const place of floorStops) {
       let kind: FreightRowKind;
       let tripNo = "0";
@@ -475,14 +513,16 @@ export async function getFreightReportRows(params: FreightReportParams): Promise
       // The period — on the row's own dispatch day.
       if (!inPeriod(dispatch.day)) continue;
 
-      const eid = effectiveCustomerId(o);
+      // The part on this row's stop (Floor rows only; null = the bill's own).
+      const stopRows = kind === "floor" && loadRows ? loadRows.filter((r) => r.tripDropId === place.stop).map((r) => r.id) : null;
+      const eff = effectiveDropInput(o, stopPart(stopRows, ownShipTo));
+      const eid = effectiveCustomerId(eff);
       const cust = eid !== null ? custById.get(eid) : undefined;
       const billTo = billToByObd.get(o.obdNumber);
       const whole = billQuantities(snapByOrder.get(o.id), o);
-      // A truck part: its own load and article share (null → the OBD's own).
-      const partTripId = place.rowIds !== null && place.stop !== null ? dropById.get(place.stop)?.tripId : undefined;
-      const partLoad =
-        loadRows && partTripId !== undefined ? placeLoad(loadRows, (d) => d !== null && dropById.get(d)?.tripId === partTripId) : null;
+      // A truck part: its own load and article share (null → the OBD's own) —
+      // its rows on THIS STOP (v27.81; = on this trip while one stop per trip).
+      const partLoad = loadRows && place.rowIds !== null && place.stop !== null ? placeLoad(loadRows, (d) => d === place.stop) : null;
       const shares = partArticles.get(o.id);
       const partArts = shares && place.rowIds !== null ? loadPlaceArticles(shares, place.rowIds) : null;
       const kg = partLoad ? partLoad.kg : whole.kg;
@@ -497,8 +537,8 @@ export async function getFreightReportRows(params: FreightReportParams): Promise
       });
       // C — where the floor sent it; an override equal to SAP's own point is no redirect.
       const redirect =
-        o.shipToOverrideCustomerId !== null && o.shipToOverrideCustomerId !== o.customerId
-          ? custById.get(o.shipToOverrideCustomerId)
+        eff.shipToOverrideCustomerId !== null && eff.shipToOverrideCustomerId !== o.customerId
+          ? custById.get(eff.shipToOverrideCustomerId)
           : undefined;
       const billToCode = blank(billTo?.code);
       const billToArea = billToCode !== null ? (billToAreaByCode.get(billToCode) ?? null) : null;

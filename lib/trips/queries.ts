@@ -42,7 +42,8 @@ import {
 } from "@/lib/trips/redelivery";
 import { getFloorBoard } from "@/lib/floor/queries";
 import type { FloorBoardRow } from "@/lib/floor/types";
-import { isTypedShipTo } from "@/lib/ship-to/effective";
+import { effectiveShipTo, isTypedShipTo, type PartShipToCols } from "@/lib/ship-to/effective";
+import { PART_SHIP_TO_SELECT, stopPart } from "@/lib/order-invoices/part-ship-to-read";
 import { isGiftBill, loadKg, loadLitres } from "@/lib/orders/gift";
 import { onStopsWhere, placeOnStops, stopRowsSelect } from "@/lib/order-invoices/trip-read";
 import { loadSplitInvoiceRows } from "@/lib/order-invoices/invoice-load";
@@ -473,13 +474,16 @@ async function loadTripBills(drops: ReadonlyArray<{ id: number; tripId: number }
       id: true,
       // For the split-invoice read (Phase 5 commit 1) — one more column.
       obdNumber: true,
-      invoices: stopRowsSelect(dropIds),
+      // v27.81 (batch 5, typeIdOf) — each row's own ship-to rides the same
+      // nested read: no extra statement on the rail feed.
+      invoices: { ...stopRowsSelect(dropIds), select: { ...stopRowsSelect(dropIds).select, ...PART_SHIP_TO_SELECT } },
       workflowStage: true,
       dispatchStatus: true,
       // SAP GIFTS — see TripBillRow.isGift. One more column, same read.
       materialType: true,
       // The effective dealer, for the delivery type — see TripBillRow.
       customerId: true,
+      shipToOverride: true,
       shipToOverrideCustomerId: true,
       // A typed ship-to's picked area decides its type instead (step 7B).
       shipToText: true,
@@ -494,6 +498,29 @@ async function loadTripBills(drops: ReadonlyArray<{ id: number; tripId: number }
   const orders = placeOnStops(found, new Map(drops.map((d) => [d.id, d.tripId])));
   if (orders.length === 0) return [];
 
+  // v27.81 (per-part ship-to, batch 5) — THE TYPE OF EACH STOP'S PART: the rows
+  // with their OWN ship-to (none while every part inherits), and each entry's
+  // effective columns (effectiveShipTo over its stop's part, else the bill's).
+  // typeIdOf below reads these, so a part at its own shop brings its own
+  // area's type to the trip's chip.
+  const ownShipTo = new Map<number, PartShipToCols>();
+  for (const f of found) {
+    for (const r of f.invoices) {
+      if (r.shipToOverride !== null) {
+        ownShipTo.set(r.id, {
+          shipToOverride: r.shipToOverride,
+          shipToOverrideCustomerId: r.shipToOverrideCustomerId,
+          shipToText: r.shipToText,
+          shipToAreaId: r.shipToAreaId,
+        });
+      }
+    }
+  }
+  const shipToOf = (o: (typeof orders)[number]) => ({
+    customerId: o.customerId,
+    ...effectiveShipTo(o, stopPart(o.rowIds, ownShipTo)),
+  });
+
   // ── The delivery type of each bill (2026-09-18) ──────────────────────────
   // `shipToOverrideCustomerId ?? customerId` is the id form of the board's
   // `order.shipToOverrideCustomer ?? order.customer` (lib/floor/queries.ts), so
@@ -501,7 +528,7 @@ async function loadTripBills(drops: ReadonlyArray<{ id: number; tripId: number }
   const dealerIdOf = (o: { customerId: number | null; shipToOverrideCustomerId: number | null }) =>
     o.shipToOverrideCustomerId ?? o.customerId;
   const dealerIds = Array.from(
-    new Set(orders.map(dealerIdOf).filter((id): id is number => id !== null)),
+    new Set(orders.map((o) => dealerIdOf(shipToOf(o))).filter((id): id is number => id !== null)),
   );
   const dealers = dealerIds.length
     ? await prisma.delivery_point_master.findMany({
@@ -517,7 +544,7 @@ async function loadTripBills(drops: ReadonlyArray<{ id: number; tripId: number }
   const areaIds = Array.from(
     new Set([
       ...dealers.map((d) => d.areaId),
-      ...orders.map(typedAreaIdOf).filter((id): id is number => id !== null),
+      ...orders.map((o) => typedAreaIdOf(shipToOf(o))).filter((id): id is number => id !== null),
     ]),
   );
   const areas = areaIds.length
@@ -536,12 +563,9 @@ async function loadTripBills(drops: ReadonlyArray<{ id: number; tripId: number }
   const areaIdByDealer = new Map(dealers.map((d) => [d.id, d.areaId]));
   const typeIdByArea = new Map(areas.map((a) => [a.id, a.deliveryTypeId]));
   const typeNameById = new Map(types.map((t) => [t.id, t.name]));
-  const typeIdOf = (o: {
-    customerId: number | null;
-    shipToOverrideCustomerId: number | null;
-    shipToText: string | null;
-    shipToAreaId: number | null;
-  }): number | null => {
+  // v27.81 — the entry's PART's effective ship-to (shipToOf), not the OBD's.
+  const typeIdOf = (entry: (typeof orders)[number]): number | null => {
+    const o = shipToOf(entry);
     const dealerId = dealerIdOf(o);
     const typedAreaId = typedAreaIdOf(o);
     const areaId =

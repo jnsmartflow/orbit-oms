@@ -28,6 +28,7 @@ import { computeDropKey } from "@/lib/trips/drop-key";
 import type { FloorScope, FloorHoldRow } from "@/lib/floor/types";
 import { effectiveArea } from "@/lib/ship-to/effective";
 import { INVOICE_SOURCE } from "@/lib/order-invoices/source";
+import { loadShopCounts } from "@/lib/order-invoices/part-ship-to-read";
 
 /** A pool row: Floor's hold row + the two facts the route cards need. */
 export interface FreightPoolRow extends FloorHoldRow {
@@ -35,6 +36,13 @@ export interface FreightPoolRow extends FloorHoldRow {
   routeId: number | null;
   /** computeDropKey — one stop per effective customer. */
   stopKey: string;
+  /**
+   * PER-PART SHIP-TO (v27.81, owner Q7): how many shops the bill's parts go to
+   * — present only when 2 or more ("2 shops" tag). A freight paper trip stays
+   * per OBD (freight_trip_bills."orderId"); stopKey above is the OBD's own.
+   * Per-part rows on freight paper trips are deferred (ROADMAP).
+   */
+  shopCount?: number;
 }
 
 export async function getFreightPool(scope: FloorScope = "All", search?: string): Promise<FloorHoldRow[]> {
@@ -65,9 +73,14 @@ export async function getFreightPoolRows(scope: FloorScope = "All", search?: str
       shipToOverrideCustomer: DEALER,
       // A typed ship-to's PICKED area decides its route (step 7B).
       shipToArea: { select: { primaryRouteId: true } },
+      // v27.81 — effectiveDropInput's OBD side, for the "2 shops" count.
+      shipToOverride: true,
     },
   });
   const byId = new Map(facts.map((f) => [f.id, f]));
+  // "2 shops" (owner Q7): ONE more batched read, rows only of the pool's OBDs
+  // with 2+ invoice rows — no per-bill query. Count 1 → no field (all today).
+  const shopCountById = await loadShopCounts(facts);
   return rows.map((r) => {
     const f = byId.get(r.orderId);
     const dealer = f ? f.shipToOverrideCustomer ?? f.customer : null;
@@ -77,6 +90,7 @@ export async function getFreightPoolRows(scope: FloorScope = "All", search?: str
       ...r,
       routeId: area?.primaryRouteId ?? null,
       stopKey: f ? computeDropKey(f) : `o:${r.orderId}`,
+      ...((shopCountById.get(r.orderId) ?? 1) > 1 ? { shopCount: shopCountById.get(r.orderId) } : {}),
     };
   });
 }

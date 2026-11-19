@@ -75,7 +75,9 @@ import { BILLABLE_BILL_WHERE } from "@/lib/challan-orders/where";
 import { logTripBillingDone, logTripBillsCopied } from "@/lib/trips/activity";
 import { invoiceRowLinks, RECORD_OBD_SELECT, recordObdOf, recordsOfObds } from "@/lib/order-invoices/links";
 import { badSentNo, coveringCopy, isWholeObdCopy, planCopyRows } from "@/lib/order-invoices/copy-plan";
-import { onStopsWhere, onTripsWhere, placeOnTrips, stopRowsSelect } from "@/lib/order-invoices/trip-read";
+import { onStopsWhere, onTripsWhere, placeOnStops, stopRowsSelect } from "@/lib/order-invoices/trip-read";
+import { loadOwnPartShipTos, stopPart } from "@/lib/order-invoices/part-ship-to-read";
+import { effectiveShipTo, type PartShipToCols } from "@/lib/ship-to/effective";
 import { loadSplitInvoiceRows } from "@/lib/order-invoices/invoice-load";
 import { placeLoad } from "@/lib/floor/invoice-rows";
 import { INVOICE_SOURCE } from "@/lib/order-invoices/source";
@@ -249,6 +251,49 @@ function iso(d: Date | null | undefined): string | null {
 }
 
 /**
+ * PER-PART SHIP-TO (v27.81, batch 5) — the shop name a Print line shows.
+ * A line whose part INHERITS (every live line) gets today's expression byte for
+ * byte: the redirect dealer's master name, else SAP's ship-to name. A part with
+ * its OWN ship-to gets the same ladder over ITS columns: its dealer's master
+ * name (`partDealerName`), else SAP's name — so a typed part, like a typed
+ * bill today, shows SAP's name, and a reset (FALSE) shows SAP's name.
+ */
+export function printShipToName(
+  o: {
+    shipToOverride: boolean | null;
+    shipToOverrideCustomerId: number | null;
+    shipToText: string | null;
+    shipToAreaId: number | null;
+    shipToCustomerName: string | null;
+    shipToOverrideCustomer: { customerName: string } | null;
+  },
+  part: PartShipToCols | null,
+  partDealerName: ReadonlyMap<number, string>,
+): string | null {
+  const eff = effectiveShipTo(o, part);
+  if (!eff.own) return o.shipToOverrideCustomer?.customerName ?? o.shipToCustomerName;
+  const dealer = eff.shipToOverrideCustomerId !== null ? partDealerName.get(eff.shipToOverrideCustomerId) : undefined;
+  return dealer ?? o.shipToCustomerName;
+}
+
+/**
+ * Q5 (owner, 2026-11-19) — one entry per BILL from a trip's Print LINES (one
+ * per (OBD, stop) since v27.81), in first-appearance order: "copied" only when
+ * every line of the bill is; otherwise the state its uncopied lines share
+ * (held / review / ready / waiting are bill facts, so they cannot differ).
+ * One line per bill → the lines themselves, same order (identity).
+ */
+export function billStatesOf<R extends Pick<PrintBillRow, "orderId" | "state">>(rows: readonly R[]): R[] {
+  const byId = new Map<number, R>();
+  for (const r of rows) {
+    const seen = byId.get(r.orderId);
+    if (seen === undefined) byId.set(r.orderId, r);
+    else if (seen.state === "copied" && r.state !== "copied") byId.set(r.orderId, r);
+  }
+  return Array.from(byId.values());
+}
+
+/**
  * Build the Print view of the given trips. Missing ids are simply absent.
  *
  * Batched: trips, drops, bills (+ their pick assignment), litres, confirmed
@@ -284,14 +329,17 @@ export async function loadPrintTrips(tripIds: number[]): Promise<PrintTrip[]> {
 
   // THROUGH THE INVOICE ROWS (v27.66 readers B, lib/order-invoices/trip-read.ts):
   // a bill is on a trip when any of its invoice rows sits on one of the trip's
-  // stops; it comes back ONCE per trip, on its lowest-seq row's stop there.
-  // The COUNT stays per OBD (one bill line). A split OBD's litres are its
-  // invoices on THAT trip (onTripOf, below) and its copies are per invoice row
-  // (trip_bill_copies, v27.74). (Said "counts, litres and copies stay PER OBD
-  // until Phase 5" until 2026-10-24.)
+  // stops. Since v27.81 (per-part ship-to, rule 4) it comes back ONCE PER STOP
+  // (placeOnStops): a split OBD whose parts go to two shops is a line at each
+  // stop, each with its own shop, its own invoices and litres. While every
+  // part inherits (all live data) that is one entry per (OBD, trip), exactly
+  // the old placeOnTrips list. The COUNTS stay per OBD (owner Q5: 1 bill, 2
+  // stops — billStateOf / onceById below). A split OBD's litres are its
+  // invoices on THAT stop (onTripOf, below) and its copies are per invoice row
+  // (trip_bill_copies, v27.74).
   const dropIds = drops.map((d) => d.id);
   const orders = drops.length
-    ? placeOnTrips(
+    ? placeOnStops(
         await prisma.orders.findMany({
           // Rule 6: challan orders and linked bills never enter the Print view —
           // every count, state and copy set below is built from this list alone.
@@ -310,6 +358,11 @@ export async function loadPrintTrips(tripIds: number[]): Promise<PrintTrip[]> {
             directLoadedAt: true,
             shipToCustomerName: true,
             materialType: true,
+            // v27.81 — effectiveShipTo's OBD side (a part may override it).
+            shipToOverride: true,
+            shipToOverrideCustomerId: true,
+            shipToText: true,
+            shipToAreaId: true,
             shipToOverrideCustomer: { select: { customerName: true } },
             pickAssignment: { select: { assignedAt: true, pickedAt: true, checkedAt: true } },
           },
@@ -333,19 +386,41 @@ export async function loadPrintTrips(tripIds: number[]): Promise<PrintTrip[]> {
   // commit 1). lib/order-invoices/invoice-load.ts — one index-only read when no
   // bill is split. Kg is not read here (Print shows litres), so no header kg.
   const splitRows = await loadSplitInvoiceRows(orders, new Map());
-  const tripIdByDrop = new Map(drops.map((d) => [d.id, d.tripId] as const));
-  const onTripOf = (o: { id: number; tripId: number }) => {
+  // v27.81 — a line's invoices and litres are its rows on THIS STOP (was "on
+  // this trip"; the same rows while an OBD sits at one stop per trip).
+  const onTripOf = (o: { id: number; tripDropId: number }) => {
     const rows = splitRows.get(o.id);
     if (!rows) return null;
-    return { rows: rows.filter((r) => r.tripDropId !== null && tripIdByDrop.get(r.tripDropId) === o.tripId), all: rows };
+    return { rows: rows.filter((r) => r.tripDropId === o.tripDropId), all: rows };
   };
-  /** The litres a bill brings to ITS trip — the OBD's own unless only some of
-   *  its invoices are on the trip. */
-  const litresOn = (o: { id: number; tripId: number }): number => {
+  /** The litres a bill brings to ITS stop — the OBD's own unless only some of
+   *  its invoices are there. */
+  const litresOn = (o: { id: number; tripDropId: number }): number => {
     const rows = splitRows.get(o.id);
-    const load = rows ? placeLoad(rows, (d) => d !== null && tripIdByDrop.get(d) === o.tripId) : null;
+    const load = rows ? placeLoad(rows, (d) => d === o.tripDropId) : null;
     return load ? load.litres : litresByOrderId.get(o.id) ?? 0;
   };
+
+  // ── PER-PART SHIP-TO (v27.81): the shop each line names ──────────────────
+  // The part's own rows (none read when no bill is split; an empty map while
+  // every part inherits) and the master names of their own dealers (none read
+  // when no part has one).
+  const ownShipTo = await loadOwnPartShipTos(Array.from(splitRows.keys()));
+  const partDealerIds = Array.from(
+    new Set(
+      Array.from(ownShipTo.values())
+        .map((p) => p.shipToOverrideCustomerId)
+        .filter((id): id is number => id !== null),
+    ),
+  );
+  const partDealerName = new Map(
+    (partDealerIds.length
+      ? await prisma.delivery_point_master.findMany({ where: { id: { in: partDealerIds } }, select: { id: true, customerName: true } })
+      : []
+    ).map((d) => [d.id, d.customerName] as const),
+  );
+  const shipToNameOf = (o: (typeof orders)[number]): string | null =>
+    printShipToName(o, stopPart(o.rowIds, ownShipTo), partDealerName);
 
   // 🔴 CONFIRMED ONLY — recordedById not null, the Picking tab's own test
   // (app/api/billing/picking/list/route.ts). A picker's unconfirmed report is a
@@ -510,7 +585,8 @@ export async function loadPrintTrips(tripIds: number[]): Promise<PrintTrip[]> {
         orderId: o.id,
         obdNumber: o.obdNumber,
         invoiceNo: o.invoiceNo,
-        shipToName: o.shipToOverrideCustomer?.customerName ?? o.shipToCustomerName,
+        // v27.81 — THIS stop's shop (the part's own ship-to, else the bill's).
+        shipToName: shipToNameOf(o),
         routeName: drop.routeName,
         dropSeq: drop.dropSeq,
         litres: litresOn(o),
@@ -537,7 +613,12 @@ export async function loadPrintTrips(tripIds: number[]): Promise<PrintTrip[]> {
       };
     });
 
-    const eligibleRows = rows.filter((r) => !r.held);
+    // Q5 (owner, 2026-11-19): every COUNT is per OBD — one OBD at two stops is
+    // 1 bill, 2 stops. billStatesOf folds a bill's lines into one state
+    // ("copied" only when every line is); with one line per bill — all live
+    // data — it returns `rows` unchanged.
+    const bills = billStatesOf(rows);
+    const eligibleRows = bills.filter((r) => !r.held);
     const eligible = eligibleRows.length;
     const copiedCount = eligibleRows.filter((r) => r.state === "copied").length;
     const readyRows = eligibleRows.filter((r) => r.state === "ready");
@@ -577,12 +658,13 @@ export async function loadPrintTrips(tripIds: number[]): Promise<PrintTrip[]> {
       billingDoneAt: iso(t.billingDoneAt),
       billingDoneByName: nameOf(t.billingDoneById),
       state,
-      bills: own.length,
+      bills: bills.length,
       challanOnly: own.length === 0 && challanTripIds.has(t.id),
       stops: new Set(own.map((o) => o.tripDropId)).size,
       // A GIFT bill adds no litres (lib/orders/gift.ts); `bills` and `stops` above count it.
+      // Per LINE: a bill at two stops adds each stop's own litres (v27.81).
       litres: own.reduce((sum, o) => sum + loadLitres(litresOn(o), isGiftBill(o.materialType)), 0),
-      held: own.length - eligible,
+      held: bills.length - eligible,
       eligible,
       invoiced: eligibleRows.filter((r) => r.invoiceNo !== null).length,
       copiedCount,

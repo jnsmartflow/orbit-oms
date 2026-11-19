@@ -13,7 +13,10 @@
 // (trip-detail-workbook.ts) takes its row type with `import type`.
 
 import { prisma } from "@/lib/prisma";
-import { onStopsWhere, placeOnTrips, stopRowsSelect } from "@/lib/order-invoices/trip-read";
+import { onStopsWhere, placeOnStops, stopRowsSelect } from "@/lib/order-invoices/trip-read";
+import { loadOwnPartShipTos, stopPart } from "@/lib/order-invoices/part-ship-to-read";
+import { effectiveDropInput } from "@/lib/ship-to/effective";
+import { effectiveCustomerId } from "@/lib/trips/drop-key";
 import { loadPartArticles, loadSplitInvoiceRows } from "@/lib/order-invoices/invoice-load";
 import { loadPlaceArticles, placeLoad } from "@/lib/floor/invoice-rows";
 import {
@@ -214,9 +217,11 @@ export async function getTripDetailRows(params: TripDetailParams): Promise<TripD
   // `NULL <> 'hold'` is NULL, so Prisma's `not` silently drops every bill whose
   // dispatchStatus is NULL — most of them. Removed bills keep their tripDropId
   // (CLAUDE_FLOOR_TRIPS.md §7), so `isRemoved: false` is what keeps them out.
-  // Through the INVOICE ROWS (v27.66, lib/order-invoices/trip-read.ts): each
-  // OBD once per trip, on its lowest-seq row's stop there. Count per OBD; a
-  // split OBD's quantities are its invoices on that trip (step 4).
+  // Through the INVOICE ROWS (v27.66, lib/order-invoices/trip-read.ts): one
+  // row per (OBD, STOP) since v27.81 (placeOnStops — a split OBD whose parts go
+  // to two shops is a row at each, owner rule 4); while every part inherits
+  // that is each OBD once per trip, as before. A split OBD's quantities are
+  // its invoices on that stop (step 4).
   const dropIds = drops.map((d) => d.id);
   const found = await prisma.orders.findMany({
     where: {
@@ -229,9 +234,13 @@ export async function getTripDetailRows(params: TripDetailParams): Promise<TripD
       obdNumber: true,
       invoices: stopRowsSelect(dropIds),
       customerId: true,
+      // v27.81 — effectiveDropInput's OBD side (a part may override it).
+      shipToOverride: true,
       shipToOverrideCustomerId: true,
       shipToCustomerId: true,
       shipToCustomerName: true,
+      shipToText: true,
+      shipToAreaId: true,
       soNumber: true,
       invoiceNo: true,
       invoiceDate: true,
@@ -245,7 +254,7 @@ export async function getTripDetailRows(params: TripDetailParams): Promise<TripD
       materialType: true,
     },
   });
-  const orders = placeOnTrips(found, new Map(drops.map((d) => [d.id, d.tripId])));
+  const orders = placeOnStops(found, new Map(drops.map((d) => [d.id, d.tripId])));
   if (orders.length === 0) return [];
 
   // ── 4. Quantities (the import's per-OBD snapshot) ────────────────────────
@@ -270,9 +279,11 @@ export async function getTripDetailRows(params: TripDetailParams): Promise<TripD
   const billToByObd = await loadBillToByObd(orders.map((o) => o.obdNumber));
 
   // ── 6. The EFFECTIVE delivery point: shipToOverrideCustomerId ?? customerId
-  // (lib/trips/drop-key.ts effectiveCustomerId) ─────────────────────────────
-  const effId = (o: { customerId: number | null; shipToOverrideCustomerId: number | null }) =>
-    o.shipToOverrideCustomerId ?? o.customerId;
+  // (lib/trips/drop-key.ts effectiveCustomerId) — of THIS ROW'S PART (v27.81):
+  // the stop's part's own ship-to when it has one (stopPart), else the bill's.
+  // No read when no bill is split; an empty map while every part inherits.
+  const ownShipTo = await loadOwnPartShipTos(Array.from(splitRows.keys()));
+  const effOf = (o: (typeof orders)[number]) => effectiveDropInput(o, stopPart(o.rowIds, ownShipTo));
   // Also SAP's own ship-to point (customerId, "B") and the redirect target
   // (shipToOverrideCustomerId, "C") — the effective id is always one of these
   // two, so one read covers all three.
@@ -280,7 +291,7 @@ export async function getTripDetailRows(params: TripDetailParams): Promise<TripD
     Array.from(
       new Set(
         orders
-          .flatMap((o) => [o.customerId, o.shipToOverrideCustomerId])
+          .flatMap((o) => [o.customerId, effOf(o).shipToOverrideCustomerId])
           .filter((id): id is number => id !== null),
       ),
     ),
@@ -299,7 +310,8 @@ export async function getTripDetailRows(params: TripDetailParams): Promise<TripD
     const trip = drop ? tripById.get(drop.tripId) : undefined;
     if (!drop || !trip) continue;
 
-    const eid = effId(o);
+    const eff = effOf(o);
+    const eid = effectiveCustomerId(eff);
     const cust = eid !== null ? custById.get(eid) : undefined;
     const billTo = billToByObd.get(o.obdNumber);
     const snap = snapByOrder.get(o.id);
@@ -308,7 +320,8 @@ export async function getTripDetailRows(params: TripDetailParams): Promise<TripD
     // the rules: a stored 0 kg is UNKNOWN only when grossWeight is null.
     const whole = billQuantities(snap, o);
     const split = splitRows.get(o.id);
-    const inTrip = (d: number | null) => d !== null && dropById.get(d)?.tripId === drop.tripId;
+    // Its rows on THIS STOP (v27.81; = on this trip while an OBD sits at one stop per trip).
+    const inTrip = (d: number | null) => d === drop.id;
     const part = split ? placeLoad(split, inTrip) : null;
     const { kg, litres } = part ? { ...whole, kg: part.kg, litres: part.litres } : whole;
     // A truck part: its share of SAP's articles; every other bill the OBD's own.
@@ -333,8 +346,8 @@ export async function getTripDetailRows(params: TripDetailParams): Promise<TripD
     // An override pointing at SAP's own ship-to point (C = B) changed nothing,
     // so it is not a redirect either (seen live: OBD 9109619675).
     const redirect =
-      o.shipToOverrideCustomerId !== null && o.shipToOverrideCustomerId !== o.customerId
-        ? custById.get(o.shipToOverrideCustomerId)
+      eff.shipToOverrideCustomerId !== null && eff.shipToOverrideCustomerId !== o.customerId
+        ? custById.get(eff.shipToOverrideCustomerId)
         : undefined;
 
     rows.push({

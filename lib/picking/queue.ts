@@ -41,6 +41,8 @@ import { getDuplicateSoNumbers } from "./duplicate-so";
 // rule lives in ./colour-work.ts and the read in ./colour-work-query.ts.
 import { getColourWorkByOrder } from "./colour-work-query";
 import { effectiveArea, isRedirected, isTypedShipTo } from "@/lib/ship-to/effective";
+// Per-part ship-to (v27.81) — rule 6's "2 shops" count, one batched read.
+import { loadShopCounts } from "@/lib/order-invoices/part-ship-to-read";
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
@@ -712,6 +714,17 @@ export async function getPickingQueue(
   // same value the old `?.name ?? null` produced for a null relation.
   const userNameById = new Map(userRows.map((u) => [u.id, u.name]));
 
+  // ── PER-PART SHIP-TO — "2 shops" (v27.81, owner rule 6, 2026-11-19) ────────
+  // Still ONE CARD PER OBD; a bill whose parts go to different shops carries
+  // shopCount > 1 and the card shows a "2 shops" chip (card-atoms CardShelf).
+  // ONE read on order_invoices, returning rows only for OBDs with 2+ invoice
+  // rows (lib/order-invoices/part-ship-to-read.ts loadShopCounts); none for an
+  // empty board. Absent = one shop. A post-fetch enrichment like the lookups
+  // around it: no term in buildPickingWhere, so the marker is untouched.
+  // ⚠ shopCount is not on PickingQueueRow (lib/picking/types.ts, out of this
+  // batch): it rides each row as an extra field the card reads optionally.
+  const shopCountById = await loadShopCounts(orders);
+
   // ── Same-SO detection — ONE bounded groupBy ───────────────────────────────
   // A post-fetch enrichment of rows the predicate above ALREADY returned, in
   // the same shape as the dealer/user/catalog lookups around it: one query for
@@ -818,7 +831,7 @@ export async function getPickingQueue(
   // was it checked", this answers "when was it due".
   const anchorMs = dateOnly.getTime();
 
-  const rows: PickingQueueRow[] = orders.map((order) => {
+  const rows: Array<PickingQueueRow & { shopCount?: number }> = orders.map((order) => {
     // Override first, plain customer second — byte-for-byte the old
     // `order.shipToOverrideCustomer ?? order.customer`, resolved through the
     // batched Map instead of two hydrated relations. See the block comment on
@@ -1018,6 +1031,9 @@ export async function getPickingQueue(
       directLoadedAt: order.directLoadedAt ?? null,
       directLoadedByName:
         order.directLoadedById != null ? (userNameById.get(order.directLoadedById) ?? null) : null,
+      // v27.81 rule 6 — only when the parts go to 2+ shops; absent otherwise,
+      // so every payload today is byte-identical.
+      ...((shopCountById.get(order.id) ?? 1) > 1 ? { shopCount: shopCountById.get(order.id) } : {}),
     };
   });
 
