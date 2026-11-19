@@ -768,6 +768,8 @@ model area_master {
   // Typed ship-to area (v27.73) — one FK each from mo_orders and orders, named.
   moOrdersShipTo mo_orders[]             @relation("MoOrderShipToArea")
   ordersShipTo   orders[]                @relation("OrderShipToArea")
+  // Per-part typed ship-to area (v27.81).
+  orderInvoicesShipTo order_invoices[]   @relation("OrderInvoiceShipToArea")
 }
 
 model area_route_map {
@@ -969,6 +971,8 @@ model delivery_point_master {
   shipToOverrideOrders     orders[]                  @relation("OrderShipToOverride")
   // mo_orders ship-to override back-relation (2026-07-07)
   mo_orders_shipToOverride mo_orders[]               @relation("MoOrderShipToOverride")
+  // Per-part ship-to override back-relation (v27.81, 2026-11-19)
+  orderInvoicesShipToOverride order_invoices[]       @relation("OrderInvoiceShipToOverride")
   // Sampling Library back-relation
   samplingRegisterEntries  sampling_register[]
   samplingUsageLogEntries  sampling_usage_log[]
@@ -1523,10 +1527,18 @@ model ship_to_copies {
   removedAt    DateTime?  @db.Timestamptz(6)
   removedById  Int?
   removedBy    users?     @relation("ShipToCopyRemovedBy", fields: [removedById], references: [id], onDelete: NoAction)
+  // v27.81 (2026-11-19) — a Floor copy may belong to ONE part of a split OBD;
+  // NULL = the OBD's (every row before v27.81). Live FK
+  // ship_to_copies_orderInvoiceId_fkey ON DELETE SET NULL (a merge / repair that
+  // deletes a part drops its copies back to the OBD) and
+  //   chk_ship_to_copies_part_has_order: CHECK ((("orderInvoiceId" IS NULL) OR ("orderId" IS NOT NULL)))
+  orderInvoiceId Int?
+  orderInvoice   order_invoices? @relation("ShipToCopyOrderInvoice", fields: [orderInvoiceId], references: [id], onDelete: SetNull)
 
   @@index([soNumber])
   @@index([orderId])
   @@index([moOrderId])
+  @@index([orderInvoiceId])
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1636,6 +1648,33 @@ model order_invoices {
   loadParent   order_invoices?  @relation("OrderInvoiceLoadParent", fields: [loadParentId, orderId], references: [id, orderId], onDelete: Restrict, map: "order_invoices_loadParentId_fkey")
   loadParts    order_invoices[] @relation("OrderInvoiceLoadParent")
 
+  // ── v27.81 — PER-PART SHIP-TO (2026-11-19, owner; REVERSES Model A for
+  // ship-to only — cancel / Hand / picking / tint stay per OBD. Do not revert).
+  // sql/2026-11-19-v27.81-order-invoices-ship-to.sql, run live 2026-11-19.
+  // "shipToOverride" is a TRI-STATE (never compare it raw — call
+  // lib/ship-to/effective.ts effectiveShipTo, the one owner):
+  //   NULL  = INHERIT the OBD's four orders columns (default; every row at v27.81)
+  //   TRUE  = the part's own redirect: exactly one of a dealer id OR a typed name (+ area)
+  //   FALSE = the part's own reset to SAP's own site, even when the OBD is redirected
+  // 🔴 FIVE LIVE CHECKs — NOT EXPRESSIBLE IN PRISMA (text as in the SQL file; the
+  // owner's 2026-11-19 read-back confirmed the live text matches it):
+  //   chk_order_invoices_ship_to_text:       CHECK (("shipToText" IS NULL) OR ("shipToText" ~ '\S'::text))
+  //   chk_order_invoices_ship_to_text_area:  CHECK (("shipToText" IS NULL) OR ("shipToAreaId" IS NOT NULL))
+  //   chk_order_invoices_ship_to_inherit:    CHECK (("shipToOverride" IS TRUE) OR ("shipToOverrideCustomerId" IS NULL AND "shipToText" IS NULL AND "shipToAreaId" IS NULL))
+  //   chk_order_invoices_ship_to_one_target: CHECK (("shipToOverride" IS NOT TRUE) OR (("shipToOverrideCustomerId" IS NULL) <> ("shipToText" IS NULL)))
+  //   chk_order_invoices_area_only_typed:    CHECK (("shipToAreaId" IS NULL) OR ("shipToText" IS NOT NULL))
+  // Live FKs order_invoices_shipToOverrideCustomerId_fkey → delivery_point_master(id)
+  // and order_invoices_shipToAreaId_fkey → area_master(id), both with NO ON DELETE
+  // clause (NO ACTION, mirroring orders) — spelled out below. Prisma default names.
+  shipToOverride           Boolean?
+  shipToOverrideCustomerId Int?
+  shipToOverrideCustomer   delivery_point_master? @relation("OrderInvoiceShipToOverride", fields: [shipToOverrideCustomerId], references: [id], onDelete: NoAction)
+  shipToText               String?
+  shipToAreaId             Int?
+  shipToArea               area_master?           @relation("OrderInvoiceShipToArea", fields: [shipToAreaId], references: [id], onDelete: NoAction)
+  // Floor copies attached to THIS part (v27.81); NULL orderInvoiceId = the OBD's.
+  shipToCopies             ship_to_copies[]       @relation("ShipToCopyOrderInvoice")
+
   lines        order_invoice_lines[]
   // v27.66 per-row keys pointing here, all ON DELETE RESTRICT.
   billCopies   trip_bill_copies[]
@@ -1651,6 +1690,9 @@ model order_invoices {
   @@index([invoiceNo])
   // v27.66 — "which rows are on this stop". Prisma's default name.
   @@index([tripDropId])
+  // v27.81 — the two ship-to FKs. Prisma's default names.
+  @@index([shipToOverrideCustomerId])
+  @@index([shipToAreaId])
 }
 
 // Which raw line, how many TINS, sits on which invoice — split OBDs only.
