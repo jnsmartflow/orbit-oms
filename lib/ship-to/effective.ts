@@ -23,6 +23,8 @@
 
 import { isAsPerChallanText } from "@/lib/ship-to/copy";
 import { dealerDisplayName } from "@/lib/orders/dealer-name";
+// Per-part ship-to (v27.81) — see the cycle note in the section at the bottom.
+import { computeDropKey } from "@/lib/trips/drop-key";
 
 /** The bill columns these rules read. */
 export interface ShipToFacts {
@@ -93,4 +95,124 @@ export function typedDropText(o: ShipToFacts): string | null {
   if (text === null) return null;
   const scope = o.customerId !== null ? String(o.customerId) : o.shipToCustomerId;
   return `${scope}/${o.shipToAreaId}/${text}`;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 🔴 PER-PART SHIP-TO (Schema v27.81, owner 2026-11-19 — REVERSES Model A for
+// ship-to only; do not revert). Plan: docs/prompts/drafts/code-plan-2026-11-19-
+// split-load-per-part-ship-to.md §A.6. THE ONE OWNER of "where does this PART
+// go": every reader and writer calls these, never the raw columns.
+//
+//   order_invoices."shipToOverride" is a TRI-STATE:
+//     NULL  = INHERIT the OBD's four orders columns (every row at v27.81)
+//     TRUE  = the part's own redirect — a dealer id OR a typed name + area
+//     FALSE = the part's own reset to SAP's own site, even when the OBD is redirected
+//   orders."shipToOverride" is boolean NULLABLE in the live DDL (0 NULL rows on
+//   2026-11-19, CORE §13): on the OBD side a NULL reads as FALSE. The two NULLs
+//   mean different things — this file is the only place that reads both.
+//
+// "Same shop" = equal drop key (lib/trips/drop-key.ts computeDropKey over
+// effectiveDropInput) — the identity a trip stop uses, so the merge refusal,
+// the "2 shops" tag and the stop grouping can never disagree. Never parse a key.
+//
+// ⚠ IMPORT CYCLE, deliberate and safe: drop-key.ts imports typedDropText from
+// here and this imports computeDropKey from there. Both are used only INSIDE
+// functions (never at module load), so either load order works.
+// ═══════════════════════════════════════════════════════════════════════════
+
+
+/** The OBD's four ship-to columns (orders). shipToOverride NULL = false. */
+export interface ObdShipToCols {
+  shipToOverride: boolean | null;
+  shipToOverrideCustomerId: number | null;
+  shipToText: string | null;
+  shipToAreaId: number | null;
+}
+
+/** A part's four ship-to columns (order_invoices). shipToOverride NULL = INHERIT. */
+export interface PartShipToCols {
+  shipToOverride: boolean | null;
+  shipToOverrideCustomerId: number | null;
+  shipToText: string | null;
+  shipToAreaId: number | null;
+}
+
+/** The four columns a part actually goes by, and whether they are its own. */
+export interface EffectiveShipTo {
+  shipToOverride: boolean;
+  shipToOverrideCustomerId: number | null;
+  shipToText: string | null;
+  shipToAreaId: number | null;
+  /** true = the part's own value; false = inherited from the OBD (or no part given). */
+  own: boolean;
+}
+
+/** Rule 1: a part with NULL shipToOverride (or no part at all) inherits. */
+export function isInheriting(part: Pick<PartShipToCols, "shipToOverride"> | null | undefined): boolean {
+  return part === null || part === undefined || part.shipToOverride === null;
+}
+
+/** Rule 1: the part's own columns when it has them, else the OBD's (NULL flag → false). */
+export function effectiveShipTo(order: ObdShipToCols, part?: PartShipToCols | null): EffectiveShipTo {
+  if (part !== null && part !== undefined && part.shipToOverride !== null) {
+    return {
+      shipToOverride: part.shipToOverride,
+      shipToOverrideCustomerId: part.shipToOverrideCustomerId,
+      shipToText: part.shipToText,
+      shipToAreaId: part.shipToAreaId,
+      own: true,
+    };
+  }
+  return {
+    shipToOverride: order.shipToOverride ?? false,
+    shipToOverrideCustomerId: order.shipToOverrideCustomerId,
+    shipToText: order.shipToText,
+    shipToAreaId: order.shipToAreaId,
+    own: false,
+  };
+}
+
+/**
+ * The bill as a trip stop sees it for ONE part: every field of `order` kept
+ * (customerId, SAP's code, shipToCustomerName …) with the four ship-to columns
+ * replaced by the part's effective ones. Feed it to computeDropKey /
+ * findOrCreateTripDrop. No part (or an inheriting one) → the OBD's own values.
+ */
+export function effectiveDropInput<O extends ShipToFacts & { shipToOverride?: boolean | null }>(
+  order: O,
+  part?: PartShipToCols | null,
+): O & { shipToOverride: boolean } {
+  const eff = effectiveShipTo(
+    {
+      shipToOverride: order.shipToOverride ?? null,
+      shipToOverrideCustomerId: order.shipToOverrideCustomerId,
+      shipToText: order.shipToText,
+      shipToAreaId: order.shipToAreaId,
+    },
+    part,
+  );
+  return {
+    ...order,
+    shipToOverride: eff.shipToOverride,
+    shipToOverrideCustomerId: eff.shipToOverrideCustomerId,
+    shipToText: eff.shipToText,
+    shipToAreaId: eff.shipToAreaId,
+  };
+}
+
+/** The stop identity of one part (drop-key equality is "same shop"). */
+export function partShopKey(order: ShipToFacts & { shipToOverride?: boolean | null }, part?: PartShipToCols | null): string {
+  return computeDropKey(effectiveDropInput(order, part));
+}
+
+/**
+ * Rules 5 and 6: how many DIFFERENT shops these parts go to (≥ 1 for any
+ * non-empty list, 0 for none). By drop-key equality only — a dealer redirect
+ * to the bill's own customer is the same shop as no redirect.
+ */
+export function partsShopCount(
+  order: ShipToFacts & { shipToOverride?: boolean | null },
+  parts: ReadonlyArray<PartShipToCols | null | undefined>,
+): number {
+  return new Set(parts.map((p) => partShopKey(order, p))).size;
 }

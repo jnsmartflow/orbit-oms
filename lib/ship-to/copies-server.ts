@@ -123,13 +123,26 @@ export async function copyCountsForBills(
 
 // ── Owner-scoped reads ────────────────────────────────────────────────────
 
+/**
+ * PER-PART COPIES (v27.81, 2026-11-19): a Floor copy may belong to ONE part of
+ * a split OBD (ship_to_copies."orderInvoiceId"). `part` narrows a FLOOR owner:
+ *   undefined → every copy of the bill (today's meaning — every caller that
+ *               does not pass it is unchanged)
+ *   null      → the OBD's OWN copies only (orderInvoiceId NULL)
+ *   a row id  → that part's own copies only
+ * Each owner — the OBD, or one part — has its own cap (MAX_ACTIVE_COPIES).
+ * Ignored for Billing (mail-order copies are SO-wide).
+ */
+export type CopyPartScope = number | null | undefined;
+
 /** The active copies an owner holds: a mail order's (Billing) or a bill's own (Floor). */
-export function activeOwnCopiesWhere(owner: ShipToCopyOwner, ownerId: number): Prisma.ship_to_copiesWhereInput {
-  return owner === "billing" ? { moOrderId: ownerId, removedAt: null } : { orderId: ownerId, removedAt: null };
+export function activeOwnCopiesWhere(owner: ShipToCopyOwner, ownerId: number, part?: CopyPartScope): Prisma.ship_to_copiesWhereInput {
+  if (owner === "billing") return { moOrderId: ownerId, removedAt: null };
+  return part === undefined ? { orderId: ownerId, removedAt: null } : { orderId: ownerId, orderInvoiceId: part, removedAt: null };
 }
 
-export async function countActiveOwnCopies(owner: ShipToCopyOwner, ownerId: number): Promise<number> {
-  return prisma.ship_to_copies.count({ where: activeOwnCopiesWhere(owner, ownerId) });
+export async function countActiveOwnCopies(owner: ShipToCopyOwner, ownerId: number, part?: CopyPartScope): Promise<number> {
+  return prisma.ship_to_copies.count({ where: activeOwnCopiesWhere(owner, ownerId, part) });
 }
 
 /**
@@ -141,16 +154,21 @@ export async function checkRemovable(
   ids: number[],
   owner: ShipToCopyOwner,
   ownerId: number,
+  /** v27.81 — see CopyPartScope. undefined = today's rule (any copy of the bill). */
+  part?: CopyPartScope,
 ): Promise<{ status: number; error: string } | null> {
   if (ids.length === 0) return null;
   const rows = await prisma.ship_to_copies.findMany({
     where: { id: { in: ids } },
-    select: { id: true, orderId: true, moOrderId: true, removedAt: true },
+    select: { id: true, orderId: true, moOrderId: true, orderInvoiceId: true, removedAt: true },
   });
   for (const id of ids) {
     const r = rows.find((x) => x.id === id);
     if (!r) return { status: 404, error: `Copy ${id} not found` };
-    const mine = owner === "billing" ? r.moOrderId === ownerId : r.orderId === ownerId;
+    const mine =
+      owner === "billing"
+        ? r.moOrderId === ownerId
+        : r.orderId === ownerId && (part === undefined || r.orderInvoiceId === part);
     if (!mine) {
       return {
         status: 403,
@@ -212,8 +230,11 @@ export async function uploadAndRecordCopies(args: {
   /** A snapshot only — readers find Billing copies via moOrderId (v27.73). */
   soNumber: string | null;
   uploadedById: number;
+  /** v27.81 — a Floor copy of ONE part (its order_invoices.id); omitted / null = the OBD's. */
+  orderInvoiceId?: number | null;
 }): Promise<RecordCopiesResult> {
   const { files, owner, ownerId, soNumber, uploadedById } = args;
+  const orderInvoiceId = owner === "floor" ? (args.orderInvoiceId ?? null) : null;
   if (files.length === 0) return { ok: true, ids: [], paths: [] };
 
   const supabase = getSupabaseAdmin();
@@ -239,6 +260,7 @@ export async function uploadAndRecordCopies(args: {
           soNumber: soNumber?.trim() || null,
           orderId: owner === "floor" ? ownerId : null,
           moOrderId: owner === "billing" ? ownerId : null,
+          orderInvoiceId,
           storagePath: u.path,
           contentType: u.file.contentType,
           sizeBytes: u.file.size,

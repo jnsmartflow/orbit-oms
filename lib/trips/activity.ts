@@ -368,19 +368,26 @@ export async function logTripShipToChanged(opts: {
   fromDropId: number | null;
   toDropId: number;
   oldStopClosed: boolean;
+  /** PER-PART SHIP-TO (v27.81, 2026-11-19): set when ONE part of a split OBD
+   *  changed (its order_invoices.id + its label, e.g. "I536233980 part 2 of 2").
+   *  Omitted → today's whole-bill row, byte for byte. No new action type. */
+  orderInvoiceId?: number;
+  partLabel?: string;
 }): Promise<void> {
   const was = opts.oldShop !== null && opts.oldShop !== opts.newShop ? ` (was ${opts.oldShop})` : "";
+  const who = opts.partLabel !== undefined ? `${opts.obdNumber} ${opts.partLabel}` : opts.obdNumber;
   await writeActivity({
     tripId: opts.tripId,
     action: TRIP_SHIP_TO_CHANGED,
     actorId: opts.actorId,
-    summary: `Ship-to changed: ${opts.obdNumber} → ${opts.newShop}${was}`,
+    summary: `Ship-to changed: ${who} → ${opts.newShop}${was}`,
     detail: {
       orderIds: [opts.orderId],
       obdNumbers: [opts.obdNumber],
       fromDropId: opts.fromDropId,
       toDropId: opts.toDropId,
       oldStopClosed: opts.oldStopClosed,
+      ...(opts.orderInvoiceId !== undefined ? { orderInvoiceId: opts.orderInvoiceId, partLabel: opts.partLabel ?? null } : {}),
     },
   });
 }

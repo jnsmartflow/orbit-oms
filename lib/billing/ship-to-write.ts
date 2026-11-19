@@ -28,16 +28,37 @@
 
 import { prisma } from "@/lib/prisma";
 import { billingRefusal } from "@/lib/billing/refusal";
-import { INVOICE_TRIPS_SELECT, invoiceTripsOf } from "@/lib/order-invoices/trip-refusal";
 import { NOT_CHALLAN_LINKED } from "@/lib/workflow-stages";
-import { shipToColumns, type ShipToTarget } from "@/lib/floor/ship-to";
+import {
+  MOVING_INVOICES_SELECT,
+  invoiceTripsThatMove,
+  keptPartsText,
+  ownShipToCount,
+  shipToColumns,
+  type ShipToTarget,
+} from "@/lib/floor/ship-to";
 import { activeOwnCopiesWhere, softRemoveCopies } from "@/lib/ship-to/copies-server";
+
+// 🔴 PER-PART SHIP-TO (v27.81, owner 2026-11-19, rule 3): this write stays
+// OBD-wide (orders, per bill on the SO). Parts with their OWN ship-to
+// (order_invoices."shipToOverride" not NULL) keep it, so (a) only the
+// inheriting rows can trip the on-a-trip refusal (invoiceTripsThatMove — with
+// every part NULL that is today's refusal exactly), (b) the result lists the
+// bills whose parts kept their own (`keptParts`, for Billing's toast), and (c)
+// the bill's log note says so.
 
 /** One bill the per-bill write did NOT change, and why — reported to the bar. */
 export interface BillingBillOutcome {
   orderId: number;
   obdNumber: string;
   reason: string;
+}
+
+/** A bill the write DID change, but some of whose parts keep their own ship-to (v27.81). */
+export interface BillingKeptParts {
+  orderId: number;
+  obdNumber: string;
+  parts: number;
 }
 
 /** The mail order fields returned to the client after a ship-to save. */
@@ -90,6 +111,7 @@ export async function applyBillingShipTo(args: {
   const updated: number[] = [];
   const skipped: BillingBillOutcome[] = [];
   const failed: BillingBillOutcome[] = [];
+  const keptParts: BillingKeptParts[] = [];
 
   const soNumber = args.soNumber?.trim();
   if (soNumber) {
@@ -109,8 +131,9 @@ export async function applyBillingShipTo(args: {
         shipToAreaId: true,
         tripDropId: true,
         tripDrop: { select: { trip: { select: { tripNumber: true } } } },
-        // Each invoice row's trip — the partly-on-a-trip message (Phase 5 commit 2).
-        invoices: INVOICE_TRIPS_SELECT,
+        // Each invoice row's trip — the partly-on-a-trip message (Phase 5 commit 2);
+        // + its ship-to flag (v27.81 — only inheriting rows move, so only they block).
+        invoices: MOVING_INVOICES_SELECT,
       },
     });
 
@@ -123,7 +146,7 @@ export async function applyBillingShipTo(args: {
             isRemoved: false,
             tripDropId: bill.tripDropId,
             tripNumber: bill.tripDrop?.trip.tripNumber ?? null,
-            invoiceTrips: invoiceTripsOf(bill.invoices),
+            invoiceTrips: invoiceTripsThatMove(bill.invoices),
           },
           target.kind === "reset" ? "clear" : "set",
         );
@@ -143,6 +166,7 @@ export async function applyBillingShipTo(args: {
 
         // ONE orders.update + ONE log per bill (the live-sync markers key on
         // MAX(orders.updatedAt) — a second write fires a false "changed").
+        const kept = ownShipToCount(bill.invoices);
         await prisma.orders.update({ where: { id: bill.id }, data: next });
         await prisma.order_status_logs.create({
           data: {
@@ -151,10 +175,11 @@ export async function applyBillingShipTo(args: {
             // No ship-to change moves a stage; the NOTE identifies the event.
             toStage: bill.workflowStage,
             changedById: userId,
-            note: billNote(target, next.shipToText),
+            note: kept === 0 ? billNote(target, next.shipToText) : `${billNote(target, next.shipToText)} · ${keptPartsText(kept)}`,
           },
         });
         updated.push(bill.id);
+        if (kept > 0) keptParts.push({ orderId: bill.id, obdNumber: bill.obdNumber, parts: kept });
       } catch (err) {
         failed.push({
           orderId: bill.id,
@@ -165,5 +190,5 @@ export async function applyBillingShipTo(args: {
     }
   }
 
-  return { moOrder, updated, skipped, failed };
+  return { moOrder, updated, skipped, failed, keptParts };
 }

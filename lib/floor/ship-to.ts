@@ -40,8 +40,22 @@
 
 import { prisma } from "@/lib/prisma";
 import { onTripRefusal } from "@/lib/billing/refusal";
-import { INVOICE_TRIPS_SELECT, invoiceTripsOf } from "@/lib/order-invoices/trip-refusal";
+import { INVOICE_TRIPS_SELECT, invoiceTripsOf, type InvoiceTrip } from "@/lib/order-invoices/trip-refusal";
 import { activeOwnCopiesWhere, softRemoveCopies } from "@/lib/ship-to/copies-server";
+import { isInheriting } from "@/lib/ship-to/effective";
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 🔴 PER-PART SHIP-TO (v27.81, owner 2026-11-19 — reverses Model A for ship-to)
+// ═══════════════════════════════════════════════════════════════════════════
+// The writes HERE stay OBD-WIDE (orders). A part with its OWN ship-to
+// (order_invoices."shipToOverride" not NULL) does not follow them (rule 3), so:
+//   · the on-a-trip refusal counts only the rows that MOVE — the inheriting
+//     ones (invoiceTripsThatMove). With every part NULL that is every row,
+//     i.e. exactly today's refusal.
+//   · the log note says how many parts keep their own ship-to.
+//   · allParts (owner Q1): writes orders AND sets every part back to NULL —
+//     every row moves, so its refusal counts ALL rows (today's input).
+// A PART's own change is lib/order-invoices/ship-to.ts setPartShipTo.
 
 /** What a ship-to write points the bill at (v27.73 free-text ship-to). */
 export type ShipToTarget =
@@ -58,8 +72,49 @@ export type ShipToResult =
       shipToText: string | null;
       shipToAreaId: number | null;
       changed: boolean;
+      /** v27.81 — parts that keep their own ship-to (did not follow); 0 on an unsplit bill. */
+      keptParts?: number;
+      /** v27.81 allParts — parts set back to "same as the bill". */
+      partsReset?: number;
     }
   | { ok: false; status: number; error: string };
+
+/**
+ * INVOICE_TRIPS_SELECT plus each row's id and ship-to flag (v27.81): the trip
+ * refusal is built from the rows that MOVE (invoiceTripsThatMove). Shared with
+ * lib/billing/ship-to-write.ts.
+ */
+export const MOVING_INVOICES_SELECT = {
+  orderBy: INVOICE_TRIPS_SELECT.orderBy,
+  select: { ...INVOICE_TRIPS_SELECT.select, id: true, shipToOverride: true },
+} as const;
+
+/**
+ * Rule 3's refusal input: the OBD's invoice rows with every row that has its
+ * OWN ship-to shown as on no trip — it does not move, so it cannot block. The
+ * row COUNT is kept (a split stays a split: the sentence still says "1 of 2
+ * invoices on L-02", and never falls back to the OBD's derived stop). Every
+ * part NULL → identical to invoiceTripsOf.
+ */
+export function invoiceTripsThatMove(
+  rows: ReadonlyArray<{
+    tripDropId: number | null;
+    tripDrop: { trip: { tripNumber: string } } | null;
+    shipToOverride: boolean | null;
+  }>,
+): InvoiceTrip[] {
+  return invoiceTripsOf(rows).map((t, i) => (isInheriting(rows[i]) ? t : { tripDropId: null, tripNumber: null }));
+}
+
+/** How many of these rows keep their own ship-to (0 on an unsplit bill). */
+export function ownShipToCount(rows: ReadonlyArray<{ shipToOverride: boolean | null }>): number {
+  return rows.length < 2 ? 0 : rows.filter((r) => !isInheriting(r)).length;
+}
+
+/** The "n part(s) keep their own ship-to" suffix, or "" when none does. */
+export function keptPartsText(n: number): string {
+  return n === 0 ? "" : `${n} part${n === 1 ? "" : "s"} keep${n === 1 ? "s" : ""} ${n === 1 ? "its" : "their"} own ship-to`;
+}
 
 const BILL_SELECT = {
   id: true,
@@ -70,8 +125,9 @@ const BILL_SELECT = {
   shipToAreaId: true,
   tripDropId: true,
   tripDrop: { select: { trip: { select: { tripNumber: true } } } },
-  // Each invoice row's trip — the partly-on-a-trip message (Phase 5 commit 2).
-  invoices: INVOICE_TRIPS_SELECT,
+  // Each invoice row's trip — the partly-on-a-trip message (Phase 5 commit 2);
+  // + its id and ship-to flag (v27.81 — only inheriting rows can block).
+  invoices: MOVING_INVOICES_SELECT,
 } as const;
 
 /**
@@ -93,17 +149,18 @@ export async function readShipToBill(orderId: number) {
  * multipart save can refuse BEFORE it uploads any copy; setShipTo re-runs it.
  * Every caller but the trip path keeps this refusal (owner, 2026-10-24).
  */
-export async function loadShipToBill(orderId: number) {
+export async function loadShipToBill(orderId: number, opts: { allParts?: boolean } = {}) {
   const read = await readShipToBill(orderId);
   if (!read.ok) return read;
   const order = read.order;
   // On a trip → refused (owner 2026-10-01). Before the target check, as
   // Billing refuses before anything else: the answer does not depend on which
-  // site was asked for.
+  // site was asked for. v27.81: only rows that MOVE can block — the inheriting
+  // ones; allParts moves every row, so every row counts (today's input).
   const onTrip = onTripRefusal({
     tripDropId: order.tripDropId,
     tripNumber: order.tripDrop?.trip.tripNumber ?? null,
-    invoiceTrips: invoiceTripsOf(order.invoices),
+    invoiceTrips: opts.allParts === true ? invoiceTripsOf(order.invoices) : invoiceTripsThatMove(order.invoices),
   });
   if (onTrip !== null) {
     return { ok: false as const, status: 409, error: onTrip };
@@ -176,23 +233,38 @@ export async function logShipToChange(args: {
   target: ShipToTarget;
   changedById: number;
   note?: string | null;
+  /** v27.81 — WHICH PART(S) (order_status_logs."orderInvoiceIds", v27.72): a
+   *  part's own change names its row; the per-part Activity filters on it
+   *  (lib/floor/detail-scope.ts activityForInvoice). Omitted → [] (whole bill). */
+  orderInvoiceIds?: number[];
+  /** v27.81 — parts that did NOT follow this OBD-wide change; > 0 appends
+   *  "n part(s) keep their own ship-to" to the note. */
+  keptParts?: number;
+  /** v27.81 — a part's from / to ("inherit" / "site" / dealer id / "typed"),
+   *  computed by the part writer. Omitted → today's stateLabel pair. */
+  labels?: { from: string | null; to: string };
 }): Promise<void> {
+  const base = args.note !== undefined ? args.note : args.target.kind === "typed" ? `Ship-to typed: ${args.next.shipToText}` : null;
+  const kept = keptPartsText(args.keptParts ?? 0);
   await prisma.order_status_logs.create({
     data: {
       orderId: args.orderId,
-      fromStage: stateLabel(args.before),
-      toStage: stateLabel(args.next) ?? "cleared",
+      fromStage: args.labels !== undefined ? args.labels.from : stateLabel(args.before),
+      toStage: args.labels !== undefined ? args.labels.to : (stateLabel(args.next) ?? "cleared"),
       changedById: args.changedById,
-      note: args.note !== undefined ? args.note : args.target.kind === "typed" ? `Ship-to typed: ${args.next.shipToText}` : null,
+      note: kept === "" ? base : base === null || base === "" ? kept : `${base} · ${kept}`,
+      ...(args.orderInvoiceIds !== undefined && args.orderInvoiceIds.length > 0 ? { orderInvoiceIds: args.orderInvoiceIds } : {}),
     },
   });
 }
 
 /** Dealer and Reset hide the bill's own Floor copies (they belonged to the
- *  typed ship-to). Billing's SO copies are never touched from here. */
+ *  typed ship-to). Billing's SO copies are never touched from here. v27.81:
+ *  the OBD's OWN copies only — a part's copies belong to that part's own
+ *  typed ship-to and go only with it (lib/order-invoices/ship-to.ts). */
 export async function finishShipToCopies(target: ShipToTarget, orderId: number, changedById: number): Promise<void> {
   if (target.kind !== "typed") {
-    await softRemoveCopies(activeOwnCopiesWhere("floor", orderId), changedById);
+    await softRemoveCopies(activeOwnCopiesWhere("floor", orderId, null), changedById);
   }
 }
 
@@ -220,10 +292,18 @@ export async function setShipTo(args: {
    *  and the single-bill Tint Manager route have always written; a typed save
    *  notes its text. Shop delivery passes its own. */
   note?: string | null;
+  /**
+   * v27.81, owner Q1 — "Apply to all parts": also set EVERY part of the OBD
+   * back to "same as the bill" (its four columns NULL), so the whole bill goes
+   * to the new ship-to. Every row moves, so the trip refusal counts every row.
+   * Omitted / false → rule 3: parts with their own ship-to keep it.
+   */
+  allParts?: boolean;
 }): Promise<ShipToResult> {
   const { orderId, target, changedById } = args;
+  const allParts = args.allParts === true;
 
-  const loaded = await loadShipToBill(orderId);
+  const loaded = await loadShipToBill(orderId, { allParts });
   if (!loaded.ok) return loaded;
   const order = loaded.order;
 
@@ -231,27 +311,61 @@ export async function setShipTo(args: {
   if (bad !== null) return { ok: false, ...bad };
 
   const next = shipToColumns(target);
+  const ownRows = order.invoices.length < 2 ? [] : order.invoices.filter((r) => !isInheriting(r));
+  const resetIds = allParts ? ownRows.map((r) => r.id) : [];
+  const keptParts = allParts ? 0 : ownRows.length;
+  const obdChanged = !isShipToUnchanged(order, next);
 
   // Nothing changed → write NOTHING. Bumping updatedAt here would tell every
   // open board that this bill moved when it did not (CLAUDE_FLOOR §5). All
   // four columns are compared: a typed bill has no dealer id, so comparing the
-  // id alone would make Reset a silent no-op on it.
-  if (isShipToUnchanged(order, next)) {
-    return { ok: true, orderId, ...shownIds(next), changed: false };
+  // id alone would make Reset a silent no-op on it. (allParts: also nothing to
+  // reset.)
+  if (!obdChanged && resetIds.length === 0) {
+    return { ok: true, orderId, ...shownIds(next), changed: false, keptParts };
   }
 
   // ONE orders.update. The flag moves with the id / text on this path (the flag
   // CAN legitimately be true with a null id AND null text on legacy rows from
   // mail-order enrichment — CLAUDE_SUPPORT.md §4.18 — only write paths pair them).
-  await prisma.orders.update({ where: { id: orderId }, data: next });
+  // allParts with the OBD already right writes no orders row: the parts' own
+  // write below fires the order_invoices live trigger.
+  if (obdChanged) await prisma.orders.update({ where: { id: orderId }, data: next });
+
+  // allParts: ONE statement puts every part back on the bill's ship-to
+  // (re-stated in the where: only rows that still have their own).
+  if (resetIds.length > 0) {
+    await prisma.order_invoices.updateMany({
+      where: { id: { in: resetIds }, orderId, shipToOverride: { not: null } },
+      data: { shipToOverride: null, shipToOverrideCustomerId: null, shipToText: null, shipToAreaId: null },
+    });
+  }
 
   // ONE log row. Same shape Support's route wrote for a dealer, so the audit
   // trail reads identically either side of the retirement.
-  await logShipToChange({ orderId, before: order, next, target, changedById, note: args.note });
+  const allPartsNote =
+    resetIds.length > 0
+      ? `Ship-to applied to all parts — ${resetIds.length} part${resetIds.length === 1 ? "" : "s"} back to the bill's ship-to`
+      : null;
+  const baseNote = args.note !== undefined ? args.note : target.kind === "typed" ? `Ship-to typed: ${next.shipToText}` : null;
+  await logShipToChange({
+    orderId,
+    before: order,
+    next,
+    target,
+    changedById,
+    note: allPartsNote === null ? args.note : baseNote === null ? allPartsNote : `${baseNote} · ${allPartsNote}`,
+    keptParts,
+    orderInvoiceIds: resetIds.length > 0 ? resetIds : undefined,
+  });
 
   await finishShipToCopies(target, orderId, changedById);
+  // The reset parts' own copies belonged to their own typed ship-to.
+  for (const rowId of resetIds) {
+    await softRemoveCopies(activeOwnCopiesWhere("floor", orderId, rowId), changedById);
+  }
 
-  return { ok: true, orderId, ...shownIds(next), changed: true };
+  return { ok: true, orderId, ...shownIds(next), changed: true, keptParts, ...(allParts ? { partsReset: resetIds.length } : {}) };
 }
 
 function shownIds(next: ReturnType<typeof shipToColumns>) {

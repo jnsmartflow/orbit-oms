@@ -9,6 +9,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import type { ActiveLine } from "./rules";
 import {
+  LOAD_DIFFERENT_SHOPS,
   LOAD_HALF_WRITTEN,
   LOAD_HOLD_OUT_OF_STEP,
   LOAD_STALE,
@@ -20,6 +21,8 @@ import {
   planLoadMerge,
   planLoadRepair,
   planLoadSplit,
+  repairDroppedShipTos,
+  rowsGoToDifferentShops,
   remainderLines,
   rowsKey,
   tinsOfRow,
@@ -85,7 +88,7 @@ test("first split of an UNSPLIT bill: seq 1 gains truck 1's lines, one 'load' ro
   assert.equal(r.plan.sourceGainsLines, true);
   assert.deepEqual(r.plan.sourceLines, L([[62850, 13], [62851, 12]])); // the 0s are dropped
   assert.deepEqual(r.plan.creates, [
-    { seq: 2, loadParentId: 17010, invoiceNo: SAP, invoiceDate: DAY, isHeld: false, heldAt: null, heldById: null, lines: L([[62852, 10], [62853, 15]]) },
+    { seq: 2, loadParentId: 17010, invoiceNo: SAP, invoiceDate: DAY, isHeld: false, heldAt: null, heldById: null, lines: L([[62852, 10], [62853, 15]]), shipTo: null },
   ]);
 });
 
@@ -454,4 +457,89 @@ test("Fix A split: a CI linked to the row blocks whatever its type; another row'
   assert.equal(loadSplitRefusal(BILL, split, split[0], { ...FACTS, cis: [onPart] }), null);
   // A void one never counts.
   assert.equal(loadSplitRefusal(BILL, split, split[1], { ...FACTS, cis: [{ ...onPart, isVoided: true }] }), null);
+});
+
+// ── PER-PART SHIP-TO (v27.81, owner 2026-11-19) ──────────────────────────────
+
+const OBD_SHIP = {
+  customerId: 501,
+  shipToCustomerId: "1100123",
+  shipToOverride: false as boolean | null,
+  shipToOverrideCustomerId: null as number | null,
+  shipToText: null as string | null,
+  shipToAreaId: null as number | null,
+};
+const OWN_DEALER = (id: number) => ({ shipToOverride: true, shipToOverrideCustomerId: id, shipToText: null, shipToAreaId: null });
+const INHERIT_COLS = { shipToOverride: null, shipToOverrideCustomerId: null, shipToText: null, shipToAreaId: null };
+
+test("ship-to Q3: splitting a part that has its OWN ship-to — new parts copy it (like the hold)", () => {
+  const rows = [
+    row({ id: 17010, seq: 1, lines: L([[62850, 13], [62851, 12]]) }),
+    row({ id: 40001, seq: 2, loadParentId: 17010, lines: L([[62852, 10], [62853, 15]]), shipTo: OWN_DEALER(42) }),
+  ];
+  const r = planLoadSplit({
+    rows,
+    sourceRowId: 40001,
+    trucks: [{ lines: L([[62852, 10]]) }, { lines: L([[62853, 15]]) }],
+    active: LINES,
+    obdHeld: false,
+  });
+  assert.ok(r.ok);
+  if (!r.ok) return;
+  assert.deepEqual(r.plan.creates[0].shipTo, OWN_DEALER(42));
+});
+
+test("ship-to Q3: an inheriting source (or an unsplit seq 1) gives parts that inherit — shipTo null", () => {
+  const r1 = planLoadSplit({ rows: UNSPLIT(), sourceRowId: 17010, trucks: TWO_TRUCKS, active: LINES, obdHeld: false });
+  assert.ok(r1.ok);
+  if (r1.ok) assert.equal(r1.plan.creates[0].shipTo, null);
+  const rows = [
+    row({ id: 17010, seq: 1, lines: L([[62850, 13], [62851, 12]]), shipTo: INHERIT_COLS }),
+    row({ id: 40001, seq: 2, loadParentId: 17010, lines: L([[62852, 10], [62853, 15]]) }),
+  ];
+  const r2 = planLoadSplit({ rows, sourceRowId: 17010, trucks: [{ lines: L([[62850, 13]]) }, { lines: L([[62851, 12]]) }], active: LINES, obdHeld: false });
+  assert.ok(r2.ok);
+  if (r2.ok) assert.equal(r2.plan.creates[0].shipTo, null);
+});
+
+test("ship-to rule 5: merge of parts going to DIFFERENT shops is refused, word for word", () => {
+  const rows = SPLIT_ONCE();
+  rows[1] = { ...rows[1], shipTo: OWN_DEALER(42) };
+  const r = planLoadMerge(rows, [17010, 40001], LINES, OBD, OBD_SHIP);
+  assert.equal(r.ok, false);
+  assert.deepEqual((r as { errors: string[] }).errors, [LOAD_DIFFERENT_SHOPS]);
+  assert.equal(LOAD_DIFFERENT_SHOPS, "Parts go to different shops — set the same ship-to first.");
+});
+
+test("ship-to rule 5: every part inheriting (today) → the merge plan is exactly as before", () => {
+  const before = planLoadMerge(SPLIT_ONCE(), [17010, 40001], LINES, OBD);
+  const after = planLoadMerge(SPLIT_ONCE(), [17010, 40001], LINES, OBD, OBD_SHIP);
+  assert.deepEqual(after, before);
+  assert.equal(rowsGoToDifferentShops(OBD_SHIP, SPLIT_ONCE()), false);
+});
+
+test("ship-to rule 5: an own ship-to that is the SAME shop (dealer = the bill's customer) still merges", () => {
+  const rows = SPLIT_ONCE();
+  rows[1] = { ...rows[1], shipTo: OWN_DEALER(501) };
+  assert.equal(planLoadMerge(rows, [17010, 40001], LINES, OBD, OBD_SHIP).ok, true);
+});
+
+test("ship-to Q4: repair names the deleted parts that had their own ship-to, never refuses on it", () => {
+  const rows = [
+    row({ id: 17010, seq: 1, lines: L([[62850, 13], [62851, 12], [62852, 10], [62853, 15]]) }),
+    row({ id: 40001, seq: 2, loadParentId: 17010, shipTo: OWN_DEALER(42) }),
+    row({ id: 40002, seq: 3, loadParentId: 17010 }),
+  ];
+  const r = planLoadRepair(rows, LINES, false);
+  assert.ok(r.ok);
+  if (!r.ok) return;
+  assert.deepEqual(r.plan.deleteIds, [40001, 40002]);
+  assert.deepEqual(repairDroppedShipTos(rows, r.plan.deleteIds).map((x) => x.id), [40001]);
+});
+
+test("Q6: a challan-linked bill is never split — the bills route's sentence", () => {
+  const msg = loadSplitRefusal({ ...BILL, workflowStage: "challan_linked" }, UNSPLIT(), UNSPLIT()[0], FACTS);
+  assert.equal(msg, `${OBD} is billed against a challan order — its goods already went out on the challan. It never goes on a trip.`);
+  // The bill-level refusal (GET blockedReason / merge / repair) is unchanged.
+  assert.equal(loadBillRefusal({ ...BILL, workflowStage: "challan_linked" }), null);
 });

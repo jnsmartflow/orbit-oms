@@ -23,6 +23,17 @@
 import { addInvoicesRefusal, detectStale, MAX_INVOICES, type ActiveLine } from "./rules";
 import { INVOICE_SOURCE } from "./source";
 import { coveringCopy, splitAtOf } from "./copy-plan";
+import { CHALLAN_LINKED } from "@/lib/workflow-stages";
+import { isInheriting, partsShopCount, type PartShipToCols, type ShipToFacts } from "@/lib/ship-to/effective";
+
+// PER-PART SHIP-TO (v27.81, owner 2026-11-19 — reverses Model A for ship-to):
+//   · SPLIT — new parts COPY the source row's own four ship-to columns, like
+//     its hold (owner Q3); a source that inherits gives parts that inherit.
+//   · MERGE — refused when the chosen rows go to different shops (rule 5,
+//     LOAD_DIFFERENT_SHOPS; "shop" = drop-key equality, lib/ship-to/effective.ts).
+//   · REPAIR — never refuses on ship-to (owner Q4); a deleted part's own
+//     ship-to is named in the repair note (repairDroppedShipTos).
+//   · A challan-linked bill is never split (owner Q6, LOAD_CHALLAN_LINKED).
 
 export interface LoadLine {
   rawLineItemId: number;
@@ -53,6 +64,9 @@ export interface LoadRow {
   redeliveryTrips?: string[];
   /** EVERY ci_returns row naming this row (void included) — the FK guard. */
   ciNumbers?: (string | null)[];
+  /** v27.81 — the row's OWN ship-to columns (shipToOverride NULL = inherit).
+   *  Omitted = inherit (every caller before per-part ship-to). */
+  shipTo?: PartShipToCols;
 }
 
 /** What one truck carries: tins per raw line (0 = not on this truck). */
@@ -282,6 +296,9 @@ export interface LoadSplitPlan {
     heldAt: Date | null;
     heldById: number | null;
     lines: LoadLine[];
+    /** v27.81, owner Q3 — COPIED from the SOURCE row's own ship-to, like its
+     *  hold. null = the source inherits → the part inherits (NULL columns). */
+    shipTo: PartShipToCols | null;
   }>;
   /** true = the source had no lines (unsplit seq 1) — it GAINS line rows. */
   sourceGainsLines: boolean;
@@ -362,6 +379,8 @@ export function planLoadSplit(input: {
   // Case 3: parts copy the source's hold. An unsplit bill's truth is orders (E.6).
   const isHeld = unsplit ? input.obdHeld : source.isHeld;
   const maxSeq = rows.reduce((m, r) => Math.max(m, r.seq), 0);
+  // Owner Q3: parts copy the source's own ship-to (an unsplit seq 1 never has one).
+  const shipTo = !unsplit && !isInheriting(source.shipTo) ? { ...(source.shipTo as PartShipToCols) } : null;
   return {
     ok: true,
     plan: {
@@ -376,6 +395,7 @@ export function planLoadSplit(input: {
         heldAt: isHeld ? source.heldAt : null,
         heldById: isHeld ? source.heldById : null,
         lines: cleanLines(t.lines),
+        shipTo: shipTo === null ? null : { ...shipTo },
       })),
       sourceGainsLines: source.lines.length === 0,
     },
@@ -413,12 +433,29 @@ export function mergeAwayRefusal(rows: readonly LoadRow[], r: LoadRow, obdNumber
   return null;
 }
 
-/** Plan merging the chosen rows of ONE group back into one row. */
+/** Rule 5 (v27.81, owner 2026-11-19) — the merge refusal, word for word. */
+export const LOAD_DIFFERENT_SHOPS = "Parts go to different shops — set the same ship-to first.";
+
+/** The OBD's ship-to facts the shop rule reads (orders' columns; NULL flag = false). */
+export type LoadObdShipTo = ShipToFacts & { shipToOverride: boolean | null };
+
+/** Rule 5: do these rows go to more than one shop? (drop-key equality). */
+export function rowsGoToDifferentShops(obd: LoadObdShipTo, rows: ReadonlyArray<Pick<LoadRow, "shipTo">>): boolean {
+  return partsShopCount(obd, rows.map((r) => r.shipTo ?? null)) > 1;
+}
+
+/**
+ * Plan merging the chosen rows of ONE group back into one row. `obdShipTo`
+ * (v27.81) turns on rule 5: chosen rows that go to different shops are refused
+ * with LOAD_DIFFERENT_SHOPS before anything else about them. Omitted → no shop
+ * check (every row inherits — one shop).
+ */
 export function planLoadMerge(
   rows: readonly LoadRow[],
   rowIds: readonly number[],
   active: readonly ActiveLine[],
   obdNumber: string,
+  obdShipTo?: LoadObdShipTo,
 ): { ok: true; plan: LoadMergePlan } | { ok: false; errors: string[] } {
   const ids = Array.from(new Set(rowIds));
   const chosen = rows.filter((r) => ids.includes(r.id));
@@ -430,6 +467,7 @@ export function planLoadMerge(
   const rootIds = new Set(chosen.map((r) => groups.get(r.id)!.rootId));
   if (rootIds.size > 1) return { ok: false, errors: ["Only parts of the SAME invoice can be merged"] };
   if (!chosen.some((r) => r.source === INVOICE_SOURCE.LOAD)) return { ok: false, errors: ["These are not parts of one invoice"] };
+  if (obdShipTo !== undefined && rowsGoToDifferentShops(obdShipTo, chosen)) return { ok: false, errors: [LOAD_DIFFERENT_SHOPS] };
 
   const errors: string[] = [];
   for (const r of chosen) {
@@ -525,6 +563,15 @@ export function planLoadRepair(
   return { ok: true, plan: { deleteIds, fill, mirrorHeld, changed: deleteIds.length > 0 || fill !== null || mirrorHeld !== null } };
 }
 
+/**
+ * Owner Q4 (v27.81): repair NEVER refuses on ship-to — but a part it deletes
+ * that had its OWN ship-to loses it, and the repair note says so. The deleted
+ * rows with their own ship-to, in seq order.
+ */
+export function repairDroppedShipTos(rows: readonly LoadRow[], deleteIds: readonly number[]): LoadRow[] {
+  return rows.filter((r) => deleteIds.includes(r.id) && !isInheriting(r.shipTo)).sort((a, b) => a.seq - b.seq);
+}
+
 // ── GUARDS (E) ───────────────────────────────────────────────────────────────
 
 /** The bill facts the guards read. */
@@ -602,6 +649,14 @@ export const LOAD_STALE = "Lines changed in SAP — merge the waiting parts back
 export const LOAD_HOLD_OUT_OF_STEP = "Hold record out of step — press Repair";
 export const LOAD_SAME_MOMENT = "Someone changed this bill at the same moment — reopen Split load.";
 
+/** Owner Q6 (2026-11-19): a challan-linked bill is never split — the bills
+ *  route's challan sentence, word for word. */
+export function loadChallanRefusal(bill: Pick<LoadBill, "obdNumber" | "workflowStage">): string | null {
+  return bill.workflowStage === CHALLAN_LINKED
+    ? `${bill.obdNumber} is billed against a challan order — its goods already went out on the challan. It never goes on a trip.`
+    : null;
+}
+
 /**
  * Why `row` cannot be split now (E.3–E.11 + A.2 rule 1), or null. The first
  * refusal wins; GET shows the same text per row as `canSplit`.
@@ -609,6 +664,9 @@ export const LOAD_SAME_MOMENT = "Someone changed this bill at the same moment �
 export function loadSplitRefusal(bill: LoadBill, rows: readonly LoadRow[], row: LoadRow, facts: LoadFacts): string | null {
   const bills = loadBillRefusal(bill);
   if (bills !== null) return bills;
+  // Owner Q6 — split only; merge and repair of a bill that somehow has parts stay open.
+  const challan = loadChallanRefusal(bill);
+  if (challan !== null) return challan;
   // E.3 before E.4: send the person to the button that fixes it.
   if (isHalfWritten(rows)) return LOAD_HALF_WRITTEN;
   if (detectStale(facts.active.slice(), rows.flatMap((r) => r.lines))) return LOAD_STALE;

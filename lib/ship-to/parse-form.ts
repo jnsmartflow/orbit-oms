@@ -14,6 +14,7 @@
 //                                                                  every typed ship-to, v27.73)
 //   files           0..n File, JPG / PNG / PDF                    (typed only)
 //   removeCopyIds   0..n positive int                             (typed only)
+// A PART's save (v27.81) also takes mode=inherit — parsePartShipToForm only.
 //
 // Server-only (reads the file bytes to sniff the type).
 
@@ -130,4 +131,25 @@ export async function parseShipToForm(form: FormData): Promise<ParseResult> {
   }
 
   return { ok: true, req: { mode: "typed", text, asPerChallan, areaId, files, removeCopyIds } };
+}
+
+/**
+ * PER-PART SHIP-TO (v27.81, 2026-11-19) — a PART's save (POST
+ * /api/floor/order-invoices/[rowId]/ship-to) takes one more mode:
+ *   inherit   "Same as the bill" — the part drops its own ship-to (NULL)
+ * Every other mode parses exactly as parseShipToForm. Kept as its own function
+ * so the OBD-wide routes can never receive an inherit they would read as Reset.
+ */
+export type PartShipToSaveRequest = ShipToSaveRequest | { mode: "inherit" };
+
+export type PartParseResult = { ok: true; req: PartShipToSaveRequest } | { ok: false; status: number; error: string };
+
+export async function parsePartShipToForm(form: FormData): Promise<PartParseResult> {
+  const mode = typeof form.get("mode") === "string" ? String(form.get("mode")).trim() : "";
+  if (mode !== "inherit") return parseShipToForm(form);
+  const hasFiles = form.getAll("files").some((f) => f instanceof File && f.size > 0);
+  if (hasFiles || form.getAll("removeCopyIds").length > 0) {
+    return { ok: false, status: 400, error: "Files can only be attached to a typed ship-to." };
+  }
+  return { ok: true, req: { mode: "inherit" } };
 }

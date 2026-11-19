@@ -7,7 +7,7 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { deriveObdTripDropId, derivePartlyOnTrip, needsDerivedRepair, planRowsTripMove, planWholeObdTripMove, type TripLinkRow } from "./trip-link";
+import { deriveObdTripDropId, derivePartlyOnTrip, needsDerivedRepair, planRowsStopsMove, planRowsTripMove, planWholeObdTripMove, rowDataMoves, type TripLinkRow } from "./trip-link";
 import { linkRowFor, recordObdOf, recordsOfObds } from "./links";
 
 const rows18648 = (drops: (number | null)[]): TripLinkRow[] =>
@@ -208,4 +208,65 @@ test("partly: the last off-trip invoice joining clears the flag; the first leavi
 test("repair: a stale FLAG alone (stop right) still needs the orders write", () => {
   const rows = placed([null, 2763, null, 2763]);
   assert.equal(needsDerivedRepair(rows, { tripDropId: 2763, partlyOnTrip: false }), true);
+});
+
+// ── PER-PART SHIP-TO (v27.81, 2026-11-19): planRowsStopsMove + rowDataMoves ──
+
+test("stops: ONE group equals planRowsTripMove (every part NULL → today's single-stop press)", () => {
+  const rows = rows18648([null, null, null, null]);
+  const one = planRowsStopsMove(rows, [{ rowIds: [17010, 36798, 36799, 36800], tripDropId: 2478 }]);
+  const old = planRowsTripMove(rows, [17010, 36798, 36799, 36800], 2478);
+  assert.deepEqual(one.updates, [{ rowIds: old.rowIdsToUpdate, tripDropId: 2478 }]);
+  assert.equal(one.derived, old.derived);
+  assert.equal(one.partlyOnTrip, old.partlyOnTrip);
+});
+
+test("stops: two parts to two stops on one trip — one update each, derived = the lowest seq's stop", () => {
+  const rows = rows18648([null, null, null, null]);
+  const p = planRowsStopsMove(rows, [
+    { rowIds: [17010, 36798], tripDropId: 3001 },
+    { rowIds: [36799], tripDropId: 3002 },
+  ]);
+  assert.deepEqual(p.updates, [
+    { rowIds: [17010, 36798], tripDropId: 3001 },
+    { rowIds: [36799], tripDropId: 3002 },
+  ]);
+  assert.equal(p.derived, 3001);
+  assert.equal(p.partlyOnTrip, true); // 36800 stays off
+});
+
+test("stops: a row already on its target is not re-written; onlyFromTripId reads the ORIGINAL trip", () => {
+  const rows: TripLinkRow[] = [
+    { id: 1, seq: 1, tripDropId: 3001, tripId: 77 },
+    { id: 2, seq: 2, tripDropId: 3001, tripId: 77 },
+    { id: 3, seq: 3, tripDropId: 4000, tripId: 88 },
+  ];
+  const p = planRowsStopsMove(
+    rows,
+    [
+      { rowIds: [1], tripDropId: 3001 },
+      { rowIds: [2, 3], tripDropId: 3002 },
+    ],
+    { onlyFromTripId: 77 },
+  );
+  assert.deepEqual(p.updates, [{ rowIds: [2], tripDropId: 3002 }]);
+  assert.equal(p.derived, 3001);
+});
+
+test("stops: a row in two groups is a caller bug and throws", () => {
+  assert.throws(() =>
+    planRowsStopsMove(rows18648([null, null, null, null]), [
+      { rowIds: [17010], tripDropId: 1 },
+      { rowIds: [17010], tripDropId: 2 },
+    ]),
+  );
+});
+
+test("rowDataMoves: one chosen row that the plan moves — and nothing else", () => {
+  const rows = rows18648([2478, null, null, null]);
+  assert.equal(rowDataMoves([36798], planRowsTripMove(rows, [36798], 2478)), true);
+  // Already on the target → nothing moves → the ship-to would be dropped.
+  assert.equal(rowDataMoves([17010], planRowsTripMove(rows, [17010], 2478)), false);
+  assert.equal(rowDataMoves("all", planRowsTripMove(rows, "all", 2478)), false);
+  assert.equal(rowDataMoves([36798, 36799], planRowsTripMove(rows, [36798, 36799], 2478)), false);
 });

@@ -132,6 +132,69 @@ export function planWholeObdTripMove(rows: TripLinkRow[], target: number | null)
 }
 
 /**
+ * PER-PART SHIP-TO (v27.81, 2026-11-19): a part's OWN four ship-to columns,
+ * written in the SAME order_invoices write as its new stop (setRowsTrip's
+ * `rowData`) — the ship-to and the stop are one fact. NULL shipToOverride =
+ * inherit the OBD (lib/ship-to/effective.ts).
+ */
+export interface RowsTripRowData {
+  shipToOverride: boolean | null;
+  shipToOverrideCustomerId: number | null;
+  shipToText: string | null;
+  shipToAreaId: number | null;
+}
+
+/** One stop's share of a several-stop press (setRowsStops). */
+export interface RowsStopGroup {
+  rowIds: readonly number[];
+  tripDropId: number | null;
+}
+
+export interface RowsStopsMove {
+  /** One updateMany per group that has rows to move, in group order. */
+  updates: Array<{ rowIds: number[]; tripDropId: number | null }>;
+  /** The derived values over ALL rows after every group — the ONE orders.update. */
+  derived: number | null;
+  partlyOnTrip: boolean;
+  noRows: boolean;
+}
+
+/**
+ * PER-PART SHIP-TO (v27.81, rule 4): ONE press that puts an OBD's rows on
+ * SEVERAL stops (each part to the stop of its own shop). Each group is planned
+ * like planRowsTripMove against the ORIGINAL rows (onlyFromTripId reads the trip
+ * a row was on BEFORE the press); the derived values come from all rows after
+ * every group. Groups must not share a row — a caller bug, so it throws. With
+ * ONE group the result equals planRowsTripMove's.
+ */
+export function planRowsStopsMove(
+  rows: readonly TripLinkRow[],
+  groups: readonly RowsStopGroup[],
+  opts: RowsTripOpts = {},
+): RowsStopsMove {
+  const seen = new Set<number>();
+  for (const g of groups) {
+    for (const id of g.rowIds) {
+      if (seen.has(id)) throw new Error(`planRowsStopsMove: invoice row ${id} is in two groups`);
+      seen.add(id);
+    }
+  }
+  if (rows.length === 0) {
+    const last = groups.length > 0 ? groups[groups.length - 1].tripDropId : null;
+    return { updates: [], derived: last, partlyOnTrip: false, noRows: true };
+  }
+  const target = new Map<number, number | null>();
+  const updates: RowsStopsMove["updates"] = [];
+  for (const g of groups) {
+    const move = planRowsTripMove(rows, g.rowIds, g.tripDropId, opts);
+    if (move.rowIdsToUpdate.length > 0) updates.push({ rowIds: move.rowIdsToUpdate, tripDropId: g.tripDropId });
+    for (const id of move.rowIdsToUpdate) target.set(id, g.tripDropId);
+  }
+  const after = rows.map((r) => ({ seq: r.seq, tripDropId: target.has(r.id) ? (target.get(r.id) as number | null) : r.tripDropId }));
+  return { updates, derived: deriveObdTripDropId(after), partlyOnTrip: derivePartlyOnTrip(after), noRows: false };
+}
+
+/**
  * Does orders disagree with the OBD's rows — the derived stop or (v27.69) the
  * "partlyOnTrip" flag? True only after a press died between step 2 and step 3
  * (or a hand fix); the routes then still call setRowsTrip, which moves no row
@@ -161,6 +224,10 @@ export async function setRowsTrip(
    *  bill pulled off a trip into tinting is still ONE orders.update. The
    *  derived tripDropId / partlyOnTrip are spread last and always win. */
   orderData?: RowsTripOrderData | Prisma.ordersUncheckedUpdateInput,
+  /** PER-PART SHIP-TO (v27.81): the part's own four ship-to columns, written in
+   *  step 2's SAME order_invoices write as its new stop. Legal only with ONE
+   *  chosen row that actually moves — asserted BEFORE anything is written. */
+  rowData?: RowsTripRowData,
 ): Promise<{ rowIdsUpdated: number[]; derived: number | null; partlyOnTrip: boolean }> {
   // 1.
   const rows = await prisma.order_invoices.findMany({
@@ -173,6 +240,11 @@ export async function setRowsTrip(
     tripDropId,
     opts,
   );
+  if (rowData !== undefined && !rowDataMoves(rowIds, move)) {
+    // A row already on the target, or no longer on onlyFromTripId, would
+    // silently drop the ship-to — refuse before any write; the caller re-reads.
+    throw new Error(`setRowsTrip: the ship-to needs exactly one invoice row that moves (order ${orderId}) — reopen and try again`);
+  }
   if (move.noRows) {
     console.error(`[order-invoices] order ${orderId} has no invoice rows — orders.tripDropId written alone; re-run v27.63 PART 3`);
   }
@@ -180,7 +252,7 @@ export async function setRowsTrip(
   if (move.rowIdsToUpdate.length > 0) {
     await prisma.order_invoices.updateMany({
       where: { id: { in: move.rowIdsToUpdate } },
-      data: { tripDropId },
+      data: { tripDropId, ...(rowData ?? {}) },
     });
   }
   // 3. ONE orders.update — the commit point. Both derived values in it, never
@@ -193,9 +265,53 @@ export async function setRowsTrip(
   return { rowIdsUpdated: move.rowIdsToUpdate, derived: move.derived, partlyOnTrip: move.partlyOnTrip };
 }
 
+/** setRowsTrip's rowData rule (pure, tested): ONE chosen row, and the plan moves exactly it. */
+export function rowDataMoves(rowIds: readonly number[] | "all", move: Pick<RowsTripMove, "rowIdsToUpdate">): boolean {
+  return rowIds !== "all" && rowIds.length === 1 && move.rowIdsToUpdate.length === 1 && move.rowIdsToUpdate[0] === rowIds[0];
+}
+
 /** Every invoice row of ONE OBD onto stop `tripDropId` (null = off any trip). */
 export async function setOrderTrip(orderId: number, tripDropId: number | null): Promise<void> {
   await setRowsTrip(orderId, "all", tripDropId);
+}
+
+/**
+ * PER-PART SHIP-TO (v27.81, rule 4): ONE press that puts an OBD's rows on
+ * SEVERAL stops — each part to the stop of its own shop. The same three steps
+ * as setRowsTrip and STILL EXACTLY ONE orders.update (ORDER_INVOICES §4.3): one
+ * order_invoices.updateMany per group with rows to move, then ONE orders.update
+ * with the derived values over all rows. Half-failure: as setRowsTrip — a
+ * retry re-reads, moves what is left, and lands step 3. (Its callers are the
+ * trip side — batch 3; nothing calls it yet.)
+ */
+export async function setRowsStops(
+  orderId: number,
+  groups: readonly RowsStopGroup[],
+  opts: RowsTripOpts = {},
+): Promise<{ rowIdsUpdated: number[]; derived: number | null; partlyOnTrip: boolean }> {
+  // 1.
+  const rows = await prisma.order_invoices.findMany({
+    where: { orderId },
+    select: { id: true, seq: true, tripDropId: true, tripDrop: { select: { tripId: true } } },
+  });
+  const plan = planRowsStopsMove(
+    rows.map((r) => ({ id: r.id, seq: r.seq, tripDropId: r.tripDropId, tripId: r.tripDrop?.tripId ?? null })),
+    groups,
+    opts,
+  );
+  if (plan.noRows) {
+    console.error(`[order-invoices] order ${orderId} has no invoice rows — orders.tripDropId written alone; re-run v27.63 PART 3`);
+  }
+  // 2. One statement per stop.
+  for (const u of plan.updates) {
+    await prisma.order_invoices.updateMany({ where: { id: { in: u.rowIds } }, data: { tripDropId: u.tripDropId } });
+  }
+  // 3. ONE orders.update — the commit point.
+  await prisma.orders.update({
+    where: { id: orderId },
+    data: { tripDropId: plan.derived, partlyOnTrip: plan.partlyOnTrip },
+  });
+  return { rowIdsUpdated: plan.updates.flatMap((u) => u.rowIds), derived: plan.derived, partlyOnTrip: plan.partlyOnTrip };
 }
 
 /** setOrderTrip for several OBDs, one at a time; a failure is reported per

@@ -40,6 +40,13 @@
 // writes fire the order_invoices live triggers; order_invoice_lines has its own
 // join-based trigger (v27.67).
 //
+// PER-PART SHIP-TO (v27.81, owner 2026-11-19): split writes each new part the
+// SOURCE row's own ship-to (Q3, planLoadSplit's creates[].shipTo — NULL when
+// the source inherits); merge refuses parts going to different shops (rule 5,
+// planLoadMerge with the OBD's facts); repair never refuses on ship-to and
+// names a dropped own ship-to in its note (Q4); a challan-linked bill is never
+// split (Q6, loadSplitRefusal). GET names each row's shop (LoadViewRow.shop).
+//
 // Sequential awaits only — never prisma.$transaction.
 
 import { Prisma } from "@prisma/client";
@@ -51,10 +58,13 @@ import { detectStale } from "./rules";
 import { loadActiveLines, type SplitActiveLine } from "./split";
 import { INVOICE_SOURCE } from "./source";
 import { deriveObdTripDropId, derivePartlyOnTrip } from "./trip-read";
+import { shopNamesFor } from "./ship-to";
+import { isInheriting } from "@/lib/ship-to/effective";
 import {
   LOAD_CHANGED,
   LOAD_SAME_MOMENT,
   isHalfWritten,
+  repairDroppedShipTos,
   loadBillRefusal,
   loadGroupsOf,
   loadMergeRefusal,
@@ -63,6 +73,7 @@ import {
   loadSplitRefusal,
   mergeAwayRefusal,
   paperLabel,
+  partLabel,
   planLoadMerge,
   planLoadRepair,
   planLoadSplit,
@@ -70,6 +81,7 @@ import {
   rowsKey,
   tinsOfRow,
   type LoadBill,
+  type LoadObdShipTo,
   type LoadFacts,
   type LoadLine,
   type LoadRow,
@@ -99,6 +111,10 @@ export interface LoadViewRow {
   canSplit: string | null;
   /** null = may be merged away into its group; else why not. A root is never merged away. */
   canMergeAway: string | null;
+  /** v27.81 — the shop this row goes to (its effective ship-to, by name). */
+  shop: string;
+  /** v27.81 — true when the row has its OWN ship-to (not the bill's). */
+  ownShipTo: boolean;
 }
 
 export interface LoadView {
@@ -141,10 +157,20 @@ async function loadKgFacts(orderId: number, obdNumber: string): Promise<LoadView
 }
 
 interface LoadState {
-  bill: LoadBill & { id: number; tripDropId: number | null; partlyOnTrip: boolean; workflowStage: string };
+  bill: LoadBill &
+    LoadObdShipTo & {
+      id: number;
+      tripDropId: number | null;
+      partlyOnTrip: boolean;
+      workflowStage: string;
+      shipToCustomerName: string | null;
+    };
   rows: LoadRow[];
   facts: LoadFacts & { active: SplitActiveLine[] };
 }
+
+/** v27.81 — the four ship-to columns of a row / an OBD, as one select. */
+const SHIP_TO_COLS = { shipToOverride: true, shipToOverrideCustomerId: true, shipToText: true, shipToAreaId: true } as const;
 
 /** Step 0's reads: the order, ALL its rows with what points at them, its CIs,
  *  copies, freight trip and active lines. null = no such order. */
@@ -159,6 +185,11 @@ async function loadState(orderId: number): Promise<LoadState | null> {
       dispatchStatus: true,
       tripDropId: true,
       partlyOnTrip: true,
+      // v27.81 — the shop rule (merge, GET's shop names) reads the OBD's ship-to.
+      customerId: true,
+      shipToCustomerId: true,
+      shipToCustomerName: true,
+      ...SHIP_TO_COLS,
     },
   });
   if (!order) return null;
@@ -182,6 +213,7 @@ async function loadState(orderId: number): Promise<LoadState | null> {
       lines: { select: { rawLineItemId: true, qty: true }, orderBy: { rawLineItemId: "asc" } },
       billCopies: { select: { trip: { select: { tripNumber: true } } }, orderBy: { id: "asc" } },
       redeliveries: { select: { trip: { select: { tripNumber: true } } }, orderBy: { id: "asc" } },
+      ...SHIP_TO_COLS,
     },
   });
   // EVERY ci_returns row on the OBD, any status, void included: the per-row FK
@@ -224,6 +256,12 @@ async function loadState(orderId: number): Promise<LoadState | null> {
     ciNumbers: cis
       .filter((c) => c.orderInvoiceId === r.id)
       .map((c) => (c.ciNumber === null ? null : c.isVoided ? `${c.ciNumber} (void)` : c.ciNumber)),
+    shipTo: {
+      shipToOverride: r.shipToOverride,
+      shipToOverrideCustomerId: r.shipToOverrideCustomerId,
+      shipToText: r.shipToText,
+      shipToAreaId: r.shipToAreaId,
+    },
   }));
   return {
     bill: order,
@@ -245,6 +283,8 @@ export async function loadLoadView(orderId: number): Promise<LoadView | null> {
   const groups = loadGroupsOf(rows);
   const halfWritten = isHalfWritten(rows);
   const kg = await loadKgFacts(bill.id, bill.obdNumber);
+  // v27.81 — each row's shop by name (one master read for the lot).
+  const shops = await shopNamesFor(bill, rows.map((r) => r.shipTo ?? null));
   return {
     kg,
     orderId: bill.id,
@@ -254,9 +294,11 @@ export async function loadLoadView(orderId: number): Promise<LoadView | null> {
     halfWritten,
     blockedReason: loadBillRefusal(bill),
     activeLines: facts.active,
-    rows: rows.map((r) => {
+    rows: rows.map((r, i) => {
       const place = groups.get(r.id)!;
       return {
+        shop: shops[i],
+        ownShipTo: !isInheriting(r.shipTo),
         id: r.id,
         seq: r.seq,
         source: r.source,
@@ -345,6 +387,9 @@ export async function saveLoadSplit(
         isHeld: c.isHeld,
         heldAt: c.heldAt,
         heldById: c.heldById,
+        // v27.81, owner Q3 — the source's own ship-to, like its hold; omitted
+        // (NULL = inherit) when the source inherits.
+        ...(c.shipTo ?? {}),
       })),
     });
   } catch (err) {
@@ -421,7 +466,8 @@ export async function mergeLoadParts(
   if (req.expectKey !== rowsKey(rows)) return { ok: false, status: 409, error: LOAD_CHANGED };
   const refusal = loadMergeRefusal(bill, rows, req.rowIds, facts);
   if (refusal !== null) return { ok: false, status: 409, error: refusal };
-  const planned = planLoadMerge(rows, req.rowIds, facts.active, bill.obdNumber);
+  // v27.81 rule 5 — the OBD's facts turn on the different-shops refusal.
+  const planned = planLoadMerge(rows, req.rowIds, facts.active, bill.obdNumber, bill);
   if (!planned.ok) return { ok: false, status: 409, error: planned.errors[0], errors: planned.errors };
   const plan = planned.plan;
   const groups = loadGroupsOf(rows);
@@ -482,6 +528,10 @@ export async function repairLoadWrite(orderId: number, actorId: number): Promise
   if (!planned.ok) return { ok: false, status: 409, error: planned.errors[0], errors: planned.errors };
   const plan = planned.plan;
   if (!plan.changed) return { ok: true, changed: false, rowIds: [] };
+  // v27.81, owner Q4 — repair never refuses on ship-to; a part it deletes that
+  // had its OWN ship-to is named in the note (read before anything is deleted).
+  const dropped = repairDroppedShipTos(rows, plan.deleteIds);
+  const droppedShops = dropped.length === 0 ? [] : await shopNamesFor(bill, dropped.map((r) => r.shipTo ?? null));
 
   // (a) one deleteMany — lineless, waiting 'load' rows only (re-stated in the where).
   if (plan.deleteIds.length > 0) {
@@ -512,6 +562,7 @@ export async function repairLoadWrite(orderId: number, actorId: number): Promise
     plan.deleteIds.length > 0 ? `removed ${plan.deleteIds.length} unfinished part${plan.deleteIds.length > 1 ? "s" : ""}` : null,
     plan.fill ? `refilled invoice row ${plan.fill.rowId} (${sumTins(plan.fill.lines)} tins)` : null,
     plan.mirrorHeld !== null ? `hold record set to ${plan.mirrorHeld ? "held" : "not held"}` : null,
+    ...dropped.map((r, i) => `${partLabel(rows, r, bill.obdNumber)}'s own ship-to (${droppedShops[i]}) dropped`),
   ].filter((p): p is string => p !== null);
   await prisma.order_status_logs.create({
     data: {
