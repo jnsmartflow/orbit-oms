@@ -17,6 +17,15 @@
 // trip's survivors 1..N in their current order (compactTripDropSeq).
 // Until 2026-10-17 gaps in dropSeq were left alone; owner reversed it, stops now close up on remove. Do not revert.
 //
+// PER-PART SHIP-TO (v27.81, batch 3): findOrCreateTripDrop keys, names and
+// places the stop ENTIRELY from the input it is given — key (computeDropKey),
+// customer (effectiveCustomerId), typed text / area, and SAP's name as the
+// fallback. So a caller placing ONE PART passes effectiveDropInput(order, part)
+// and the stop is that part's shop in every field: an own dealer → that
+// dealer's master name, area and route; an own typed name → the text and its
+// picked area; an own reset (FALSE) → the bill's own customer. Nothing here
+// reads the order a second time. Checked 2026-11-19; no code change needed.
+//
 // Sequential awaits, never prisma.$transaction (CORE §3).
 
 import { prisma } from "@/lib/prisma";

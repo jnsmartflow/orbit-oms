@@ -38,6 +38,8 @@ import { prisma } from "../prisma";
 export interface StopRow {
   seq: number;
   tripDropId: number | null;
+  /** order_invoices.id — read by placeOnStops (v27.81); stopRowsSelect carries it. */
+  id?: number;
 }
 
 /**
@@ -111,7 +113,8 @@ export const ON_SHOWN_TRIP_WHERE: Prisma.ordersWhereInput = onTripsWhere({ shown
 export function stopRowsSelect(dropIds?: number[]) {
   return {
     where: { tripDropId: dropIds ? { in: dropIds } : { not: null } },
-    select: { seq: true, tripDropId: true },
+    // id since v27.81 — placeOnStops names each stop's rows.
+    select: { id: true, seq: true, tripDropId: true },
   } satisfies Prisma.orders$invoicesArgs;
 }
 
@@ -146,6 +149,63 @@ export function placeOnTrips<T extends { invoices: StopRow[] }>(
     });
   }
   return out;
+}
+
+/**
+ * PER-PART SHIP-TO (v27.81, owner 2026-11-19, rule 4): one entry per (OBD,
+ * STOP) — an OBD whose parts go to two shops sits at two stops of one trip, and
+ * each stop must list it with ITS rows. `rowIds` / `seqs` are the OBD's rows on
+ * that stop (seq order); rows on stops not in `tripIdOfDrop` are ignored.
+ * Order: the input order, then stops by their lowest seq.
+ *
+ * 🔴 IDENTITY: while every OBD sits at ONE stop per trip (every part inherits —
+ * all live data at v27.81), this returns exactly placeOnTrips' entries (same
+ * order, same tripId / tripDropId), plus the row lists. trip-read.test.ts
+ * asserts it. The COUNT of a trip's bills stays per OBD (owner Q5: one OBD at
+ * two stops = 1 bill, 2 stops) — callers de-duplicate by id per trip.
+ */
+export function placeOnStops<T extends { invoices: StopRow[] }>(
+  orders: readonly T[],
+  tripIdOfDrop: ReadonlyMap<number, number>,
+): Array<Omit<T, "invoices"> & { tripId: number; tripDropId: number; rowIds: number[]; seqs: number[] }> {
+  const out: Array<Omit<T, "invoices"> & { tripId: number; tripDropId: number; rowIds: number[]; seqs: number[] }> = [];
+  for (const o of orders) {
+    const { invoices, ...rest } = o;
+    const byStop = new Map<number, StopRow[]>();
+    for (const r of invoices) {
+      if (r.tripDropId === null || !tripIdOfDrop.has(r.tripDropId)) continue;
+      const arr = byStop.get(r.tripDropId) ?? [];
+      arr.push(r);
+      byStop.set(r.tripDropId, arr);
+    }
+    Array.from(byStop.entries())
+      .map(([tripDropId, rows]) => ({ tripDropId, rows: rows.slice().sort((a, b) => a.seq - b.seq) }))
+      .sort((a, b) => a.rows[0].seq - b.rows[0].seq)
+      .forEach(({ tripDropId, rows }) => {
+        out.push({
+          ...rest,
+          tripId: tripIdOfDrop.get(tripDropId) as number,
+          tripDropId,
+          rowIds: rows.map((r) => r.id).filter((id): id is number => id !== undefined),
+          seqs: rows.map((r) => r.seq),
+        });
+      });
+  }
+  return out;
+}
+
+/**
+ * PER-PART SHIP-TO (v27.81): where ONE invoice ROW sits on ONE trip — its stop
+ * (id + dropKey), or null when the row is not on that trip. obdStopOnTrip's
+ * row-scoped twin: a part with its own ship-to may sit at a different stop
+ * than the OBD's lowest-seq row.
+ */
+export async function rowStopOnTrip(rowId: number, tripId: number): Promise<{ id: number; dropKey: string } | null> {
+  const row = await prisma.order_invoices.findFirst({
+    where: { id: rowId, tripDrop: { tripId } },
+    select: { tripDrop: { select: { id: true, dropKey: true } } },
+  });
+  return row?.tripDrop ?? null;
 }
 
 /**

@@ -26,6 +26,20 @@
 // colliding onto one stop. Same class of mistake CORE §13's id-space landmine
 // records — never compare ids across spaces, and never let two spaces share a
 // key without a discriminator.
+//
+// 🔴 PER-PART SHIP-TO (v27.81, owner 2026-11-19 — batch 3). A split OBD's
+// invoice row may have its OWN ship-to (order_invoices."shipToOverride" not
+// NULL), and then it goes to ITS shop's stop. The rule here does not change and
+// neither does any signature: a caller keying ONE PART passes
+// `effectiveDropInput(order, part)` (lib/ship-to/effective.ts — the order with
+// the part's effective four columns), and passes the raw order only for an
+// unsplit OBD or the OBD-level key. An inheriting part's effective input is the
+// order itself, so its key is the OBD's key. "Same shop" anywhere in the app is
+// equality of THIS key (partShopKey) — never parse it.
+//
+// ⚠ IMPORT CYCLE, deliberate and safe: lib/ship-to/effective.ts imports
+// computeDropKey from here and this imports typedDropText from there; both are
+// only used inside functions.
 
 import { typedDropText } from "@/lib/ship-to/effective";
 

@@ -46,6 +46,9 @@ export const dynamic = "force-dynamic";
  * Indexes (pg_indexes, read 2026-09-29): orders_obdNumber_key,
  * orders_invoiceNo_idx and idx_orders_sonumber — all three columns are indexed.
  *
+ * `stopIds` (v27.81, per-part ship-to): per matched OBD, EVERY stop it has on
+ * the trip — two when its parts go to two shops. Additive; no field changed.
+ *
  * Gate: floor canView, the same as the board. Sequential awaits (CORE §3).
  */
 export async function GET(req: Request): Promise<NextResponse> {
@@ -96,6 +99,9 @@ export async function GET(req: Request): Promise<NextResponse> {
       obdNumbers: string[];
       /** Per matched OBD (same order as obdNumbers): the invoice seq the number named, null = OBD / SO. */
       matchedInvoiceSeqs: Array<number | null>;
+      /** v27.81 — per matched OBD (same order): EVERY stop of it on this trip (trip_drops ids, ascending).
+       *  One id today; two when its parts go to two shops (per-part ship-to, rule 4). */
+      stopIds: number[][];
     }
   >();
   for (const o of orders) {
@@ -115,9 +121,15 @@ export async function GET(req: Request): Promise<NextResponse> {
       status: t.status,
       obdNumbers: [],
       matchedInvoiceSeqs: [],
+      stopIds: [],
     };
     entry.obdNumbers.push(o.obdNumber);
     entry.matchedInvoiceSeqs.push(invoiceMatches.get(o.id)?.[0]?.seq ?? null);
+    entry.stopIds.push(
+      Array.from(
+        new Set(o.invoices.filter((r) => r.tripDrop?.trip.id === t.id && r.tripDropId !== null).map((r) => r.tripDropId as number)),
+      ).sort((a, b) => a - b),
+    );
     byTrip.set(t.id, entry);
   }
 
@@ -130,6 +142,7 @@ export async function GET(req: Request): Promise<NextResponse> {
     obdNumber: string;
     obdNumbers: string[];
     matchedInvoiceSeqs: Array<number | null>;
+    stopIds: number[][];
     onLiveDesk: boolean;
   }> = [];
   for (const entry of Array.from(byTrip.values())) {

@@ -46,7 +46,7 @@ import { dedupeObdAttempts, invoiceRefusal, redeliveryTargetsOf } from "@/lib/or
 
 // ── Vocabulary — lives in lib/trips/redelivery-reasons.ts (pure, client-safe) ──
 import { isRedeliveryReason, redeliveryReasonLabel, type RedeliveryReason } from "@/lib/trips/redelivery-reasons";
-import { effectiveArea } from "@/lib/ship-to/effective";
+import { effectiveArea, effectiveDropInput } from "@/lib/ship-to/effective";
 export {
   REDELIVERY_REASONS,
   REDELIVERY_REASON_LABELS,
@@ -702,7 +702,21 @@ export async function addRedeliveries(
     try {
       const row = await prisma.order_invoices.findUnique({
         where: { id: rowId },
-        select: { id: true, orderId: true, seq: true, invoiceNo: true, isHeld: true, isDispatched: true, loadParentId: true, tripDrop: { select: { tripId: true } } },
+        select: {
+          id: true,
+          orderId: true,
+          seq: true,
+          invoiceNo: true,
+          isHeld: true,
+          isDispatched: true,
+          loadParentId: true,
+          tripDrop: { select: { tripId: true } },
+          // v27.81 — a part with its OWN ship-to is re-delivered to ITS shop's stop.
+          shipToOverride: true,
+          shipToOverrideCustomerId: true,
+          shipToText: true,
+          shipToAreaId: true,
+        },
       });
       if (!row) {
         failed.push({ orderId: 0, orderInvoiceId: rowId, error: "Invoice not found" });
@@ -763,8 +777,10 @@ export async function addRedeliveries(
       });
       const part = loadPartsOf(group).get(rowId);
 
-      // The OBD's stop on this trip — two invoices of one bill share it.
-      const drop = await findOrCreateTripDrop(tripId, order);
+      // The stop of THIS INVOICE's shop on this trip (v27.81, per-part ship-to):
+      // the OBD's stop while the part inherits — two invoices of one bill share
+      // it, as before — its own shop's stop when it has its own ship-to.
+      const drop = await findOrCreateTripDrop(tripId, effectiveDropInput(order, row));
       let created: { id: number };
       try {
         created = await prisma.trip_redeliveries.create({

@@ -29,6 +29,19 @@
 // loadRootId, so every other row — and every wording above — is unchanged.
 // A MOVE onto a trip is a join too (moveRefusals, Phase 4 batch 1, 2026-10-25):
 // the same test, the same words.
+//
+// 🔴 PER-PART SHIP-TO (v27.81, owner 2026-11-19, batch 3 — plan §D.5). Each row
+// may carry `shopKey`: the drop key of ITS effective ship-to (lib/ship-to/
+// effective.ts partShopKey). Then:
+//   · ADD — a row's stop on this trip is the stop of ITS shop (shopKey), not
+//     the OBD's: one OBD may sit at two stops of one trip (rule 4). "Already
+//     attached to a different stop" fires only when a row's current stop is not
+//     its own shop's. attachGroups says which rows go to which shop's stop.
+//   · TWIN RULE (owner Q2): two parts of ONE invoice may share a trip only when
+//     their shops DIFFER; same shop → the old refusal, word for word.
+// A row without shopKey takes the OBD's dropKey (the caller's argument), so
+// every caller that passes none — and every bill whose parts all inherit — is
+// exactly what it was.
 
 import { loadGroupsOf, loadPartsOf, loadPartText, withLoadPart, type LoadPart } from "./load-plan";
 
@@ -50,6 +63,9 @@ export interface TripBillRow {
   /** Split load — the row's group root id (its own id when it is a root with
    *  parts). Absent / null on every row not in a load group. */
   loadRootId?: number | null;
+  /** v27.81 — the drop key of the row's EFFECTIVE ship-to (its shop). Absent =
+   *  the OBD's own key (the caller's dropKey) — today's behaviour. */
+  shopKey?: string;
 }
 
 export interface RowRefusal {
@@ -93,8 +109,15 @@ function sameInvoiceOnTrip(
 ): string | null {
   if (r.loadRootId === undefined || r.loadRootId === null) return null;
   const rootId = r.loadRootId;
+  // Owner Q2 (v27.81): a twin going to a DIFFERENT shop is allowed on this
+  // trip; only a twin to the SAME shop refuses. Without shopKeys both sides are
+  // undefined — equal — so the rule is the old one.
   const other = rows.find(
-    (x) => x.id !== r.id && x.loadRootId === rootId && ((x.tripDropId !== null && x.tripId === tripId) || attaching.includes(x.id)),
+    (x) =>
+      x.id !== r.id &&
+      x.loadRootId === rootId &&
+      x.shopKey === r.shopKey &&
+      ((x.tripDropId !== null && x.tripId === tripId) || attaching.includes(x.id)),
   );
   if (!other) return null;
   const places = loadGroupsOf(rows.map((x) => ({ id: x.id, seq: x.seq, loadParentId: x.loadRootId === undefined || x.loadRootId === null || x.loadRootId === x.id ? null : x.loadRootId })));
@@ -118,11 +141,34 @@ export function foreignRowIds(rows: readonly TripBillRow[], chosen: readonly num
 }
 
 export interface AddRowsPlan {
-  /** Rows on no trip — attach to the OBD's stop on this trip. */
+  /** Rows on no trip — attach to their shop's stop on this trip. */
   attach: number[];
-  /** Rows already at the OBD's stop on this trip — nothing to do. */
+  /** v27.81 — `attach` by shop: one entry per drop key, rows in attach order,
+   *  groups in order of first appearance. ONE group when every row goes to the
+   *  OBD's stop (today). */
+  attachGroups: Array<{ dropKey: string; rowIds: number[] }>;
+  /** Rows already at their shop's stop on this trip — nothing to do. */
   here: number[];
   refused: RowRefusal[];
+}
+
+/** v27.81 — the stop key a row goes to: its own shop, else the OBD's. */
+export function rowKeyOf(r: Pick<TripBillRow, "shopKey">, obdKey: string): string {
+  return r.shopKey ?? obdKey;
+}
+
+/** Group row ids by their target key, keeping first-appearance order. */
+export function groupByKey(rows: readonly TripBillRow[], ids: readonly number[], obdKey: string): Array<{ dropKey: string; rowIds: number[] }> {
+  const out: Array<{ dropKey: string; rowIds: number[] }> = [];
+  for (const id of ids) {
+    const r = rows.find((x) => x.id === id);
+    if (!r) continue;
+    const key = rowKeyOf(r, obdKey);
+    const g = out.find((x) => x.dropKey === key);
+    if (g) g.rowIds.push(id);
+    else out.push({ dropKey: key, rowIds: [id] });
+  }
+  return out;
 }
 
 /**
@@ -137,7 +183,7 @@ export function planAddRows(
   obdNumber: string,
 ): AddRowsPlan {
   const split = rows.length >= 2;
-  const plan: AddRowsPlan = { attach: [], here: [], refused: [] };
+  const plan: AddRowsPlan = { attach: [], attachGroups: [], here: [], refused: [] };
   for (const r of targetsOf(rows, chosen)) {
     // 6.3 (owner, 2026-10-19) — a SPLIT OBD's HELD invoice never joins a trip:
     // release it first. One with its own CI is finished. That invoice only;
@@ -157,7 +203,8 @@ export function planAddRows(
       if (twin !== null) plan.refused.push({ rowId: r.id, invoiceNo: r.invoiceNo, error: twin });
       else plan.attach.push(r.id);
     } else if (r.tripId === tripId) {
-      if (r.dropKey === dropKey) plan.here.push(r.id);
+      // v27.81 — its OWN shop's stop (rowKeyOf), which is the OBD's unless the part has its own ship-to.
+      if (r.dropKey === rowKeyOf(r, dropKey)) plan.here.push(r.id);
       else plan.refused.push({ rowId: r.id, invoiceNo: r.invoiceNo, error: "Already attached to a different stop on this trip." });
     } else if (r.tripNumber === null) {
       // A stop with no readable trip (the old route's own fallback wording).
@@ -172,6 +219,7 @@ export function planAddRows(
       });
     }
   }
+  plan.attachGroups = groupByKey(rows, plan.attach, dropKey);
   return plan;
 }
 

@@ -33,6 +33,13 @@ export const dynamic = "force-dynamic";
 // `preview` writes NOTHING and uploads nothing: it answers what a save would do
 // ({ preview }), or the refusal a save would get.
 //
+// PER-PART SHIP-TO (v27.81, batch 3): this change is the BILL's — parts with
+// their own ship-to keep it and do not move. The preview says so:
+// preview.keptParts / preview.keptPartsNote ("1 part keeps its own ship-to"),
+// and preview.offTrip when only such parts are on this trip (the change then
+// writes the bill alone and moves no stop). Copies here are the BILL's own
+// (orderInvoiceId NULL) — a part's copies are capped and removed on its own route.
+//
 // Gate: floor canEdit. Sequential awaits, never prisma.$transaction (CORE §3).
 
 export async function POST(
@@ -133,10 +140,11 @@ async function saveFromModal(req: Request, tripId: number, changedById: number):
   const files = r.mode === "typed" ? r.files : [];
   const removeCopyIds = r.mode === "typed" ? r.removeCopyIds : [];
   if (r.mode === "typed") {
-    const notMine = await checkRemovable(removeCopyIds, "floor", orderId);
+    const notMine = await checkRemovable(removeCopyIds, "floor", orderId, null);
     if (notMine !== null) return NextResponse.json({ error: notMine.error }, { status: notMine.status });
 
-    const ownAfter = (await countActiveOwnCopies("floor", orderId)) - removeCopyIds.length + files.length;
+    // v27.81 — the BILL's own copies (a part's copies are its own, capped apart).
+    const ownAfter = (await countActiveOwnCopies("floor", orderId, null)) - removeCopyIds.length + files.length;
     if (ownAfter > MAX_ACTIVE_COPIES) {
       return NextResponse.json(
         { error: `At most ${MAX_ACTIVE_COPIES} copies per bill — remove one before adding another.` },
@@ -175,7 +183,7 @@ async function saveFromModal(req: Request, tripId: number, changedById: number):
   let copiesRemoved = 0;
   if (removeCopyIds.length > 0) {
     copiesRemoved = await softRemoveCopies(
-      { ...activeOwnCopiesWhere("floor", orderId), id: { in: removeCopyIds } },
+      { ...activeOwnCopiesWhere("floor", orderId, null), id: { in: removeCopyIds } },
       changedById,
     );
   }

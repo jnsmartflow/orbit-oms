@@ -6,8 +6,9 @@ import { computeDropKey } from "@/lib/trips/drop-key";
 import { deleteTripDropIfEmpty, findOrCreateTripDrop } from "@/lib/trips/drop";
 import { logTripBills } from "@/lib/trips/activity";
 import { CHALLAN_LINKED } from "@/lib/workflow-stages";
-import { needsDerivedRepair, setRowsTrip } from "@/lib/order-invoices/trip-link";
-import { foreignRowIds, moveRefusals, planAddRows, planRemoveRows, rowLabelOf, type TripBillRow } from "@/lib/order-invoices/trip-bills";
+import { needsDerivedRepair, setRowsStops, setRowsTrip } from "@/lib/order-invoices/trip-link";
+import { foreignRowIds, groupByKey, moveRefusals, planAddRows, planRemoveRows, rowKeyOf, rowLabelOf, type TripBillRow } from "@/lib/order-invoices/trip-bills";
+import { effectiveDropInput, partShopKey, type PartShipToCols } from "@/lib/ship-to/effective";
 import { getTripSummariesByIds } from "@/lib/trips/queries";
 
 export const dynamic = "force-dynamic";
@@ -75,6 +76,17 @@ interface Failed {
  * bills between trips repeatedly while building a load. A log row per bill would
  * be noise that buries the events somebody reads back, and it would be the
  * second write the marker landmine warns about.
+ *
+ * 🔴 PER-PART SHIP-TO (v27.81, owner 2026-11-19 — batch 3, plan §D.5). A row of
+ * a split OBD may have its OWN ship-to; it then goes to ITS shop's stop. So an
+ * add or a move groups the rows by their shop (drop key of effectiveDropInput),
+ * finds or creates ONE stop per shop, and writes them with ONE setRowsStops —
+ * N order_invoices.updateMany, still EXACTLY ONE orders.update per bill. One
+ * OBD may thus sit at two stops of one trip (rule 4). Two parts of one invoice
+ * may share a trip only when their shops differ (owner Q2, trip-bills.ts). With
+ * every row inheriting — all live data at v27.81 — there is ONE group, the
+ * OBD's own stop, and the press is exactly what it was (setRowsStops with one
+ * group == setRowsTrip, trip-link.test.ts).
  *
  * Same 422/partial contract as /api/floor/release.
  * Sequential awaits, never prisma.$transaction (CORE §3).
@@ -217,6 +229,7 @@ export async function POST(
           // v27.69 — the derived flag, for the same half-write repair check.
           partlyOnTrip: true,
           customerId: true,
+          shipToOverride: true,
           shipToOverrideCustomerId: true,
           shipToCustomerId: true,
           shipToCustomerName: true,
@@ -250,8 +263,21 @@ export async function POST(
           ciReturns: { where: { isVoided: false }, orderBy: { id: "desc" }, take: 1, select: { ciNumber: true } },
           // Split load (v27.76) — one part of an invoice per trip (planAddRows).
           loadParentId: true,
+          // v27.81 — the row's OWN ship-to decides its stop (NULL = the bill's).
+          shipToOverride: true,
+          shipToOverrideCustomerId: true,
+          shipToText: true,
+          shipToAreaId: true,
         },
       });
+      // v27.81 — each row's own four ship-to columns, and the stop input of a row's shop.
+      const shipToOfRow = new Map<number, PartShipToCols>(
+        rowRecs.map((r) => [
+          r.id,
+          { shipToOverride: r.shipToOverride, shipToOverrideCustomerId: r.shipToOverrideCustomerId, shipToText: r.shipToText, shipToAreaId: r.shipToAreaId },
+        ]),
+      );
+      const dropInputOf = (rowId: number) => effectiveDropInput(order, shipToOfRow.get(rowId) ?? null);
       const rows: TripBillRow[] = rowRecs.map((r) => ({
         id: r.id,
         seq: r.seq,
@@ -264,6 +290,8 @@ export async function POST(
         ciNumber: r.ciReturns.length > 0 ? r.ciReturns[0].ciNumber ?? "" : null,
         // The group root: a part's parent, a root's own id when it has parts, else null.
         loadRootId: r.loadParentId ?? (rowRecs.some((x) => x.loadParentId === r.id) ? r.id : null),
+        // v27.81 — the row's shop (its effective drop key); = the OBD's key while it inherits.
+        shopKey: partShopKey(order, shipToOfRow.get(r.id) ?? null),
       }));
       const chosen = chosenRows.get(orderId) ?? "all";
       const foreign = foreignRowIds(rows, chosen);
@@ -328,10 +356,12 @@ export async function POST(
           });
           continue;
         }
-        // One OBD, one stop per trip: rows of this OBD already on the target at
-        // ANOTHER stop would split it across two stops — refused, as add does.
+        // A row of this OBD already on the target at a stop that is NOT its own
+        // shop's is out of step — refused, as add does. (v27.81: each row's OWN
+        // shop — rowKeyOf; was "the OBD's one stop", which it still is while
+        // every row inherits.)
         const dropKey = computeDropKey(order);
-        if (rows.some((r) => r.tripId === tripId && r.dropKey !== dropKey)) {
+        if (rows.some((r) => r.tripId === tripId && r.dropKey !== rowKeyOf(r, dropKey))) {
           failed.push({ orderId, error: `Already attached to a different stop on ${trip.tripNumber}.` });
           continue;
         }
@@ -343,11 +373,16 @@ export async function POST(
         refuseRows(moving.refused);
         if (moving.move.length === 0) continue;
 
-        // The target stop, then ONE setRowsTrip: the rows go straight from the
-        // source stop to the target stop (onlyFromTripId re-checks they are
-        // still on the source) and orders gets its ONE update.
-        const drop = await findOrCreateTripDrop(tripId, order);
-        await setRowsTrip(orderId, moving.move, drop.id, { onlyFromTripId: source.id });
+        // The target stop of each row's shop, then ONE setRowsStops: the rows go
+        // straight from the source stop to their target stop (onlyFromTripId
+        // re-checks they are still on the source) and orders gets its ONE update.
+        // One group (the OBD's stop) while every row inherits — as before.
+        const stops: Array<{ rowIds: number[]; tripDropId: number }> = [];
+        for (const g of groupByKey(rows, moving.move, dropKey)) {
+          const drop = await findOrCreateTripDrop(tripId, dropInputOf(g.rowIds[0]));
+          stops.push({ rowIds: g.rowIds, tripDropId: drop.id });
+        }
+        await setRowsStops(orderId, stops, { onlyFromTripId: source.id });
         changed.push(orderId);
         changedObds.push(order.obdNumber);
         // Source stops left with nothing go, and the source closes up 1..N —
@@ -468,11 +503,17 @@ export async function POST(
       // lookup, same MAX(dropSeq)+1, same snapshot). A lost race on the
       // (tripId, dropKey) unique throws into this bill's catch below and is
       // reported as this bill's failure, as before.
-      const drop = await findOrCreateTripDrop(tripId, order);
+      // v27.81 — ONE stop per SHOP of the attaching rows (plan.attachGroups);
+      // one group, the OBD's own stop, while every row inherits.
+      const stops: Array<{ rowIds: number[]; tripDropId: number }> = [];
+      for (const g of plan.attachGroups) {
+        const drop = await findOrCreateTripDrop(tripId, dropInputOf(g.rowIds[0]));
+        stops.push({ rowIds: g.rowIds, tripDropId: drop.id });
+      }
 
       // The rows that attach, then ONE orders.update — still the only write to
       // `orders` on this path (v27.66, lib/order-invoices/trip-link.ts).
-      await setRowsTrip(orderId, plan.attach, drop.id);
+      await setRowsStops(orderId, stops);
       changed.push(orderId);
       changedObds.push(order.obdNumber);
     } catch (err) {

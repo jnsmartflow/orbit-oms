@@ -44,7 +44,7 @@ import { getFloorBoard } from "@/lib/floor/queries";
 import type { FloorBoardRow } from "@/lib/floor/types";
 import { isTypedShipTo } from "@/lib/ship-to/effective";
 import { isGiftBill, loadKg, loadLitres } from "@/lib/orders/gift";
-import { onStopsWhere, placeOnTrips, stopRowsSelect } from "@/lib/order-invoices/trip-read";
+import { onStopsWhere, placeOnStops, stopRowsSelect } from "@/lib/order-invoices/trip-read";
 import { loadSplitInvoiceRows } from "@/lib/order-invoices/invoice-load";
 import { loadPartsOf } from "@/lib/order-invoices/load-plan";
 import { RECORD_OBD_SELECT, recordObdOf } from "@/lib/order-invoices/links";
@@ -487,7 +487,11 @@ async function loadTripBills(drops: ReadonlyArray<{ id: number; tripId: number }
     },
     orderBy: { id: "asc" },
   });
-  const orders = placeOnTrips(found, new Map(drops.map((d) => [d.id, d.tripId])));
+  // v27.81 (per-part ship-to, rule 4) — one entry per (OBD, STOP): an OBD whose
+  // parts go to two shops is listed at both stops. With every part inheriting it
+  // is exactly the old per-(OBD, trip) placement (trip-read.test.ts asserts it).
+  // The trip COUNT stays per OBD (owner Q5) — toSummary counts each id once.
+  const orders = placeOnStops(found, new Map(drops.map((d) => [d.id, d.tripId])));
   if (orders.length === 0) return [];
 
   // ── The delivery type of each bill (2026-09-18) ──────────────────────────
@@ -566,12 +570,13 @@ async function loadTripBills(drops: ReadonlyArray<{ id: number; tripId: number }
   // is split (every trip today), three more when one is. An OBD wholly on the
   // trip keeps its own litres / kg (placeLoad → null).
   const splitRows = await loadSplitInvoiceRows(orders, weightByOrderId);
-  const tripOfDrop = new Map(drops.map((d) => [d.id, d.tripId] as const));
 
   return orders.map((o) => {
     const deliveryTypeId = typeIdOf(o);
     const rows = splitRows.get(o.id);
-    const load = rows ? placeLoad(rows, (d) => d !== null && tripOfDrop.get(d) === o.tripId) : null;
+    // The OBD's rows at THIS STOP (v27.81) — equal to "on this trip" while an
+    // OBD sits at one stop per trip; null when it is all here (its own totals).
+    const load = rows ? placeLoad(rows, (d) => d !== null && d === o.tripDropId) : null;
     return {
       id: o.id,
       tripDropId: o.tripDropId,
@@ -873,6 +878,17 @@ function toRankItems(stops: readonly AreaStop[], pick: (s: AreaStop) => string |
   return stops.map((s) => ({ name: pick(s), order: s.dropSeq, hasBills: s.hasBills }));
 }
 
+/**
+ * Owner Q5 (v27.81): ONE BILL PER OBD PER TRIP. loadTripBills lists an OBD once
+ * per STOP (an OBD whose parts go to two shops sits at two); a trip's counts read
+ * each id once — the first entry. Pure. While every OBD sits at one stop per
+ * trip it returns its input unchanged.
+ */
+export function onceById<T extends { id: number }>(bills: readonly T[]): T[] {
+  const seen = new Set<number>();
+  return bills.filter((b) => (seen.has(b.id) ? false : (seen.add(b.id), true)));
+}
+
 /** Assemble one summary from a row plus the resolved maps and its own bills. */
 function toSummary(
   t: TripRow,
@@ -891,16 +907,25 @@ function toSummary(
   let dispatchedCount = 0;
   let totalWeightKg = 0;
   let weightUnknownCount = 0;
-  for (const b of bills) {
+  // 🔴 ONE BILL PER OBD PER TRIP (owner Q5, v27.81): an OBD whose parts go to two
+  // shops arrives here ONCE PER STOP (loadTripBills, placeOnStops) — it counts
+  // once (and its "kg unknown" once); its litres / kg are summed over its stops.
+  // While every OBD sits at one stop per trip, each id arrives once: unchanged.
+  for (const b of onceById(bills)) {
     counts[bucketFor(b.workflowStage, b.dispatchStatus)] += 1;
     counts.total += 1;
     if (b.workflowStage === DISPATCHED) dispatchedCount += 1;
+  }
+  const unknownKg = new Set<number>();
+  for (const b of bills) {
     // A GIFT adds 0 L and a KNOWN 0 kg (never "unknown"); it is still counted
     // above as a bill. lib/orders/gift.ts.
     totalLitres += loadLitres(b.litres, b.isGift);
     const kg = loadKg(b.weightKg, b.isGift);
-    if (kg === null) weightUnknownCount += 1;
-    else totalWeightKg += kg;
+    if (kg === null) {
+      if (!unknownKg.has(b.id)) weightUnknownCount += 1;
+      unknownKg.add(b.id);
+    } else totalWeightKg += kg;
   }
   // 2026-10-05 owner: re-delivery litres/kg count in physical load; NOT in bill counts or buckets. Do not remove.
   for (const r of redeliveryLoads) {

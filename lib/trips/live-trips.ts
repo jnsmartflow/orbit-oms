@@ -130,6 +130,12 @@ export function tripsOnDeskWhere(deskDate: Date, todayDate: Date): Prisma.tripsW
       // lookups and lost orders_tripDropId_idx. This runs every 15 s — keep
       // the two branches. The bill's `tripDropId: { not: null }` in branch 2 is
       // redundant by meaning and keeps the inner orders read on that index.
+      // PER-PART SHIP-TO (v27.81, batch 3): a part with its own ship-to may sit
+      // at a stop that is NOT its OBD's derived one — on the same trip or
+      // another. Branch 2 already covers it (any row with seq > 1 on the stop),
+      // and seq 1 is always the derived stop when it has one, so the two
+      // branches stay exactly "any invoice row on the stop". No change needed;
+      // checked 2026-11-19.
       // ⚠ ONE `drops: { some: { OR } }`, measured against the alternative
       // (2026-10-15, Floor marker, EXPLAIN ANALYZE ×3): this form 35.8–37.1 ms
       // (HEAD 34 ms) — the stop list is one seq scan of trip_drops (~3.8k rows,

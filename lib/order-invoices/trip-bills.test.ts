@@ -30,7 +30,7 @@ const unsplit = (place: typeof OFF | typeof ON_668 | typeof ON_605): TripBillRow
 // ── add ──────────────────────────────────────────────────────────────────────
 
 test("add, unsplit OBD off any trip: attaches its one row", () => {
-  assert.deepEqual(planAddRows(unsplit(OFF), "all", 668, KEY, OBD), { attach: [500], here: [], refused: [] });
+  assert.deepEqual(planAddRows(unsplit(OFF), "all", 668, KEY, OBD), { attach: [500], attachGroups: [{ dropKey: KEY, rowIds: [500] }], here: [], refused: [] });
 });
 
 test("add, unsplit OBD on another trip: today's wording, word for word", () => {
@@ -40,7 +40,7 @@ test("add, unsplit OBD on another trip: today's wording, word for word", () => {
 });
 
 test("add, unsplit OBD already at its stop on this trip: nothing to do", () => {
-  assert.deepEqual(planAddRows(unsplit(ON_668), "all", 668, KEY, OBD), { attach: [], here: [500], refused: [] });
+  assert.deepEqual(planAddRows(unsplit(ON_668), "all", 668, KEY, OBD), { attach: [], attachGroups: [], here: [500], refused: [] });
 });
 
 test("add, a different stop on this trip: refused with today's wording", () => {
@@ -49,7 +49,7 @@ test("add, a different stop on this trip: refused with today's wording", () => {
 
 test("add PARTIAL: only the chosen invoices (713 + 715) attach", () => {
   const plan = planAddRows(r18648([OFF, OFF, OFF, OFF]), [36798, 36800], 668, KEY, OBD);
-  assert.deepEqual(plan, { attach: [36798, 36800], here: [], refused: [] });
+  assert.deepEqual(plan, { attach: [36798, 36800], attachGroups: [{ dropKey: KEY, rowIds: [36798, 36800] }], here: [], refused: [] });
 });
 
 test("add whole split OBD, one invoice on ANOTHER trip: refused for that invoice only, the rest attach", () => {
@@ -62,7 +62,7 @@ test("add whole split OBD, one invoice on ANOTHER trip: refused for that invoice
 
 test("add whole split OBD, some invoices already here: the rest join the SAME stop", () => {
   const plan = planAddRows(r18648([OFF, ON_668, OFF, ON_668]), "all", 668, KEY, OBD);
-  assert.deepEqual(plan, { attach: [17010, 36799], here: [36798, 36800], refused: [] });
+  assert.deepEqual(plan, { attach: [17010, 36799], attachGroups: [{ dropKey: KEY, rowIds: [17010, 36799] }], here: [36798, 36800], refused: [] });
 });
 
 test("add: a split row with no invoice number is named by its place", () => {
@@ -164,7 +164,7 @@ test("split load: rows WITHOUT loadRootId keep every wording byte for byte (null
       { rowId: 500, invoiceNo: "I1", error: "Already on L-261006-05 — remove it from that trip first." },
     ]);
     assert.equal(planAddRows(unsplit(ON_668).map((r) => ({ ...r, ...extra })), "all", 668, "C:2", OBD).refused[0].error, "Already attached to a different stop on this trip.");
-    assert.deepEqual(planAddRows(unsplit(OFF).map((r) => ({ ...r, ...extra })), "all", 668, KEY, OBD), { attach: [500], here: [], refused: [] });
+    assert.deepEqual(planAddRows(unsplit(OFF).map((r) => ({ ...r, ...extra })), "all", 668, KEY, OBD), { attach: [500], attachGroups: [{ dropKey: KEY, rowIds: [500] }], here: [], refused: [] });
     const split = r18648([OFF, ON_605, OFF, OFF]).map((r) => ({ ...r, ...extra }));
     assert.deepEqual(planAddRows(split, "all", 668, KEY, OBD).attach, [17010, 36799, 36800]);
   }
@@ -192,4 +192,56 @@ test("move: unsplit and Add-invoices rows always move, as before", () => {
     const split = r18648([ON_605, ON_668, ON_605, OFF]).map((r) => ({ ...r, ...extra }));
     assert.deepEqual(moveRefusals(split, [17010, 36799], 668, OBD), { move: [17010, 36799], refused: [] });
   }
+});
+
+// ── PER-PART SHIP-TO (v27.81, owner 2026-11-19 — batch 3) ────────────────────
+// 9110835499's shape: root 17010 + part 40001 of one invoice; the part's own
+// shop is "c:2375" (National Hardware Paints), the bill's "c:2441".
+const OBD_KEY = "c:2441";
+const OWN_KEY = "c:2375";
+const twoParts = (keys: (string | undefined)[], places: (typeof OFF | typeof ON_668)[]): TripBillRow[] =>
+  [17010, 40001].map((id, i) => ({
+    id,
+    seq: i + 1,
+    invoiceNo: "I536230716",
+    loadRootId: 17010,
+    ...places[i],
+    ...(keys[i] !== undefined ? { shopKey: keys[i] } : {}),
+  }));
+
+test("ship-to: both parts INHERIT → one group on the bill's stop; the twin rule refuses as before (Q2, same shop)", () => {
+  const plan = planAddRows(twoParts([OBD_KEY, OBD_KEY], [OFF, OFF]), "all", 668, OBD_KEY, OBD);
+  assert.deepEqual(plan.attach, [17010]);
+  assert.deepEqual(plan.attachGroups, [{ dropKey: OBD_KEY, rowIds: [17010] }]);
+  assert.equal(plan.refused[0].error, "I536230716 part 2 of 2 — part 1 of the same invoice is already on this trip");
+  // shopKey given as the OBD's key == shopKey absent: identical plan.
+  assert.deepEqual(plan, planAddRows(twoParts([undefined, undefined], [OFF, OFF]), "all", 668, OBD_KEY, OBD));
+});
+
+test("ship-to: part 2 to ITS OWN shop → both attach, two groups, two stops (rule 4; Q2 allows the twin)", () => {
+  const plan = planAddRows(twoParts([OBD_KEY, OWN_KEY], [OFF, OFF]), "all", 668, OBD_KEY, OBD);
+  assert.deepEqual(plan.refused, []);
+  assert.deepEqual(plan.attach, [17010, 40001]);
+  assert.deepEqual(plan.attachGroups, [
+    { dropKey: OBD_KEY, rowIds: [17010] },
+    { dropKey: OWN_KEY, rowIds: [40001] },
+  ]);
+});
+
+test("ship-to: a part already at ITS OWN shop's stop is 'here'; at the bill's stop it is 'a different stop'", () => {
+  const atOwn = { ...ON_668, dropKey: OWN_KEY };
+  const p1 = planAddRows(twoParts([OBD_KEY, OWN_KEY], [OFF, atOwn]), "all", 668, OBD_KEY, OBD);
+  assert.deepEqual(p1.here, [40001]);
+  assert.deepEqual(p1.attach, [17010]);
+  const atBill = { ...ON_668, dropKey: OBD_KEY };
+  const p2 = planAddRows(twoParts([OBD_KEY, OWN_KEY], [OFF, atBill]), [40001], 668, OBD_KEY, OBD);
+  assert.equal(p2.refused[0].error, "Already attached to a different stop on this trip.");
+});
+
+test("ship-to: a MOVE of twins onto one trip — different shops move, same shop refuses (Q2)", () => {
+  const onSrc = { ...ON_668, tripId: 999, tripNumber: "L-SRC" };
+  assert.deepEqual(moveRefusals(twoParts([OBD_KEY, OWN_KEY], [onSrc, onSrc]), [17010, 40001], 668, OBD).move, [17010, 40001]);
+  const same = moveRefusals(twoParts([OBD_KEY, OBD_KEY], [onSrc, onSrc]), [17010, 40001], 668, OBD);
+  assert.deepEqual(same.move, [17010]);
+  assert.equal(same.refused.length, 1);
 });
