@@ -501,6 +501,26 @@ export function narrowToPlace<T extends Narrowable>(row: T, inPlace: (tripDropId
 }
 
 /**
+ * ONE STOP's rows (v27.81 per-part ship-to): the stop's OBDs (`orderIds`, the
+ * trip summary's per-stop placement) looked up and narrowed to the invoices AT
+ * THAT STOP. A split OBD whose parts sit at two stops of one trip (a part with
+ * its own ship-to) is in both stops' orderIds — narrowing to the TRIP drew both
+ * parts under each stop, and a stop's select-all ticked the other stop's part.
+ * An OBD wholly at the stop (every row while all parts inherit) is the same
+ * row object back. Missing rows (not on the board) are skipped.
+ */
+export function rowsAtStop<T extends Narrowable>(
+  orderIds: readonly number[],
+  rowById: ReadonlyMap<number, T>,
+  dropId: number,
+): T[] {
+  return orderIds
+    .map((id) => rowById.get(id))
+    .filter((r): r is T => r !== undefined)
+    .map((r) => narrowToPlace(r, (d) => d === dropId));
+}
+
+/**
  * TO PLAN (6.1): an invoice is in the pool when it is on no trip AND not held.
  * A held invoice of a split OBD is drawn on the On hold tab instead.
  */

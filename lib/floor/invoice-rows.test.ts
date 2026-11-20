@@ -6,7 +6,7 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { addedInvoiceNosOf, articleShareText, awayChipOf, buildInvoiceRows as buildFacts, drawRows, drawRowsOf, goneChipOf, hasLoadGroup, loadPlaceArticles, loadRowArticles, loadRowArticleTags, loadTripsOf, narrowToInvoiceIds, narrowToPlace, paperCountOf, placeLoad, type FloorInvoiceRow, type InvoiceLineFacts, type InvoiceRowSource } from "./invoice-rows";
+import { addedInvoiceNosOf, articleShareText, awayChipOf, buildInvoiceRows as buildFacts, drawRows, drawRowsOf, goneChipOf, hasLoadGroup, rowsAtStop, loadPlaceArticles, loadRowArticles, loadRowArticleTags, loadTripsOf, narrowToInvoiceIds, narrowToPlace, paperCountOf, placeLoad, type FloorInvoiceRow, type InvoiceLineFacts, type InvoiceRowSource } from "./invoice-rows";
 
 // v27.81 fixtures: FloorInvoiceRow carries a REQUIRED shipTo (the server adds it,
 // lib/floor/queries.ts withPartShipTo). Every fixture row here INHERITS — the
@@ -161,6 +161,30 @@ test("narrowToPlace: the same object when wholly in the place; else only its inv
   assert.deepEqual(pool.invoiceRows.map((r) => r.seq), [1, 3]);
   assert.equal(pool.volumeLitres, 540);
   assert.ok(Math.abs((pool.weightKg ?? 0) - (405.45 + 325.332)) < 1e-9);
+});
+
+test("rowsAtStop (v27.81): 9110835499 — part 1 at stop A, part 2 (own ship-to) at stop B; inheriting → the same row", () => {
+  const A = 9101;
+  const B = 9102;
+  const parts = buildInvoiceRows({ rows: ROWS.slice(0, 2), activeLines: LINES, obdKg: 1357 });
+  const at = (a: number, b: number) => [{ ...parts[0], tripDropId: a }, { ...parts[1], tripDropId: b }];
+  // Both parts at stop A (inheriting — all live data): the same object, stop B empty-handed.
+  const one = { orderId: 25130, volumeLitres: 560, weightKg: 760, invoiceRows: at(A, A) };
+  const other = { orderId: 7, volumeLitres: 100, weightKg: 130, invoiceRows: [] as FloorInvoiceRow[] };
+  const byId = new Map([[25130, one], [7, other]]);
+  const sameStop = rowsAtStop([25130, 7, 99], byId, A);
+  assert.equal(sameStop[0], one);
+  assert.equal(sameStop[1], other);
+  assert.equal(sameStop.length, 2);
+  // Split across the stops: each stop draws only its own part.
+  const split = { ...one, invoiceRows: at(A, B) };
+  const byId2 = new Map([[25130, split]]);
+  const a = rowsAtStop([25130], byId2, A);
+  const b = rowsAtStop([25130], byId2, B);
+  assert.deepEqual(drawRowsOf(a[0]).map((d) => [d.key, d.k, d.n]), [["inv:17010", 1, 2]]);
+  assert.deepEqual(drawRowsOf(b[0]).map((d) => [d.key, d.k, d.n]), [["inv:17011", 2, 2]]);
+  assert.equal(a[0].volumeLitres, 300);
+  assert.equal(b[0].volumeLitres, 260);
 });
 
 // ── P5-3: per-invoice ticks — OBD-wide k/n, ticked load, where the rest are ──

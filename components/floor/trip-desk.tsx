@@ -55,7 +55,7 @@ import {
 } from "./status-pill";
 import { rdKey, type FloorDeskSelection } from "@/lib/floor/selection";
 import type { FloorBoardResult, FloorBoardRow, FloorRouteClub, FloorScope } from "@/lib/floor/types";
-import { inPool, narrowToPlace, narrowToPool } from "@/lib/floor/invoice-rows";
+import { inPool, narrowToPool, rowsAtStop } from "@/lib/floor/invoice-rows";
 import { withLoadPart } from "@/lib/order-invoices/load-plan";
 import type { TripSummary, TripDetail } from "@/lib/trips/queries";
 
@@ -1096,14 +1096,13 @@ export function TripDesk({
           // the stops are the bottom of the detail panel (design spec).
           <div className="pb-[22px]">
           {drops.map((d, i) => {
-            // NARROWED TO THIS TRIP (Phase 5 commit 1): a split OBD shows only
-            // its invoices on this trip's stops, with their litres / kg — the
-            // same row object when it is wholly on the trip (every row today).
-            const tripDropIdSet = new Set(drops.map((x) => x.id));
-            const rows = d.orderIds
-              .map((id) => rowById.get(id))
-              .filter((r): r is FloorBoardRow => r !== undefined)
-              .map((r) => narrowToPlace(r, (dropId) => dropId !== null && tripDropIdSet.has(dropId)));
+            // NARROWED TO THIS STOP (Phase 5 commit 1; per STOP since v27.81):
+            // a split OBD shows only its invoices at this stop, with their
+            // litres / kg — two parts at two stops of one trip (per-part
+            // ship-to) each draw under their own stop, and the stop's
+            // select-all ticks only them. The same row object when the OBD is
+            // wholly at the stop (every row while all parts inherit).
+            const rows = rowsAtStop(d.orderIds, rowById, d.id);
             // RE-DELIVERIES (2026-10-03) — appended AFTER the stop's own bills,
             // each its own bill's FloorTable row (built server-side by the board's
             // row builder) marked `redelivery`, so FloorTable ticks it by `rd:<id>`

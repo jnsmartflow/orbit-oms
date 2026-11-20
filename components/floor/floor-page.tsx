@@ -116,7 +116,7 @@ import {
   type FloorDeskSelection,
   type SelectionUnit,
 } from "@/lib/floor/selection";
-import { narrowToInvoiceIds, narrowToPlace, narrowToPool, type FloorInvoiceRow } from "@/lib/floor/invoice-rows";
+import { narrowToInvoiceIds, narrowToPlace, narrowToPool, rowsAtStop, type FloorInvoiceRow } from "@/lib/floor/invoice-rows";
 import { rowsInScope, scopeBoard } from "@/lib/floor/scope";
 import { parseSearch, applySearch, searchReport, lookupTermOf, matchedInvoiceIdsOf, litSeqsOf, partHitsOf, searchRowSelector, tripSearchHitsOf, type Searchable, type ParsedSearch, type TripSearchLine } from "@/lib/floor/search";
 import { applyFloorFilters, applyFlagFilters, EMPTY_FILTERS, type FloorFilters } from "@/lib/floor/filter";
@@ -2543,16 +2543,11 @@ export function FloorPage({
     if (detail.tripId !== null && (detail.source === "floor" || detail.source === "history")) {
       if (tripDetail === null || tripDetail.id !== detail.tripId) return [];
       const rowById = new Map((data?.floor.rows ?? []).map((r) => [r.orderId, r] as const));
-      const dropIds = new Set(tripDetail.drops.map((d) => d.id));
-      const inTrip = (dropId: number | null) => dropId !== null && dropIds.has(dropId);
+      // Per STOP (v27.81): a split OBD's part is walked under the stop it is
+      // at, once — as the trip desk draws it (rowsAtStop).
       return tripDetail.drops.flatMap((d) =>
         detailWalk(
-          sortFloorRows(
-            d.orderIds
-              .map((id) => rowById.get(id))
-              .filter((r): r is FloorBoardRow => r !== undefined)
-              .map((r) => narrowToPlace(r, inTrip)),
-          ),
+          sortFloorRows(rowsAtStop(d.orderIds, rowById, d.id)),
           detail.source === "floor",
         ),
       );
